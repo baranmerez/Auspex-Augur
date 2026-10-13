@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { assertReadOnlyQuery, stripLiteralsAndComments } from '../sqlGuard.js';
+import { withFileLock, renameRetrying } from '../fileLock.js';
 
 export const stages = { draft: '_drafts', approved: 'SELECT', execute: 'EXECUTE' };
 const maxRuns = 100;
@@ -55,12 +56,19 @@ function writeAtomic(file, text) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
   fs.writeFileSync(tmp, text, 'utf8');
-  fs.renameSync(tmp, file);
+  renameRetrying(tmp, file); // the viewer may be reading the target on Windows
 }
 
 export class Library {
   constructor(root) {
     this.root = path.resolve(root);
+  }
+
+  // Every read-modify-write of the library runs under one cross-process lock
+  // (<library>/.lock), so concurrent Auspex processes cannot lose updates or
+  // mix SQL and metadata revisions. Re-entrant within a process.
+  locked(fn) {
+    return withFileLock(path.join(this.root, '.lock'), fn);
   }
 
   ensure() {
@@ -110,7 +118,11 @@ export class Library {
   }
 
   // Saves or updates a draft. The SQL must pass the read-only guard.
-  saveDraft({ ref, title, description, sql, note, mask, unmask }) {
+  saveDraft(input) {
+    return this.locked(() => this.saveDraftUnlocked(input));
+  }
+
+  saveDraftUnlocked({ ref, title, description, sql, note, mask, unmask }) {
     assertReadOnlyQuery(sql);
     this.ensure();
     const r = normalizeRef(ref);
@@ -143,6 +155,10 @@ export class Library {
   }
 
   appendRun(stage, ref, run, last) {
+    return this.locked(() => this.appendRunUnlocked(stage, ref, run, last));
+  }
+
+  appendRunUnlocked(stage, ref, run, last) {
     const meta = this.readMeta(stage, ref);
     if (!meta) throw new LibraryError('Report metadata missing; save the report first.');
     meta.runs.push(run);
@@ -155,6 +171,10 @@ export class Library {
 
   // Moves a draft into SELECT/..., replacing an older approved version.
   approve(ref) {
+    return this.locked(() => this.approveUnlocked(ref));
+  }
+
+  approveUnlocked(ref) {
     const r = normalizeRef(ref);
     if (!this.exists('draft', r)) throw new LibraryError(`No draft "${refLabel(r)}" to approve.`);
     const from = this.paths('draft', r);
@@ -220,7 +240,11 @@ export class Library {
   }
 
   // Writes a change script for a human to run. Never executed by Auspex.
-  saveExecuteScript({ ref, title, purpose, relatedReport, expectedRows, sql, replace = false }) {
+  saveExecuteScript(input) {
+    return this.locked(() => this.saveExecuteScriptUnlocked(input));
+  }
+
+  saveExecuteScriptUnlocked({ ref, title, purpose, relatedReport, expectedRows, sql, replace = false }) {
     const lint = lintExecuteScript(sql);
     if (lint.errors.length) throw new LibraryError(`EXECUTE script rejected:\n- ${lint.errors.join('\n- ')}`);
     this.ensure();

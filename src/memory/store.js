@@ -10,6 +10,7 @@
 //                                  rebuilt after every change, safe to delete
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import { withFileLock, renameRetrying } from '../fileLock.js';
 import path from 'node:path';
 import { splitColumnRef } from './planUsage.js';
 
@@ -40,7 +41,7 @@ function writeFileAtomic(file, text) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, text, 'utf8');
-  fs.renameSync(tmp, file);
+  renameRetrying(tmp, file); // the viewer may be reading the target on Windows
 }
 
 // The structural part of a describe_table result, in the form stored and diffed.
@@ -192,6 +193,12 @@ export class SchemaMemory {
     return out.filter(Boolean).sort((a, b) => tableKey(a.schema, a.table).localeCompare(tableKey(b.schema, b.table)));
   }
 
+  // Read-modify-write of one profile's memory (tables, notes, view) runs under
+  // a cross-process lock (<memory>/<profile>/.lock); re-entrant in a process.
+  locked(profile, fn) {
+    return withFileLock(path.join(this.profileDir(profile), '.lock'), fn);
+  }
+
   profiles() {
     if (!fs.existsSync(this.root)) return [];
     return fs.readdirSync(this.root, { withFileTypes: true })
@@ -217,6 +224,10 @@ export class SchemaMemory {
   // describe_table read the full structure: store it and report what changed
   // since the last recording.
   recordDescribe(desc) {
+    return this.locked(desc.profile, () => this.recordDescribeUnlocked(desc));
+  }
+
+  recordDescribeUnlocked(desc) {
     const profile = desc.profile;
     const next = recordFromDescribe(desc);
     const prev = this.readTable(profile, next.schema, next.table);
@@ -246,6 +257,10 @@ export class SchemaMemory {
   // A plan touched these relations: remember that they exist and which columns
   // were used. Relations not described yet stay "seen" (name and usage only).
   recordSeen(profile, relations) {
+    return this.locked(profile, () => this.recordSeenUnlocked(profile, relations));
+  }
+
+  recordSeenUnlocked(profile, relations) {
     const at = this.now();
     for (const rel of relations) {
       const prev = this.readTable(profile, rel.schema, rel.table);
@@ -278,6 +293,10 @@ export class SchemaMemory {
   }
 
   addNote(profile, { kind, schema, table, column, text, evidence, source }) {
+    return this.locked(profile, () => this.addNoteUnlocked(profile, { kind, schema, table, column, text, evidence, source }));
+  }
+
+  addNoteUnlocked(profile, { kind, schema, table, column, text, evidence, source }) {
     if (!noteKinds.includes(kind)) throw new MemoryError(`kind must be one of ${noteKinds.join(', ')}.`);
     const body = String(text || '').trim();
     if (!body) throw new MemoryError('Note text is empty.');
@@ -312,6 +331,10 @@ export class SchemaMemory {
 
   // An inference the user agreed with becomes a rule or an observation.
   confirmNote(profile, id, kind) {
+    return this.locked(profile, () => this.confirmNoteUnlocked(profile, id, kind));
+  }
+
+  confirmNoteUnlocked(profile, id, kind) {
     if (kind !== 'rule' && kind !== 'observation') throw new MemoryError('Confirm as kind rule or observation.');
     const data = this.readNotes(profile);
     const note = data.notes.find(n => n.id === id);
@@ -326,6 +349,10 @@ export class SchemaMemory {
 
   // Notes are never deleted; a wrong or outdated note is archived with a reason.
   archiveNote(profile, id, reason) {
+    return this.locked(profile, () => this.archiveNoteUnlocked(profile, id, reason));
+  }
+
+  archiveNoteUnlocked(profile, id, reason) {
     const why = String(reason || '').trim();
     if (!why) throw new MemoryError('Archiving needs a reason.');
     const data = this.readNotes(profile);
@@ -518,6 +545,10 @@ export class SchemaMemory {
   }
 
   rebuildView(profile) {
+    return this.locked(profile, () => this.rebuildViewUnlocked(profile));
+  }
+
+  rebuildViewUnlocked(profile) {
     this.writeJson(path.join(this.profileDir(profile), 'graph.json'), this.view(profile));
   }
 }
