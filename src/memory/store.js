@@ -402,7 +402,10 @@ export class SchemaMemory {
   // Everything memory knows about one table, without touching the database.
   knowledge(profile, schema, table) {
     const rec = this.readTable(profile, schema, table);
-    if (!rec) return { relation: tableKey(schema, table), known: false, hint: 'Not in memory yet. describe_table records it (reads the catalog only).' };
+    if (!rec) {
+      const notes = this.activeNotes(profile, [{ schema, table }]).map(n => ({ id: n.id, kind: n.kind, column: n.column, text: n.text }));
+      return { relation: tableKey(schema, table), known: false, hint: 'Not in memory yet. describe_table records it (reads the catalog only).', ...(notes.length ? { notes } : {}) };
+    }
     const tables = this.listTables(profile);
     const key = tableKey(schema, table);
     const edges = this.edges(profile, tables).filter(e => e.from === key || e.to === key);

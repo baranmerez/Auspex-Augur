@@ -133,7 +133,9 @@ test('notes: add, show on touched tables, confirm inferences, archive instead of
   assert.throws(() => mem.archiveNote('shop', obs.id, ''), /reason/);
   mem.archiveNote('shop', obs.id, 'column is filled since the new release');
   assert.equal(mem.knowledge('shop', 'sales', 'orders').notes.length, 2);
-  assert.equal(mem.readNotes('shop').notes.length, 3, 'archived notes stay');
+  assert.equal(mem.readNotes('shop').notes.filter(n => n.table === 'orders').length, 3, 'archived notes stay');
+  mem.addNote('shop', { kind: 'observation', schema: 'sales', table: 'returns', text: 'returns is not linked to orders.' });
+  assert.deepEqual(mem.knowledge('shop', 'sales', 'returns').notes.map(n => n.text), ['returns is not linked to orders.'], 'notes show before the table is explored');
   assert.throws(() => mem.addNote('shop', { kind: 'guess', text: 'x' }), MemoryError);
   assert.throws(() => mem.addNote('shop', { kind: 'rule', schema: 'sales', text: 'x' }), /both schema and table/);
 });
