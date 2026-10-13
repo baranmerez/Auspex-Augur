@@ -86,6 +86,7 @@ tool('list_profiles', {
     source: config.profileInfo.get(name)?.source,
     ...describeConnection(cs),
     maxTimeoutSeconds: (config.maxTimeoutByProfile.get(name) ?? config.maxStatementTimeoutMs) / 1000,
+    defaultTimeoutSeconds: Math.min(config.statementTimeoutMs, config.maxTimeoutByProfile.get(name) ?? config.maxStatementTimeoutMs) / 1000,
   })),
 }));
 
