@@ -45,6 +45,11 @@
     <td valign="top"><h3>📊 Viewer &amp; desktop app</h3>Charts, filters and per-query details in a local web viewer or a 3 MB Tauri tray app.</td>
     <td valign="top"><h3>🔌 Any MCP client</h3>Plain stdio MCP server: Claude Code, Codex, Cursor, VS Code or anything else that speaks the protocol.</td>
   </tr>
+  <tr>
+    <td valign="top"><h3>📚 Report library</h3>Approved queries per database, schema and category, with plan, timings and history in a fixed HTML template that costs no tokens.</td>
+    <td valign="top"><h3>🧠 Schema memory</h3>Tables, keys, relations, business rules and schema changes are remembered as you explore, without crawling the catalog.</td>
+    <td valign="top"><h3>🗺️ Relation map</h3>A force-directed graph and an ER diagram of everything the memory knows, with unexplored neighbors to visit next.</td>
+  </tr>
 </table>
 
 ## 🚀 Quick start
@@ -75,7 +80,9 @@ flowchart LR
     C -->|stdio| S["Auspex Augur<br/>guard · read-only tx · cursor"]
     S -->|role: Auspex, SELECT only| D[("🐘 PostgreSQL")]
     S -->|every call| L["📜 Audit log<br/>~/.auspex/logs"]
+    S -->|tables, notes, changes| M["🧠 Schema memory<br/>~/.auspex/memory"]
     L --> V["📊 Viewer / desktop app"]
+    M --> V
     P["🗂️ profiles.json + pgpass"] -.-> S
 
     classDef agent fill:#3987e5,stroke:#1c5cab,color:#fff
@@ -86,7 +93,7 @@ flowchart LR
     class A,C agent
     class S core
     class D db
-    class L,V log
+    class L,V,M log
     class P cfg
 ```
 
@@ -128,7 +135,7 @@ flowchart LR
 | 🔎 `search` | Tables, views and columns whose name or comment matches a text, across all schemas; with estimated rows and SELECT privilege |
 | 📁 `list_schemas` | Non-system schemas with owner, relation count, usage privilege, comment |
 | 📋 `list_tables` | Tables/views in a schema with estimated rows, size, SELECT privilege, comment; optional ILIKE filter |
-| 🧬 `describe_table` | Columns, types, defaults, comments, constraints, indexes, incoming FKs, view definition |
+| 🧬 `describe_table` | Columns, types, defaults, comments, constraints, indexes, incoming FKs, view definition; records the table in the schema memory and reports changes since the last time |
 | ▶️ `query` | One read-only statement, max `AUSPEX_MAX_ROWS` rows, `$1..$n` params, optional `timeoutSeconds` |
 | 🧠 `explain` | Estimated plan by default; `analyze: true` runs `EXPLAIN (ANALYZE, BUFFERS)` read-only, under the timeout, rolled back |
 | 📤 `export_csv` | Streams the result to a UTF-8 CSV file; returns only path, columns and row count |
@@ -137,6 +144,8 @@ flowchart LR
 | ✅ `approve_report` | Moves a draft into `SELECT/` after the user approved it |
 | 📚 `list_reports` / 🎨 `render_reports` | Lists the library; re-renders every report HTML from stored JSON |
 | 🧾 `save_execute_script` | Writes a change script into `EXECUTE/` for a human to run — never executed by Auspex |
+| 🧠 `table_knowledge` | What the schema memory knows about a table — key and used columns, relations, notes, recent changes, unexplored neighbors — without touching the database |
+| 📌 `remember` | Adds, confirms or archives a note: a rule the user stated, an observation backed by evidence, or an unconfirmed inference |
 
 ### Choosing the database
 
@@ -195,6 +204,40 @@ library/
 > Masking is a name-based safety net (English and Turkish names, including
 > compounds such as `aliciadi`). Free-text and JSON columns can still contain
 > personal data; add them to a report's `mask` list.
+
+## 🧠 Schema memory
+
+Auspex remembers what it learned about each database in local JSON files
+(`~/.auspex/memory/<profile>/`, override with `AUSPEX_MEMORY_DIR`). It grows
+with the work and never crawls the catalog on its own:
+
+- **`describe_table`** records the full structure of a table (columns, keys,
+  indexes, incoming foreign keys). The next time the same table is described,
+  the answer lists what changed: added, dropped, renamed or retyped columns,
+  constraints and indexes. Row estimates and comments are not changes. Only the
+  system catalog is read, never table data.
+- **Plans teach it too:** tables and columns used by `run_report` and `explain`
+  are recorded as "seen", with the columns they actually used.
+- **Relations** have three levels: `fk` (declared), `used` (joined in an
+  approved report) and `suggested` (a column named like another table's
+  primary key; unconfirmed until you say so).
+- **Notes** are `rule` (stated by the user), `observation` (a finding with
+  evidence: the SQL and aggregate figures, dated, never row values) and
+  `inference` (the model's interpretation, shown as unconfirmed). Notes on a
+  table come back automatically when a later call touches it. They are
+  archived with a reason, never deleted.
+- **Exploring further:** after a report, `run_report` and `table_knowledge`
+  list neighbors that were never described. The server instructions tell the
+  model to ask you before looking at them, and then to read their structure
+  only.
+
+```
+memory/<profile>/
+├── tables/<schema>/<table>.json   structure, used columns, change history
+├── notes.json                     rules, observations, inferences
+├── changelog.jsonl                explored tables, notes and schema changes
+└── graph.json                     derived view for the viewer (rebuilt on every change)
+```
 
 ## 🔌 Register with an MCP client
 
@@ -285,6 +328,8 @@ Opens a local page at http://127.0.0.1:4719 (port: `AUSPEX_VIEWER_PORT`):
 - **Overview** — stat tiles, activity over time, usage by profile, tool and table, slowest operations, recent errors
 - **Operations** — sortable, paged log with full SQL, parameters and errors; copy and CSV/JSON download
 - **Tables** — which tables were accessed, how often and by which profile
+- **Reports** — the report library by database, schema and category, with each report's HTML
+- **Schema** — the schema memory of a database as a force-directed graph (focus on a table or *Show all*) or an ER diagram centered on one table; an inspector with notes, relations and history; a timeline of schema changes. A badge in the header counts schema changes you have not seen yet.
 - **Profiles** — configured databases with connection details (never passwords)
 
 It binds to 127.0.0.1 only, accepts only GET, rejects other Host headers,
@@ -354,6 +399,7 @@ naming the problem.
 | `AUSPEX_EXPORT_DIR`, `AUSPEX_LOG_DIR` | under data dir | Override each folder |
 | `AUSPEX_VIEWER_PORT` | 4719 | Port of the local viewer |
 | `AUSPEX_LIBRARY_DIR` | `<home>/library` | Report library (`SELECT/`, `EXECUTE/`, `_drafts/`) |
+| `AUSPEX_MEMORY_DIR` | `<home>/memory` | Schema memory, one folder per profile |
 
 Files are kept out of AppData on purpose: MSIX-packaged desktop apps
 (including some AI clients) redirect AppData writes of their child processes
