@@ -15,6 +15,31 @@ const profilePrefix = 'AUSPEX_DB_';
 const profileNamePattern = /^[a-z][a-z0-9_-]{0,39}$/;
 const profileKeys = new Set(['url', 'description', 'maxTimeoutSeconds']);
 
+// Query options node-postgres would read as a password; any spelling or
+// repetition is refused, like a password in the user-info part.
+const passwordOptions = new Set(['password', 'sslpassword']);
+
+function queryPasswordKeys(url) {
+  return [...new Set([...url.searchParams.keys()].filter(k => passwordOptions.has(k.toLowerCase())))];
+}
+
+// One policy for profiles from the file and from AUSPEX_DB_<NAME>: a
+// postgresql:// URL with no password anywhere in it. Errors name the profile
+// and the field, never the value.
+function validateProfileUrl(text, where, field) {
+  let url;
+  try {
+    url = new URL(text);
+  } catch {
+    throw new Error(`Invalid ${where}: ${field} must look like postgresql://user@host:port/db.`);
+  }
+  if (!/^postgres(ql)?:$/.test(url.protocol)) throw new Error(`Invalid ${where}: ${field} must start with postgresql://.`);
+  if (url.password) throw new Error(`Invalid ${where}: remove the password from ${field} and put it in pgpass.`);
+  const keys = queryPasswordKeys(url);
+  if (keys.length) throw new Error(`Invalid ${where}: remove the "${keys.join('", "')}" option from ${field} and put the password in pgpass.`);
+  return url;
+}
+
 function intFromEnv(env, name, fallback, min, max) {
   const raw = env[name];
   if (raw === undefined || raw === '') return fallback;
@@ -73,14 +98,7 @@ export function readProfilesFile(file) {
     const unknown = Object.keys(profile).filter(k => !profileKeys.has(k));
     if (unknown.length) throw new Error(`Invalid ${where}: unknown field(s) ${unknown.join(', ')}.`);
     if (typeof profile.url !== 'string' || !profile.url) throw new Error(`Invalid ${where}: "url" is required.`);
-    let url;
-    try {
-      url = new URL(profile.url);
-    } catch {
-      throw new Error(`Invalid ${where}: "url" must look like postgresql://user@host:port/db.`);
-    }
-    if (!/^postgres(ql)?:$/.test(url.protocol)) throw new Error(`Invalid ${where}: "url" must start with postgresql://.`);
-    if (url.password) throw new Error(`Invalid ${where}: remove the password from "url" and put it in pgpass.`);
+    validateProfileUrl(profile.url, where, '"url"');
     if (profile.description !== undefined && typeof profile.description !== 'string') throw new Error(`Invalid ${where}: "description" must be text.`);
     const max = profile.maxTimeoutSeconds;
     if (max !== undefined && (!Number.isInteger(max) || max < 1 || max > 3600)) {
@@ -105,6 +123,9 @@ export function loadConfig(env = process.env) {
   for (const [key, value] of Object.entries(env)) {
     if (!key.toUpperCase().startsWith(profilePrefix) || !value) continue;
     const name = key.slice(profilePrefix.length).toLowerCase();
+    const where = `profile "${name}" in ${key}`;
+    if (!profileNamePattern.test(name)) throw new Error(`Invalid ${key}: profile names use a-z, 0-9, - and _ and start with a letter.`);
+    validateProfileUrl(value, where, 'the value');
     if (profiles.has(name)) {
       throw new Error(`Profile "${name}" is defined both in ${profilesFile} and in ${key}; keep only one.`);
     }
@@ -153,7 +174,7 @@ export function describeConnection(connectionString) {
       port: url.port || '5432',
       database: decodeURIComponent(url.pathname.replace(/^\//, '')),
       user: decodeURIComponent(url.username),
-      passwordInString: url.password !== '',
+      passwordInString: url.password !== '' || queryPasswordKeys(url).length > 0,
     };
   } catch {
     return { error: 'Connection string is not a URL (postgresql://user@host:port/db expected).' };

@@ -128,7 +128,9 @@ flowchart LR
 
 > [!WARNING]
 > Never put a password in a connection string or in `profiles.json` — Auspex
-> refuses to start if it finds one. Passwords belong in pgpass only.
+> refuses to start if it finds one, whether in `user:password@` or as a
+> `?password=` / `?sslpassword=` option, in the file or in `AUSPEX_DB_<NAME>`.
+> Passwords belong in pgpass only.
 
 ## 🧰 Tools
 
@@ -373,7 +375,7 @@ Windows; override with `AUSPEX_PROFILES_FILE`):
 
 | Field | Required | Meaning |
 |---|---|---|
-| `url` | yes | `postgresql://user@host:port/db`; a password here is rejected |
+| `url` | yes | `postgresql://user@host:port/db`; a password here (user-info or query option) is rejected |
 | `description` | no | Shown by `list_profiles` when the model asks which database to use; mark production clearly |
 | `maxTimeoutSeconds` | no | Ceiling for `timeoutSeconds` on this profile (1-3600) |
 
