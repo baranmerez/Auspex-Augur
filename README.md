@@ -109,7 +109,10 @@ flowchart LR
 1. **SQL guard** (`src/sqlGuard.js`): single statement only; must start with
    `SELECT`/`WITH`/`VALUES`/`TABLE`; rejects data-modifying CTEs, `SELECT INTO`,
    `FOR UPDATE` and side-effect functions (`set_config`, `pg_terminate_backend`,
-   `pg_sleep`, `lo_*`, `dblink*`, `pg_read_*`, `nextval`...). Runs before connecting.
+   `pg_sleep`, `lo_*`, `dblink*`, `pg_read_*`, `nextval`...), also when the
+   name is quoted, schema-qualified or Unicode-escaped. Runs before connecting.
+   It is a lexical check only: user-defined functions that call these functions
+   internally are not seen, so what the role may EXECUTE is limited by its grants.
 2. **Transaction wrapper** (`src/db.js`): every call runs in
    `BEGIN ... READ ONLY` with `statement_timeout`, `lock_timeout` and
    `idle_in_transaction_session_timeout`, and always ends with `ROLLBACK`.
