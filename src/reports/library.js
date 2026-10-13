@@ -241,9 +241,19 @@ function commentLines(label, value) {
     .map((line, i) => `-- ${i ? pad : label}${line}`.trimEnd())
     .join('\n');
 }
-// Structural checks for change scripts: BEGIN first, ROLLBACK last, no COMMIT,
-// WHERE on every UPDATE/DELETE. Comments, string literals and dollar-quoted
-// bodies (DO blocks, functions) are ignored.
+
+// Structural checks for change scripts, failing closed:
+// - exactly one transaction envelope: BEGIN / START TRANSACTION first and a
+//   plain ROLLBACK last; no other statement may start, end or prepare a
+//   transaction (COMMIT, END, ABORT, a second BEGIN, an early ROLLBACK...).
+//   SAVEPOINT, RELEASE and ROLLBACK TO stay inside it and are allowed.
+// - no code the checks cannot see into: DO blocks, CALL, CREATE FUNCTION /
+//   PROCEDURE, and psql backslash commands are rejected.
+// - every UPDATE and DELETE, also inside a CTE or subquery, needs its own
+//   WHERE at its own parenthesis level; a WHERE inside a subquery does not count.
+// Comments and string literals are ignored.
+const transactionVerbs = new Set(['begin', 'start', 'commit', 'end', 'abort', 'rollback', 'prepare']);
+
 export function lintExecuteScript(sql) {
   const errors = [];
   const warnings = [];
@@ -262,16 +272,54 @@ export function lintExecuteScript(sql) {
     errors.push('The first statement must be BEGIN (or START TRANSACTION).');
   }
   const last = words(statements.at(-1));
-  if (!(last[0] === 'rollback' && last.length <= 2)) {
+  if (!(last[0] === 'rollback' && last.length <= 2 && (last.length === 1 || ['work', 'transaction'].includes(last[1])))) {
     errors.push('The last statement must be ROLLBACK; whoever runs the script swaps it for COMMIT after review.');
   }
   statements.forEach((s, i) => {
+    const n = i + 1;
     const w = words(s);
-    if (w[0] === 'commit' || w[0] === 'end') errors.push(`Statement ${i + 1} is ${w[0].toUpperCase()}; COMMIT is never written into the script.`);
-    const hasUpdate = w.some((x, j) => x === 'update' && w[j - 1] !== 'for' && w[j - 1] !== 'on');
-    const hasDelete = w.some((x, j) => x === 'delete' && w[j + 1] === 'from');
-    if ((hasUpdate || hasDelete) && !w.includes('where')) errors.push(`Statement ${i + 1} is ${hasDelete ? 'a DELETE' : 'an UPDATE'} without WHERE.`);
-    if (w[0] === 'truncate' || w[0] === 'drop') warnings.push(`Statement ${i + 1} is ${w[0].toUpperCase()}; double-check it is intended.`);
+    const inside = i > 0 && i < statements.length - 1;
+    if (w[0] === 'commit' || w[0] === 'end') {
+      errors.push(`Statement ${n} is ${w[0].toUpperCase()}; COMMIT is never written into the script.`);
+    } else if (inside && transactionVerbs.has(w[0]) && !(w[0] === 'rollback' && w[1] === 'to')) {
+      errors.push(`Statement ${n} is ${w.slice(0, 2).join(' ').toUpperCase()}; only one BEGIN ... ROLLBACK envelope is allowed.`);
+    }
+    if (w[0] === 'do') errors.push(`Statement ${n} is a DO block; its body cannot be checked, write the statements directly.`);
+    if (w[0] === 'call') errors.push(`Statement ${n} is CALL; procedures cannot be checked.`);
+    if (w[0] === 'create' && w.slice(1, 4).some(x => x === 'function' || x === 'procedure')) {
+      errors.push(`Statement ${n} creates a function or procedure; its body cannot be checked.`);
+    }
+    if (/(^|\n)\s*\\/.test(s)) errors.push(`Statement ${n} contains a psql backslash command.`);
+    for (const write of writesWithoutWhere(s)) errors.push(`Statement ${n} has ${write} without WHERE.`);
+    if (w[0] === 'truncate' || w[0] === 'drop') warnings.push(`Statement ${n} is ${w[0].toUpperCase()}; double-check it is intended.`);
   });
   return { errors, warnings };
+}
+
+// UPDATE / DELETE nodes in one masked statement that have no WHERE at their own
+// parenthesis depth before their enclosing group closes.
+function writesWithoutWhere(statement) {
+  const tokens = [];
+  let depth = 0;
+  const re = /[A-Za-z_][A-Za-z0-9_$]*|[()]/g;
+  for (let m = re.exec(statement); m; m = re.exec(statement)) {
+    if (m[0] === '(') depth++;
+    else if (m[0] === ')') tokens.push({ close: true, depth: depth-- });
+    else tokens.push({ word: m[0].toLowerCase(), depth });
+  }
+  const missing = [];
+  tokens.forEach((t, k) => {
+    const prev = tokens[k - 1]?.word;
+    const isUpdate = t.word === 'update' && !['for', 'on', 'do', 'key'].includes(prev);
+    const isDelete = t.word === 'delete' && tokens[k + 1]?.word === 'from';
+    if (!isUpdate && !isDelete) return;
+    let found = false;
+    for (let j = k + 1; j < tokens.length; j++) {
+      const u = tokens[j];
+      if (u.close && u.depth === t.depth) break;
+      if (u.word === 'where' && u.depth === t.depth) { found = true; break; }
+    }
+    if (!found) missing.push(isDelete ? 'a DELETE' : 'an UPDATE');
+  });
+  return missing;
 }
