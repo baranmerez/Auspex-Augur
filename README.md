@@ -126,7 +126,7 @@ flowchart LR
      tools): time, source, tool, profile, SQL, params, row count, duration,
      error — also when the SQL guard rejects the query.
    - Library and memory changes (`save_report`, `approve_report`,
-     `save_execute_script`, `render_reports`, `remember`): which report or
+     `save_execute_script`, `render_reports`, `share_report`, `remember`): which report or
      note, the SQL hash and version or note id and status, and the error.
      The SQL text, note text, evidence and reasons are not logged.
    - Not logged: tools that only read local files (`table_knowledge`,
@@ -161,6 +161,7 @@ flowchart LR
 | 🏁 `run_report` | Runs a report: plan + timings + masked preview, history, regenerated HTML; returns a compact summary |
 | ✅ `approve_report` | Moves a draft into `SELECT/` after the user approved it |
 | 📚 `list_reports` / 🎨 `render_reports` | Lists the library; re-renders every report HTML from stored JSON |
+| 📨 `share_report` | Writes a copy of a report to send to someone: masked preview and figures only, no SQL, plan, parameters or history |
 | 🧾 `save_execute_script` | Writes a change script into `EXECUTE/` for a human to run — never executed by Auspex |
 | 🧠 `table_knowledge` | What the schema memory knows about a table — key and used columns, relations, table notes, database-wide notes, recent changes, unexplored neighbors — without touching the database |
 | 📌 `remember` | Adds, confirms or archives a note: a rule the user stated, an observation backed by evidence, or an unconfirmed inference |
@@ -244,10 +245,21 @@ library/
   gets a "try again" error. A lock left by a crashed process (or older than
   30 s) is taken over automatically.
 
+- **Private report, shared copy:** a report's own HTML is a private working
+  file: it embeds the raw SQL, parameters, query plan (with its filter
+  expressions) and run history, and says so at the top. To send a report to
+  someone, `share_report` writes a separate copy into `exports/` built from an
+  allowlist: title, description, category, the masked preview and the
+  timing/row figures. SQL, plan, parameters, warnings, history and database,
+  schema and server names are left out, not redacted. The title and
+  description are kept as written, so keep secrets out of them.
+
 > [!NOTE]
 > Masking is a name-based safety net (English and Turkish names, including
 > compounds such as `aliciadi`). Free-text and JSON columns can still contain
-> personal data; add them to a report's `mask` list.
+> personal data; add them to a report's `mask` list. A shared copy is no
+> anonymization: its preview rows are exactly what the masking left, so check
+> them before sending.
 
 ## 🧠 Schema memory
 

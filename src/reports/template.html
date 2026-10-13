@@ -54,6 +54,7 @@
   h1 { margin: 6px 0 2px; font-size: 24px; letter-spacing: -.2px; }
   .desc { color: var(--text-2); margin: 0; max-width: 900px; }
   .meta { color: var(--text-3); font-size: 12px; margin-top: 6px; }
+  .private { margin-top: 8px; font-size: 12px; color: var(--text-3); }
   .stale { margin-top: 8px; padding: 8px 10px; border-radius: 8px; font-size: 12.5px; border: 1px solid var(--warn); background: var(--warn-soft); color: var(--warn-ink); }
   .badge { display: inline-flex; align-items: center; gap: 5px; padding: 1px 9px; border-radius: 999px; font-size: 11px; font-weight: 650; white-space: nowrap; }
   .b-draft { background: var(--warn-soft); color: var(--warn-ink); }
@@ -202,6 +203,8 @@ const I18N = {
   en: {
     auto: 'Auto', light: 'Light', dark: 'Dark', help: 'How to read this report',
     approved: 'approved v{v}', draft: 'draft', lastRun: 'Last run {at} · profile {p} · PostgreSQL {pg}', notRun: 'Not run yet', runs: '{n} runs', lastRunVersion: 'results of SQL v{v}', staleResult: 'The results below come from SQL v{v}; the current SQL is v{c} and has not been run yet.',
+    privateNote: 'Private copy: contains the raw SQL, parameters, query plan and run history. To send it to someone, create a shared copy with share_report.',
+    sharedBadge: 'shared copy', sharedMeta: 'Results of {at}', sharedNote: 'Shared copy: SQL, query plan, parameters, run history and database names were left out. The preview rows are as shown in the report; columns are masked by name only, so check them before sending.',
     runFirst: 'Run the report to see its plan, joins, timings and preview.',
     execTime: 'Execution time', planning: 'planning {v}', planOnly: 'Estimated plan', firstRows: 'preview fetch: the query ran once (no ANALYZE)', noExec: 'nothing executed (preview of 0 rows)',
     rowsReturned: 'Rows returned', rowsEst: 'Rows (estimated)', previewShows: 'preview shows {n}', totalCost: 'Total cost', plannerUnits: 'planner units',
@@ -236,6 +239,8 @@ const I18N = {
   tr: {
     auto: 'Oto', light: 'Açık', dark: 'Koyu', help: 'Bu rapor nasıl okunur',
     approved: 'onaylı v{v}', draft: 'taslak', lastRun: 'Son çalıştırma {at} · profil {p} · PostgreSQL {pg}', notRun: 'Henüz çalıştırılmadı', runs: '{n} çalıştırma', lastRunVersion: 'SQL v{v} sonuçları', staleResult: 'Aşağıdaki sonuçlar SQL v{v} ile üretildi; güncel SQL v{c} henüz çalıştırılmadı.',
+    privateNote: 'Özel kopya: ham SQL, parametreler, sorgu planı ve çalıştırma geçmişi içerir. Birine göndermek için share_report ile paylaşılabilir kopya oluşturun.',
+    sharedBadge: 'paylaşılan kopya', sharedMeta: '{at} sonuçları', sharedNote: 'Paylaşılan kopya: SQL, sorgu planı, parametreler, çalıştırma geçmişi ve veritabanı adları çıkarıldı. Önizleme satırları rapordaki gibidir; sütunlar yalnızca ada göre maskelenir, göndermeden önce kontrol edin.',
     runFirst: 'Plan, join, süre ve önizleme için raporu çalıştırın.',
     execTime: 'Çalışma süresi', planning: 'planlama {v}', planOnly: 'Tahmini plan', firstRows: 'önizleme: sorgu bir kez çalıştı (ANALYZE yok)', noExec: 'hiçbir şey çalıştırılmadı (0 satır önizleme)',
     rowsReturned: 'Dönen satır', rowsEst: 'Satır (tahmini)', previewShows: 'önizlemede {n} satır', totalCost: 'Toplam maliyet', plannerUnits: 'planlayıcı birimi',
@@ -398,15 +403,27 @@ function render() {
   const current = activeVersion();
   const currentSql = current?.sql || '';
   const stale = last && current && last.sqlHash !== current.hash;
+  // A shared copy (share_report) carries only an allowlist: no SQL, plan,
+  // parameters, history or database names. It shows the preview only.
+  const shared = R.shareable === true;
+  if (shared) state.tab = 'preview';
 
-  put($('head'),
+  if (shared) {
+    put($('head'),
+      h('div', { class: 'crumbs' }, h('span', { class: 'crumb' }, R.category), h('span', { class: 'badge b-plan' }, t('sharedBadge'))),
+      h('h1', {}, R.title || R.name),
+      R.description ? h('p', { class: 'desc' }, R.description) : null,
+      h('div', { class: 'meta' }, last ? t('sharedMeta', { at: fmtWhen(last.at) }) : t('notRun')),
+      h('div', { class: 'stale' }, t('sharedNote')));
+  } else put($('head'),
     h('div', { class: 'crumbs' }, h('span', { class: 'crumb' }, R.db), '›', h('span', { class: 'crumb' }, R.schema), '›', h('span', { class: 'crumb' }, R.category),
       h('span', { class: 'badge ' + (R.status === 'approved' ? 'b-approved' : 'b-draft') }, R.status === 'approved' ? t('approved', { v: R.approvedVersion ?? '?' }) : t('draft')),
       current ? h('span', { class: 'badge b-plan' }, `SQL v${current.version}`) : null),
     h('h1', {}, R.title || R.name),
     R.description ? h('p', { class: 'desc' }, R.description) : null,
     h('div', { class: 'meta' }, last ? t('lastRun', { at: fmtWhen(last.at), p: last.profile, pg: last.serverVersion }) : t('notRun'), ' · ', t('runs', { n: R.runs?.length || 0 }), last ? ' · ' + t('lastRunVersion', { v: last.version ?? '?' }) : null),
-    stale ? h('div', { class: 'stale' }, '⚠ ', t('staleResult', { v: last.version ?? '?', c: current.version })) : null);
+    stale ? h('div', { class: 'stale' }, '⚠ ', t('staleResult', { v: last.version ?? '?', c: current.version })) : null,
+    h('div', { class: 'private' }, '🔒 ', t('privateNote')));
 
   if (!last) {
     put($('tiles')); put($('warns')); put($('tabs'));
@@ -423,15 +440,15 @@ function render() {
     tile(t('totalCost'), fmt(S.totalCost), t('plannerUnits')),
     tile(t('buffers'), S.analyzed ? blocks(hit + read) : '–', ratio !== null ? t('fromCache', { p: ratio.toLocaleString(locale()) }) : null),
     tile(t('tempWritten'), S.analyzed ? blocks(S.buffers?.tempWritten ?? 0) : '–', (S.buffers?.tempWritten ?? 0) > 0 ? t('spilled') : t('none')),
-    tile(t('joinsTables'), `${S.joins.length} / ${S.relations.length}`, S.joins.map(j => j.method.replace(' Join', '')).join(', ') || t('noJoins')));
+    shared ? null : tile(t('joinsTables'), `${S.joins.length} / ${S.relations.length}`, S.joins.map(j => j.method.replace(' Join', '')).join(', ') || t('noJoins')));
 
-  put($('warns'), S.warnings.length
+  put($('warns'), shared ? null : S.warnings.length
     ? h('ul', { class: 'warns' }, S.warnings.map(w => h('li', { onclick: () => { state.tab = 'plan'; state.sel = w.nodeId; renderTab(); } }, h('span', { class: 'ico' }, '⚠'), h('span', {}, warnText(w)))))
     : h('div', { class: 'ok-note' }, S.analyzed ? t('noWarnings') : t('planOnlyNote')));
 
   const counts = { plan: S.nodes.length, joins: S.joins.length, tables: S.relations.length, preview: last.preview.length, history: R.runs.length, sql: R.sqlVersions.length };
   const labels = { plan: 'tabPlan', joins: 'tabJoins', tables: 'tabTables', preview: 'tabPreview', history: 'tabHistory', sql: 'tabSql' };
-  put($('tabs'), TABS.map(k => h('button', { 'data-k': k, class: state.tab === k ? 'on' : '', onclick: () => { state.tab = k; renderTab(); } }, t(labels[k]), h('span', { class: 'n' }, counts[k]))));
+  put($('tabs'), (shared ? ['preview'] : TABS).map(k => h('button', { 'data-k': k, class: state.tab === k ? 'on' : '', onclick: () => { state.tab = k; renderTab(); } }, t(labels[k]), h('span', { class: 'n' }, counts[k]))));
   renderTab();
 }
 
