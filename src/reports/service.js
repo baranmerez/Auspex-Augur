@@ -88,7 +88,10 @@ export class ReportService {
     if (analyze === 'auto' || analyze === undefined) {
       const prev = meta.runs.filter(r => Number.isFinite(r.durationMs)).at(-1);
       doAnalyze = !prev || prev.durationMs <= autoAnalyzeLimitMs;
-      if (!doAnalyze) note = `Previous run took ${(prev.durationMs / 1000).toFixed(1)} s; ran plan only. Ask the user before running with analyze="always".`;
+      if (!doAnalyze) {
+        const preview = previewRows > 0 ? `; the query still ran once to fetch ${previewRows} preview rows` : '; nothing was executed (previewRows 0)';
+        note = `Previous run took ${(prev.durationMs / 1000).toFixed(1)} s; skipped EXPLAIN ANALYZE (estimated plan only)${preview}. Ask the user before running with analyze="always".`;
+      }
     }
 
     const result = await this.db.runReport(ref.db, sql, { params, analyze: doAnalyze, previewRows, timeoutSeconds, label: refLabel(ref) });
@@ -103,14 +106,14 @@ export class ReportService {
     const run = {
       at, profile: result.profile, sqlHash: hash, version, analyzed: summary.analyzed,
       durationMs, planningMs: summary.planningMs, executionMs: summary.executionMs,
-      explainMs: Math.round(result.explainMs), previewMs: Math.round(result.previewMs),
+      explainMs: Math.round(result.explainMs), previewMs: Math.round(result.previewMs), previewExecuted: result.previewExecuted,
       totalCost: summary.totalCost, rows: summary.rows, buffers: summary.buffers,
       warnings: summary.warnings.map(w => w.text), params: params || null,
     };
     const last = {
       at, profile: result.profile, serverVersion: result.serverVersion, sqlHash: hash, version,
       summary, plan: result.plan, columns, preview: masked.rows, maskedColumns: masked.maskedColumns,
-      previewTruncated: result.truncated, explainMs: run.explainMs, previewMs: run.previewMs,
+      previewTruncated: result.truncated, explainMs: run.explainMs, previewMs: run.previewMs, previewExecuted: result.previewExecuted,
     };
     const updated = this.library.appendRun(stage, ref, run, last);
     const html = this.library.paths(stage, ref).html;

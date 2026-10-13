@@ -566,7 +566,7 @@ const TR = {
   'Could not read the report library: ': 'Rapor kütüphanesi okunamadı: ', 'No reports for {db} yet': '{db} için henüz rapor yok', 'The report library is empty': 'Rapor kütüphanesi boş',
   'Ask your agent to save an analysis query with ': 'Agent\'tan bir analiz sorgusunu ', ' and run it with ': ' ile kaydetmesini ve ', '.': ' ile çalıştırmasını isteyin.',
   'Library: ': 'Kütüphane: ', 'Stage': 'Aşama', 'Drafts': 'Taslaklar', 'Approved': 'Onaylı', 'Execute': 'Execute', 'No reports match.': 'Eşleşen rapor yok.',
-  'plan only': 'sadece plan', '{n} rows': '{n} satır', 'change script': 'değişiklik script\'i', 'not run yet': 'henüz çalıştırılmadı',
+  'estimated plan': 'tahmini plan', '{n} rows': '{n} satır', 'change script': 'değişiklik script\'i', 'not run yet': 'henüz çalıştırılmadı',
   ' · schema {s}': ' · şema {s}', 'Language': 'Dil', 'Run report': 'Rapor çalıştırma',
   'Schema': 'Şema', '1 new schema change': '1 yeni şema değişikliği', '{n} new schema changes': '{n} yeni şema değişikliği',
   'Graph': 'Graph', 'ER diagram': 'ER diyagramı', 'Show all': 'Hepsini göster',
@@ -1252,7 +1252,7 @@ function renderReports() {
           h('div', { class: 't' }, r.title, h('span', { class: 'badge ' + r.stage }, t(r.stage))),
           h('div', { class: 's' },
             r.versions ? h('span', {}, `v${r.versions}`) : null,
-            lr ? h('span', {}, `${lr.analyzed === false ? t('plan only') : fmtMs(lr.durationMs)} · ${t('{n} rows', { n: fmt(lr.rows) })}`) : (r.stage === 'execute' ? h('span', {}, t('change script')) : h('span', {}, t('not run yet'))),
+            lr ? h('span', {}, `${lr.analyzed === false ? t('estimated plan') : fmtMs(lr.durationMs)} · ${t('{n} rows', { n: fmt(lr.rows) })}`) : (r.stage === 'execute' ? h('span', {}, t('change script')) : h('span', {}, t('not run yet'))),
             lr?.warnings ? h('span', { style: 'color:var(--warn-ink)' }, `⚠ ${lr.warnings}`) : null,
             h('span', {}, ago(lr?.at || r.updatedAt))));
       })]) : h('div', { class: 'rep-empty' }, t('No reports match.')));
