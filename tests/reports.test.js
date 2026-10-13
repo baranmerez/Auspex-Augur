@@ -187,6 +187,9 @@ const invalidScripts = [
   ['CALL', 'BEGIN; CALL purge(); ROLLBACK;', /CALL/],
   ['CREATE FUNCTION', 'BEGIN; CREATE OR REPLACE FUNCTION f() RETURNS void AS $$ DELETE FROM t $$ LANGUAGE sql; ROLLBACK;', /function or procedure/],
   ['psql meta command', 'BEGIN;\nUPDATE t SET a = 1 WHERE id = 1;\n\\commit\nROLLBACK;', /backslash command/],
+  ['COMMIT hidden after a comment ended by a lone CR', 'BEGIN;\nUPDATE t SET a = 1 WHERE id = 1; -- note\rCOMMIT;\nROLLBACK;', /COMMIT is never written/],
+  ['MERGE with THEN DELETE', 'BEGIN;\nMERGE INTO t USING s ON t.id = s.id WHEN MATCHED THEN DELETE;\nROLLBACK;', /MERGE/],
+  ['MERGE with THEN UPDATE', 'BEGIN;\nMERGE INTO t USING s ON t.id = s.id WHEN MATCHED THEN UPDATE SET a = s.a;\nROLLBACK;', /MERGE/],
 ];
 
 for (const [name, sql, message] of invalidScripts) {
