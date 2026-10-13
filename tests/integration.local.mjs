@@ -131,6 +131,15 @@ test('DECLARE wrapper rejects a data-modifying CTE at the database', async () =>
   await assert.rejects(attempt, /data-modifying|read-only transaction|permission denied/);
 });
 
+test('quoted and Unicode-escaped spellings of a forbidden function get the same guard decision', async () => {
+  for (const sql of ['select pg_sleep(0)', 'select "pg_sleep"(0)', 'select pg_catalog."pg_sleep"(0)',
+    String.raw`select U&"pg\005fsleep"(0)`]) {
+    await assert.rejects(db.query('local', sql), /Function "pg_sleep" is not allowed/);
+  }
+  const ok = await db.query('local', 'select "lower"(\'A\') as v');
+  assert.equal(ok.rows[0][0] ?? ok.rows[0].v, 'a');
+});
+
 test('extended protocol rejects stacked statements', async () => {
   const attempt = db.withReadOnly('local', client =>
     db.declareCursor(client, 'select 1; delete from auspex_test.worker', []));
