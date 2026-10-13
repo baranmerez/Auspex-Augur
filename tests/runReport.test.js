@@ -25,6 +25,8 @@ function fakeDb() {
     statementTimeoutMs: 30000, maxStatementTimeoutMs: 300000, maxRows: 500,
   });
   db.pool = () => ({ connect: async () => client });
+  // The role check is covered in roleCheck.test.js; here the role is known good.
+  db.roleChecks.set('local', { status: 'ok', blocking: [], warnings: [] });
   return { db, sent };
 }
 
