@@ -3,6 +3,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/baranmerez/Auspex-Augur/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/baranmerez/Auspex-Augur/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-2a78d6"></a>
   <img alt="Node.js 20+" src="https://img.shields.io/badge/node-%E2%89%A520-1baf7a?logo=node.js&amp;logoColor=white">
   <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-read--only-336791?logo=postgresql&amp;logoColor=white">
@@ -516,6 +517,12 @@ The integration tests need a one-time setup with
 [`scripts/local-test-setup.sql`](scripts/local-test-setup.sql) (role `"Auspex"`,
 schema `auspex_test`) plus a `local` profile and a pgpass line. They prove that
 writes are refused by the database itself, even with the SQL guard bypassed.
+
+GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs
+both on every pull request and every push to `main`: the unit tests on Ubuntu
+(Node 20, 22, 24) and Windows (Node 22, 24), and the integration tests against
+a PostgreSQL 16 service container set up with the same script. The desktop app
+is not built in CI.
 
 ## 📄 License
 

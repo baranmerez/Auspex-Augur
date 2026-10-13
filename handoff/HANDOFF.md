@@ -179,6 +179,11 @@ Local test setup: `scripts/local-test-setup.sql` (+ a `local` profile and a
 pgpass line). The Turkish names in the test data are intentional: they check
 UTF-8 handling.
 
+CI: `.github/workflows/ci.yml` runs `npm test` on Ubuntu (Node 20/22/24) and
+Windows (Node 22/24) and `npm run test:local` against a PostgreSQL 16 service
+container (same setup script, run through the container socket with a random
+password). Desktop build and `cargo test` are not in CI.
+
 ## 10. Client-side setup (outside this repo)
 
 Agent definitions, client rules and local tooling are personal and live
