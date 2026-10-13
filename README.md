@@ -38,7 +38,7 @@
   <tr>
     <td width="33%" valign="top"><h3>🛡️ Safe by construction</h3>Read-only role, SQL guard, <code>READ ONLY</code> transactions, cursor-only execution. Writes are refused at every layer that can see them.</td>
     <td width="33%" valign="top"><h3>🔎 Built for exploration</h3>Search tables and columns across schemas, describe structure and relationships, sample data, read plans with <code>EXPLAIN ANALYZE</code>.</td>
-    <td width="33%" valign="top"><h3>📜 Everything audited</h3>Every database call — including ones the SQL guard rejects — and every report, script and memory change lands in a daily JSONL log with duration, row count and errors.</td>
+    <td width="33%" valign="top"><h3>📜 Everything audited</h3>Every database call — including ones the SQL guard rejects — and every report, script and memory-note change you ask for lands in a daily JSONL log with duration, row count and errors (see the audit log layer for what is not logged).</td>
   </tr>
   <tr>
     <td valign="top"><h3>🗂️ Many databases</h3>Named profiles in one file, no default database: the agent must name the database, and is told to ask you first.</td>
@@ -79,7 +79,7 @@ flowchart LR
     A["🤖 AI agent"] -->|MCP tool call| C["MCP client"]
     C -->|stdio| S["Auspex Augur<br/>guard · read-only tx · cursor"]
     S -->|role: Auspex, SELECT only| D[("🐘 PostgreSQL")]
-    S -->|every call| L["📜 Audit log<br/>~/.auspex/logs"]
+    S -->|database calls and changes| L["📜 Audit log<br/>~/.auspex/logs"]
     S -->|tables, notes, changes| M["🧠 Schema memory<br/>~/.auspex/memory"]
     L --> V["📊 Viewer / desktop app"]
     M --> V
@@ -245,10 +245,12 @@ library/
   A human still reviews every script.
 - **Several Auspex processes:** two MCP clients or a script can share one
   library and memory folder. Every change runs under a lock file
-  (`<library>/.lock`, `<memory>/<profile>/.lock`), so no update is lost and
-  SQL, metadata and HTML stay in step. A second writer waits up to 5 s, then
-  gets a "try again" error. A lock left by a crashed process (or older than
-  30 s) is taken over automatically.
+  (`<library>/.lock`, `<memory>/<profile>/.lock`), so concurrent writers do
+  not lose each other's updates and SQL, metadata and HTML stay in step. A
+  second writer waits up to 5 s, then gets a "try again" error. A lock left by
+  a crashed process (or older than 30 s) is taken over automatically; a
+  process paused for longer than that while holding it (debugger, sleep) can
+  lose it, and a crash in the middle of an approval can leave it half done.
 
 - **Private report, shared copy:** a report's own HTML is a private working
   file: it embeds the raw SQL, parameters, query plan (with its filter
@@ -285,7 +287,9 @@ with the work and never crawls the catalog on its own:
 - **Notes** are `rule` (stated by the user), `observation` (a finding with
   evidence: the SQL and aggregate figures, dated, never row values) and
   `inference` (the model's interpretation, shown as unconfirmed). Notes on a
-  table come back automatically when a later call touches it. They are
+  table come back with `table_knowledge`, `describe_table`, `explain` and
+  `run_report`, and with `query` when its SQL names the table as
+  `schema.table`; database-wide notes come back with `table_knowledge`. They are
   archived with a reason, never deleted.
 - **Exploring further:** after a report, `run_report` and `table_knowledge`
   list neighbors that were never described. The server instructions tell the

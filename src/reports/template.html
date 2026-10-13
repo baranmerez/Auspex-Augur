@@ -227,7 +227,7 @@ const I18N = {
     tablesTouched: 'Tables touched', colRelation: 'Relation', colAlias: 'Alias', colAccess: 'Access', colIndexes: 'Indexes',
     preview: 'Result preview', previewHint: '{n} rows', firstOnly: ' (first rows only)', masked: ' · masked: {c}', noRows: 'The query returned no rows.',
     history: 'Run history', historyHint: 'duration per run · alternating colors mark SQL versions · last 100 runs', noRuns: 'No runs yet.',
-    colWhen: 'When', colSql: 'SQL', colMode: 'Mode', colDuration: 'Duration', colCost: 'Cost', colWarnings: 'Warnings', modeAnalyze: 'analyze', modePlan: 'plan',
+    colWhen: 'When', colSql: 'SQL', colMode: 'Mode', colDuration: 'Duration', colCost: 'Cost', colWarnings: 'Warnings', modeAnalyze: 'analyze', modePlan: 'estimate',
     sqlChanges: 'SQL changes', compare: 'compare two versions', oneVersion: 'only one version so far',
     copySql: 'Copy SQL', copyPlan: 'Copy plan JSON', copied: '{w} copied', copyFailed: 'Copy failed', generated: 'Generated {at} by Auspex Augur · template v{v}',
     noData: 'No report data.',
@@ -263,7 +263,7 @@ const I18N = {
     tablesTouched: 'Erişilen tablolar', colRelation: 'Tablo', colAlias: 'Takma ad', colAccess: 'Erişim', colIndexes: 'Index',
     preview: 'Sonuç önizlemesi', previewHint: '{n} satır', firstOnly: ' (sadece ilk satırlar)', masked: ' · maskeli: {c}', noRows: 'Sorgu satır döndürmedi.',
     history: 'Çalıştırma geçmişi', historyHint: 'çalıştırma başına süre · renkler SQL sürümlerini ayırır · son 100 çalıştırma', noRuns: 'Henüz çalıştırma yok.',
-    colWhen: 'Zaman', colSql: 'SQL', colMode: 'Mod', colDuration: 'Süre', colCost: 'Maliyet', colWarnings: 'Uyarı', modeAnalyze: 'analyze', modePlan: 'plan',
+    colWhen: 'Zaman', colSql: 'SQL', colMode: 'Mod', colDuration: 'Süre', colCost: 'Maliyet', colWarnings: 'Uyarı', modeAnalyze: 'analyze', modePlan: 'tahmin',
     sqlChanges: 'SQL değişiklikleri', compare: 'iki sürümü karşılaştırın', oneVersion: 'şimdilik tek sürüm var',
     copySql: 'SQL kopyala', copyPlan: 'Plan JSON kopyala', copied: '{w} kopyalandı', copyFailed: 'Kopyalanamadı', generated: '{at} tarihinde Auspex Augur ile üretildi · şablon v{v}',
     noData: 'Rapor verisi yok.',
@@ -275,7 +275,7 @@ const I18N = {
 };
 const HELP = {
   en: [
-    ['Execution time / planning', 'Time PostgreSQL spent running the query (EXPLAIN ANALYZE) and planning it. "Plan only" means the query was not executed; then the time shown is how long the first rows took.'],
+    ['Execution time / planning', 'Time PostgreSQL spent running the query (EXPLAIN ANALYZE) and planning it. "Estimated plan" means EXPLAIN ran without ANALYZE; the query itself still ran once for the preview (unless the preview has 0 rows), and the time shown is how long the first rows took.'],
     ['Rows returned', 'Rows the whole query produced. The preview stores only the first rows, with personal-looking columns masked.'],
     ['Total cost', 'The planner\'s own unit for estimated work. Compare it between versions of the same report, not between different queries.'],
     ['Buffers', 'Data pages read (8 kB each). "From cache" is the share already in memory; low values mean disk reads.'],
@@ -289,7 +289,7 @@ const HELP = {
     ['History and SQL changes', 'Every run is kept with its duration; colors mark SQL versions. Compare two versions in the SQL changes panel to see what each edit did.'],
   ],
   tr: [
-    ['Çalışma süresi / planlama', 'PostgreSQL\'in sorguyu çalıştırmak (EXPLAIN ANALYZE) ve planlamak için harcadığı süre. "Sadece plan" sorgunun çalıştırılmadığını gösterir; o zaman görünen süre ilk satırların gelme süresidir.'],
+    ['Çalışma süresi / planlama', 'PostgreSQL\'in sorguyu çalıştırmak (EXPLAIN ANALYZE) ve planlamak için harcadığı süre. "Tahmini plan", EXPLAIN\'ın ANALYZE olmadan çalıştığını gösterir; sorgu önizleme için yine bir kez çalışır (önizleme 0 satır değilse) ve görünen süre ilk satırların gelme süresidir.'],
     ['Dönen satır', 'Sorgunun tamamının ürettiği satır sayısı. Önizleme sadece ilk satırları saklar; kişisel veri gibi görünen sütunlar maskelenir.'],
     ['Toplam maliyet', 'Planlayıcının tahmini iş birimi. Farklı sorgular arasında değil, aynı raporun sürümleri arasında karşılaştırın.'],
     ['Buffer', 'Okunan veri sayfaları (her biri 8 kB). "Önbellekten" bellekte hazır bulunan oran; düşükse diskten okuma vardır.'],
