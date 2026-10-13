@@ -131,10 +131,15 @@ export class Library {
     if (!meta.sqlVersions.some(v => v.hash === hash)) {
       meta.sqlVersions.push({ version: meta.sqlVersions.length + 1, hash, savedAt: now, note: note || null, sql: text });
     }
+    // The active revision is the SQL just saved, which after a revert is an
+    // older entry, not the last one in sqlVersions.
+    const version = meta.sqlVersions.find(v => v.hash === hash).version;
+    meta.activeHash = hash;
+    meta.activeVersion = version;
     const p = this.paths('draft', r);
     writeAtomic(p.sql, text + '\n');
     this.writeMeta('draft', r, meta);
-    return { ref: r, stage: 'draft', version: meta.sqlVersions.find(v => v.hash === hash).version, paths: p };
+    return { ref: r, stage: 'draft', version, paths: p };
   }
 
   appendRun(stage, ref, run, last) {
@@ -155,15 +160,27 @@ export class Library {
     const from = this.paths('draft', r);
     const to = this.paths('approved', r);
     const meta = this.readMeta('draft', r);
+    // Approve exactly the SQL in the draft file, found by its hash.
+    const hash = sqlHash(fs.readFileSync(from.sql, 'utf8'));
+    const version = meta.sqlVersions.find(v => v.hash === hash)?.version;
+    if (version === undefined) throw new LibraryError(`The draft SQL of "${refLabel(r)}" matches no saved version; save it with save_report first.`);
     meta.status = 'approved';
     meta.approvedAt = new Date().toISOString();
-    meta.approvedVersion = meta.sqlVersions.at(-1)?.version ?? null;
+    meta.activeHash = hash;
+    meta.activeVersion = version;
+    meta.approvedVersion = version;
     writeAtomic(to.meta, JSON.stringify(meta, null, 2) + '\n');
     fs.copyFileSync(from.sql, to.sql);
     if (fs.existsSync(from.html)) fs.copyFileSync(from.html, to.html);
     for (const f of Object.values(from)) fs.rmSync(f, { force: true });
     this.pruneEmpty(path.dirname(from.sql), path.join(this.root, stages.draft));
     return { ref: r, stage: 'approved', paths: to, meta };
+  }
+
+  // Hash of the SQL the report currently stands for: the recorded active
+  // revision, or for reports saved before that field existed, the SQL file.
+  activeHash(stage, ref, meta) {
+    return meta?.activeHash ?? sqlHash(this.readSql(stage, ref));
   }
 
   pruneEmpty(dir, stopAt) {
