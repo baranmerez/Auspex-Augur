@@ -171,7 +171,7 @@ tool('export_csv', {
     profile: profileArg,
     sql: z.string(),
     params: paramsArg,
-    fileName: z.string().optional().describe('Base file name; a timestamp prefix is added.'),
+    fileName: z.string().optional().describe('Base file name; a timestamp and a random part are added, so an existing file is never overwritten.'),
     delimiter: z.enum([',', ';', '\t']).optional().describe('Default ",". Use ";" for Turkish-locale Excel.'),
     timeoutSeconds: timeoutArg,
   },
