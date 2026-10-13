@@ -5,6 +5,7 @@ import path from 'node:path';
 import pg from 'pg';
 import { assertReadOnlyQuery, SqlGuardError } from './sqlGuard.js';
 import { createAuditLog } from './auditLog.js';
+import { runRoleCheck, RoleCheckError } from './roleCheck.js';
 
 // Keep date/time values exactly as PostgreSQL prints them; converting a
 // timestamp without time zone to a JS Date would shift it to local time.
@@ -23,6 +24,42 @@ export class ReadOnlyDatabase {
     this.pools = new Map();
     this.auditFn = audit ?? (config.logDir ? createAuditLog(config.logDir) : () => {});
     this.source = source;
+    this.roleChecks = new Map(); // profile -> result of the read-only role check
+  }
+
+  // Result of the role check for a profile in this process, or null when the
+  // profile has not been used yet.
+  roleCheck(name) {
+    return this.roleChecks.get(name) ?? null;
+  }
+
+  // Runs the role check again (check_profile) and returns its result; a
+  // blocked role is reported, not thrown.
+  async checkProfile(profile) {
+    const name = this.resolveProfile(profile);
+    this.roleChecks.delete(name);
+    try {
+      await this.withReadOnly(name, async () => null);
+    } catch (err) {
+      if (!(err instanceof RoleCheckError)) throw err;
+    }
+    return { profile: name, ...this.roleChecks.get(name) };
+  }
+
+  // First use of a profile in this process: check that its role is read-only
+  // with the open client, record the result in the audit log, and refuse the
+  // call when the role could write.
+  async ensureRoleChecked(client, name) {
+    let result = this.roleChecks.get(name);
+    if (!result) {
+      result = { ...(await runRoleCheck(client)), checkedAt: new Date().toISOString() };
+      this.roleChecks.set(name, result);
+      this.auditFn({
+        source: this.source, tool: 'role_check', profile: name, roleStatus: result.status,
+        blocking: result.blocking.map(f => f.code), warnings: result.warnings.map(f => f.code),
+      });
+    }
+    if (result.status === 'blocked') throw new RoleCheckError(name, result);
   }
 
   // Runs one operation and records it: tool, profile, request details,
@@ -83,6 +120,8 @@ export class ReadOnlyDatabase {
   async withReadOnly(profile, fn, timeoutSeconds) {
     const name = this.resolveProfile(profile);
     const timeoutMs = this.timeoutMs(name, timeoutSeconds);
+    const known = this.roleChecks.get(name);
+    if (known?.status === 'blocked') throw new RoleCheckError(name, known); // no connection needed
     let client;
     try {
       client = await this.pool(name).connect();
@@ -95,6 +134,7 @@ export class ReadOnlyDatabase {
       await client.query(`SET LOCAL statement_timeout = ${timeoutMs}`);
       await client.query(`SET LOCAL idle_in_transaction_session_timeout = ${timeoutMs * 2}`);
       await client.query("SET LOCAL lock_timeout = '5s'");
+      await this.ensureRoleChecked(client, name);
       return await fn(client, name);
     } catch (err) {
       if (!err.code && !(err instanceof SqlGuardError)) broken = true;

@@ -48,6 +48,8 @@ test('omitted timeout reaches SET LOCAL statement_timeout clamped', async () => 
     maxTimeoutByProfile: new Map([['strict', 5000]]),
   });
   tight.pool = () => ({ connect: async () => fakeClient });
+  // The role check is covered in roleCheck.test.js; here the role is known good.
+  tight.roleChecks.set('strict', { status: 'ok', blocking: [], warnings: [] });
   await tight.withReadOnly('strict', async () => null);
   assert.ok(sent.includes('SET LOCAL statement_timeout = 5000'), sent.join(' | '));
 });

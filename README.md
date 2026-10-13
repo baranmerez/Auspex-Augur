@@ -124,7 +124,16 @@ flowchart LR
    over the extended protocol, which rejects stacked statements and
    data-modifying CTEs at the server.
 4. **Database role (the real guarantee):** the role only has `CONNECT`, `USAGE`
-   and `SELECT`. Everything else is defense in depth.
+   and `SELECT`. Everything else is defense in depth. Auspex checks this
+   instead of trusting it: on the first call to each profile it reads the
+   catalog (`src/roleCheck.js`). Superuser, `BYPASSRLS`, `REPLICATION`,
+   `CREATEROLE`, membership in `pg_write_all_data` or the server-file roles, or
+   any table it can write (table or column grants) **block** the profile: no
+   query runs on it until the role is fixed. CREATE on a schema or the
+   database, `CREATEDB` and `default_transaction_read_only` off are
+   **warnings** only, since the READ ONLY transaction already stops them. The
+   result is in `list_profiles`, `check_profile` runs it again, and the audit
+   log and the viewer's profile cards show it.
 5. **Audit log:** appended to `<data dir>/logs/YYYY-MM-DD.jsonl`.
    - Database calls (`query`, `explain`, `export_csv`, `run_report`, catalog
      tools): time, source, tool, profile, SQL, params, row count, duration,
@@ -153,7 +162,8 @@ flowchart LR
 
 | Tool | What it does |
 |---|---|
-| 🗂️ `list_profiles` | Configured profiles (description, host, database, user, timeout limit; never passwords) |
+| 🗂️ `list_profiles` | Configured profiles (description, host, database, user, timeout limit, role check; never passwords) |
+| 🔐 `check_profile` | Checks that a profile's database role is read-only; a role that can write blocks the profile |
 | 🔎 `search` | Tables, views and columns whose name or comment matches a text, across all schemas; with estimated rows and SELECT privilege |
 | 📁 `list_schemas` | Non-system schemas with owner, relation count, usage privilege, comment |
 | 📋 `list_tables` | Tables/views in a schema with estimated rows, size, SELECT privilege, comment; optional ILIKE filter |
