@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>__AUSPEX_TITLE__ · Auspex Augur report</title>
+<title>__AUSPEX_TITLE__ · Auspex Augur</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%232a78d6'/%3E%3Ccircle cx='16' cy='16' r='6' fill='white'/%3E%3C/svg%3E">
 <style>
   :root {
@@ -58,23 +58,33 @@
   .b-draft { background: var(--warn-soft); color: var(--warn-ink); }
   .b-approved { background: var(--good-soft); color: var(--good-ink); }
   .b-plan { background: var(--surface-2); color: var(--text-2); }
-  .theme { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 2px; }
-  .theme button { border: 0; background: none; padding: 3px 9px; border-radius: 6px; font-size: 12px; color: var(--text-2); }
-  .theme button.on { background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
+  .ctrls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 2px; }
+  .seg button { border: 0; background: none; padding: 3px 9px; border-radius: 6px; font-size: 12px; color: var(--text-2); }
+  .seg button.on { background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
+  .help-btn { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface); font-weight: 700; color: var(--text-2); }
+  .help-btn.on, .help-btn:hover { border-color: var(--accent); color: var(--accent-ink); background: var(--accent-soft); }
 
-  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 18px 0 14px; }
+  .help { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 16px 18px; margin: 16px 0 0; animation: fade .25s var(--ease); }
+  .help h2 { margin: 0 0 10px; font-size: 15px; }
+  .help-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px 22px; }
+  .help h3 { margin: 0 0 3px; font-size: 13px; color: var(--accent-ink); }
+  .help p { margin: 0; color: var(--text-2); font-size: 13px; }
+  .help code { font: 12px var(--mono); background: var(--surface-2); padding: 0 4px; border-radius: 4px; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 18px 0 14px; }
   .tile { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; box-shadow: var(--shadow); animation: rise .4s var(--ease) both; }
   .tile .k { font-size: 12px; color: var(--text-2); }
   .tile .v { font-size: 24px; font-weight: 600; letter-spacing: -.3px; margin-top: 2px; }
   .tile .d { font-size: 12px; color: var(--text-3); }
-  .tile.hero .v { font-size: 34px; }
+  .tile.hero .v { font-size: 32px; }
 
   .warns { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 6px; }
   .warns li { display: flex; gap: 10px; align-items: flex-start; background: var(--warn-soft); color: var(--text); border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); border-radius: 8px; padding: 8px 12px; font-size: 13px; cursor: pointer; }
   .warns li .ico { color: var(--warn-ink); font-weight: 700; }
   .ok-note { background: var(--good-soft); color: var(--good-ink); border-radius: 8px; padding: 8px 12px; font-size: 13px; margin-bottom: 14px; }
 
-  nav.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: 14px; position: relative; flex-wrap: wrap; }
+  nav.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: 14px; flex-wrap: wrap; }
   nav.tabs button { border: 0; background: none; padding: 9px 14px; color: var(--text-2); font-weight: 500; border-bottom: 2px solid transparent; margin-bottom: -1px; }
   nav.tabs button.on { color: var(--text); border-bottom-color: var(--accent); }
   nav.tabs .n { font-size: 11px; color: var(--text-3); margin-left: 4px; }
@@ -84,10 +94,10 @@
   .panel-h .hint { color: var(--text-3); font-size: 12px; }
   .panel-b { padding: 12px 16px; }
   .empty { padding: 40px 16px; text-align: center; color: var(--text-3); }
+  [data-tip] { cursor: help; text-decoration: underline dotted var(--text-3); text-underline-offset: 3px; }
 
-  /* plan tree */
   .tree { font-size: 13px; }
-  .node { display: grid; grid-template-columns: minmax(260px, 1.6fr) minmax(120px, 1fr) 110px 110px 90px; gap: 10px; align-items: center; padding: 6px 16px; border-bottom: 1px solid var(--line); cursor: pointer; transition: background .15s; }
+  .node { display: grid; grid-template-columns: minmax(260px, 1.6fr) minmax(120px, 1fr) 120px 110px 90px; gap: 10px; align-items: center; padding: 6px 16px; border-bottom: 1px solid var(--line); cursor: pointer; transition: background .15s; }
   .node:hover { background: var(--surface-2); }
   .node.sel { background: var(--accent-soft); }
   .node .name { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
@@ -100,10 +110,10 @@
   .node .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .node .est { color: var(--text-3); font-size: 12px; }
   .mis { color: var(--critical); font-weight: 600; font-size: 11px; }
-  .tree-head { display: grid; grid-template-columns: minmax(260px, 1.6fr) minmax(120px, 1fr) 110px 110px 90px; gap: 10px; padding: 8px 16px; font-size: 12px; color: var(--text-2); font-weight: 600; border-bottom: 1px solid var(--line); }
+  .tree-head { display: grid; grid-template-columns: minmax(260px, 1.6fr) minmax(120px, 1fr) 120px 110px 90px; gap: 10px; padding: 8px 16px; font-size: 12px; color: var(--text-2); font-weight: 600; border-bottom: 1px solid var(--line); }
   .tree-head .num { text-align: right; }
   .detail { padding: 12px 16px; background: var(--surface-2); border-bottom: 1px solid var(--line); font-size: 12px; animation: fade .2s; }
-  .detail dl { display: grid; grid-template-columns: 170px 1fr; gap: 4px 12px; margin: 0; }
+  .detail dl { display: grid; grid-template-columns: 190px 1fr; gap: 4px 12px; margin: 0; }
   .detail dt { color: var(--text-3); }
   .detail dd { margin: 0; font-family: var(--mono); word-break: break-word; }
 
@@ -134,8 +144,9 @@
   .diff .del { background: var(--critical-soft); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--critical) 50%, transparent); }
   .diff-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--line); }
   select { font: inherit; font-size: 12px; background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
+  select option { background: var(--surface); color: var(--text); }
 
-  .tip { position: fixed; z-index: 50; pointer-events: none; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 8px; box-shadow: 0 10px 28px rgba(0,0,0,.18); padding: 7px 10px; font-size: 12px; opacity: 0; transition: opacity .12s; }
+  .tip { position: fixed; z-index: 50; pointer-events: none; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 8px; box-shadow: 0 10px 28px rgba(0,0,0,.18); padding: 7px 10px; font-size: 12px; max-width: 340px; opacity: 0; transition: opacity .12s; }
   .tip.show { opacity: 1; }
   .toast { position: fixed; bottom: 22px; left: 50%; transform: translate(-50%, 16px); opacity: 0; background: var(--text); color: var(--bg); padding: 7px 14px; border-radius: 8px; font-size: 13px; transition: .2s; pointer-events: none; }
   .toast.show { opacity: 1; transform: translate(-50%, 0); }
@@ -163,8 +174,13 @@
       <circle cx="16" cy="16" r="5" fill="var(--accent)"/>
     </svg>
     <div class="head" id="head"></div>
-    <div class="theme" id="theme"><button data-v="auto">Auto</button><button data-v="light">Light</button><button data-v="dark">Dark</button></div>
+    <div class="ctrls">
+      <button class="help-btn" id="helpBtn" aria-expanded="false">?</button>
+      <div class="seg" id="lang"><button data-v="en">EN</button><button data-v="tr">TR</button></div>
+      <div class="seg" id="theme"><button data-v="auto"></button><button data-v="light"></button><button data-v="dark"></button></div>
+    </div>
   </header>
+  <section id="help"></section>
   <section class="tiles" id="tiles"></section>
   <section id="warns"></section>
   <nav class="tabs" id="tabs"></nav>
@@ -179,6 +195,115 @@
 'use strict';
 const DATA = JSON.parse(document.getElementById('auspex-report').textContent);
 const R = DATA && DATA.report;
+
+// ---------- i18n ----------
+const I18N = {
+  en: {
+    auto: 'Auto', light: 'Light', dark: 'Dark', help: 'How to read this report',
+    approved: 'approved v{v}', draft: 'draft', lastRun: 'Last run {at} · profile {p} · PostgreSQL {pg}', notRun: 'Not run yet', runs: '{n} runs',
+    runFirst: 'Run the report to see its plan, joins, timings and preview.',
+    execTime: 'Execution time', planning: 'planning {v}', planOnly: 'Plan only', firstRows: 'time to first rows (no ANALYZE)',
+    rowsReturned: 'Rows returned', rowsEst: 'Rows (estimated)', previewShows: 'preview shows {n}', totalCost: 'Total cost', plannerUnits: 'planner units',
+    buffers: 'Buffers', fromCache: '{p}% from cache', tempWritten: 'Temp written', spilled: 'spilled to disk', none: 'none',
+    joinsTables: 'Joins / tables', noJoins: 'no joins',
+    noWarnings: '✓ No plan warnings: no large sequential scans, misestimates, disk sorts or temp spills.',
+    planOnlyNote: 'Plan only: run with ANALYZE to check actual rows and timings.',
+    tabPlan: 'Plan', tabJoins: 'Joins', tabTables: 'Tables', tabPreview: 'Preview', tabHistory: 'History', tabSql: 'SQL',
+    planTree: 'Plan tree', planHint: 'bar = share of execution time spent in the node itself · click a node for details', planHintCost: 'plan only · bar = share of estimated cost',
+    colNode: 'Node', colShare: 'Share', colEst: 'Est. rows', colActual: 'Actual rows', colOwnTime: 'Own time', colOwnCost: 'Own cost',
+    tipShare: 'Share of the total execution time spent in this node itself, without its children. The longest bars are where the time goes.',
+    tipEst: 'Rows the planner expected before running the query. A red label shows how far the estimate was off from the actual rows.',
+    tipActual: 'Rows this node really produced (all loops together).',
+    tipOwn: 'Time spent in this node itself, excluding its children.',
+    over: '{f}× over-estimate', under: '{f}× under-estimate',
+    dNode: 'Node', dRelation: 'Relation', dAlias: 'Alias', dIndex: 'Index', dJoinType: 'Join type', dCond: 'Condition', dFilter: 'Filter',
+    dRemoved: 'Rows removed by filter', dSort: 'Sort', dCost: 'Cost', dLoops: 'Loops', dTotal: 'Total time (incl. children)', dWorkers: 'Workers',
+    joins: 'Joins', joinsHint: 'read from the plan, not from the SQL text', colMethod: 'Method', colType: 'Type', colOuter: 'Outer', colInner: 'Inner',
+    colCond: 'Condition', colRows: 'Rows', colTime: 'Time', noJoinsPlan: 'No joins in this plan.', colPairs: 'Column relationships used by this report',
+    tablesTouched: 'Tables touched', colRelation: 'Relation', colAlias: 'Alias', colAccess: 'Access', colIndexes: 'Indexes',
+    preview: 'Result preview', previewHint: '{n} rows', firstOnly: ' (first rows only)', masked: ' · masked: {c}', noRows: 'The query returned no rows.',
+    history: 'Run history', historyHint: 'duration per run · alternating colors mark SQL versions · last 100 runs', noRuns: 'No runs yet.',
+    colWhen: 'When', colSql: 'SQL', colMode: 'Mode', colDuration: 'Duration', colCost: 'Cost', colWarnings: 'Warnings', modeAnalyze: 'analyze', modePlan: 'plan',
+    sqlChanges: 'SQL changes', compare: 'compare two versions', oneVersion: 'only one version so far',
+    copySql: 'Copy SQL', copyPlan: 'Copy plan JSON', copied: '{w} copied', copyFailed: 'Copy failed', generated: 'Generated {at} by Auspex Augur · template v{v}',
+    noData: 'No report data.',
+    w_seq: 'Sequential scan of {rows} rows{on}', w_mis: '{node}{on}: planner expected {est} rows, got {act} ({f}× {dir}){hint}',
+    w_misHint: '; statistics may be stale, consider ANALYZE on the table', w_over: 'over', w_under: 'under',
+    w_disk: 'Sort spilled to disk ({kb} kB){on}', w_filter: 'Filter discarded {rows} rows{on}; an index on the filtered columns may help',
+    w_nested: 'Nested loop runs a sequential scan {loops} times', w_temp: 'Query wrote {blocks} temp blocks', on: ' on {r}',
+  },
+  tr: {
+    auto: 'Oto', light: 'Açık', dark: 'Koyu', help: 'Bu rapor nasıl okunur',
+    approved: 'onaylı v{v}', draft: 'taslak', lastRun: 'Son çalıştırma {at} · profil {p} · PostgreSQL {pg}', notRun: 'Henüz çalıştırılmadı', runs: '{n} çalıştırma',
+    runFirst: 'Plan, join, süre ve önizleme için raporu çalıştırın.',
+    execTime: 'Çalışma süresi', planning: 'planlama {v}', planOnly: 'Sadece plan', firstRows: 'ilk satırlara kadar geçen süre (ANALYZE yok)',
+    rowsReturned: 'Dönen satır', rowsEst: 'Satır (tahmini)', previewShows: 'önizlemede {n} satır', totalCost: 'Toplam maliyet', plannerUnits: 'planlayıcı birimi',
+    buffers: 'Buffer', fromCache: '%{p} önbellekten', tempWritten: 'Temp yazılan', spilled: 'diske taştı', none: 'yok',
+    joinsTables: 'Join / tablo', noJoins: 'join yok',
+    noWarnings: '✓ Plan uyarısı yok: büyük sıralı tarama, tahmin sapması, diske sıralama ya da temp taşması görülmedi.',
+    planOnlyNote: 'Sadece plan: gerçek satır ve süreleri görmek için ANALYZE ile çalıştırın.',
+    tabPlan: 'Plan', tabJoins: 'Joinler', tabTables: 'Tablolar', tabPreview: 'Önizleme', tabHistory: 'Geçmiş', tabSql: 'SQL',
+    planTree: 'Plan ağacı', planHint: 'çubuk = düğümün kendi içinde harcanan sürenin payı · ayrıntı için düğüme tıklayın', planHintCost: 'sadece plan · çubuk = tahmini maliyetin payı',
+    colNode: 'Düğüm', colShare: 'Pay', colEst: 'Tahmini satır', colActual: 'Gerçek satır', colOwnTime: 'Kendi süresi', colOwnCost: 'Kendi maliyeti',
+    tipShare: 'Toplam çalışma süresinin, alt düğümler hariç bu düğümde harcanan payı. En uzun çubuklar sürenin gittiği yerlerdir.',
+    tipEst: 'Planlayıcının sorguyu çalıştırmadan önce beklediği satır sayısı. Kırmızı etiket, tahminin gerçekten ne kadar saptığını gösterir.',
+    tipActual: 'Bu düğümün gerçekte ürettiği satır sayısı (tüm döngüler toplamı).',
+    tipOwn: 'Alt düğümler hariç, bu düğümün kendi içinde geçen süre.',
+    over: '{f}× fazla tahmin', under: '{f}× az tahmin',
+    dNode: 'Düğüm', dRelation: 'Tablo', dAlias: 'Takma ad', dIndex: 'Index', dJoinType: 'Join tipi', dCond: 'Koşul', dFilter: 'Filtre',
+    dRemoved: 'Filtrenin elediği satır', dSort: 'Sıralama', dCost: 'Maliyet', dLoops: 'Döngü', dTotal: 'Toplam süre (alt düğümler dahil)', dWorkers: 'Paralel işçi',
+    joins: 'Joinler', joinsHint: 'SQL metninden değil, plandan okunur', colMethod: 'Yöntem', colType: 'Tip', colOuter: 'Dış', colInner: 'İç',
+    colCond: 'Koşul', colRows: 'Satır', colTime: 'Süre', noJoinsPlan: 'Bu planda join yok.', colPairs: 'Bu raporun kullandığı sütun ilişkileri',
+    tablesTouched: 'Erişilen tablolar', colRelation: 'Tablo', colAlias: 'Takma ad', colAccess: 'Erişim', colIndexes: 'Index',
+    preview: 'Sonuç önizlemesi', previewHint: '{n} satır', firstOnly: ' (sadece ilk satırlar)', masked: ' · maskeli: {c}', noRows: 'Sorgu satır döndürmedi.',
+    history: 'Çalıştırma geçmişi', historyHint: 'çalıştırma başına süre · renkler SQL sürümlerini ayırır · son 100 çalıştırma', noRuns: 'Henüz çalıştırma yok.',
+    colWhen: 'Zaman', colSql: 'SQL', colMode: 'Mod', colDuration: 'Süre', colCost: 'Maliyet', colWarnings: 'Uyarı', modeAnalyze: 'analyze', modePlan: 'plan',
+    sqlChanges: 'SQL değişiklikleri', compare: 'iki sürümü karşılaştırın', oneVersion: 'şimdilik tek sürüm var',
+    copySql: 'SQL kopyala', copyPlan: 'Plan JSON kopyala', copied: '{w} kopyalandı', copyFailed: 'Kopyalanamadı', generated: '{at} tarihinde Auspex Augur ile üretildi · şablon v{v}',
+    noData: 'Rapor verisi yok.',
+    w_seq: '{rows} satırlık sıralı tarama{on}', w_mis: '{node}{on}: planlayıcı {est} satır bekledi, {act} geldi ({f}× {dir}){hint}',
+    w_misHint: '; istatistikler eski olabilir, tabloda ANALYZE çalıştırmayı düşünün', w_over: 'fazla tahmin', w_under: 'az tahmin',
+    w_disk: 'Sıralama diske taştı ({kb} kB){on}', w_filter: 'Filtre {rows} satırı eledi{on}; filtrelenen sütunlara index faydalı olabilir',
+    w_nested: 'Nested loop bir sıralı taramayı {loops} kez çalıştırıyor', w_temp: 'Sorgu {blocks} temp blok yazdı', on: ' ({r})',
+  },
+};
+const HELP = {
+  en: [
+    ['Execution time / planning', 'Time PostgreSQL spent running the query (EXPLAIN ANALYZE) and planning it. "Plan only" means the query was not executed; then the time shown is how long the first rows took.'],
+    ['Rows returned', 'Rows the whole query produced. The preview stores only the first rows, with personal-looking columns masked.'],
+    ['Total cost', 'The planner\'s own unit for estimated work. Compare it between versions of the same report, not between different queries.'],
+    ['Buffers', 'Data pages read (8 kB each). "From cache" is the share already in memory; low values mean disk reads.'],
+    ['Temp written', 'Data spilled to disk because a sort or hash did not fit in memory (work_mem). Anything above zero is worth a look on big queries.'],
+    ['Share bar', 'How much of the total time was spent in the node itself (children excluded). Orange bars take 30% or more: start optimising there.'],
+    ['Est. rows vs actual rows', 'The planner chooses join methods, memory and index use from its estimate. "28× over-estimate" means it expected 28 times more rows than it got.'],
+    ['Over vs under', 'Over-estimates usually lead to heavier but safe plans. Under-estimates are riskier: nested loops over many rows, sorts spilling to disk. Below 10× is normal.'],
+    ['Fixing misestimates', 'Usually stale statistics: ANALYZE the table (needs the owner or a DBA). Correlated columns may need extended statistics (CREATE STATISTICS).'],
+    ['Join methods', 'Hash Join builds a hash table of one side (good for large unsorted sets). Nested Loop repeats the inner side per outer row (good when the outer side is small). Merge Join walks two sorted inputs.'],
+    ['Scan types', 'Seq Scan reads the whole table. Index Scan / Index Only Scan use an index. Bitmap scans collect many matching rows through an index first.'],
+    ['History and SQL changes', 'Every run is kept with its duration; colors mark SQL versions. Compare two versions in the SQL changes panel to see what each edit did.'],
+  ],
+  tr: [
+    ['Çalışma süresi / planlama', 'PostgreSQL\'in sorguyu çalıştırmak (EXPLAIN ANALYZE) ve planlamak için harcadığı süre. "Sadece plan" sorgunun çalıştırılmadığını gösterir; o zaman görünen süre ilk satırların gelme süresidir.'],
+    ['Dönen satır', 'Sorgunun tamamının ürettiği satır sayısı. Önizleme sadece ilk satırları saklar; kişisel veri gibi görünen sütunlar maskelenir.'],
+    ['Toplam maliyet', 'Planlayıcının tahmini iş birimi. Farklı sorgular arasında değil, aynı raporun sürümleri arasında karşılaştırın.'],
+    ['Buffer', 'Okunan veri sayfaları (her biri 8 kB). "Önbellekten" bellekte hazır bulunan oran; düşükse diskten okuma vardır.'],
+    ['Temp yazılan', 'Sıralama ya da hash belleğe (work_mem) sığmadığı için diske taşan veri. Büyük sorgularda sıfırın üstü incelenmeye değer.'],
+    ['Pay çubuğu', 'Toplam sürenin, alt düğümler hariç o düğümde geçen payı. Turuncu çubuklar %30 ve üzeri: iyileştirmeye oradan başlayın.'],
+    ['Tahmini ve gerçek satır', 'Planlayıcı join yöntemini, belleği ve index kullanımını tahmine göre seçer. "28× fazla tahmin", beklenen satırın gerçekte gelenin 28 katı olduğu anlamına gelir.'],
+    ['Fazla ve az tahmin', 'Fazla tahmin genelde daha ağır ama güvenli plan seçtirir. Az tahmin daha risklidir: çok satır üzerinde nested loop, diske taşan sıralama. 10× altı normaldir.'],
+    ['Sapmayı düzeltmek', 'Çoğunlukla istatistikler eskidir: tabloda ANALYZE çalıştırılmalı (tablo sahibi ya da DBA). İlişkili sütunlar için genişletilmiş istatistik (CREATE STATISTICS) gerekebilir.'],
+    ['Join yöntemleri', 'Hash Join bir tarafın hash tablosunu kurar (büyük, sırasız kümelerde iyi). Nested Loop iç tarafı dış taraftaki her satır için tekrarlar (dış taraf küçükse iyi). Merge Join iki sıralı girdiyi birlikte yürür.'],
+    ['Tarama tipleri', 'Seq Scan tablonun tamamını okur. Index Scan / Index Only Scan index kullanır. Bitmap taramalar önce index üzerinden çok sayıda eşleşen satırı toplar.'],
+    ['Geçmiş ve SQL değişiklikleri', 'Her çalıştırma süresiyle saklanır; renkler SQL sürümlerini ayırır. Her değişikliğin etkisini görmek için SQL değişiklikleri panelinde iki sürümü karşılaştırın.'],
+  ],
+};
+const forcedLang = document.documentElement.getAttribute('data-lang');
+const storedLang = (() => { try { return localStorage.getItem('auspex.report.lang'); } catch { return null; } })();
+const browserLang = (navigator.language || '').toLowerCase().startsWith('tr') ? 'tr' : 'en';
+let lang = forcedLang || storedLang || browserLang;
+if (!I18N[lang]) lang = 'en';
+const t = (key, vars = {}) => String(I18N[lang][key] ?? I18N.en[key] ?? key).replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? '');
+
 const $ = id => document.getElementById(id);
 const h = (tag, attrs = {}, ...kids) => {
   const n = document.createElement(tag);
@@ -191,37 +316,53 @@ const h = (tag, attrs = {}, ...kids) => {
   return n;
 };
 const put = (node, ...kids) => node.replaceChildren(...kids.flat(Infinity).filter(k => k !== null && k !== undefined && k !== false));
-const nf = new Intl.NumberFormat('en-GB');
-const fmt = n => (n === null || n === undefined || Number.isNaN(n)) ? '–' : nf.format(Math.round(n * 100) / 100);
-const fmtMs = ms => !Number.isFinite(ms) ? '–' : ms >= 1000 ? (ms / 1000).toFixed(ms >= 10000 ? 1 : 2) + ' s' : (ms < 10 ? ms.toFixed(2) : Math.round(ms)) + ' ms';
-const fmtWhen = ts => ts ? new Date(ts).toLocaleString('en-GB', { hour12: false }) : '–';
-const blocks = b => (b === null || b === undefined) ? '–' : b >= 128 ? (b * 8 / 1024).toFixed(b * 8 >= 10240 ? 0 : 1) + ' MB' : fmt(b * 8) + ' kB';
-const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const locale = () => (lang === 'tr' ? 'tr-TR' : 'en-GB');
+const fmt = n => (n === null || n === undefined || Number.isNaN(n)) ? '–' : new Intl.NumberFormat(locale()).format(Math.round(n * 100) / 100);
+const fmtMs = ms => !Number.isFinite(ms) ? '–' : ms >= 1000 ? (ms / 1000).toLocaleString(locale(), { maximumFractionDigits: ms >= 10000 ? 1 : 2 }) + ' s' : ms.toLocaleString(locale(), { maximumFractionDigits: ms < 10 ? 2 : 0 }) + ' ms';
+const fmtWhen = ts => ts ? new Date(ts).toLocaleString(locale(), { hour12: false }) : '–';
+const blocks = b => (b === null || b === undefined) ? '–' : b >= 128 ? (b * 8 / 1024).toLocaleString(locale(), { maximumFractionDigits: b * 8 >= 10240 ? 0 : 1 }) + ' MB' : fmt(b * 8) + ' kB';
 
-function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 1500); }
-async function copy(text, what) { try { await navigator.clipboard.writeText(text); toast(what + ' copied'); } catch { toast('Copy failed'); } }
-const tip = $('tip');
-function showTip(ev, lines) { put(tip, lines.map(l => h('div', {}, l))); tip.style.left = Math.min(innerWidth - 240, ev.clientX + 14) + 'px'; tip.style.top = Math.max(8, ev.clientY - 46) + 'px'; tip.classList.add('show'); }
-const hideTip = () => tip.classList.remove('show');
+function toast(msg) { const x = $('toast'); x.textContent = msg; x.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => x.classList.remove('show'), 1500); }
+async function copy(text, what) { try { await navigator.clipboard.writeText(text); toast(t('copied', { w: what })); } catch { toast(t('copyFailed')); } }
+const tipEl = $('tip');
+function showTip(ev, lines) { put(tipEl, lines.map(l => h('div', {}, l))); tipEl.style.left = Math.min(innerWidth - 350, ev.clientX + 14) + 'px'; tipEl.style.top = Math.max(8, ev.clientY - 46) + 'px'; tipEl.classList.add('show'); }
+const hideTip = () => tipEl.classList.remove('show');
+const withTip = (text, key) => h('span', { 'data-tip': '', onpointermove: ev => showTip(ev, [t(key)]), onpointerleave: hideTip }, text);
 
-// --- tiny SQL highlighter (keywords, strings, comments) ---
+const misLabel = n => n.misDir ? t(n.misDir, { f: fmt(n.misFactor) }) : (n.misestimate || null);
+function warnText(w) {
+  const d = w.data;
+  if (!d) return w.text;
+  const on = d.relation ? t('on', { r: d.relation }) : '';
+  switch (w.kind) {
+    case 'seq-scan': return t('w_seq', { rows: fmt(d.rows), on });
+    case 'misestimate': return t('w_mis', { node: d.nodeType, on, est: fmt(d.est), act: fmt(d.actual), f: fmt(d.factor), dir: t(d.dir === 'over' ? 'w_over' : 'w_under'), hint: d.relation ? t('w_misHint') : '' });
+    case 'disk-sort': return t('w_disk', { kb: fmt(d.kb), on });
+    case 'filter': return t('w_filter', { rows: fmt(d.rows), on });
+    case 'nested-seq': return t('w_nested', { loops: fmt(d.loops) });
+    case 'temp': return t('w_temp', { blocks: fmt(d.blocks) });
+    default: return w.text;
+  }
+}
+
+// ---------- tiny SQL highlighter ----------
 const KW = /\b(select|from|where|join|left|right|full|inner|outer|cross|lateral|on|and|or|not|in|exists|group|by|order|having|limit|offset|with|as|union|all|distinct|case|when|then|else|end|is|null|between|like|ilike|asc|desc|over|partition|filter|values|table|using|coalesce|count|sum|avg|min|max|true|false)\b/gi;
 function highlight(sql) {
   const out = [];
-  const re = /(--[^\n]*|\/\*[\s\S]*?\*\/)|('(?:[^']|'')*')|([^'-/]+|[\s\S])/g;
+  const re = /(--[^\n]*|\/\*[\s\S]*?\*\/)|('(?:[^']|'')*')|([^'\-/]+|[\s\S])/g;
   for (const m of sql.matchAll(re)) {
     if (m[1]) out.push(h('span', { class: 'cm' }, m[1]));
     else if (m[2]) out.push(h('span', { class: 'str' }, m[2]));
     else {
-      let last = 0; const t = m[0];
-      for (const k of t.matchAll(KW)) { out.push(t.slice(last, k.index)); out.push(h('span', { class: 'kw' }, k[0])); last = k.index + k[0].length; }
-      out.push(t.slice(last));
+      let last = 0; const s = m[0];
+      for (const k of s.matchAll(KW)) { out.push(s.slice(last, k.index)); out.push(h('span', { class: 'kw' }, k[0])); last = k.index + k[0].length; }
+      out.push(s.slice(last));
     }
   }
   return out;
 }
 
-// --- line diff (LCS) ---
+// ---------- line diff (LCS) ----------
 function diffLines(a, b) {
   const A = a.split('\n'), B = b.split('\n');
   const m = A.length, n = B.length;
@@ -233,156 +374,174 @@ function diffLines(a, b) {
   return out;
 }
 
+const state = { tab: 'plan', sel: null, diffA: null, diffB: null, help: false };
+const TABS = ['plan', 'joins', 'tables', 'preview', 'history', 'sql'];
+
+function renderHelp() {
+  $('helpBtn').classList.toggle('on', state.help);
+  $('helpBtn').setAttribute('aria-expanded', String(state.help));
+  $('helpBtn').title = t('help');
+  put($('help'), state.help ? h('div', { class: 'help' }, h('h2', {}, t('help')),
+    h('div', { class: 'help-grid' }, HELP[lang].map(([title, text]) => h('div', {}, h('h3', {}, title), h('p', {}, text))))) : null);
+}
+
 function render() {
-  if (!R) { put($('view'), h('div', { class: 'empty' }, 'No report data.')); return; }
+  document.documentElement.lang = lang;
+  document.querySelectorAll('#lang button').forEach(b => b.classList.toggle('on', b.dataset.v === lang));
+  document.querySelectorAll('#theme button').forEach(b => { b.textContent = t(b.dataset.v); });
+  renderHelp();
+  put($('foot'), t('generated', { at: fmtWhen(DATA && DATA.generatedAt), v: DATA && DATA.templateVersion }));
+  if (!R) { put($('view'), h('div', { class: 'empty' }, t('noData'))); return; }
   const last = R.last;
   const S = last && last.summary;
   const currentSql = (R.sqlVersions || []).at(-1)?.sql || '';
 
-  // header
   put($('head'),
     h('div', { class: 'crumbs' }, h('span', { class: 'crumb' }, R.db), '›', h('span', { class: 'crumb' }, R.schema), '›', h('span', { class: 'crumb' }, R.category),
-      h('span', { class: 'badge ' + (R.status === 'approved' ? 'b-approved' : 'b-draft') }, R.status === 'approved' ? `approved v${R.approvedVersion ?? '?'}` : 'draft'),
+      h('span', { class: 'badge ' + (R.status === 'approved' ? 'b-approved' : 'b-draft') }, R.status === 'approved' ? t('approved', { v: R.approvedVersion ?? '?' }) : t('draft')),
       R.sqlVersions?.length ? h('span', { class: 'badge b-plan' }, `SQL v${R.sqlVersions.at(-1).version}`) : null),
     h('h1', {}, R.title || R.name),
     R.description ? h('p', { class: 'desc' }, R.description) : null,
-    h('div', { class: 'meta' }, last ? `Last run ${fmtWhen(last.at)} · profile ${last.profile} · PostgreSQL ${last.serverVersion}` : 'Not run yet', ' · ', `${R.runs?.length || 0} runs`));
+    h('div', { class: 'meta' }, last ? t('lastRun', { at: fmtWhen(last.at), p: last.profile, pg: last.serverVersion }) : t('notRun'), ' · ', t('runs', { n: R.runs?.length || 0 })));
 
   if (!last) {
     put($('tiles')); put($('warns')); put($('tabs'));
-    put($('view'), h('div', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', {}, 'SQL')), h('pre', { class: 'sql' }, highlight(currentSql))), h('div', { class: 'empty' }, 'Run the report to see its plan, joins, timings and preview.'));
+    put($('view'), h('div', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', {}, 'SQL')), h('pre', { class: 'sql' }, highlight(currentSql))), h('div', { class: 'empty' }, t('runFirst')));
     return;
   }
 
-  // tiles
   const hit = S.buffers?.sharedHit ?? 0, read = S.buffers?.sharedRead ?? 0;
   const ratio = hit + read ? Math.round(hit / (hit + read) * 1000) / 10 : null;
   const tile = (k, v, d, cls = '') => h('div', { class: 'tile ' + cls }, h('div', { class: 'k' }, k), h('div', { class: 'v' }, v), d ? h('div', { class: 'd' }, d) : null);
   put($('tiles'),
-    S.analyzed ? tile('Execution time', fmtMs(S.executionMs), `planning ${fmtMs(S.planningMs)}`, 'hero') : tile('Plan only', fmtMs(last.previewMs), 'time to first rows (no ANALYZE)', 'hero'),
-    tile(S.analyzed ? 'Rows returned' : 'Rows (estimated)', fmt(S.rows), last.previewTruncated ? `preview shows ${fmt(last.preview.length)}` : null),
-    tile('Total cost', fmt(S.totalCost), 'planner units'),
-    tile('Buffers', S.analyzed ? blocks(hit + read) : '–', ratio !== null ? `${ratio}% from cache` : null),
-    tile('Temp written', S.analyzed ? blocks(S.buffers?.tempWritten ?? 0) : '–', (S.buffers?.tempWritten ?? 0) > 0 ? 'spilled to disk' : 'none'),
-    tile('Joins / tables', `${S.joins.length} / ${S.relations.length}`, S.joins.map(j => j.method.replace(' Join', '')).join(', ') || 'no joins'));
+    S.analyzed ? tile(t('execTime'), fmtMs(S.executionMs), t('planning', { v: fmtMs(S.planningMs) }), 'hero') : tile(t('planOnly'), fmtMs(last.previewMs), t('firstRows'), 'hero'),
+    tile(S.analyzed ? t('rowsReturned') : t('rowsEst'), fmt(S.rows), last.previewTruncated ? t('previewShows', { n: fmt(last.preview.length) }) : null),
+    tile(t('totalCost'), fmt(S.totalCost), t('plannerUnits')),
+    tile(t('buffers'), S.analyzed ? blocks(hit + read) : '–', ratio !== null ? t('fromCache', { p: ratio.toLocaleString(locale()) }) : null),
+    tile(t('tempWritten'), S.analyzed ? blocks(S.buffers?.tempWritten ?? 0) : '–', (S.buffers?.tempWritten ?? 0) > 0 ? t('spilled') : t('none')),
+    tile(t('joinsTables'), `${S.joins.length} / ${S.relations.length}`, S.joins.map(j => j.method.replace(' Join', '')).join(', ') || t('noJoins')));
 
-  // warnings
   put($('warns'), S.warnings.length
-    ? h('ul', { class: 'warns' }, S.warnings.map(w => h('li', { onclick: () => { state.tab = 'plan'; state.sel = w.nodeId; renderTab(); } }, h('span', { class: 'ico' }, '⚠'), h('span', {}, w.text))))
-    : h('div', { class: 'ok-note' }, S.analyzed ? '✓ No plan warnings: no large sequential scans, misestimates, disk sorts or temp spills.' : 'Plan only: run with ANALYZE to check actual rows and timings.'));
+    ? h('ul', { class: 'warns' }, S.warnings.map(w => h('li', { onclick: () => { state.tab = 'plan'; state.sel = w.nodeId; renderTab(); } }, h('span', { class: 'ico' }, '⚠'), h('span', {}, warnText(w)))))
+    : h('div', { class: 'ok-note' }, S.analyzed ? t('noWarnings') : t('planOnlyNote')));
 
-  const tabs = [['plan', 'Plan', S.nodes.length], ['joins', 'Joins', S.joins.length], ['tables', 'Tables', S.relations.length], ['preview', 'Preview', last.preview.length], ['history', 'History', R.runs.length], ['sql', 'SQL', R.sqlVersions.length]];
-  put($('tabs'), tabs.map(([k, label, n]) => h('button', { class: state.tab === k ? 'on' : '', onclick: () => { state.tab = k; renderTab(); } }, label, h('span', { class: 'n' }, n))));
+  const counts = { plan: S.nodes.length, joins: S.joins.length, tables: S.relations.length, preview: last.preview.length, history: R.runs.length, sql: R.sqlVersions.length };
+  const labels = { plan: 'tabPlan', joins: 'tabJoins', tables: 'tabTables', preview: 'tabPreview', history: 'tabHistory', sql: 'tabSql' };
+  put($('tabs'), TABS.map(k => h('button', { 'data-k': k, class: state.tab === k ? 'on' : '', onclick: () => { state.tab = k; renderTab(); } }, t(labels[k]), h('span', { class: 'n' }, counts[k]))));
   renderTab();
 }
 
-const state = { tab: 'plan', sel: null, diffA: null, diffB: null };
 function renderTab() {
-  document.querySelectorAll('#tabs button').forEach((b, i) => b.classList.toggle('on', ['plan', 'joins', 'tables', 'preview', 'history', 'sql'][i] === state.tab));
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.k === state.tab));
   const last = R.last, S = last.summary;
   const view = $('view');
   if (state.tab === 'plan') {
     const rows = [];
-    const unit = S.analyzed ? 'own time' : 'own cost';
     S.nodes.forEach(n => {
       const guide = n.depth ? '  '.repeat(n.depth - 1) + '└ ' : '';
       const share = Math.max(0, Math.min(1, n.share));
+      const mis = misLabel(n);
       rows.push(h('div', { class: 'node' + (state.sel === n.id ? ' sel' : ''), onclick: () => { state.sel = state.sel === n.id ? null : n.id; renderTab(); },
-        onpointermove: ev => showTip(ev, [`${n.type}${n.relation ? ' · ' + n.relation : ''}`, `${unit}: ${S.analyzed ? fmtMs(n.ownMs) : fmt(n.ownCost)} (${(share * 100).toFixed(1)}%)`, `rows est ${fmt(n.estRows)}${n.actualRows !== null ? ' · actual ' + fmt(n.actualRows) : ''}`]), onpointerleave: hideTip },
+        onpointermove: ev => showTip(ev, [`${n.type}${n.relation ? ' · ' + n.relation : ''}`, `${S.analyzed ? t('colOwnTime') : t('colOwnCost')}: ${S.analyzed ? fmtMs(n.ownMs) : fmt(n.ownCost)} (${(share * 100).toLocaleString(locale(), { maximumFractionDigits: 1 })}%)`, `${t('colEst')} ${fmt(n.estRows)}${n.actualRows !== null ? ' · ' + t('colActual') + ' ' + fmt(n.actualRows) : ''}`, mis || '']), onpointerleave: hideTip },
         h('div', { class: 'name' }, h('span', { class: 'guide' }, guide), h('span', { class: 't' }, n.type + (n.joinType && n.isJoin ? ` (${n.joinType})` : '')), n.relation ? h('span', { class: 'r' }, n.relation + (n.alias && n.alias !== n.relation.split('.').pop() ? ' ' + n.alias : '')) : (n.subplan ? h('span', { class: 'r' }, n.subplan) : null)),
-        h('div', { class: 'bar' + (share >= 0.3 ? ' hot' : ''), title: `${(share * 100).toFixed(1)}%` }, h('i', { style: `width:${Math.max(share * 100, 0.5)}%` })),
-        h('div', { class: 'num est-col' }, h('span', { class: 'est' }, fmt(n.estRows)), n.misestimate ? h('div', { class: 'mis' }, n.misestimate) : null),
+        h('div', { class: 'bar' + (share >= 0.3 ? ' hot' : '') }, h('i', { style: `width:${Math.max(share * 100, 0.5)}%` })),
+        h('div', { class: 'num est-col' }, h('span', { class: 'est' }, fmt(n.estRows)), mis ? h('div', { class: 'mis' }, mis) : null),
         h('div', { class: 'num' }, n.actualRows !== null ? fmt(n.actualRows) : '–'),
         h('div', { class: 'num' }, S.analyzed ? fmtMs(n.ownMs) : fmt(n.ownCost))));
       if (state.sel === n.id) {
-        const kv = [['Node', n.type], ['Relation', n.relation], ['Alias', n.alias], ['Index', n.index], ['Join type', n.joinType], ['Condition', n.condition], ['Filter', n.filter],
-          ['Rows removed by filter', n.rowsRemovedByFilter !== null ? fmt(n.rowsRemovedByFilter) : null], ['Sort', n.sort ? `${n.sort.key.join(', ')} · ${n.sort.method || ''} ${n.sort.space ?? ''} kB ${n.sort.spaceType || ''}` : null],
-          ['Cost', `${fmt(n.startupCost)} .. ${fmt(n.totalCost)}`], ['Loops', n.loops], ['Total time (incl. children)', S.analyzed ? fmtMs(n.totalMs) : null], ['Workers', n.workers]];
-        rows.push(h('div', { class: 'detail' }, h('dl', {}, kv.filter(([, v]) => v !== null && v !== undefined && v !== '').map(([k, v]) => [h('dt', {}, k), h('dd', {}, String(v))]))));
+        const kv = [['dNode', n.type], ['dRelation', n.relation], ['dAlias', n.alias], ['dIndex', n.index], ['dJoinType', n.joinType], ['dCond', n.condition], ['dFilter', n.filter],
+          ['dRemoved', n.rowsRemovedByFilter !== null ? fmt(n.rowsRemovedByFilter) : null], ['dSort', n.sort ? `${n.sort.key.join(', ')} · ${n.sort.method || ''} ${n.sort.space ?? ''} kB ${n.sort.spaceType || ''}` : null],
+          ['dCost', `${fmt(n.startupCost)} .. ${fmt(n.totalCost)}`], ['dLoops', n.loops], ['dTotal', S.analyzed ? fmtMs(n.totalMs) : null], ['dWorkers', n.workers]];
+        rows.push(h('div', { class: 'detail' }, h('dl', {}, kv.filter(([, v]) => v !== null && v !== undefined && v !== '').map(([k, v]) => [h('dt', {}, t(k)), h('dd', {}, String(v))]))));
       }
     });
     put(view, h('div', { class: 'panel tree' },
-      h('div', { class: 'panel-h' }, h('h2', {}, 'Plan tree'), h('span', { class: 'hint' }, S.analyzed ? 'bar = share of execution time spent in the node itself · click a node for details' : 'plan only · bar = share of estimated cost')),
-      h('div', { class: 'tree-head' }, h('div', {}, 'Node'), h('div', { class: 'c-bar' }, 'Share'), h('div', { class: 'num c-est' }, 'Est. rows'), h('div', { class: 'num' }, 'Actual rows'), h('div', { class: 'num' }, S.analyzed ? 'Own time' : 'Own cost')),
+      h('div', { class: 'panel-h' }, h('h2', {}, t('planTree')), h('span', { class: 'hint' }, S.analyzed ? t('planHint') : t('planHintCost'))),
+      h('div', { class: 'tree-head' }, h('div', {}, t('colNode')), h('div', { class: 'c-bar' }, withTip(t('colShare'), 'tipShare')), h('div', { class: 'num c-est' }, withTip(t('colEst'), 'tipEst')),
+        h('div', { class: 'num' }, withTip(t('colActual'), 'tipActual')), h('div', { class: 'num' }, withTip(S.analyzed ? t('colOwnTime') : t('colOwnCost'), 'tipOwn'))),
       rows));
   } else if (state.tab === 'joins') {
-    put(view, h('div', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', {}, 'Joins'), h('span', { class: 'hint' }, 'read from the plan, not from the SQL text')),
+    put(view, h('div', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', {}, t('joins')), h('span', { class: 'hint' }, t('joinsHint'))),
       S.joins.length ? h('div', { class: 'tbl-wrap' }, h('table', {},
-        h('thead', {}, h('tr', {}, h('th', {}, 'Method'), h('th', {}, 'Type'), h('th', {}, 'Outer'), h('th', {}, ''), h('th', {}, 'Inner'), h('th', {}, 'Condition'), h('th', { class: 'num' }, 'Rows'), h('th', { class: 'num' }, 'Time'))),
+        h('thead', {}, h('tr', {}, h('th', {}, t('colMethod')), h('th', {}, t('colType')), h('th', {}, t('colOuter')), h('th', {}, ''), h('th', {}, t('colInner')), h('th', {}, t('colCond')), h('th', { class: 'num' }, t('colRows')), h('th', { class: 'num' }, t('colTime')))),
         h('tbody', {}, S.joins.map(j => h('tr', {},
           h('td', {}, j.method), h('td', {}, j.type), h('td', {}, j.outer.map(r => h('span', { class: 'pill' }, r))), h('td', { class: 'arrow' }, '⋈'),
           h('td', {}, j.inner.map(r => h('span', { class: 'pill' }, r))), h('td', { class: 'mono' }, j.condition || '–'),
-          h('td', { class: 'num' }, fmt(j.rows)), h('td', { class: 'num' }, fmtMs(j.ms))))))) : h('div', { class: 'empty' }, 'No joins in this plan.'),
-      S.joins.some(j => j.columnPairs.length) ? h('div', { class: 'panel-b' }, h('div', { class: 'hint', style: 'margin-bottom:6px;color:var(--text-3);font-size:12px' }, 'Column relationships used by this report'),
-        S.joins.flatMap(j => j.columnPairs).map(p => h('div', { class: 'mono', style: 'font-family:var(--mono);font-size:12px;margin:2px 0' }, `${p.left}  =  ${p.right}`))) : null));
+          h('td', { class: 'num' }, fmt(j.rows)), h('td', { class: 'num' }, fmtMs(j.ms))))))) : h('div', { class: 'empty' }, t('noJoinsPlan')),
+      S.joins.some(j => j.columnPairs.length) ? h('div', { class: 'panel-b' }, h('div', { style: 'margin-bottom:6px;color:var(--text-3);font-size:12px' }, t('colPairs')),
+        S.joins.flatMap(j => j.columnPairs).map(p => h('div', { style: 'font-family:var(--mono);font-size:12px;margin:2px 0' }, `${p.left}  =  ${p.right}`))) : null));
   } else if (state.tab === 'tables') {
-    put(view, h('div', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', {}, 'Tables touched')),
+    put(view, h('div', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', {}, t('tablesTouched'))),
       h('div', { class: 'tbl-wrap' }, h('table', {},
-        h('thead', {}, h('tr', {}, h('th', {}, 'Relation'), h('th', {}, 'Alias'), h('th', {}, 'Access'), h('th', {}, 'Indexes'), h('th', { class: 'num' }, 'Est. rows'), h('th', { class: 'num' }, 'Actual rows'), h('th', { class: 'num' }, 'Own time'))),
+        h('thead', {}, h('tr', {}, h('th', {}, t('colRelation')), h('th', {}, t('colAlias')), h('th', {}, t('colAccess')), h('th', {}, t('colIndexes')), h('th', { class: 'num' }, t('colEst')), h('th', { class: 'num' }, t('colActual')), h('th', { class: 'num' }, t('colOwnTime')))),
         h('tbody', {}, S.relations.map(r => h('tr', {}, h('td', { class: 'mono' }, r.relation), h('td', { class: 'mono' }, r.aliases.join(', ')), h('td', {}, r.scans.map(s => h('span', { class: 'pill' }, s))),
           h('td', { class: 'mono' }, r.indexes.join(', ') || '–'), h('td', { class: 'num' }, fmt(r.estRows)), h('td', { class: 'num' }, S.analyzed ? fmt(r.actualRows) : '–'), h('td', { class: 'num' }, S.analyzed ? fmtMs(r.ms) : '–'))))))));
   } else if (state.tab === 'preview') {
     const masked = new Set(last.maskedColumns || []);
-    put(view, h('div', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', {}, 'Result preview'),
-      h('span', { class: 'hint' }, `${fmt(last.preview.length)} rows${last.previewTruncated ? ' (first rows only)' : ''}${masked.size ? ` · masked: ${[...masked].join(', ')}` : ''}`)),
+    put(view, h('div', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', {}, t('preview')),
+      h('span', { class: 'hint' }, t('previewHint', { n: fmt(last.preview.length) }) + (last.previewTruncated ? t('firstOnly') : '') + (masked.size ? t('masked', { c: [...masked].join(', ') }) : ''))),
       last.preview.length ? h('div', { class: 'tbl-wrap' }, h('table', {},
         h('thead', {}, h('tr', {}, last.columns.map(c => h('th', { class: masked.has(c.name) ? 'masked-h' : '', title: c.type }, c.name, masked.has(c.name) ? ' 🔒' : '')))),
-        h('tbody', {}, last.preview.map(row => h('tr', {}, row.map((v, i) => h('td', { class: /int|numeric|double|real|decimal/.test(last.columns[i].type) ? 'num' : '' }, v === null ? h('span', { class: 'null' }, 'null') : String(v)))))))) : h('div', { class: 'empty' }, 'The query returned no rows.')));
+        h('tbody', {}, last.preview.map(row => h('tr', {}, row.map((v, i) => h('td', { class: /int|numeric|double|real|decimal/.test(last.columns[i].type) ? 'num' : '' }, v === null ? h('span', { class: 'null' }, 'null') : String(v)))))))) : h('div', { class: 'empty' }, t('noRows'))));
   } else if (state.tab === 'history') {
     const runs = R.runs;
-    const vals = runs.map(r => Number.isFinite(r.durationMs) ? r.durationMs : null);
-    const max = Math.max(1, ...vals.filter(v => v !== null));
-    const W = 760, H = 180, L = 46, B = 22, pw = (W - L - 8) / Math.max(runs.length, 1), bw = Math.min(24, pw * 0.6);
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-    const S2 = (t, a) => { const e = document.createElementNS('http://www.w3.org/2000/svg', t); for (const [k, v] of Object.entries(a)) e.setAttribute(k, v); return e; };
-    for (let i = 0; i <= 3; i++) { const y = 8 + (H - 8 - B) * i / 3; svg.append(S2('line', { class: 'grid', x1: L, x2: W - 8, y1: y, y2: y })); const t = S2('text', { class: 'axis', x: L - 6, y: y + 4, 'text-anchor': 'end' }); t.textContent = fmtMs(max * (1 - i / 3)); svg.append(t); }
+    const max = Math.max(1, ...runs.map(r => r.durationMs).filter(Number.isFinite));
+    const W = 760, H = 180, L = 52, B = 22, pw = (W - L - 8) / Math.max(runs.length, 1), bw = Math.min(24, pw * 0.6);
+    const NS = 'http://www.w3.org/2000/svg';
+    const S2 = (tag, a) => { const e = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(a)) e.setAttribute(k, v); return e; };
+    const svg = S2('svg', { viewBox: `0 0 ${W} ${H}` });
+    for (let i = 0; i <= 3; i++) { const y = 8 + (H - 8 - B) * i / 3; svg.append(S2('line', { class: 'grid', x1: L, x2: W - 8, y1: y, y2: y })); const tx = S2('text', { class: 'axis', x: L - 6, y: y + 4, 'text-anchor': 'end' }); tx.textContent = fmtMs(max * (1 - i / 3)); svg.append(tx); }
     const versions = [...new Set(runs.map(r => r.version))];
     runs.forEach((r, i) => {
       const x = L + pw * i + (pw - bw) / 2;
-      if (r.durationMs === null || !Number.isFinite(r.durationMs)) { const t = S2('text', { class: 'axis', x: x + bw / 2, y: H - B - 4, 'text-anchor': 'middle' }); t.textContent = '·'; svg.append(t); return; }
+      if (!Number.isFinite(r.durationMs)) { const tx = S2('text', { class: 'axis', x: x + bw / 2, y: H - B - 4, 'text-anchor': 'middle' }); tx.textContent = '·'; svg.append(tx); return; }
       const hgt = Math.max(2, (H - 8 - B) * r.durationMs / max), y = H - B - hgt;
       const color = versions.indexOf(r.version) % 2 ? 'var(--s2)' : 'var(--s1)';
       const rect = S2('path', { d: `M${x},${H - B} V${y + 4} Q${x},${y} ${x + 4},${y} H${x + bw - 4} Q${x + bw},${y} ${x + bw},${y + 4} V${H - B} Z`, fill: color });
-      rect.addEventListener('pointermove', ev => showTip(ev, [fmtWhen(r.at), `v${r.version ?? '?'} · ${fmtMs(r.durationMs)}`, `${fmt(r.rows)} rows · cost ${fmt(r.totalCost)}`, `${r.warnings.length} warnings`]));
+      rect.addEventListener('pointermove', ev => showTip(ev, [fmtWhen(r.at), `v${r.version ?? '?'} · ${fmtMs(r.durationMs)}`, `${fmt(r.rows)} ${t('colRows').toLowerCase()} · ${t('colCost').toLowerCase()} ${fmt(r.totalCost)}`, `${r.warnings.length} ${t('colWarnings').toLowerCase()}`]));
       rect.addEventListener('pointerleave', hideTip);
       svg.append(rect);
     });
     const vs = R.sqlVersions || [];
     if (state.diffA === null && vs.length > 1) { state.diffA = vs.length - 2; state.diffB = vs.length - 1; }
-    const sel = (key) => h('select', { onchange: ev => { state[key] = Number(ev.target.value); renderTab(); } }, vs.map((v, i) => h('option', { value: i, selected: state[key] === i ? true : null }, `v${v.version} · ${fmtWhen(v.savedAt)}${v.note ? ' · ' + v.note : ''}`)));
+    const sel = key => h('select', { onchange: ev => { state[key] = Number(ev.target.value); renderTab(); } }, vs.map((v, i) => h('option', { value: i, selected: state[key] === i ? true : null }, `v${v.version} · ${fmtWhen(v.savedAt)}${v.note ? ' · ' + v.note : ''}`)));
     put(view, h('div', { class: 'panel' },
-      h('div', { class: 'panel-h' }, h('h2', {}, 'Run history'), h('span', { class: 'hint' }, 'duration per run · alternating colors mark SQL versions · last 100 runs')),
-      h('div', { class: 'panel-b hist-chart' }, runs.length ? svg : h('div', { class: 'empty' }, 'No runs yet.')),
+      h('div', { class: 'panel-h' }, h('h2', {}, t('history')), h('span', { class: 'hint' }, t('historyHint'))),
+      h('div', { class: 'panel-b hist-chart' }, runs.length ? svg : h('div', { class: 'empty' }, t('noRuns'))),
       h('div', { class: 'tbl-wrap', style: 'max-height:280px' }, h('table', {},
-        h('thead', {}, h('tr', {}, h('th', {}, 'When'), h('th', {}, 'SQL'), h('th', {}, 'Mode'), h('th', { class: 'num' }, 'Duration'), h('th', { class: 'num' }, 'Rows'), h('th', { class: 'num' }, 'Cost'), h('th', { class: 'num' }, 'Warnings'))),
-        h('tbody', {}, [...runs].reverse().map(r => h('tr', {}, h('td', {}, fmtWhen(r.at)), h('td', {}, `v${r.version ?? '?'}`), h('td', {}, r.analyzed ? 'analyze' : 'plan'),
+        h('thead', {}, h('tr', {}, h('th', {}, t('colWhen')), h('th', {}, t('colSql')), h('th', {}, t('colMode')), h('th', { class: 'num' }, t('colDuration')), h('th', { class: 'num' }, t('colRows')), h('th', { class: 'num' }, t('colCost')), h('th', { class: 'num' }, t('colWarnings')))),
+        h('tbody', {}, [...runs].reverse().map(r => h('tr', {}, h('td', {}, fmtWhen(r.at)), h('td', {}, `v${r.version ?? '?'}`), h('td', {}, r.analyzed ? t('modeAnalyze') : t('modePlan')),
           h('td', { class: 'num' }, fmtMs(r.durationMs)), h('td', { class: 'num' }, fmt(r.rows)), h('td', { class: 'num' }, fmt(r.totalCost)), h('td', { class: 'num' }, r.warnings.length))))))),
       h('div', { class: 'panel', style: 'margin-top:14px' },
-        h('div', { class: 'panel-h' }, h('h2', {}, 'SQL changes'), h('span', { class: 'hint' }, vs.length > 1 ? 'compare two versions' : 'only one version so far')),
+        h('div', { class: 'panel-h' }, h('h2', {}, t('sqlChanges')), h('span', { class: 'hint' }, vs.length > 1 ? t('compare') : t('oneVersion'))),
         vs.length > 1 ? [h('div', { class: 'diff-bar' }, sel('diffA'), h('span', { class: 'arrow' }, '→'), sel('diffB')),
-          h('div', { class: 'diff panel-b' }, diffLines(vs[state.diffA].sql, vs[state.diffB].sql).map(([t, line]) => h('div', { class: t === '+' ? 'add' : t === '-' ? 'del' : '' }, (t === ' ' ? '  ' : t + ' ') + line)))] : null));
+          h('div', { class: 'diff panel-b' }, diffLines(vs[state.diffA].sql, vs[state.diffB].sql).map(([k, line]) => h('div', { class: k === '+' ? 'add' : k === '-' ? 'del' : '' }, (k === ' ' ? '  ' : k + ' ') + line)))] : null));
   } else if (state.tab === 'sql') {
     put(view, h('div', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', {}, `SQL v${R.sqlVersions.at(-1)?.version ?? '?'}`), h('span', { style: 'flex:1' }),
-      h('button', { class: 'btn', onclick: () => copy(R.sqlVersions.at(-1)?.sql || '', 'SQL') }, 'Copy SQL'),
-      h('button', { class: 'btn', onclick: () => copy(JSON.stringify(R.last.plan, null, 2), 'Plan JSON') }, 'Copy plan JSON')),
+      h('button', { class: 'btn', onclick: () => copy(R.sqlVersions.at(-1)?.sql || '', 'SQL') }, t('copySql')),
+      h('button', { class: 'btn', onclick: () => copy(JSON.stringify(R.last.plan, null, 2), 'Plan JSON') }, t('copyPlan'))),
       h('pre', { class: 'sql' }, highlight(R.sqlVersions.at(-1)?.sql || ''))));
   }
 }
 
-// theme
-function applyTheme(t) {
-  if (t === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', t);
-  document.querySelectorAll('#theme button').forEach(b => b.classList.toggle('on', b.dataset.v === t));
-  try { localStorage.setItem('auspex.report.theme', t); } catch {}
+// ---------- theme, language, help ----------
+function applyTheme(v) {
+  if (v === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', v);
+  document.querySelectorAll('#theme button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  try { localStorage.setItem('auspex.report.theme', v); } catch {}
 }
 document.querySelectorAll('#theme button').forEach(b => b.addEventListener('click', () => applyTheme(b.dataset.v)));
-// A host page (the Auspex viewer) may force a theme through <html data-theme>.
+// A host page (the Auspex viewer) may force a theme and language through <html data-theme / data-lang>.
 const forcedTheme = document.documentElement.getAttribute('data-theme');
 let savedTheme = forcedTheme || 'auto';
 if (!forcedTheme) { try { savedTheme = localStorage.getItem('auspex.report.theme') || 'auto'; } catch {} }
 applyTheme(savedTheme);
-put($('foot'), `Generated ${fmtWhen(DATA && DATA.generatedAt)} by Auspex Augur · template v${DATA && DATA.templateVersion}`);
+document.querySelectorAll('#lang button').forEach(b => b.addEventListener('click', () => {
+  lang = b.dataset.v;
+  try { localStorage.setItem('auspex.report.lang', lang); } catch {}
+  render();
+}));
+$('helpBtn').addEventListener('click', () => { state.help = !state.help; renderHelp(); });
 render();
 </script>
 </body>

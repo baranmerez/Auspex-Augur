@@ -329,35 +329,38 @@
       </svg>
       <h1>Auspex Augur</h1>
       <div class="dbsel" id="dbsel">
-        <button id="dbBtn" aria-haspopup="listbox" aria-expanded="false" title="Choose the database for every tab (d)">
+        <button id="dbBtn" aria-haspopup="listbox" aria-expanded="false" data-i18n-title="Choose the database for every tab (d)">
           <svg class="db-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
-          <span class="lbl">Database</span><span class="val" id="dbVal">All databases</span>
+          <span class="lbl" data-i18n="Database">Database</span><span class="val" id="dbVal">All databases</span>
           <svg class="caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
         </button>
         <div class="dbmenu" id="dbMenu" role="listbox"></div>
       </div>
-      <span class="sub">read-only database access log</span>
       <span class="spacer"></span>
-      <span class="live" id="live" title="Live refresh"><span class="dot"></span><span id="liveText">Live off</span></span>
-      <button class="icon-btn" id="liveBtn" title="Toggle live refresh">
+      <span class="live" id="live" data-i18n-title="Live refresh"><span class="dot"></span><span id="liveText">Live off</span></span>
+      <button class="icon-btn" id="liveBtn" data-i18n-title="Toggle live refresh">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12a7 7 0 0 1 12-5l2 2M19 12a7 7 0 0 1-12 5l-2-2"/><path d="M19 4v5h-5M5 20v-5h5"/></svg>
-        <span>Live</span>
+        <span data-i18n="Live">Live</span>
       </button>
-      <button class="icon-btn" id="refreshBtn" title="Refresh (r)">
+      <button class="icon-btn" id="refreshBtn" data-i18n-title="Refresh (r)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
       </button>
+      <div class="seg" id="lang" role="group" aria-label="Language">
+        <button data-v="en">EN</button>
+        <button data-v="tr">TR</button>
+      </div>
       <div class="seg" id="theme" role="group" aria-label="Theme">
-        <button data-v="auto" title="Follow system theme">Auto</button>
-        <button data-v="light">Light</button>
-        <button data-v="dark">Dark</button>
+        <button data-v="auto" data-i18n="Auto" data-i18n-title="Follow system theme">Auto</button>
+        <button data-v="light" data-i18n="Light">Light</button>
+        <button data-v="dark" data-i18n="Dark">Dark</button>
       </div>
     </div>
     <nav class="tabs" id="tabs">
-      <button data-tab="overview" class="on">Overview</button>
-      <button data-tab="ops">Operations<span class="count" id="cOps"></span></button>
-      <button data-tab="tables">Tables<span class="count" id="cTables"></span></button>
-      <button data-tab="reports">Reports<span class="count" id="cReports"></span></button>
-      <button data-tab="profiles">Profiles<span class="count" id="cProfiles"></span></button>
+      <button data-tab="overview" class="on"><span data-i18n="Overview">Overview</span></button>
+      <button data-tab="ops"><span data-i18n="Operations">Operations</span><span class="count" id="cOps"></span></button>
+      <button data-tab="tables"><span data-i18n="Tables">Tables</span><span class="count" id="cTables"></span></button>
+      <button data-tab="reports"><span data-i18n="Reports">Reports</span><span class="count" id="cReports"></span></button>
+      <button data-tab="profiles"><span data-i18n="Profiles">Profiles</span><span class="count" id="cProfiles"></span></button>
       <span class="tab-ink" id="tabInk"></span>
     </nav>
   </div>
@@ -367,20 +370,20 @@
   <div class="toolbar" id="filterRow" data-mode="ops">
     <div class="row when">
       <div class="seg" id="range" role="group" aria-label="Date range">
-        <button data-r="today" class="on">Today</button>
-        <button data-r="yesterday">Yesterday</button>
-        <button data-r="7">7 days</button>
-        <button data-r="30">30 days</button>
-        <button data-r="all">All</button>
+        <button data-r="today" class="on" data-i18n="Today">Today</button>
+        <button data-r="yesterday" data-i18n="Yesterday">Yesterday</button>
+        <button data-r="7" data-i18n="7 days">7 days</button>
+        <button data-r="30" data-i18n="30 days">30 days</button>
+        <button data-r="all" data-i18n="All">All</button>
       </div>
-      <div class="field"><label for="from">From</label><input type="date" id="from"></div>
-      <div class="field"><label for="to">To</label><input type="date" id="to"></div>
+      <div class="field"><label for="from" data-i18n="From">From</label><input type="date" id="from"></div>
+      <div class="field"><label for="to" data-i18n="To">To</label><input type="date" id="to"></div>
     </div>
     <div class="row">
-      <div class="field opsonly"><label for="fSource">Source</label><select id="fSource"><option value="">All</option><option value="mcp">mcp</option><option value="script">script</option><option value="old">legacy entry</option></select></div>
-      <div class="field opsonly"><label for="fTool">Tool</label><select id="fTool"><option value="">All</option></select></div>
-      <div class="field opsonly"><label for="fStatus">Status</label><select id="fStatus"><option value="">All</option><option value="ok">Succeeded</option><option value="err">Error / rejected</option></select></div>
-      <div class="field search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--text-3)"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" id="fText" placeholder="Search SQL, tables, errors, reports" aria-label="Search"><kbd>/</kbd></div>
+      <div class="field opsonly"><label for="fSource" data-i18n="Source">Source</label><select id="fSource"><option value="" data-i18n="All">All</option><option value="mcp">mcp</option><option value="script">script</option><option value="old" data-i18n="legacy entry">legacy entry</option></select></div>
+      <div class="field opsonly"><label for="fTool" data-i18n="Tool">Tool</label><select id="fTool"><option value="">All</option></select></div>
+      <div class="field opsonly"><label for="fStatus" data-i18n="Status">Status</label><select id="fStatus"><option value="" data-i18n="All">All</option><option value="ok" data-i18n="Succeeded">Succeeded</option><option value="err" data-i18n="Error / rejected">Error / rejected</option></select></div>
+      <div class="field search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--text-3)"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" id="fText" placeholder="Search SQL, tables, errors, reports" data-i18n-ph="Search SQL, tables, errors, reports" aria-label="Search"><kbd>/</kbd></div>
     </div>
   </div>
   <div class="chips" id="chips"></div>
@@ -420,8 +423,74 @@ const svg = (tag, attrs = {}, ...kids) => {
 // replaceChildren that skips null/false (DOM would print them as text).
 const put = (node, ...kids) => node.replaceChildren(...kids.flat(Infinity).filter(k => k !== null && k !== undefined && k !== false));
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-const locale = 'en-GB';
-const nf = new Intl.NumberFormat(locale);
+// ---------- i18n (English is the key; Turkish is the translation) ----------
+const TR = {
+  'Database': 'Veritabanı', 'All databases': 'Tüm veritabanları', 'Every profile together': 'Tüm profiller birlikte',
+  'Choose the database for every tab (d)': 'Tüm sekmeler için veritabanını seçin (d)', 'not in the profiles file': 'profil dosyasında yok',
+  '{o} ops · {r} reports': '{o} işlem · {r} rapor',
+  'Live refresh': 'Canlı yenileme', 'Toggle live refresh': 'Canlı yenilemeyi aç/kapat', 'Live': 'Canlı', 'Live off': 'Canlı kapalı', 'Live · 5 s': 'Canlı · 5 sn',
+  'Refresh (r)': 'Yenile (r)', 'Auto': 'Oto', 'Light': 'Açık', 'Dark': 'Koyu', 'Follow system theme': 'Sistem temasını izle',
+  'Overview': 'Genel bakış', 'Operations': 'İşlemler', 'Tables': 'Tablolar', 'Reports': 'Raporlar', 'Profiles': 'Profiller',
+  'Today': 'Bugün', 'Yesterday': 'Dün', '7 days': '7 gün', '30 days': '30 gün', 'All': 'Tümü', 'From': 'Başlangıç', 'To': 'Bitiş',
+  'Source': 'Kaynak', 'Tool': 'Araç', 'Status': 'Durum', 'Succeeded': 'Başarılı', 'Error / rejected': 'Hata / reddedilen', 'legacy entry': 'eski kayıt', 'legacy': 'eski',
+  'Search SQL, tables, errors, reports': 'SQL, tablo, hata ya da rapor ara', 'Search': 'Ara',
+  'Query': 'Sorgu', 'Plan': 'Plan', 'CSV export': 'CSV dışa aktarma', 'Schemas': 'Şemalar', 'Table structure': 'Tablo yapısı',
+  'Remove': 'Kaldır', 'Remove filter': 'Filtreyi kaldır', 'Source: {v}': 'Kaynak: {v}', 'Tool: {v}': 'Araç: {v}', 'Database: {v}': 'Veritabanı: {v}',
+  'Errors only': 'Sadece hatalar', 'Succeeded only': 'Sadece başarılı', 'Clear filters': 'Filtreleri temizle', 'operations': 'işlem',
+  '{n} new operations': '{n} yeni işlem', 'Could not load data: ': 'Veri yüklenemedi: ', '{w} copied': '{w} kopyalandı', 'Copy failed': 'Kopyalanamadı',
+  'Operations over time': 'Zaman içinde işlemler', 'by hour': 'saat bazında', 'by day · click a column to drill into that day': 'gün bazında · güne inmek için sütuna tıklayın',
+  'By database': 'Veritabanına göre', 'click to switch': 'değiştirmek için tıklayın', 'By tool': 'Araca göre', 'click to filter': 'filtrelemek için tıklayın',
+  'Most accessed tables': 'En çok erişilen tablolar', 'click to search': 'aramak için tıklayın', 'Slowest operations': 'En yavaş işlemler', 'click for details': 'ayrıntı için tıklayın',
+  'Recent errors': 'Son hatalar', '{n} errors': '{n} hata', 'no errors': 'hata yok', 'No entries': 'Kayıt yok', 'No data': 'Veri yok', 'Other ({n})': 'Diğer ({n})',
+  'Errors': 'Hata', 'Total': 'Toplam', 'Avg. duration': 'Ort. süre', 'accesses': 'erişim', 'mcp (agent)': 'mcp (agent)',
+  'Operations': 'İşlemler', '{p} profiles · {m} via mcp': '{p} profil · {m} mcp üzerinden', 'Errors / rejected': 'Hata / reddedilen', '{v}% error rate': '%{v} hata oranı',
+  'Average duration': 'Ortalama süre', 'p95 duration': 'p95 süre', 'Longest': 'En uzun', 'Rows returned': 'Dönen satır',
+  'Time': 'Zaman', 'Profile': 'Profil', 'SQL / details': 'SQL / ayrıntı', 'Duration': 'Süre', 'Rows': 'Satır', 'custom timeout': 'özel zaman aşımı',
+  'error': 'hata', 'ok': 'ok', 'Parameters: ': 'Parametreler: ', 'Copy SQL': 'SQL kopyala', 'Entry': 'Kayıt', 'Copy entry as JSON': 'Kaydı JSON kopyala', 'Only {p}': 'Sadece {p}',
+  '{n} operations': '{n} işlem', 'Per page': 'Sayfa başına', 'Download filtered operations as CSV': 'Filtrelenmiş işlemleri CSV indir', 'Download CSV': 'CSV indir',
+  'Download filtered operations as JSON': 'Filtrelenmiş işlemleri JSON indir', 'Download JSON': 'JSON indir', '‹ Previous': '‹ Önceki', 'Next ›': 'Sonraki ›',
+  'No operations match the filters': 'Filtreye uyan işlem yok', 'No entries in this range': 'Bu aralıkta kayıt yok',
+  'Show system catalogs': 'Sistem kataloglarını göster', 'Table / view': 'Tablo / view', 'Accesses': 'Erişim', 'Last access': 'Son erişim',
+  'No table access in this range': 'Bu aralıkta tablo erişimi yok', 'from FROM/JOIN in SQL and table structure calls': 'SQL içindeki FROM/JOIN ve tablo yapısı çağrılarından',
+  'file': 'dosya', 'env': 'ortam', 'no description': 'açıklama yok', 'errors': 'hata', 'avg. duration': 'ort. süre', 'last': 'son',
+  'Server': 'Sunucu', 'User': 'Kullanıcı', 'Timeout': 'Zaman aşımı', '{d} s default · max {m} s': 'varsayılan {d} sn · en fazla {m} sn', 'Password': 'Şifre',
+  'in URL (move it to pgpass)': 'URL içinde (pgpass\'a taşıyın)', 'Show operations': 'İşlemlerini göster', 'Could not read profiles file: ': 'Profil dosyası okunamadı: ',
+  'No profiles configured': 'Tanımlı profil yok', 'Folder: ': 'Klasör: ', 'Profiles file: ': 'Profil dosyası: ', 'Logs: ': 'Loglar: ', 'Exports: ': 'Dışa aktarımlar: ',
+  'just now': 'az önce', '{n} min ago': '{n} dk önce', '{n} h ago': '{n} sa önce', '{n} d ago': '{n} gün önce',
+  'Open in new tab': 'Yeni sekmede aç', 'Select a report': 'Bir rapor seçin', 'Its plan, joins, timings, preview and history open here.': 'Planı, joinleri, süreleri, önizlemesi ve geçmişi burada açılır.',
+  'Loading…': 'Yükleniyor…', 'approved v{v}': 'onaylı v{v}', 'draft': 'taslak', 'approved': 'onaylı', 'execute': 'execute',
+  'Could not read the report library: ': 'Rapor kütüphanesi okunamadı: ', 'No reports for {db} yet': '{db} için henüz rapor yok', 'The report library is empty': 'Rapor kütüphanesi boş',
+  'Ask your agent to save an analysis query with ': 'Agent\'tan bir analiz sorgusunu ', ' and run it with ': ' ile kaydetmesini ve ', '.': ' ile çalıştırmasını isteyin.',
+  'Library: ': 'Kütüphane: ', 'Stage': 'Aşama', 'Drafts': 'Taslaklar', 'Approved': 'Onaylı', 'Execute': 'Execute', 'No reports match.': 'Eşleşen rapor yok.',
+  'plan only': 'sadece plan', '{n} rows': '{n} satır', 'change script': 'değişiklik script\'i', 'not run yet': 'henüz çalıştırılmadı',
+  ' · schema {s}': ' · şema {s}', 'Language': 'Dil', 'Run report': 'Rapor çalıştırma',
+};
+let lang = 'en';
+try { lang = localStorage.getItem('auspex.viewer.lang') || ((navigator.language || '').toLowerCase().startsWith('tr') ? 'tr' : 'en'); } catch {}
+if (lang !== 'tr' && lang !== 'en') lang = 'en';
+const t = (en, vars = {}) => String(lang === 'tr' && TR[en] !== undefined ? TR[en] : en).replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? '');
+let locale = lang === 'tr' ? 'tr-TR' : 'en-GB';
+let nf = new Intl.NumberFormat(locale);
+// Static markup: data-i18n (text), data-i18n-title, data-i18n-ph (placeholder).
+function applyStaticI18n() {
+  document.documentElement.lang = lang;
+  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = t(el.dataset.i18nTitle); });
+  document.querySelectorAll('[data-i18n-ph]').forEach(el => { el.placeholder = t(el.dataset.i18nPh); });
+  document.querySelectorAll('#lang button').forEach(b => b.classList.toggle('on', b.dataset.v === lang));
+}
+function setLang(next) {
+  lang = next === 'tr' ? 'tr' : 'en';
+  locale = lang === 'tr' ? 'tr-TR' : 'en-GB';
+  nf = new Intl.NumberFormat(locale);
+  try { localStorage.setItem('auspex.viewer.lang', lang); } catch {}
+  applyStaticI18n();
+  syncFilterOptions();
+  applyLive();
+  state.reportViewNode = null;
+  render();
+  moveInk();
+}
 const fmt = n => (n === null || n === undefined || Number.isNaN(n)) ? '–' : nf.format(n);
 const compact = n => n >= 10000 ? new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(n) : fmt(n);
 const fmtMs = ms => !Number.isFinite(ms) ? '–'
@@ -434,14 +503,14 @@ const addDays = (s, n) => { const d = new Date(s + 'T00:00:00'); d.setDate(d.get
 const timeOf = ts => ts ? new Date(ts).toLocaleTimeString(locale, { hour12: false }) : '?';
 const dateTimeOf = ts => ts ? new Date(ts).toLocaleString(locale, { hour12: false }) : '?';
 const toolNames = { query: 'Query', explain: 'Plan', export_csv: 'CSV export', search: 'Search',
-  list_schemas: 'Schemas', list_tables: 'Tables', describe_table: 'Table structure', list_profiles: 'Profiles' };
-const toolName = t => toolNames[t] || t || '?';
+  list_schemas: 'Schemas', list_tables: 'Tables', describe_table: 'Table structure', list_profiles: 'Profiles', run_report: 'Run report' };
+const toolName = k => t(toolNames[k] || k || '?');
 const sourceOf = e => e.source || 'old';
-const sourceLabel = s => s === 'old' ? 'legacy entry' : s;
+const sourceLabel = s => s === 'old' ? t('legacy entry') : s;
 
 function summaryOf(e) {
   if (e.sql) return e.sql.replace(/\s+/g, ' ').trim();
-  if (e.tool === 'search' && e.text) return `"${e.text}"` + (e.schema ? ` · schema ${e.schema}` : '');
+  if (e.tool === 'search' && e.text) return `"${e.text}"` + (e.schema ? t(' · schema {s}', { s: e.schema }) : '');
   if (e.tool === 'describe_table' && e.table) return `${e.schema}.${e.table}`;
   if (e.tool === 'list_tables' && e.schema) return e.schema + (e.pattern ? ` · ${e.pattern}` : '');
   return '';
@@ -474,7 +543,7 @@ function toast(msg) {
   toast.timer = setTimeout(() => t.classList.remove('show'), 1600);
 }
 async function copy(text, what) {
-  try { await navigator.clipboard.writeText(text); toast(`${what} copied`); }
+  try { await navigator.clipboard.writeText(text); toast(t('{w} copied', { w: what })); }
   catch { toast('Copy failed'); }
 }
 function download(name, text, type) {
@@ -577,12 +646,12 @@ async function load({ quiet = false } = {}) {
     if (!state.firstLoad) for (const e of state.all) if (!state.seen.has(e._id)) fresh.add(e._id);
     state.seen = new Set(state.all.map(e => e._id));
     state.fresh = fresh;
-    if (fresh.size && quiet) toast(`${fresh.size} new operation${fresh.size === 1 ? '' : 's'}`);
+    if (fresh.size && quiet) toast(t('{n} new operations', { n: fresh.size }));
     state.firstLoad = false;
     syncFilterOptions();
     render();
   } catch (err) {
-    $('v-' + state.tab).replaceChildren(h('div', { class: 'panel' }, h('div', { class: 'error-box', style: 'margin:16px' }, 'Could not load data: ' + err.message)));
+    $('v-' + state.tab).replaceChildren(h('div', { class: 'panel' }, h('div', { class: 'error-box', style: 'margin:16px' }, t('Could not load data: ') + err.message)));
   } finally {
     document.body.classList.remove('loading');
     $('refreshBtn').classList.remove('spin');
@@ -598,7 +667,7 @@ const F = {
 function syncFilterOptions() {
   const fill = (sel, values, labelOf = v => v) => {
     const cur = sel.value;
-    sel.replaceChildren(h('option', { value: '' }, 'All'), ...values.map(v => h('option', { value: v }, labelOf(v))));
+    sel.replaceChildren(h('option', { value: '' }, t('All')), ...values.map(v => h('option', { value: v }, labelOf(v))));
     sel.value = values.includes(cur) ? cur : '';
   };
   fill(F.tool, [...new Set(state.all.map(e => e.tool).filter(Boolean))].sort(), toolName);
@@ -616,26 +685,26 @@ function setDb(db, { render: doRender = true } = {}) {
   state.db = db;
   state.reportSel = null; state.reportDoc = null;
   persist();
-  $('dbVal').textContent = db || 'All databases';
+  $('dbVal').textContent = db || t('All databases');
   closeDbMenu();
   if (doRender) render();
 }
 function renderDbMenu() {
-  $('dbVal').textContent = state.db || 'All databases';
+  $('dbVal').textContent = state.db || t('All databases');
   const info = new Map((state.profiles?.profiles || []).map(p => [p.name, p]));
   const opsBy = groupCount(state.all, e => e.profile);
   const opsCount = name => opsBy.find(g => g.key === name)?.count || 0;
   const repCount = name => (state.reports?.reports || []).filter(r => !name || r.db === name).length;
   const item = (name, title, desc) => h('button', { role: 'option', class: state.db === name ? 'on' : '', 'aria-selected': state.db === name ? 'true' : 'false', onclick: () => setDb(name) },
     h('span', { class: 'chk' }, state.db === name ? '✓' : ''), h('span', { class: 'n' }, title),
-    h('span', { class: 'c' }, `${fmt(name ? opsCount(name) : state.all.length)} ops · ${fmt(repCount(name))} reports`),
+    h('span', { class: 'c' }, t('{o} ops · {r} reports', { o: fmt(name ? opsCount(name) : state.all.length), r: fmt(repCount(name)) })),
     desc ? h('span', { class: 'd' }, desc) : null);
   put($('dbMenu'),
-    item('', 'All databases', 'Every profile together'),
+    item('', t('All databases'), t('Every profile together')),
     h('hr'),
     knownDbs().map(name => {
       const p = info.get(name);
-      return item(name, name, p ? [p.description, `${p.host}:${p.port}/${p.database}`].filter(Boolean).join(' · ') : 'not in the profiles file');
+      return item(name, name, p ? [p.description, `${p.host}:${p.port}/${p.database}`].filter(Boolean).join(' · ') : t('not in the profiles file'));
     }));
 }
 function openDbMenu() { $('dbsel').classList.add('open'); $('dbBtn').setAttribute('aria-expanded', 'true'); renderDbMenu(); }
@@ -649,15 +718,15 @@ function filtered() {
 }
 function renderChips(rows) {
   const chips = [];
-  const add = (label, clear) => chips.push(h('span', { class: 'chip' }, label, h('button', { title: 'Remove', 'aria-label': 'Remove filter', onclick: () => { clear(); render(); } }, '×')));
-  if (state.db) add(`Database: ${state.db}`, () => setDb('', { render: false }));
-  if (F.source.value) add(`Source: ${sourceLabel(F.source.value)}`, () => F.source.value = '');
-  if (F.tool.value) add(`Tool: ${toolName(F.tool.value)}`, () => F.tool.value = '');
-  if (F.status.value) add(F.status.value === 'err' ? 'Errors only' : 'Succeeded only', () => F.status.value = '');
+  const add = (label, clear) => chips.push(h('span', { class: 'chip' }, label, h('button', { title: t('Remove'), 'aria-label': t('Remove filter'), onclick: () => { clear(); render(); } }, '×')));
+  if (state.db) add(t('Database: {v}', { v: state.db }), () => setDb('', { render: false }));
+  if (F.source.value) add(t('Source: {v}', { v: sourceLabel(F.source.value) }), () => F.source.value = '');
+  if (F.tool.value) add(t('Tool: {v}', { v: toolName(F.tool.value) }), () => F.tool.value = '');
+  if (F.status.value) add(F.status.value === 'err' ? t('Errors only') : t('Succeeded only'), () => F.status.value = '');
   if (F.text.value.trim()) add(`“${F.text.value.trim()}”`, () => F.text.value = '');
   const [from, to] = resolveRange();
-  const scope = h('span', { class: 'scope' }, `${from === to ? from : from + ' → ' + to} · ${fmt(rows.length)} / ${fmt(state.all.length)} operations`);
-  if (chips.length > 1) chips.push(h('button', { class: 'clear', onclick: () => { for (const k of ['source', 'tool', 'status', 'text']) F[k].value = ''; render(); } }, 'Clear filters'));
+  const scope = h('span', { class: 'scope' }, `${from === to ? from : from + ' → ' + to} · ${fmt(rows.length)} / ${fmt(state.all.length)} ${t('operations')}`);
+  if (chips.length > 1) chips.push(h('button', { class: 'clear', onclick: () => { for (const k of ['source', 'tool', 'status', 'text']) F[k].value = ''; render(); } }, t('Clear filters')));
   $('chips').replaceChildren(scope, ...chips);
 }
 
@@ -723,7 +792,7 @@ function activityChart(rows) {
   const max = niceMax(Math.max(1, ...buckets.map(total)));
   const pw = (W - L - R) / buckets.length, bw = Math.min(24, Math.max(4, pw * .62));
   const y = v => T + (H - T - B) * (1 - v / max);
-  const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Operations over time' });
+  const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': t('Operations over time') });
   for (let i = 0; i <= 4; i++) {
     const v = max / 4 * i, yy = y(v);
     root.append(svg('line', { class: 'grid-line', x1: L, x2: W - R, y1: yy, y2: yy }));
@@ -749,8 +818,8 @@ function activityChart(rows) {
     const hit = svg('rect', { class: 'hit', x: L + pw * i, y: T, width: pw, height: H - T - B, tabindex: total(b) ? 0 : -1 });
     const show = ev => showTip(ev, b.title, [
       ['var(--series-1)', 'mcp', fmt(b.mcp)], ['var(--series-2)', 'script', fmt(b.script)],
-      ...(b.old ? [['var(--text-3)', 'legacy', fmt(b.old)]] : []),
-      [null, 'Errors', fmt(b.err)], [null, 'Total', fmt(total(b))]]);
+      ...(b.old ? [['var(--text-3)', t('legacy'), fmt(b.old)]] : []),
+      [null, t('Errors'), fmt(b.err)], [null, t('Total'), fmt(total(b))]]);
     hit.addEventListener('pointermove', show); hit.addEventListener('focus', show);
     hit.addEventListener('pointerleave', hideTip); hit.addEventListener('blur', hideTip);
     if (total(b)) hit.style.cursor = 'pointer';
@@ -768,16 +837,16 @@ function activityChart(rows) {
   reveal(wrap);
   return wrap;
 }
-function hbarChart(groups, { labelOf = g => g.key, onPick, unit = 'operations', limit = 8, extra } = {}) {
-  if (!groups.length) return emptyState('No data');
+function hbarChart(groups, { labelOf = g => g.key, onPick, unit = t('operations'), limit = 8, extra } = {}) {
+  if (!groups.length) return emptyState(t('No data'));
   const shown = groups.slice(0, limit), rest = groups.slice(limit);
   if (rest.length) shown.push({ key: '__other', count: rest.reduce((a, g) => a + g.count, 0), errors: rest.reduce((a, g) => a + g.errors, 0), ms: rest.reduce((a, g) => a + g.ms, 0), other: rest.length });
   const max = Math.max(...shown.map(g => g.count));
   const grid = h('div', { class: 'hbars' });
   shown.forEach((g, i) => {
-    const label = g.key === '__other' ? `Other (${g.other})` : labelOf(g);
+    const label = g.key === '__other' ? t('Other ({n})', { n: g.other }) : labelOf(g);
     const fill = h('div', { class: 'fill', style: `width:${Math.max(1, g.count / max * 100)}%; transition-delay:${reduceMotion ? 0 : i * 50}ms` });
-    const tipRows = () => [[null, unit, fmt(g.count)], [null, 'Errors', fmt(g.errors)], [null, 'Avg. duration', fmtMs(g.count ? g.ms / g.count : NaN)], ...(extra ? extra(g) : [])];
+    const tipRows = () => [[null, unit, fmt(g.count)], [null, t('Errors'), fmt(g.errors)], [null, t('Avg. duration'), fmtMs(g.count ? g.ms / g.count : NaN)], ...(extra ? extra(g) : [])];
     const row = h('div', { class: 'row', tabindex: 0, role: 'button', 'aria-label': `${label}: ${g.count} ${unit}`,
       onpointermove: ev => showTip(ev, label, tipRows()), onpointerleave: hideTip,
       onfocus: ev => showTip(ev, label, tipRows()), onblur: hideTip,
@@ -785,7 +854,7 @@ function hbarChart(groups, { labelOf = g => g.key, onPick, unit = 'operations', 
       onkeydown: ev => { if (ev.key === 'Enter' && g.key !== '__other' && onPick) onPick(g.key); } },
       h('div', { class: 'lbl', title: label }, label),
       h('div', { class: 'track' }, fill),
-      h('div', { class: 'val' }, fmt(g.count), g.errors ? h('span', { class: 'sub' }, `${fmt(g.errors)} errors`) : null));
+      h('div', { class: 'val' }, fmt(g.count), g.errors ? h('span', { class: 'sub' }, t('{n} errors', { n: fmt(g.errors) })) : null));
     grid.append(row);
   });
   const wrap = h('div', { class: 'chart' }, grid);
@@ -803,14 +872,14 @@ function renderOverview(rows) {
     const v = h('div', { class: 'v ' + cls });
     return [h('div', { class: 'panel tile' + (hero ? ' hero' : '') }, h('div', { class: 'k' }, k), v, d ? h('div', { class: 'd' }, d) : null), v];
   };
-  const [t1, v1] = tile('Operations', `${fmt(s.profiles)} profiles · ${fmt(rows.filter(e => sourceOf(e) === 'mcp').length)} via mcp`, '', true);
-  const [t2, v2] = tile('Errors / rejected', null, s.errors ? 'bad' : '');
-  const [t3, v3] = tile('Average duration', null);
-  const [t4, v4] = tile('p95 duration', null);
-  const [t5, v5] = tile('Longest', null);
-  const [t6, v6] = tile('Rows returned', null);
+  const [t1, v1] = tile(t('Operations'), t('{p} profiles · {m} via mcp', { p: fmt(s.profiles), m: fmt(rows.filter(e => sourceOf(e) === 'mcp').length) }), '', true);
+  const [t2, v2] = tile(t('Errors / rejected'), null, s.errors ? 'bad' : '');
+  const [t3, v3] = tile(t('Average duration'), null);
+  const [t4, v4] = tile(t('p95 duration'), null);
+  const [t5, v5] = tile(t('Longest'), null);
+  const [t6, v6] = tile(t('Rows returned'), null);
   t2.querySelector('.k').prepend(h('span', { class: 'status-ico', style: `background:${s.errors ? 'var(--critical)' : 'var(--good)'}` }));
-  t2.append(h('div', { class: 'd' }, s.count ? `${s.errRate.toLocaleString(locale, { maximumFractionDigits: 1 })}% error rate` : '—'));
+  t2.append(h('div', { class: 'd' }, s.count ? t('{v}% error rate', { v: s.errRate.toLocaleString(locale, { maximumFractionDigits: 1 }) }) : '—'));
   countUp(v1, s.count); countUp(v2, s.errors); countUp(v3, s.avg, fmtMs); countUp(v4, s.p95, fmtMs); countUp(v5, s.max, fmtMs); countUp(v6, s.rowsOut, compact);
 
   const pick = (sel, val) => { sel.value = val; render(); };
@@ -818,25 +887,25 @@ function renderOverview(rows) {
   const errs = rows.filter(e => e.error).sort((a, b) => String(b.ts).localeCompare(String(a.ts))).slice(0, 6);
   const goOp = e => { state.open = e._id; switchTab('ops'); };
   const miniList = (list, right) => list.length ? h('ul', { class: 'mini' }, list.map(e => h('li', { onclick: () => goOp(e), title: summaryOf(e) },
-    h('span', { class: 'when' }, timeOf(e.ts)), h('span', { class: 'sql' }, summaryOf(e) || toolName(e.tool)), right(e)))) : emptyState('No entries');
+    h('span', { class: 'when' }, timeOf(e.ts)), h('span', { class: 'sql' }, summaryOf(e) || toolName(e.tool)), right(e)))) : emptyState(t('No entries'));
 
   const legend = h('div', { class: 'legend' },
-    h('span', {}, h('i', { style: 'background:var(--series-1)' }), 'mcp (agent)'),
+    h('span', {}, h('i', { style: 'background:var(--series-1)' }), t('mcp (agent)')),
     h('span', {}, h('i', { style: 'background:var(--series-2)' }), 'script'),
-    rows.some(e => !e.source) ? h('span', {}, h('i', { style: 'background:var(--text-3)' }), 'legacy entry') : null);
+    rows.some(e => !e.source) ? h('span', {}, h('i', { style: 'background:var(--text-3)' }), t('legacy entry')) : null);
   const [from, to] = resolveRange();
 
   $('v-overview').replaceChildren(h('div', { class: 'stack' },
     h('div', { class: 'grid g-tiles' }, t1, t2, t3, t4, t5, t6),
     h('div', { class: 'grid g-main' },
-      panel('Operations over time', from === to ? 'by hour' : 'by day · click a column to drill into that day', h('div', {}, activityChart(rows), h('div', { style: 'margin-top:10px' }, legend))),
-      panel('By database', 'click to switch', hbarChart(groupCount(rows, e => e.profile), { onPick: v => setDb(v), limit: 6 }))),
+      panel(t('Operations over time'), from === to ? t('by hour') : t('by day · click a column to drill into that day'), h('div', {}, activityChart(rows), h('div', { style: 'margin-top:10px' }, legend))),
+      panel(t('By database'), t('click to switch'), hbarChart(groupCount(rows, e => e.profile), { onPick: v => setDb(v), limit: 6 }))),
     h('div', { class: 'grid g-2' },
-      panel('By tool', 'click to filter', hbarChart(groupCount(rows, e => e.tool), { labelOf: g => toolName(g.key), onPick: v => pick(F.tool, v), limit: 8 })),
-      panel('Most accessed tables', 'click to search', hbarChart(groupCount(rows, e => relationsOf(e).filter(r => !isSystemRel(r))), { onPick: v => { F.text.value = v; render(); }, unit: 'accesses', limit: 8 }))),
+      panel(t('By tool'), t('click to filter'), hbarChart(groupCount(rows, e => e.tool), { labelOf: g => toolName(g.key), onPick: v => pick(F.tool, v), limit: 8 })),
+      panel(t('Most accessed tables'), t('click to search'), hbarChart(groupCount(rows, e => relationsOf(e).filter(r => !isSystemRel(r))), { onPick: v => { F.text.value = v; render(); }, unit: t('accesses'), limit: 8 }))),
     h('div', { class: 'grid g-2' },
-      panel('Slowest operations', 'click for details', miniList(slow, e => h('span', { class: 'ms' }, fmtMs(e.ms)))),
-      panel('Recent errors', s.errors ? `${fmt(s.errors)} errors` : 'no errors', miniList(errs, e => h('span', { class: 'err', title: e.error }, e.error))))));
+      panel(t('Slowest operations'), t('click for details'), miniList(slow, e => h('span', { class: 'ms' }, fmtMs(e.ms)))),
+      panel(t('Recent errors'), s.errors ? t('{n} errors', { n: fmt(s.errors) }) : t('no errors'), miniList(errs, e => h('span', { class: 'err', title: e.error }, e.error))))));
 }
 
 function sortRows(rows) {
@@ -864,7 +933,7 @@ function renderOps(rows) {
   state.page = Math.min(state.page, pages - 1);
   const slice = sorted.slice(state.page * state.pageSize, (state.page + 1) * state.pageSize);
   const maxMs = Math.max(1, ...rows.map(e => e.ms).filter(Number.isFinite));
-  const cols = [['ts', 'Time'], ['source', 'Source'], ['tool', 'Tool'], ['profile', 'Profile', 'hide-sm'], ['summary', 'SQL / details'], ['ms', 'Duration', 'num'], ['rowCount', 'Rows', 'num hide-sm'], ['status', 'Status']];
+  const cols = [['ts', t('Time')], ['source', t('Source')], ['tool', t('Tool')], ['profile', t('Profile'), 'hide-sm'], ['summary', t('SQL / details')], ['ms', t('Duration'), 'num'], ['rowCount', t('Rows'), 'num hide-sm'], ['status', t('Status')]];
   const head = h('tr', {}, cols.map(([k, label, cls]) => h('th', { class: 'sort ' + (cls || ''), onclick: () => {
     state.sort = { key: k, dir: state.sort.key === k && state.sort.dir === 'desc' ? 'asc' : 'desc' }; state.page = 0; render(); } },
     label, state.sort.key === k ? h('span', { class: 'arr ' + (state.sort.dir === 'desc' ? 'desc' : '') }, '▲') : null)));
@@ -876,40 +945,40 @@ function renderOps(rows) {
       tabindex: 0, onclick: () => { state.open = open ? null : e._id; render(); }, onkeydown: ev => { if (ev.key === 'Enter') { state.open = open ? null : e._id; render(); } } },
       h('td', { class: 'time', title: dateTimeOf(e.ts) }, (state.range === 'today' || state.range === 'yesterday') ? timeOf(e.ts) : dateTimeOf(e.ts)),
       h('td', {}, h('span', { class: 'badge ' + src }, sourceLabel(src))),
-      h('td', {}, toolName(e.tool), e.analyze ? h('span', { class: 'muted' }, ' + analyze') : null, e.timeoutSeconds ? h('span', { class: 'muted', title: 'custom timeout' }, ` · ${e.timeoutSeconds} s`) : null),
+      h('td', {}, toolName(e.tool), e.analyze ? h('span', { class: 'muted' }, ' + analyze') : null, e.timeoutSeconds ? h('span', { class: 'muted', title: t('custom timeout') }, ` · ${e.timeoutSeconds} s`) : null),
       h('td', { class: 'hide-sm' }, e.profile || h('span', { class: 'muted' }, '–')),
       h('td', { class: 'sum', title: summaryOf(e) }, summaryOf(e) || h('span', { class: 'muted' }, '–')),
       h('td', { class: 'num' }, h('span', { class: 'dur' }, Number.isFinite(e.ms) ? h('span', { class: 'bar', style: `width:${Math.max(2, e.ms / maxMs * 60)}px` }) : null, fmtMs(e.ms))),
       h('td', { class: 'num hide-sm' }, Number.isFinite(e.rowCount) ? fmt(e.rowCount) : ''),
-      h('td', {}, e.error ? h('span', { class: 'badge err' }, h('span', { class: 'sw', style: 'background:var(--critical)' }), 'error') : h('span', { class: 'badge ok' }, h('span', { class: 'sw', style: 'background:var(--good)' }), 'ok')));
+      h('td', {}, e.error ? h('span', { class: 'badge err' }, h('span', { class: 'sw', style: 'background:var(--critical)' }), t('error')) : h('span', { class: 'badge ok' }, h('span', { class: 'sw', style: 'background:var(--good)' }), 'ok')));
     body.append(tr);
     if (open) {
       const meta = Object.entries(e).filter(([k, v]) => !['_id', 'sql', 'params', 'error'].includes(k) && v !== null && v !== undefined && v !== '');
       body.append(h('tr', { class: 'd' }, h('td', { colspan: cols.length }, h('div', { class: 'detail' },
         e.sql ? h('pre', {}, e.sql) : null,
         h('div', { class: 'meta' }, meta.map(([k, v]) => h('div', {}, h('span', {}, k + ': '), typeof v === 'object' ? JSON.stringify(v) : (k === 'ts' ? dateTimeOf(v) : k === 'tool' ? toolName(v) : String(v))))),
-        e.params?.length ? h('div', { class: 'meta' }, h('div', {}, h('span', {}, 'Parametreler: '), JSON.stringify(e.params))) : null,
+        e.params?.length ? h('div', { class: 'meta' }, h('div', {}, h('span', {}, t('Parameters: ')), JSON.stringify(e.params))) : null,
         e.error ? h('div', { class: 'error-box' }, e.error) : null,
         h('div', { class: 'acts' },
-          e.sql ? h('button', { class: 'icon-btn', onclick: ev => { ev.stopPropagation(); copy(e.sql, 'SQL'); } }, 'Copy SQL') : null,
-          h('button', { class: 'icon-btn', onclick: ev => { ev.stopPropagation(); const { _id, ...raw } = e; copy(JSON.stringify(raw, null, 2), 'Entry'); } }, 'Copy entry as JSON'),
-          e.profile ? h('button', { class: 'icon-btn', onclick: ev => { ev.stopPropagation(); F.profile.value = e.profile; render(); } }, `Only ${e.profile}`) : null)))));
+          e.sql ? h('button', { class: 'icon-btn', onclick: ev => { ev.stopPropagation(); copy(e.sql, 'SQL'); } }, t('Copy SQL')) : null,
+          h('button', { class: 'icon-btn', onclick: ev => { ev.stopPropagation(); const { _id, ...raw } = e; copy(JSON.stringify(raw, null, 2), t('Entry')); } }, t('Copy entry as JSON')),
+          e.profile ? h('button', { class: 'icon-btn', onclick: ev => { ev.stopPropagation(); F.profile.value = e.profile; render(); } }, t('Only {p}', { p: e.profile })) : null)))));
     }
   });
   state.animateRows = false;
   const tools = h('div', { class: 'tbl-tools' },
-    h('span', { class: 'muted' }, `${fmt(rows.length)} operations`), h('span', { class: 'grow' }),
-    h('div', { class: 'field' }, h('label', {}, 'Per page'), (() => { const s = h('select', { onchange: ev => { state.pageSize = Number(ev.target.value); state.page = 0; persist(); render(); } },
+    h('span', { class: 'muted' }, t('{n} operations', { n: fmt(rows.length) })), h('span', { class: 'grow' }),
+    h('div', { class: 'field' }, h('label', {}, t('Per page')), (() => { const s = h('select', { onchange: ev => { state.pageSize = Number(ev.target.value); state.page = 0; persist(); render(); } },
       [25, 50, 100, 250].map(n => h('option', { value: n, selected: n === state.pageSize }, n))); return s; })()),
-    h('button', { class: 'icon-btn', onclick: () => exportRows(sortRows(rows), 'csv'), title: 'Download filtered operations as CSV' }, 'Download CSV'),
-    h('button', { class: 'icon-btn', onclick: () => exportRows(sortRows(rows), 'json'), title: 'Download filtered operations as JSON' }, 'Download JSON'));
+    h('button', { class: 'icon-btn', onclick: () => exportRows(sortRows(rows), 'csv'), title: t('Download filtered operations as CSV') }, t('Download CSV')),
+    h('button', { class: 'icon-btn', onclick: () => exportRows(sortRows(rows), 'json'), title: t('Download filtered operations as JSON') }, t('Download JSON')));
   const pager = h('div', { class: 'pager' },
     h('span', {}, `${fmt(state.page * state.pageSize + (slice.length ? 1 : 0))}–${fmt(state.page * state.pageSize + slice.length)} / ${fmt(rows.length)}`), h('span', { class: 'grow' }),
-    h('button', { class: 'icon-btn', disabled: state.page === 0 ? true : null, onclick: () => { state.page--; state.animateRows = true; render(); } }, '‹ Previous'),
+    h('button', { class: 'icon-btn', disabled: state.page === 0 ? true : null, onclick: () => { state.page--; state.animateRows = true; render(); } }, t('‹ Previous')),
     h('span', {}, `${state.page + 1} / ${pages}`),
-    h('button', { class: 'icon-btn', disabled: state.page >= pages - 1 ? true : null, onclick: () => { state.page++; state.animateRows = true; render(); } }, 'Next ›'));
+    h('button', { class: 'icon-btn', disabled: state.page >= pages - 1 ? true : null, onclick: () => { state.page++; state.animateRows = true; render(); } }, t('Next ›')));
   $('v-ops').replaceChildren(h('div', { class: 'panel' }, tools,
-    rows.length ? h('div', { class: 'tbl-wrap' }, h('table', {}, h('thead', {}, head), body)) : emptyState(state.all.length ? 'No operations match the filters' : 'No entries in this range'),
+    rows.length ? h('div', { class: 'tbl-wrap' }, h('table', {}, h('thead', {}, head), body)) : emptyState(state.all.length ? t('No operations match the filters') : t('No entries in this range')),
     rows.length > state.pageSize ? pager : null));
 }
 
@@ -918,15 +987,15 @@ function renderTables(rows) {
   const byRel = new Map();
   for (const e of rows) for (const r of relationsOf(e)) { const s = byRel.get(r) || new Set(); if (e.profile) s.add(e.profile); byRel.set(r, s); }
   const toggle = h('label', { class: 'muted', style: 'font-size:12px;display:inline-flex;gap:6px;align-items:center;cursor:pointer' },
-    h('input', { type: 'checkbox', checked: state.systemTables ? true : null, onchange: ev => { state.systemTables = ev.target.checked; persist(); render(); } }), 'Show system catalogs');
+    h('input', { type: 'checkbox', checked: state.systemTables ? true : null, onchange: ev => { state.systemTables = ev.target.checked; persist(); render(); } }), t('Show system catalogs'));
   const table = groups.length ? h('div', { class: 'tbl-wrap' }, h('table', {},
-    h('thead', {}, h('tr', {}, h('th', {}, 'Table / view'), h('th', { class: 'num' }, 'Accesses'), h('th', { class: 'num' }, 'Errors'), h('th', { class: 'num hide-sm' }, 'Avg. duration'), h('th', { class: 'hide-sm' }, 'Profiles'), h('th', {}, 'Last access'))),
+    h('thead', {}, h('tr', {}, h('th', {}, t('Table / view')), h('th', { class: 'num' }, t('Accesses')), h('th', { class: 'num' }, t('Errors')), h('th', { class: 'num hide-sm' }, t('Avg. duration')), h('th', { class: 'hide-sm' }, t('Profiles')), h('th', {}, t('Last access')))),
     h('tbody', {}, groups.map(g => h('tr', { class: 'r', onclick: () => { F.text.value = g.key; switchTab('ops'); } },
       h('td', { class: 'sum' }, g.key), h('td', { class: 'num' }, fmt(g.count)), h('td', { class: 'num' }, g.errors ? fmt(g.errors) : '–'),
       h('td', { class: 'num hide-sm' }, fmtMs(g.ms / g.count)), h('td', { class: 'hide-sm' }, [...(byRel.get(g.key) || [])].join(', ')),
-      h('td', { class: 'time' }, dateTimeOf(g.last))))))) : emptyState('No table access in this range');
+      h('td', { class: 'time' }, dateTimeOf(g.last))))))) : emptyState(t('No table access in this range'));
   $('v-tables').replaceChildren(h('div', { class: 'stack' },
-    panel('Most accessed tables', 'from FROM/JOIN in SQL and table structure calls', hbarChart(groups, { onPick: v => { F.text.value = v; switchTab('ops'); }, unit: 'accesses', limit: 12 }), toggle),
+    panel(t('Most accessed tables'), t('from FROM/JOIN in SQL and table structure calls'), hbarChart(groups, { onPick: v => { F.text.value = v; switchTab('ops'); }, unit: t('accesses'), limit: 12 }), toggle),
     h('div', { class: 'panel' }, table)));
   $('cTables').textContent = groups.length ? fmt(groups.length) : '';
 }
@@ -938,30 +1007,30 @@ function renderProfiles(rows) {
   const cards = (data.profiles || []).map((p, i) => {
     const g = per.get(p.name);
     return h('div', { class: 'panel pcard', style: reduceMotion ? null : `animation-delay:${i * 60}ms` },
-      h('h3', {}, p.name, h('span', { class: 'badge ' + (p.source === 'file' ? 'mcp' : 'script') }, p.source === 'file' ? 'file' : 'env')),
-      h('div', { class: 'desc' }, p.description || h('span', { class: 'muted' }, 'no description')),
+      h('h3', {}, p.name, h('span', { class: 'badge ' + (p.source === 'file' ? 'mcp' : 'script') }, p.source === 'file' ? t('file') : t('env'))),
+      h('div', { class: 'desc' }, p.description || h('span', { class: 'muted' }, t('no description'))),
       h('div', { class: 'stats' },
-        h('div', {}, h('b', {}, fmt(g?.count || 0)), h('span', {}, 'operations')),
-        h('div', {}, h('b', { style: g?.errors ? 'color:var(--critical)' : null }, fmt(g?.errors || 0)), h('span', {}, 'errors')),
-        h('div', {}, h('b', {}, g ? fmtMs(g.ms / g.count) : '–'), h('span', {}, 'avg. duration')),
-        h('div', {}, h('b', { style: 'font-size:13px' }, g?.last ? timeOf(g.last) : '–'), h('span', {}, 'last'))),
+        h('div', {}, h('b', {}, fmt(g?.count || 0)), h('span', {}, t('operations'))),
+        h('div', {}, h('b', { style: g?.errors ? 'color:var(--critical)' : null }, fmt(g?.errors || 0)), h('span', {}, t('errors'))),
+        h('div', {}, h('b', {}, g ? fmtMs(g.ms / g.count) : '–'), h('span', {}, t('avg. duration'))),
+        h('div', {}, h('b', { style: 'font-size:13px' }, g?.last ? timeOf(g.last) : '–'), h('span', {}, t('last')))),
       h('dl', {},
-        h('dt', {}, 'Server'), h('dd', {}, `${p.host}:${p.port}`),
-        h('dt', {}, 'Database'), h('dd', {}, p.database),
-        h('dt', {}, 'User'), h('dd', {}, p.user),
-        h('dt', {}, 'Timeout'), h('dd', {}, `${data.defaultTimeoutSeconds} s default · max ${p.maxTimeoutSeconds} s`),
-        h('dt', {}, 'Password'), h('dd', {}, p.passwordInString ? 'in URL (move it to pgpass)' : 'pgpass')),
+        h('dt', {}, t('Server')), h('dd', {}, `${p.host}:${p.port}`),
+        h('dt', {}, t('Database')), h('dd', {}, p.database),
+        h('dt', {}, t('User')), h('dd', {}, p.user),
+        h('dt', {}, t('Timeout')), h('dd', {}, t('{d} s default · max {m} s', { d: data.defaultTimeoutSeconds, m: p.maxTimeoutSeconds })),
+        h('dt', {}, t('Password')), h('dd', {}, p.passwordInString ? t('in URL (move it to pgpass)') : 'pgpass')),
       h('div', { style: 'margin-top:12px;display:flex;gap:8px' },
-        h('button', { class: 'icon-btn', onclick: () => { F.profile.value = p.name; switchTab('ops'); } }, 'Show operations')));
+        h('button', { class: 'icon-btn', onclick: () => { F.profile.value = p.name; switchTab('ops'); } }, t('Show operations'))));
   });
   put($('v-profiles'),
-    data.error ? h('div', { class: 'error-box' }, 'Could not read profiles file: ' + data.error) : null,
-    cards.length ? h('div', { class: 'profiles' }, cards) : h('div', { class: 'panel' }, emptyState('No profiles configured')),
+    data.error ? h('div', { class: 'error-box' }, t('Could not read profiles file: ') + data.error) : null,
+    cards.length ? h('div', { class: 'profiles' }, cards) : h('div', { class: 'panel' }, emptyState(t('No profiles configured'))),
     h('div', { class: 'paths' },
-      h('div', {}, 'Folder: ' + (data.home || '')),
-      data.profilesFile ? h('div', {}, 'Profiles file: ' + data.profilesFile) : null,
-      data.logDir ? h('div', {}, 'Logs: ' + data.logDir) : null,
-      data.exportDir ? h('div', {}, 'Exports: ' + data.exportDir) : null));
+      h('div', {}, t('Folder: ') + (data.home || '')),
+      data.profilesFile ? h('div', {}, t('Profiles file: ') + data.profilesFile) : null,
+      data.logDir ? h('div', {}, t('Logs: ') + data.logDir) : null,
+      data.exportDir ? h('div', {}, t('Exports: ') + data.exportDir) : null));
   $('cProfiles').textContent = cards.length ? fmt(cards.length) : '';
 }
 
@@ -970,10 +1039,10 @@ const repKey = r => [r.stage, r.db, r.schema, r.category, r.name].join('|');
 function ago(ts) {
   if (!ts) return '';
   const s = (Date.now() - new Date(ts).getTime()) / 1000;
-  if (s < 60) return 'just now';
-  if (s < 3600) return `${Math.round(s / 60)} min ago`;
-  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
-  return `${Math.round(s / 86400)} d ago`;
+  if (s < 60) return t('just now');
+  if (s < 3600) return t('{n} min ago', { n: Math.round(s / 60) });
+  if (s < 86400) return t('{n} h ago', { n: Math.round(s / 3600) });
+  return t('{n} d ago', { n: Math.round(s / 86400) });
 }
 async function loadReport(r) {
   const key = repKey(r);
@@ -992,26 +1061,26 @@ async function loadReport(r) {
 }
 // Report HTML follows the viewer theme when the viewer forces one.
 function themedReport(html) {
-  const t = state.theme && state.theme !== 'auto' ? state.theme : null;
-  return t ? html.replace('<html lang="en">', `<html lang="en" data-theme="${t}">`) : html;
+  const th = state.theme && state.theme !== 'auto' ? state.theme : null;
+  return html.replace('<html lang="en">', `<html lang="${lang}" data-lang="${lang}"${th ? ` data-theme="${th}"` : ''}>`);
 }
 function reportView(r) {
-  if (!r) return h('div', { class: 'panel rep-view' }, h('div', { class: 'rep-empty' }, h('b', {}, 'Select a report'), h('div', {}, 'Its plan, joins, timings, preview and history open here.')));
-  if (state.reportViewNode && state.reportViewKey === repKey(r) && state.reportViewTheme === state.theme) return state.reportViewNode;
+  if (!r) return h('div', { class: 'panel rep-view' }, h('div', { class: 'rep-empty' }, h('b', {}, t('Select a report')), h('div', {}, t('Its plan, joins, timings, preview and history open here.'))));
+  if (state.reportViewNode && state.reportViewKey === repKey(r) && state.reportViewTheme === state.theme + lang) return state.reportViewNode;
   const doc = state.reportDoc && state.reportDoc.key === repKey(r) ? state.reportDoc : null;
-  const body = !doc || doc.loading ? h('div', { class: 'rep-empty' }, 'Loading…')
+  const body = !doc || doc.loading ? h('div', { class: 'rep-empty' }, t('Loading…'))
     : doc.error ? h('div', { class: 'error-box', style: 'margin:16px' }, doc.error)
     : doc.kind === 'html' ? (() => { const f = h('iframe', { sandbox: 'allow-scripts allow-popups allow-modals', title: r.title, loading: 'eager' }); f.srcdoc = themedReport(doc.content); return f; })()
     : h('pre', {}, doc.content);
   const actions = [];
-  if (doc && doc.content && doc.kind === 'sql') actions.push(h('button', { class: 'icon-btn', onclick: () => copy(doc.content, 'SQL') }, 'Copy SQL'));
-  if (doc && doc.kind === 'html' && !tauriCore) actions.push(h('button', { class: 'icon-btn', onclick: () => window.open(URL.createObjectURL(new Blob([doc.content], { type: 'text/html' })), '_blank') }, 'Open in new tab'));
+  if (doc && doc.content && doc.kind === 'sql') actions.push(h('button', { class: 'icon-btn', onclick: () => copy(doc.content, 'SQL') }, t('Copy SQL')));
+  if (doc && doc.kind === 'html' && !tauriCore) actions.push(h('button', { class: 'icon-btn', onclick: () => window.open(URL.createObjectURL(new Blob([doc.content], { type: 'text/html' })), '_blank') }, t('Open in new tab')));
   // HTML reports carry their own header; the bar only adds actions then.
   const heading = doc && doc.kind === 'html' ? h('span', { class: 'muted', style: 'font-size:12px' }, `${r.db} › ${r.schema} › ${r.category} › ${r.name}`) : h('div', {},
     h('div', { class: 'crumbs' }, h('span', { class: 'crumb' }, r.db), '›', h('span', { class: 'crumb' }, r.schema), '›', h('span', { class: 'crumb' }, r.category)),
-    h('div', { style: 'font-weight:650;margin-top:3px' }, r.title, ' ', h('span', { class: 'badge ' + r.stage }, r.stage === 'approved' ? `approved v${r.approvedVersion ?? '?'}` : r.stage)));
+    h('div', { style: 'font-weight:650;margin-top:3px' }, r.title, ' ', h('span', { class: 'badge ' + r.stage }, r.stage === 'approved' ? t('approved v{v}', { v: r.approvedVersion ?? '?' }) : t(r.stage))));
   const node = h('div', { class: 'panel rep-view' }, h('div', { class: 'bar' }, heading, h('span', { class: 'grow' }), actions), body);
-  if (doc && !doc.loading) { state.reportViewNode = node; state.reportViewKey = repKey(r); state.reportViewTheme = state.theme; }
+  if (doc && !doc.loading) { state.reportViewNode = node; state.reportViewKey = repKey(r); state.reportViewTheme = state.theme + lang; }
   return node;
 }
 function renderReports() {
@@ -1019,20 +1088,20 @@ function renderReports() {
   const all = (data?.reports || []).filter(r => !state.db || r.db === state.db);
   $('cReports').textContent = all.length ? fmt(all.length) : '';
   if (state.tab !== 'reports') return;
-  if (data?.error) { put($('v-reports'), h('div', { class: 'panel' }, h('div', { class: 'error-box', style: 'margin:16px' }, 'Could not read the report library: ' + data.error))); return; }
+  if (data?.error) { put($('v-reports'), h('div', { class: 'panel' }, h('div', { class: 'error-box', style: 'margin:16px' }, t('Could not read the report library: ') + data.error))); return; }
   if (!all.length) {
     put($('v-reports'), h('div', { class: 'panel' }, h('div', { class: 'rep-empty' },
-      h('b', {}, state.db ? `No reports for ${state.db} yet` : 'The report library is empty'),
-      h('p', {}, 'Ask your agent to save an analysis query with ', h('code', {}, 'save_report'), ' and run it with ', h('code', {}, 'run_report'), '.'),
-      h('p', {}, 'Library: ', h('code', {}, data?.libraryDir || '~/.auspex/library')))));
+      h('b', {}, state.db ? t('No reports for {db} yet', { db: state.db }) : t('The report library is empty')),
+      h('p', {}, t('Ask your agent to save an analysis query with '), h('code', {}, 'save_report'), t(' and run it with '), h('code', {}, 'run_report'), t('.')),
+      h('p', {}, t('Library: '), h('code', {}, data?.libraryDir || '~/.auspex/library')))));
     return;
   }
   const q = F.text.value.trim().toLowerCase();
   const list = all.filter(r => (state.stageFilter === 'all' || r.stage === state.stageFilter)
     && (!q || [r.title, r.name, r.category, r.schema, r.db, r.description].join(' ').toLowerCase().includes(q)));
   const count = st => all.filter(r => st === 'all' || r.stage === st).length;
-  const stagebar = h('div', { class: 'stagebar' }, h('div', { class: 'seg', role: 'group', 'aria-label': 'Stage' },
-    [['all', 'All'], ['draft', 'Drafts'], ['approved', 'Approved'], ['execute', 'Execute']].map(([k, label]) =>
+  const stagebar = h('div', { class: 'stagebar' }, h('div', { class: 'seg', role: 'group', 'aria-label': t('Stage') },
+    [['all', t('All')], ['draft', t('Drafts')], ['approved', t('Approved')], ['execute', t('Execute')]].map(([k, label]) =>
       h('button', { class: state.stageFilter === k ? 'on' : '', onclick: () => { state.stageFilter = k; persist(); renderReports(); } }, `${label} ${count(k)}`))));
   const groups = new Map();
   for (const r of list) {
@@ -1046,13 +1115,13 @@ function renderReports() {
       groups.get(key).sort((a, b) => String(a.title).localeCompare(String(b.title), 'tr')).map(r => {
         const lr = r.lastRun;
         return h('button', { class: 'rep-item' + (state.reportSel === repKey(r) ? ' on' : ''), onclick: () => loadReport(r), title: r.description || r.title },
-          h('div', { class: 't' }, r.title, h('span', { class: 'badge ' + r.stage }, r.stage)),
+          h('div', { class: 't' }, r.title, h('span', { class: 'badge ' + r.stage }, t(r.stage))),
           h('div', { class: 's' },
             r.versions ? h('span', {}, `v${r.versions}`) : null,
-            lr ? h('span', {}, `${lr.analyzed === false ? 'plan only' : fmtMs(lr.durationMs)} · ${fmt(lr.rows)} rows`) : (r.stage === 'execute' ? h('span', {}, 'change script') : h('span', {}, 'not run yet')),
+            lr ? h('span', {}, `${lr.analyzed === false ? t('plan only') : fmtMs(lr.durationMs)} · ${t('{n} rows', { n: fmt(lr.rows) })}`) : (r.stage === 'execute' ? h('span', {}, t('change script')) : h('span', {}, t('not run yet'))),
             lr?.warnings ? h('span', { style: 'color:var(--warn-ink)' }, `⚠ ${lr.warnings}`) : null,
             h('span', {}, ago(lr?.at || r.updatedAt))));
-      })]) : h('div', { class: 'rep-empty' }, 'No reports match.'));
+      })]) : h('div', { class: 'rep-empty' }, t('No reports match.')));
   const selected = all.find(r => repKey(r) === state.reportSel);
   if (selected && (!state.reportDoc || state.reportDoc.key !== state.reportSel)) { loadReport(selected); return; }
   put($('v-reports'), h('div', { class: 'rep' }, left, reportView(selected)));
@@ -1114,7 +1183,7 @@ document.querySelectorAll('#theme button').forEach(b => b.addEventListener('clic
 let liveTimer = null;
 function applyLive() {
   $('live').classList.toggle('on', state.live);
-  $('liveText').textContent = state.live ? 'Live · 5 s' : 'Live off';
+  $('liveText').textContent = state.live ? t('Live · 5 s') : t('Live off');
   clearInterval(liveTimer);
   if (state.live) liveTimer = setInterval(() => { if (!document.hidden) load({ quiet: true }); }, 5000);
 }
@@ -1133,6 +1202,8 @@ addEventListener('resize', moveInk);
 addEventListener('scroll', hideTip, { passive: true });
 
 // ---------- start ----------
+document.querySelectorAll('#lang button').forEach(b => b.addEventListener('click', () => setLang(b.dataset.v)));
+applyStaticI18n();
 applyTheme();
 syncRangeButtons();
 applyLive();
