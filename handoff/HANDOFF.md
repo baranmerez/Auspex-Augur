@@ -34,7 +34,9 @@ auspex/
 │   ├── config.js       ~/.auspex, profiles.json, environment variables
 │   ├── auditLog.js     Daily JSONL audit log
 │   ├── viewer.js       Local viewer server (127.0.0.1:4719)
-│   └── viewer.html     Viewer UI (shared by browser and desktop app)
+│   ├── viewer.html     Viewer UI (shared by browser and desktop app)
+│   ├── reports/        Report library: library, plan summary, masking, HTML template
+│   └── memory/         Schema memory: store (tables, notes, relations, view) and plan usage
 ├── desktop/            Tauri 2 desktop app (Rust)
 ├── scripts/            SQL: local test setup, role creation, schema grants
 ├── tests/              Unit tests (*.test.js) + local integration test
@@ -53,6 +55,14 @@ auspex/
 | `query` | One SELECT/WITH/VALUES/TABLE statement; max 500 rows; `$1..$n` params; `timeoutSeconds` |
 | `explain` | Estimated plan; `analyze: true` for real timings and buffers |
 | `export_csv` | Writes the result to CSV under `~/.auspex/exports`, returns only path and row count |
+| `save_report`, `run_report`, `approve_report`, `list_reports`, `render_reports` | Report library: versioned drafts, read-only runs with plan summary and masked preview, approval after explicit user consent |
+| `save_execute_script` | Writes a change script into `EXECUTE/`; never executed by Auspex |
+| `table_knowledge` | Answers from the schema memory without database access |
+| `remember` | Adds, confirms or archives a note (rule, observation, inference) |
+
+`describe_table` also records the table in the schema memory and reports
+changes since the last time; `run_report` and `explain` record the tables and
+columns their plans used. The memory never crawls the catalog on its own.
 
 **A profile is mandatory.** There is no default database. Every tool requires
 a profile name, and the server instructions tell the model to ask the user which
@@ -88,6 +98,8 @@ If `profiles.json` contains a password, Auspex refuses to start.
 ├── profiles.json   Database profiles
 ├── logs\           YYYY-MM-DD.jsonl audit log (file name is the UTC day)
 ├── exports\        CSV exports
+├── library\        Report library: _drafts\, SELECT\, EXECUTE\ by db\schema\category
+├── memory\         Schema memory per profile: tables\, notes.json, changelog.jsonl, graph.json
 └── analyses\       Optional: analysis output written by agents
 ```
 
@@ -136,9 +148,15 @@ has a hole in that schema.
 - **Desktop:** `desktop/src-tauri/target/release/auspex-augur.exe` (start it
   from Explorer). Tray menu: Open Auspex, Show log folder, Start with Windows,
   Quit. Closing the window minimizes to the tray.
+- Header: database switcher (applies to every tab), EN/TR, theme, and a badge
+  for unseen schema changes.
 - Tabs: Overview (stat tiles, activity chart, by profile/tool/table, slowest
   operations, recent errors), Operations (sort, paging, details, copy,
-  CSV/JSON download), Tables (accesses extracted from SQL), Profiles.
+  CSV/JSON download), Tables (accesses extracted from SQL), Reports (library
+  tree and report HTML), Schema (relation graph, ER diagram, notes inspector,
+  change timeline), Profiles.
+- The Schema tab reads `graph.json`, which the memory module rebuilds after
+  every change, so the viewer and the Rust app contain no relation logic.
 - Binds to 127.0.0.1 only, GET only, foreign Host headers get 403; never
   connects to a database.
 
@@ -150,8 +168,9 @@ Desktop build: Rust (MSVC toolchain), VS 2022 C++ Build Tools, WebView2;
 
 | Command | Scope | Last result |
 |---|---|---|
-| `npm test` | SQL guard, profiles, config, timeouts, explain, audit (no database) | 81/81 |
-| `npm run test:local` | Local PG16 + `auspex_test` schema: writes rejected by the database, unprivileged table, CTE, stacked statements, timeout, EXPLAIN ANALYZE, CSV, search | 22/22 |
+| `npm test` | SQL guard, profiles, config, timeouts, explain, audit, reports, schema memory (no database) | 103/103 |
+| `npm run test:local` | Local PG16 + `auspex_test` schema: writes rejected by the database, unprivileged table, CTE, stacked statements, timeout, EXPLAIN ANALYZE, CSV, search, reports, memory | 26/26 |
+| `cargo test` (in `desktop/src-tauri`) | Path validation of the desktop API | 1/1 |
 
 Local test setup: `scripts/local-test-setup.sql` (+ a `local` profile and a
 pgpass line). The Turkish names in the test data are intentional: they check
@@ -183,8 +202,8 @@ outside the repository. The current setup is described in
 
 ## 12. Next steps
 
-1. First real exploration and data dictionary with the data agents
-   (see `environment.local.md`).
+1. Keep exploring with the schema memory: after each report, review the
+   unexplored neighbors it suggests.
 2. Personal-data column inventory and a privilege decision.
 3. Production database: role + schema grants + profile (`description`:
    "PRODUCTION", lower `maxTimeoutSeconds`).
