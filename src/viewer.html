@@ -290,6 +290,107 @@
   @media (max-width: 900px) { .rep { grid-template-columns: 1fr; } .rep-list { position: static; max-height: 360px; } }
   .loading .view { opacity: .55; transition: opacity .2s; }
 
+  /* Schema memory */
+  .toolbar[data-mode="schema"] .when, .toolbar[data-mode="schema"] .opsonly { display: none; }
+  .chg-badge { display: inline-flex; align-items: center; gap: 6px; border: 1px solid color-mix(in srgb, var(--warn-ink) 35%, transparent);
+    background: var(--warn-soft); color: var(--warn-ink); border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 600; animation: pop .25s var(--ease); }
+  .chg-badge[hidden] { display: none; }
+  .chg-badge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--warn-ink); }
+  .sch-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px 12px; }
+  .sch-bar .grow { flex: 1; }
+  .sch-stats { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-2); }
+  .sch-stats b { color: var(--text); font-variant-numeric: tabular-nums; margin-right: 3px; }
+  .sch { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 14px; align-items: start; margin-top: 14px; }
+  .sch-canvas { position: relative; overflow: hidden; height: calc(100vh - 300px); min-height: 520px; }
+  .sch-canvas.er { overflow: auto; }
+  .sch-canvas svg.graph { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; user-select: none; }
+  .sch-canvas svg.graph.panning { cursor: grabbing; }
+  .g-edge { stroke: var(--line-strong); stroke-width: 1.2; transition: opacity .2s; }
+  .g-edge.used { stroke: var(--accent); stroke-dasharray: 6 4; }
+  .g-edge.suggested { stroke: var(--warn-ink); stroke-dasharray: 2 4; }
+  .g-edge.hot { stroke: var(--accent); stroke-width: 2; }
+  .g-edge.pending, .g-node.pending { opacity: 0; }
+  .g-node { cursor: pointer; transition: opacity .4s var(--ease); }
+  .g-node circle.body { stroke-width: 1.5; }
+  .g-node.explored circle.body { fill: var(--accent); stroke: var(--surface); }
+  .g-node.seen circle.body { fill: var(--accent-soft); stroke: var(--accent); }
+  .g-node.unexplored circle.body { fill: var(--surface); stroke: var(--text-3); stroke-dasharray: 3 2; }
+  .g-node.sel circle.body { stroke: var(--text); stroke-width: 3; stroke-dasharray: none; }
+  .g-node text.lbl { font-size: 11px; fill: var(--text-2); paint-order: stroke; stroke: var(--surface); stroke-width: 3px; pointer-events: none; transition: opacity .2s; }
+  .g-node.explored text.lbl { fill: var(--text); font-weight: 600; font-size: 12px; }
+  .g-node.unexplored text.lbl { opacity: .8; }
+  svg.graph.crowded .g-node.unexplored text.lbl { opacity: 0; }
+  svg.graph.crowded.zoomed .g-node.unexplored text.lbl, svg.graph .g-node.hot text.lbl { opacity: 1; }
+  .g-node .nb circle { fill: var(--warn-ink); stroke: var(--surface); stroke-width: 1.5; }
+  .g-node .nb text { fill: var(--surface); font-size: 9px; font-weight: 700; pointer-events: none; }
+  svg.graph.hovering .g-node:not(.hot), svg.graph.hovering .g-edge:not(.hot) { opacity: .16; }
+  svg.graph.searching .g-node:not(.match) { opacity: .18; }
+  .sch-legend { position: absolute; left: 12px; bottom: 10px; display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--text-2);
+    background: color-mix(in srgb, var(--surface) 90%, transparent); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; max-width: calc(100% - 70px); }
+  .sch-legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .sch-zoom { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 4px; }
+  .sch-zoom button { width: 30px; height: 30px; padding: 0; justify-content: center; }
+  .insp { position: sticky; top: 130px; max-height: calc(100vh - 150px); overflow: auto; }
+  .insp h3 { margin: 0; font-size: 15px; word-break: break-all; }
+  .insp .sub { font-size: 12px; color: var(--text-3); margin-top: 4px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .insp .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0 4px; }
+  .insp .facts div { background: var(--surface-2); border-radius: 8px; padding: 7px 9px; }
+  .insp .facts b { display: block; font-size: 15px; font-variant-numeric: tabular-nums; }
+  .insp .facts span { font-size: 11px; color: var(--text-3); }
+  .insp h4 { margin: 16px 0 6px; font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: .5px; display: flex; gap: 8px; }
+  .insp h4 .grow { flex: 1; }
+  .insp h4 button { border: 0; background: none; color: var(--accent-ink); font-size: 11px; text-transform: none; letter-spacing: 0; padding: 0; }
+  .insp .acts { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .note { border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; font-size: 13px; animation: rise .3s var(--ease) both; }
+  .note.observation { border-left-color: var(--good); }
+  .note.inference { border-left-color: var(--warn-ink); border-left-style: dashed; }
+  .note.archived { opacity: .55; }
+  .note .nh { display: flex; gap: 6px; align-items: center; font-size: 11px; color: var(--text-3); margin-bottom: 3px; flex-wrap: wrap; }
+  .note .nh code { font: 11px var(--mono); color: var(--text-2); }
+  .note .fig { font: 11px/1.5 var(--mono); color: var(--text-2); margin-top: 5px; display: flex; flex-wrap: wrap; gap: 2px 10px; }
+  .badge.rule { background: var(--accent-soft); color: var(--accent-ink); }
+  .badge.observation { background: var(--good-soft); color: var(--good-ink); }
+  .badge.inference { background: var(--warn-soft); color: var(--warn-ink); }
+  .badge.explored { background: var(--accent-soft); color: var(--accent-ink); }
+  .badge.seen, .badge.unexplored { background: var(--surface-2); color: var(--text-3); }
+  .nlist { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+  .nlist li { display: flex; gap: 8px; align-items: center; padding: 5px 0; border-top: 1px solid var(--line); cursor: pointer; }
+  .nlist li:first-child { border-top: 0; }
+  .nlist li:hover .nm { color: var(--accent-ink); }
+  .nlist .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .nlist .cols { margin-left: auto; font: 11px var(--mono); color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 42%; flex: none; }
+  .er-box .frame { fill: var(--surface); stroke: var(--line-strong); }
+  .er-box.center .frame { stroke: var(--accent); stroke-width: 2; }
+  .er-box.unexplored .frame { stroke-dasharray: 4 3; }
+  .er-box .head { fill: var(--surface-2); }
+  .er-box.center .head { fill: var(--accent-soft); }
+  .er-box text { font-size: 12px; fill: var(--text); }
+  .er-box text.h { font-weight: 650; }
+  .er-box text.ty { fill: var(--text-3); font: 11px var(--mono); }
+  .er-box text.tag { font-size: 10px; font-weight: 700; fill: var(--accent-ink); }
+  .er-box text.more { fill: var(--accent-ink); cursor: pointer; font-size: 12px; }
+  .er-box text.dim { fill: var(--text-3); font-style: italic; }
+  .er-box { cursor: pointer; animation: rise .35s var(--ease) both; }
+  .er-box.center { cursor: default; }
+  .er-link { fill: none; stroke: var(--line-strong); stroke-width: 1.4; transition: opacity .2s, stroke .2s; }
+  .er-link.used { stroke: var(--accent); stroke-dasharray: 6 4; }
+  .er-link.suggested { stroke: var(--warn-ink); stroke-dasharray: 2 4; }
+  .er-link.hot { stroke: var(--accent); stroke-width: 2.2; }
+  svg.er.hovering .er-link:not(.hot), svg.er.hovering .er-box:not(.hot):not(.center) { opacity: .25; }
+  .tl { padding: 4px 14px 12px; max-height: 320px; overflow: auto; border-top: 1px solid var(--line); }
+  .tl-item { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 10px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 13px; }
+  .tl-item:first-child { border-top: 0; }
+  .tl-item .when { color: var(--text-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .tl-item b { cursor: pointer; }
+  .tl-item b:hover { color: var(--accent-ink); }
+  .tl-item ul { margin: 3px 0 0; padding-left: 18px; color: var(--text-2); font-size: 12px; }
+  .tl-item.new .when { color: var(--warn-ink); font-weight: 600; }
+  .note pre { font: 11px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; margin: 4px 0 0; background: var(--surface-2); padding: 6px 8px; border-radius: 6px; }
+  .mem-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+  .mem-card { padding: 16px; cursor: pointer; text-align: left; border: 1px solid var(--line); transition: transform .2s var(--ease), box-shadow .2s; animation: rise .4s var(--ease) both; }
+  .mem-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+  .mem-card h3 { margin: 0 0 10px; font-size: 16px; }
+  @media (max-width: 1000px) { .sch { grid-template-columns: 1fr; } .insp { position: static; max-height: none; } .tl-item { grid-template-columns: 1fr; gap: 2px; } }
   .toast { position: fixed; bottom: 24px; left: 50%; transform: translate(-50%, 20px); opacity: 0; z-index: 60;
     background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 13px; box-shadow: var(--shadow-lg);
     transition: opacity .2s, transform .25s var(--ease); pointer-events: none; }
@@ -337,6 +438,7 @@
         <div class="dbmenu" id="dbMenu" role="listbox"></div>
       </div>
       <span class="spacer"></span>
+      <button class="chg-badge" id="chgBadge" hidden><span class="dot"></span><span id="chgText"></span></button>
       <span class="live" id="live" data-i18n-title="Live refresh"><span class="dot"></span><span id="liveText">Live off</span></span>
       <button class="icon-btn" id="liveBtn" data-i18n-title="Toggle live refresh">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12a7 7 0 0 1 12-5l2 2M19 12a7 7 0 0 1-12 5l-2-2"/><path d="M19 4v5h-5M5 20v-5h5"/></svg>
@@ -360,6 +462,7 @@
       <button data-tab="ops"><span data-i18n="Operations">Operations</span><span class="count" id="cOps"></span></button>
       <button data-tab="tables"><span data-i18n="Tables">Tables</span><span class="count" id="cTables"></span></button>
       <button data-tab="reports"><span data-i18n="Reports">Reports</span><span class="count" id="cReports"></span></button>
+      <button data-tab="schema"><span data-i18n="Schema">Schema</span><span class="count" id="cSchema"></span></button>
       <button data-tab="profiles"><span data-i18n="Profiles">Profiles</span><span class="count" id="cProfiles"></span></button>
       <span class="tab-ink" id="tabInk"></span>
     </nav>
@@ -392,6 +495,7 @@
   <section id="v-ops" class="view" hidden></section>
   <section id="v-tables" class="view" hidden></section>
   <section id="v-reports" class="view" hidden></section>
+  <section id="v-schema" class="view" hidden></section>
   <section id="v-profiles" class="view" hidden></section>
 </main>
 
@@ -464,6 +568,32 @@ const TR = {
   'Library: ': 'Kütüphane: ', 'Stage': 'Aşama', 'Drafts': 'Taslaklar', 'Approved': 'Onaylı', 'Execute': 'Execute', 'No reports match.': 'Eşleşen rapor yok.',
   'plan only': 'sadece plan', '{n} rows': '{n} satır', 'change script': 'değişiklik script\'i', 'not run yet': 'henüz çalıştırılmadı',
   ' · schema {s}': ' · şema {s}', 'Language': 'Dil', 'Run report': 'Rapor çalıştırma',
+  'Schema': 'Şema', '1 new schema change': '1 yeni şema değişikliği', '{n} new schema changes': '{n} yeni şema değişikliği',
+  'Graph': 'Graph', 'ER diagram': 'ER diyagramı', 'Show all': 'Hepsini göster',
+  'Focus view': 'Odak görünümü', 'View': 'Görünüm', 'explored': 'keşfedildi',
+  'seen': 'görüldü', 'not explored': 'keşfedilmedi', 'relations': 'ilişki',
+  'notes': 'not', 'used': 'kullanıldı', 'suggested': 'öneri',
+  'Timeline': 'Zaman çizelgesi', 'seen in a plan': 'planda görüldü', 'foreign key': 'yabancı anahtar (FK)',
+  'used in an approved report': 'onaylı raporda kullanıldı', 'name match (unconfirmed)': 'isim benzerliği (onaysız)', 'rule': 'kural',
+  'observation': 'gözlem', 'inference': 'çıkarım', 'as of {d}': '{d} itibarıyla',
+  'unconfirmed': 'onaysız', 'archived': 'arşivlendi', 'Archived: ': 'Arşiv gerekçesi: ',
+  'Evidence SQL': 'Kanıt SQL', 'Est. rows': 'Tahmini satır', 'Columns': 'Kolon',
+  'Relations': 'İlişkiler', 'Notes': 'Notlar', 'History': 'Geçmiş',
+  'Focus here': 'Buraya odaklan', 'Show archived ({n})': 'Arşivlenenleri göster ({n})', 'Hide archived': 'Arşivlenenleri gizle',
+  'No notes yet.': 'Henüz not yok.', 'No relations known.': 'Bilinen ilişki yok.', '+{n} more': '+{n} daha',
+  'Select a table in the graph.': 'Graph üzerinde bir tablo seçin.', 'Relation graph': 'İlişki grafiği', 'explored (structure recorded)': 'keşfedildi (yapı kaydedildi)',
+  'note #{id} ({kind})': 'not #{id} ({kind})', 'schema changed': 'şema değişti', 'No events yet.': 'Henüz olay yok.',
+  'column {c} added ({t})': '{c} kolonu eklendi ({t})', 'column {c} dropped': '{c} kolonu silindi', 'column {f} renamed to {to}': '{f} kolonunun adı {to} oldu',
+  'column {c}: {f} → {to}': '{c} kolonu: {f} → {to}', 'column {c} is now NOT NULL': '{c} kolonu artık NOT NULL', 'column {c} is now nullable': '{c} kolonu artık NULL olabilir',
+  'kind {f} → {to}': 'tür {f} → {to}', 'view definition changed': 'view tanımı değişti', 'constraint': 'kısıt',
+  'index': 'indeks', 'incoming FK': 'gelen FK', 'added': 'eklendi',
+  'dropped': 'silindi', 'changed': 'değişti', 'No schema memory for {db} yet': '{db} için henüz şema hafızası yok',
+  'It fills as your agent describes tables (describe_table) and runs reports.': 'Agent tabloları inceledikçe (describe_table) ve rapor çalıştırdıkça dolar.', 'No schema memory yet': 'Henüz şema hafızası yok', 'Pick a database': 'Bir veritabanı seçin',
+  'Memory: ': 'Hafıza: ', 'last activity {w}': 'son etkinlik {w}', '+{n} more columns': '+{n} kolon daha',
+  'Show key columns only': 'Sadece anahtar kolonlar', 'no column info': 'kolon bilgisi yok', 'Zoom in': 'Yakınlaş',
+  'Zoom out': 'Uzaklaş', 'Fit to view': 'Sığdır', 'State': 'Durum',
+  'Database-wide notes': 'Veritabanı geneli notlar', 'rows': 'satır', 'No tables match.': 'Eşleşen tablo yok.',
+  'PK, FK: keys · U: used in a plan · N: has a note · ←: referenced': 'PK, FK: anahtar · U: planda kullanıldı · N: notu var · ←: referans alınıyor',
 };
 let lang = 'en';
 try { lang = localStorage.getItem('auspex.viewer.lang') || ((navigator.language || '').toLowerCase().startsWith('tr') ? 'tr' : 'en'); } catch {}
@@ -598,9 +728,11 @@ const state = {
   tab: 'overview', sort: { key: 'ts', dir: 'desc' }, page: 0, pageSize: 50,
   open: null, live: false, seen: new Set(), firstLoad: true, systemTables: false,
   db: '', reports: null, reportSel: null, stageFilter: 'all', reportDoc: null,
+  memory: null, memView: null, memMode: 'graph', memSelBy: {}, memFocusBy: {}, memShowAll: false, memTimeline: false,
+  memSchema: '', memErAll: false, memPos: new Map(), schemaKey: null,
 };
-try { Object.assign(state, JSON.parse(localStorage.getItem('auspex.viewer') || '{}'), { all: [], seen: new Set(), firstLoad: true, open: null, reports: null, reportDoc: null }); } catch {}
-const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel })); } catch {} };
+try { Object.assign(state, JSON.parse(localStorage.getItem('auspex.viewer') || '{}'), { all: [], seen: new Set(), firstLoad: true, open: null, reports: null, reportDoc: null, memory: null, memView: null, memPos: new Map() }); } catch {}
+const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy })); } catch {} };
 
 // In the Tauri desktop app the same routes are served by the Rust `api` command.
 const tauriCore = window.__TAURI__?.core;
@@ -642,6 +774,7 @@ async function load({ quiet = false } = {}) {
       .map((e, i) => ({ ...e, _id: (e.ts || '') + '|' + (e.tool || '') + '|' + i }));
     if (!state.profiles || !quiet) state.profiles = await getJson('/api/profiles');
     try { state.reports = await getJson('/api/reports'); } catch (err) { state.reports = { error: err.message, reports: [] }; }
+    try { state.memory = await getJson('/api/memory'); } catch (err) { state.memory = { error: err.message, profiles: [] }; }
     const fresh = new Set();
     if (!state.firstLoad) for (const e of state.all) if (!state.seen.has(e._id)) fresh.add(e._id);
     state.seen = new Set(state.all.map(e => e._id));
@@ -679,6 +812,7 @@ function knownDbs() {
   const names = new Set((state.profiles?.profiles || []).map(p => p.name));
   for (const e of state.all) if (e.profile) names.add(e.profile);
   for (const r of state.reports?.reports || []) names.add(r.db);
+  for (const p of state.memory?.profiles || []) names.add(p.name);
   return [...names].sort();
 }
 function setDb(db, { render: doRender = true } = {}) {
@@ -1127,6 +1261,670 @@ function renderReports() {
   put($('v-reports'), h('div', { class: 'rep' }, left, reportView(selected)));
 }
 
+// ---------- schema memory ----------
+// Reads graph.json, the view the memory module writes after every change, and
+// table files for the ER view. All relation logic stays in src/memory/store.js.
+const stateLabel = s => t({ explored: 'explored', seen: 'seen in a plan', unexplored: 'not explored' }[s] || s || '');
+const levelLabel = l => t({ fk: 'foreign key', used: 'used in an approved report', suggested: 'name match (unconfirmed)' }[l] || l);
+let memSeenAt = {};
+try { memSeenAt = JSON.parse(localStorage.getItem('auspex.viewer.memSeen') || '{}') || {}; } catch {}
+const memProfiles = () => state.memory?.profiles || [];
+const memSummaryFor = db => memProfiles().find(p => p.name === db) || null;
+const newChanges = p => (p?.changeTimes || []).filter(at => at > (memSeenAt[p.name] || '')).length;
+function markChangesSeen(name) {
+  memSeenAt[name] = new Date().toISOString();
+  try { localStorage.setItem('auspex.viewer.memSeen', JSON.stringify(memSeenAt)); } catch {}
+  renderChangeBadge();
+}
+function renderChangeBadge() {
+  const n = memProfiles().filter(p => !state.db || p.name === state.db).reduce((a, p) => a + newChanges(p), 0);
+  $('chgBadge').hidden = !n;
+  $('chgText').textContent = n === 1 ? t('1 new schema change') : t('{n} new schema changes', { n: fmt(n) });
+}
+function openTimeline(db) {
+  state.memTimeline = true;
+  state.memTimelineSince = memSeenAt[db] || '';
+  markChangesSeen(db);
+}
+$('chgBadge').addEventListener('click', () => {
+  const target = state.db || memProfiles().find(p => newChanges(p))?.name;
+  if (!target) return;
+  if (state.db !== target) setDb(target, { render: false });
+  openTimeline(target);
+  state.schemaKey = null;
+  switchTab('schema');
+});
+
+const memSel = () => state.memSelBy?.[state.db] || null;
+const memFocus = () => state.memFocusBy?.[state.db] || null;
+function setMemSel(id) { state.memSelBy = { ...(state.memSelBy || {}), [state.db]: id }; persist(); }
+function setMemFocus(id) { state.memFocusBy = { ...(state.memFocusBy || {}), [state.db]: id }; persist(); }
+
+async function ensureMemView(db) {
+  if (state.memLoading === db) return;
+  state.memLoading = db;
+  try {
+    state.memView = { profile: db, data: await getJson('/api/memory/graph?profile=' + encodeURIComponent(db)) };
+  } catch (err) {
+    state.memView = { profile: db, error: err.message };
+  }
+  state.memLoading = null;
+  state.schemaKey = null;
+  renderSchema();
+}
+
+function memGraph(data) {
+  const schema = state.memSchema && data.nodes.some(n => n.schema === state.memSchema) ? state.memSchema : '';
+  const nodes = schema ? data.nodes.filter(n => n.schema === schema) : data.nodes;
+  const byId = new Map(nodes.map(n => [n.id, n]));
+  const edges = data.edges.filter(e => e.from !== e.to && byId.has(e.from) && byId.has(e.to));
+  const adj = new Map(nodes.map(n => [n.id, new Set()]));
+  for (const e of edges) { adj.get(e.from).add(e.to); adj.get(e.to).add(e.from); }
+  return { nodes, edges, adj, byId, schema };
+}
+function defaultRoot(g) {
+  const explored = g.nodes.filter(n => n.state === 'explored');
+  return (explored.length ? explored : g.nodes).reduce((best, n) => (!best || g.adj.get(n.id).size > g.adj.get(best.id).size ? n : best), null)?.id || null;
+}
+function bfs(g, root, limit, hops) {
+  const order = [], depth = new Map();
+  if (!root || !g.byId.has(root)) return { order, depth };
+  const queue = [root];
+  depth.set(root, 0);
+  while (queue.length && order.length < limit) {
+    const id = queue.shift();
+    order.push(id);
+    if (depth.get(id) >= hops) continue;
+    for (const nb of [...g.adj.get(id)].sort()) if (!depth.has(nb)) { depth.set(nb, depth.get(id) + 1); queue.push(nb); }
+  }
+  return { order, depth };
+}
+
+function changeLabel(c) {
+  switch (c.change) {
+    case 'column-added': return t('column {c} added ({t})', { c: c.column, t: c.type });
+    case 'column-dropped': return t('column {c} dropped', { c: c.column });
+    case 'column-renamed': return t('column {f} renamed to {to}', { f: c.from, to: c.to });
+    case 'column-type-changed': return t('column {c}: {f} → {to}', { c: c.column, f: c.from, to: c.to });
+    case 'column-nullability-changed': return t(c.notNull ? 'column {c} is now NOT NULL' : 'column {c} is now nullable', { c: c.column });
+    case 'kind-changed': return t('kind {f} → {to}', { f: c.from, to: c.to });
+    case 'view-definition-changed': return t('view definition changed');
+    default: {
+      const cut = c.change.lastIndexOf('-');
+      const what = { constraint: 'constraint', index: 'index', 'incoming-fk': 'incoming FK' }[c.change.slice(0, cut)] || c.change.slice(0, cut);
+      return `${t(what)} ${c.name} ${t(c.change.slice(cut + 1))}`;
+    }
+  }
+}
+function eventLabel(e) {
+  if (e.event === 'explored') return t('explored (structure recorded)');
+  if (e.event === 'note') return t('note #{id} ({kind})', { id: e.noteId, kind: t(e.kind) });
+  if (e.event === 'changed') return t('schema changed');
+  return e.event;
+}
+
+function noteCard(note) {
+  const fig = note.evidence?.figures;
+  return h('div', { class: `note ${note.kind}${note.status !== 'active' ? ' archived' : ''}` },
+    h('div', { class: 'nh' },
+      h('span', { class: 'badge ' + note.kind }, t(note.kind)),
+      note.column ? h('code', {}, note.column) : null,
+      h('span', {}, '#' + note.id),
+      note.asOf ? h('span', {}, t('as of {d}', { d: note.asOf })) : null,
+      note.kind === 'inference' ? h('span', {}, t('unconfirmed')) : null,
+      note.status !== 'active' ? h('span', {}, t('archived')) : null),
+    h('div', {}, note.text),
+    fig ? h('div', { class: 'fig' }, Object.entries(fig).map(([k, v]) => h('span', {}, `${k}: ${typeof v === 'number' ? fmt(v) : v}`))) : null,
+    note.archivedReason ? h('div', { class: 'muted', style: 'font-size:12px;margin-top:4px' }, t('Archived: ') + note.archivedReason) : null,
+    note.evidence?.sql ? h('details', {}, h('summary', { class: 'muted', style: 'font-size:12px;cursor:pointer;margin-top:4px' }, t('Evidence SQL')), h('pre', {}, note.evidence.sql)) : null);
+}
+
+function inspector(data, id) {
+  const n = data.nodes.find(x => x.id === id);
+  const dbNotes = data.notes.filter(x => !x.table && x.status === 'active');
+  if (!n) {
+    return h('div', { class: 'panel insp' }, h('div', { class: 'panel-b' },
+      h('div', { class: 'muted' }, t('Select a table in the graph.')),
+      dbNotes.length ? [h('h4', {}, t('Database-wide notes')), dbNotes.map(noteCard)] : null));
+  }
+  const notes = data.notes.filter(x => x.schema === n.schema && x.table === n.table);
+  const active = notes.filter(x => x.status === 'active'), archived = notes.filter(x => x.status !== 'active');
+  const order = { fk: 0, used: 1, suggested: 2 };
+  const rels = data.edges.filter(e => e.from !== e.to && (e.from === id || e.to === id))
+    .map(e => ({ id: e.from === id ? e.to : e.from, level: e.level, out: e.from === id, cols: `${e.columns.join(', ')} → ${e.refColumns.join(', ')}` }))
+    .sort((a, b) => order[a.level] - order[b.level] || a.id.localeCompare(b.id));
+  const events = data.changelog.filter(e => e.schema === n.schema && e.table === n.table).slice().reverse();
+  const relLimit = 40;
+  return h('div', { class: 'panel insp' }, h('div', { class: 'panel-b' },
+    h('h3', {}, n.id),
+    h('div', { class: 'sub' }, h('span', { class: 'badge ' + n.state }, stateLabel(n.state)), n.kind ? h('span', {}, n.kind) : null),
+    h('div', { class: 'facts' },
+      h('div', {}, h('b', {}, n.estimatedRows === null || n.estimatedRows === undefined ? '–' : compact(n.estimatedRows)), h('span', {}, t('Est. rows'))),
+      h('div', {}, h('b', {}, n.columnCount ? fmt(n.columnCount) : '–'), h('span', {}, t('Columns'))),
+      h('div', {}, h('b', {}, fmt(rels.length)), h('span', {}, t('Relations'))),
+      h('div', {}, h('b', {}, fmt(active.length)), h('span', {}, t('Notes')))),
+    h('div', { class: 'acts' },
+      state.memMode === 'graph'
+        ? [h('button', { class: 'icon-btn', onclick: () => { state.memMode = 'er'; persist(); renderSchema(); } }, t('ER diagram')),
+          h('button', { class: 'icon-btn', onclick: () => { setMemFocus(id); state.memShowAll = false; state.memAnimateIn = true; renderSchema(); } }, t('Focus here'))]
+        : h('button', { class: 'icon-btn', onclick: () => { setMemFocus(id); state.memMode = 'graph'; persist(); renderSchema(); } }, t('Graph'))),
+    h('h4', {}, h('span', {}, t('Notes')), h('span', { class: 'grow' }),
+      archived.length ? h('button', { onclick: () => { state.memArchived = !state.memArchived; renderInspector(); } }, state.memArchived ? t('Hide archived') : t('Show archived ({n})', { n: archived.length })) : null),
+    active.length || (state.memArchived && archived.length) ? [active.map(noteCard), state.memArchived ? archived.map(noteCard) : null] : h('div', { class: 'muted', style: 'font-size:13px' }, t('No notes yet.')),
+    h('h4', {}, t('Relations')),
+    rels.length ? h('ul', { class: 'nlist' }, rels.slice(0, relLimit).map(r => h('li', { onclick: () => focusTable(r.id), title: `${levelLabel(r.level)}: ${r.cols}` },
+      relKey(r.level, r.out), h('span', { class: 'nm' }, r.id), h('span', { class: 'cols' }, r.cols))),
+      rels.length > relLimit ? h('li', { class: 'muted' }, t('+{n} more', { n: rels.length - relLimit })) : null) : h('div', { class: 'muted', style: 'font-size:13px' }, t('No relations known.')),
+    events.length ? [h('h4', {}, t('History')), h('ul', { class: 'nlist' }, events.slice(0, 30).map(e => h('li', { style: 'cursor:default;display:block' },
+      h('span', { class: 'muted', style: 'font-size:12px' }, dateTimeOf(e.at)), ' ', eventLabel(e),
+      e.changes ? h('ul', { style: 'margin:2px 0 0;padding-left:18px;font-size:12px;color:var(--text-2)' }, e.changes.map(c => h('li', { style: 'border:0;padding:0;cursor:default' }, changeLabel(c)))) : null)))] : null));
+}
+// Small line sample for a relation level; the arrow tells the direction.
+function relKey(level, out) {
+  const s = svg('svg', { width: 26, height: 10, viewBox: '0 0 26 10', style: 'flex:none' });
+  s.append(svg('line', { class: 'g-edge ' + level, x1: 1, y1: 5, x2: 19, y2: 5 }));
+  s.append(svg('path', { d: out ? 'M18,1 L25,5 L18,9' : 'M8,1 L1,5 L8,9', fill: 'none', stroke: 'var(--text-3)', 'stroke-width': 1.4 }));
+  return s;
+}
+function renderInspector() {
+  if (!state.memInspHost || !state.memView?.data) return;
+  put(state.memInspHost, inspector(state.memView.data, memSel()));
+}
+function focusTable(id) {
+  setMemSel(id);
+  if (state.memMode === 'graph' && graphSim?.index.has(id)) { graphSim.select(id); return; }
+  if (state.memMode === 'graph') { setMemFocus(id); state.memAnimateIn = true; }
+  renderSchema();
+}
+
+function legend() {
+  const dot = cls => { const s = svg('svg', { width: 14, height: 14, viewBox: '-7 -7 14 14' }); const g = svg('g', { class: 'g-node ' + cls }); g.append(svg('circle', { class: 'body', r: cls === 'unexplored' ? 4.5 : 5.5 })); s.append(g); return s; };
+  const line = cls => { const s = svg('svg', { width: 24, height: 8, viewBox: '0 0 24 8' }); s.append(svg('line', { class: 'g-edge ' + cls, x1: 0, y1: 4, x2: 24, y2: 4 })); return s; };
+  return h('div', { class: 'sch-legend' },
+    h('span', {}, dot('explored'), t('explored')), h('span', {}, dot('seen'), t('seen')), h('span', {}, dot('unexplored'), t('not explored')),
+    h('span', {}, line('fk'), 'FK'), h('span', {}, line('used'), t('used')), h('span', {}, line('suggested'), t('suggested')));
+}
+
+// ---------- force-directed graph (no library) ----------
+let graphSim = null;
+function stopGraph() {
+  if (!graphSim) return;
+  graphSim.save();
+  graphSim.stopped = true;
+  graphSim = null;
+}
+const hashAngle = id => { let x = 2166136261; for (const ch of id) x = Math.imul(x ^ ch.charCodeAt(0), 16777619); return ((x >>> 0) % 3600) / 3600 * Math.PI * 2; };
+
+function graphCanvas(g, visible, depth, data) {
+  const db = state.db;
+  const wrap = h('div', { class: 'panel sch-canvas' });
+  const root = svg('svg', { class: 'graph' + (visible.length > 120 ? ' crowded' : ''), role: 'img', 'aria-label': t('Relation graph') });
+  const scene = svg('g'), edgeLayer = svg('g'), nodeLayer = svg('g');
+  scene.append(edgeLayer, nodeLayer);
+  root.append(scene);
+  const ids = new Set(visible);
+  const nodes = visible.map(id => {
+    const n = g.byId.get(id);
+    const deg = g.adj.get(id).size;
+    const r = n.state === 'explored' ? 8 + Math.min(9, Math.sqrt(deg) * 1.6) : n.state === 'seen' ? 6 : 4.5;
+    const prev = state.memPos.get(db + '|' + id);
+    const d = depth.get(id) ?? 3, a = hashAngle(id);
+    return { id, n, r, deg, x: prev?.x ?? Math.cos(a) * d * 110, y: prev?.y ?? Math.sin(a) * d * 110, vx: 0, vy: 0, el: null };
+  });
+  const index = new Map(nodes.map(nd => [nd.id, nd]));
+  const links = g.edges.filter(e => ids.has(e.from) && ids.has(e.to)).map(e => ({ e, a: index.get(e.from), b: index.get(e.to), el: svg('line', { class: 'g-edge ' + e.level }) }));
+  for (const l of links) edgeLayer.append(l.el);
+  for (const nd of nodes) {
+    const el = svg('g', { class: `g-node ${nd.n.state}`, 'data-id': nd.id });
+    el.append(svg('circle', { class: 'body', r: nd.r }));
+    const lbl = svg('text', { class: 'lbl', y: nd.r + 13, 'text-anchor': 'middle' });
+    lbl.textContent = nd.n.table;
+    el.append(lbl);
+    if (nd.n.notes) {
+      const b = svg('g', { class: 'nb', transform: `translate(${(nd.r * .8).toFixed(1)},${(-nd.r * .8).toFixed(1)})` });
+      b.append(svg('circle', { r: 6.5 }));
+      const tx = svg('text', { 'text-anchor': 'middle', y: 3 });
+      tx.textContent = nd.n.notes > 9 ? '9+' : nd.n.notes;
+      b.append(tx);
+      el.append(b);
+    }
+    nd.el = el;
+    nodeLayer.append(el);
+  }
+
+  const sim = { nodes, links, index, alpha: state.memPos.size && nodes.every(nd => state.memPos.has(db + '|' + nd.id)) ? 0.25 : 1, k: 1, tx: 0, ty: 0, W: 800, H: 560, follow: true, stopped: false, running: false, drag: null, press: null, hot: null };
+  graphSim = sim;
+  const apply = () => {
+    scene.setAttribute('transform', `translate(${(sim.W / 2 + sim.tx).toFixed(1)},${(sim.H / 2 + sim.ty).toFixed(1)}) scale(${sim.k.toFixed(3)})`);
+    root.classList.toggle('zoomed', sim.k >= 1.4);
+  };
+  const draw = () => {
+    for (const nd of nodes) nd.el.setAttribute('transform', `translate(${nd.x.toFixed(1)},${nd.y.toFixed(1)})`);
+    for (const l of links) {
+      l.el.setAttribute('x1', l.a.x.toFixed(1)); l.el.setAttribute('y1', l.a.y.toFixed(1));
+      l.el.setAttribute('x2', l.b.x.toFixed(1)); l.el.setAttribute('y2', l.b.y.toFixed(1));
+    }
+  };
+  // Camera target that fits every node; followed smoothly until the user pans or zooms.
+  const fitTarget = () => {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const nd of nodes) { x0 = Math.min(x0, nd.x - nd.r); x1 = Math.max(x1, nd.x + nd.r); y0 = Math.min(y0, nd.y - nd.r); y1 = Math.max(y1, nd.y + nd.r + 16); }
+    if (!Number.isFinite(x0)) return { k: 1, tx: 0, ty: 0 };
+    const k = Math.min(1.6, Math.max(0.2, Math.min((sim.W - 60) / Math.max(1, x1 - x0), (sim.H - 60) / Math.max(1, y1 - y0))));
+    return { k, tx: -((x0 + x1) / 2) * k, ty: -((y0 + y1) / 2) * k };
+  };
+  const follow = (rate = 0.12) => {
+    if (!sim.follow) return;
+    const f = fitTarget();
+    sim.k += (f.k - sim.k) * rate; sim.tx += (f.tx - sim.tx) * rate; sim.ty += (f.ty - sim.ty) * rate;
+    apply();
+  };
+  const tick = () => {
+    const a = sim.alpha, n = nodes.length;
+    for (let i = 0; i < n; i++) {
+      const p = nodes[i];
+      for (let j = i + 1; j < n; j++) {
+        const q = nodes[j];
+        let dx = q.x - p.x, dy = q.y - p.y, d2 = dx * dx + dy * dy;
+        if (d2 > 250000) continue;
+        if (d2 < 0.01) { dx = Math.cos(i + j); dy = Math.sin(i + j); d2 = 1; }
+        const f = (900 * a) / d2;
+        p.vx -= dx * f; p.vy -= dy * f; q.vx += dx * f; q.vy += dy * f;
+        const min = p.r + q.r + 6;
+        if (d2 < min * min) {
+          const d = Math.sqrt(d2), push = (min - d) / d * 0.25;
+          p.x -= dx * push; p.y -= dy * push; q.x += dx * push; q.y += dy * push;
+        }
+      }
+    }
+    const spring = Math.min(1, a * 3) * 0.06;
+    for (const l of links) {
+      const dx = l.b.x - l.a.x, dy = l.b.y - l.a.y, d = Math.sqrt(dx * dx + dy * dy) || 1;
+      const len = (l.a.n.state === 'explored' && l.b.n.state === 'explored' ? 110 : 52) + l.a.r + l.b.r;
+      const f = (d - len) / d * spring;
+      l.a.vx += dx * f; l.a.vy += dy * f; l.b.vx -= dx * f; l.b.vy -= dy * f;
+    }
+    for (const nd of nodes) {
+      if (nd === sim.drag) { nd.vx = nd.vy = 0; continue; }
+      nd.vx = (nd.vx - nd.x * 0.008 * a) * 0.55;
+      nd.vy = (nd.vy - nd.y * 0.008 * a) * 0.55;
+      const v = Math.hypot(nd.vx, nd.vy);
+      if (v > 30) { nd.vx *= 30 / v; nd.vy *= 30 / v; }
+      nd.x += nd.vx; nd.y += nd.vy;
+    }
+    sim.alpha *= 0.982;
+  };
+  sim.save = () => { for (const nd of nodes) state.memPos.set(db + '|' + nd.id, { x: nd.x, y: nd.y }); };
+  const frame = () => {
+    if (sim.stopped) return;
+    tick(); tick();
+    draw();
+    follow();
+    if (sim.alpha > 0.02 || sim.drag) schedule();
+    else { sim.running = false; sim.save(); follow(1); }
+  };
+  const schedule = () => { sim.running = true; if (document.hidden) setTimeout(frame, 40); else requestAnimationFrame(frame); };
+  const reheat = (to = 0.3) => { sim.alpha = Math.max(sim.alpha, to); if (!sim.running) schedule(); };
+
+  sim.select = id => {
+    setMemSel(id);
+    for (const nd of nodes) nd.el.classList.toggle('sel', nd.id === id);
+    renderInspector();
+  };
+  const setHot = id => {
+    if (sim.hot === id) return;
+    sim.hot = id;
+    root.classList.toggle('hovering', !!id);
+    const near = id ? new Set([id, ...g.adj.get(id)]) : new Set();
+    for (const nd of nodes) nd.el.classList.toggle('hot', near.has(nd.id));
+    for (const l of links) l.el.classList.toggle('hot', !!id && (l.a.id === id || l.b.id === id));
+  };
+  const toWorld = (cx, cy) => {
+    const r = root.getBoundingClientRect();
+    return { x: (cx - r.left - sim.W / 2 - sim.tx) / sim.k, y: (cy - r.top - sim.H / 2 - sim.ty) / sim.k };
+  };
+  root.addEventListener('wheel', ev => {
+    ev.preventDefault();
+    const r = root.getBoundingClientRect();
+    const mx = ev.clientX - r.left - sim.W / 2, my = ev.clientY - r.top - sim.H / 2;
+    const k2 = Math.min(4, Math.max(0.15, sim.k * (ev.deltaY < 0 ? 1.15 : 1 / 1.15)));
+    sim.tx = mx - (mx - sim.tx) * (k2 / sim.k); sim.ty = my - (my - sim.ty) * (k2 / sim.k); sim.k = k2;
+    sim.follow = false;
+    apply();
+  }, { passive: false });
+  root.addEventListener('pointerdown', ev => {
+    if (ev.button !== 0) return;
+    const id = ev.target.closest('.g-node')?.dataset.id || null;
+    sim.press = { x: ev.clientX, y: ev.clientY, id, moved: false, tx: sim.tx, ty: sim.ty };
+    if (!id) root.classList.add('panning');
+    root.setPointerCapture(ev.pointerId);
+  });
+  root.addEventListener('pointermove', ev => {
+    const p = sim.press;
+    if (!p) {
+      const id = ev.target.closest('.g-node')?.dataset.id || null;
+      setHot(id);
+      if (id) {
+        const nd = index.get(id);
+        showTip(ev, id, [[null, t('State'), stateLabel(nd.n.state)],
+          nd.n.estimatedRows !== null && nd.n.estimatedRows !== undefined ? [null, t('Est. rows'), compact(nd.n.estimatedRows)] : null,
+          nd.n.columnCount ? [null, t('Columns'), fmt(nd.n.columnCount)] : null,
+          [null, t('Relations'), fmt(nd.deg)],
+          nd.n.notes ? [null, t('Notes'), fmt(nd.n.notes)] : null].filter(Boolean));
+      } else hideTip();
+      return;
+    }
+    const dx = ev.clientX - p.x, dy = ev.clientY - p.y;
+    if (!p.moved && Math.hypot(dx, dy) < 4) return;
+    p.moved = true;
+    hideTip();
+    if (p.id) {
+      sim.drag = index.get(p.id);
+      const w = toWorld(ev.clientX, ev.clientY);
+      sim.drag.x = w.x; sim.drag.y = w.y;
+      sim.follow = false;
+      reheat(0.25);
+    } else {
+      sim.tx = p.tx + dx; sim.ty = p.ty + dy;
+      sim.follow = false;
+      apply();
+    }
+  });
+  const end = () => {
+    const p = sim.press;
+    sim.press = null;
+    sim.drag = null;
+    root.classList.remove('panning');
+    if (p && !p.moved && p.id) sim.select(p.id);
+  };
+  root.addEventListener('pointerup', end);
+  root.addEventListener('pointercancel', end);
+  root.addEventListener('pointerleave', () => { if (!sim.press) { setHot(null); hideTip(); } });
+  root.addEventListener('dblclick', ev => {
+    const id = ev.target.closest('.g-node')?.dataset.id;
+    if (!id) return;
+    setMemSel(id);
+    state.memMode = 'er';
+    persist();
+    hideTip();
+    renderSchema();
+  });
+
+  const zoomBy = f => { sim.k = Math.min(4, Math.max(0.15, sim.k * f)); sim.tx *= f; sim.ty *= f; sim.follow = false; apply(); };
+  wrap.append(root, legend(), h('div', { class: 'sch-zoom' },
+    h('button', { class: 'icon-btn', title: t('Zoom in'), onclick: () => zoomBy(1.25) }, '+'),
+    h('button', { class: 'icon-btn', title: t('Zoom out'), onclick: () => zoomBy(1 / 1.25) }, '−'),
+    h('button', { class: 'icon-btn', title: t('Fit to view'), onclick: () => { sim.follow = true; follow(1); } }, '⤢')));
+
+  // "Show all" / refocus: nodes appear one after another, nearest first.
+  const animateIn = state.memAnimateIn && !reduceMotion;
+  state.memAnimateIn = false;
+  if (animateIn) {
+    const at = new Map(visible.map((id, i) => [id, Math.min(i * 12, 1800)]));
+    for (const nd of nodes) { nd.el.classList.add('pending'); setTimeout(() => nd.el.classList.remove('pending'), at.get(nd.id)); }
+    for (const l of links) { l.el.classList.add('pending'); setTimeout(() => l.el.classList.remove('pending'), Math.max(at.get(l.a.id), at.get(l.b.id)) + 120); }
+  }
+  sim.start = () => {
+    const r = root.getBoundingClientRect();
+    sim.W = r.width || 800; sim.H = r.height || 560;
+    for (const nd of nodes) nd.el.classList.toggle('sel', nd.id === memSel());
+    if (reduceMotion) {
+      while (sim.alpha > 0.02) tick();
+      draw(); follow(1); sim.save();
+      return;
+    }
+    draw(); follow(1);
+    schedule();
+  };
+  sim.resize = () => { const r = root.getBoundingClientRect(); sim.W = r.width || sim.W; sim.H = r.height || sim.H; apply(); };
+  sim.search = q => {
+    root.classList.toggle('searching', !!q);
+    for (const nd of nodes) nd.el.classList.toggle('match', !!q && nd.id.toLowerCase().includes(q));
+  };
+  return wrap;
+}
+addEventListener('resize', () => graphSim?.resize());
+function applyMemSearch() {
+  graphSim?.search(state.tab === 'schema' ? F.text.value.trim().toLowerCase() : '');
+}
+
+// ---------- ER diagram ----------
+const memTableCache = new Map();
+function memTable(db, file, gen) {
+  const key = `${db}|${file}|${gen}`;
+  if (!memTableCache.has(key)) {
+    memTableCache.set(key, getJson(`/api/memory/table?profile=${encodeURIComponent(db)}&file=${encodeURIComponent(file)}`).catch(() => null));
+  }
+  return memTableCache.get(key);
+}
+const ER = { row: 21, head: 34, pad: 8, nbw: 250, cw: 310, gap: 12, m: 16 };
+const trunc = (s, n) => (s.length > n ? s.slice(0, Math.max(1, n - 1)) + '…' : s);
+
+function erBox({ x, y, w, title, st, rows, more, center, note, delay }) {
+  const hgt = ER.head + Math.max(1, rows.length + (more ? 1 : 0)) * ER.row + ER.pad;
+  const g = svg('g', { class: `er-box ${st || 'unexplored'}${center ? ' center' : ''}`, transform: `translate(${x},${y})`, style: delay ? `animation-delay:${delay}ms` : null });
+  const tip = svg('title');
+  tip.textContent = title;
+  g.append(tip, svg('rect', { class: 'frame', width: w, height: hgt, rx: 8 }),
+    svg('path', { class: 'head', d: `M1,${ER.head} V9 a8,8 0 0 1 8,-8 H${w - 9} a8,8 0 0 1 8,8 V${ER.head} Z` }));
+  const head = svg('text', { class: 'h', x: 10, y: 21 });
+  head.textContent = trunc(title, Math.floor((w - (note ? 110 : 20)) / 7));
+  g.append(head);
+  if (note) { const s = svg('text', { class: 'ty', x: w - 10, y: 21, 'text-anchor': 'end' }); s.textContent = note; g.append(s); }
+  if (!rows.length) { const s = svg('text', { class: 'dim', x: 10, y: ER.head + 15 }); s.textContent = t('no column info'); g.append(s); }
+  rows.forEach((r, i) => {
+    const y0 = ER.head + i * ER.row + 15;
+    const tags = (r.tags || []).join(' ');
+    const name = svg('text', { x: 10, y: y0 });
+    name.textContent = trunc(r.name, Math.floor((w * 0.55) / 7));
+    g.append(name);
+    if (tags) { const s = svg('text', { class: 'tag', x: w - 10, y: y0, 'text-anchor': 'end' }); s.textContent = tags; g.append(s); }
+    if (r.type) { const s = svg('text', { class: 'ty', x: w - 14 - tags.length * 6.5, y: y0, 'text-anchor': 'end' }); s.textContent = trunc(r.type, Math.floor((w * 0.4 - tags.length * 6.5) / 6.6)); g.append(s); }
+  });
+  if (more) { const s = svg('text', { class: 'more', x: 10, y: ER.head + rows.length * ER.row + 15, 'data-more': '1' }); s.textContent = more; g.append(s); }
+  return { g, hgt };
+}
+
+async function buildEr(wrap, data, centerId, key) {
+  const center = data.nodes.find(n => n.id === centerId);
+  const edges = data.edges.filter(e => e.from === centerId || e.to === centerId);
+  const want = [center, ...new Set(edges.flatMap(e => [e.from, e.to]))].map(x => (typeof x === 'string' ? data.nodes.find(n => n.id === x) : x))
+    .filter((n, i, a) => n?.file && (n.state === 'explored' || n.id === centerId) && a.indexOf(n) === i);
+  const recs = new Map();
+  await Promise.all(want.map(async n => recs.set(n.id, await memTable(state.db, n.file, data.generatedAt))));
+  if (state.schemaKey !== key) return;
+  wrap.replaceChildren(erSvg(data, centerId, recs, wrap.clientWidth || 1000), h('div', { class: 'muted', style: 'font-size:11px;padding:4px 12px 10px' },
+    t('PK, FK: keys · U: used in a plan · N: has a note · ←: referenced')));
+}
+
+function erSvg(data, centerId, recs, width) {
+  const center = data.nodes.find(n => n.id === centerId);
+  const rec = recs.get(centerId);
+  const notes = data.notes.filter(n => n.status === 'active' && `${n.schema}.${n.table}` === centerId);
+  const groups = new Map();
+  const selfFk = new Set();
+  for (const e of data.edges) {
+    if (e.from !== centerId && e.to !== centerId) continue;
+    if (e.from === e.to) { e.columns.forEach(c => selfFk.add(c)); continue; }
+    const out = e.from === centerId, nb = out ? e.to : e.from, gk = (out ? 'R|' : 'L|') + nb;
+    if (!groups.has(gk)) groups.set(gk, { id: nb, side: out ? 'right' : 'left', links: [] });
+    groups.get(gk).links.push({ level: e.level, centerCols: out ? e.columns : e.refColumns, nbCols: out ? e.refColumns : e.columns });
+  }
+  const all = [...groups.values()];
+  const pk = new Set(rec?.constraints?.find(c => c.type === 'primary key')?.columns || []);
+  const fkOut = new Set(all.filter(x => x.side === 'right').flatMap(x => x.links.flatMap(l => l.centerCols)));
+  const refIn = new Set(all.filter(x => x.side === 'left').flatMap(x => x.links.flatMap(l => l.centerCols)));
+  const used = rec?.usedColumns || {};
+  const noted = new Set(notes.map(n => n.column).filter(Boolean));
+  const tagsOf = c => [pk.has(c) && 'PK', (fkOut.has(c) || selfFk.has(c)) && 'FK', refIn.has(c) && !pk.has(c) && '←', used[c] && 'U', noted.has(c) && 'N'].filter(Boolean);
+  const cols = rec?.columns?.length ? rec.columns.map(c => ({ name: c.name, type: c.type }))
+    : [...new Set([...fkOut, ...refIn, ...Object.keys(used)])].map(name => ({ name, type: '' }));
+  const keyCols = cols.filter(c => tagsOf(c.name).length);
+  let shown = state.memErAll ? cols : keyCols.length ? keyCols : cols.slice(0, 12);
+  const hidden = cols.length - shown.length;
+  const more = hidden > 0 ? t('+{n} more columns', { n: fmt(hidden) }) : state.memErAll && keyCols.length < cols.length ? t('Show key columns only') : null;
+
+  const W = Math.max(width - 2, 2 * ER.nbw + ER.cw + 160);
+  const cx = Math.round((W - ER.cw) / 2), lx = ER.m, rx = W - ER.m - ER.nbw;
+  const rowY = (top, i) => top + ER.head + i * ER.row + ER.row / 2 - 1;
+  const boxes = [];
+  let ly = ER.m, ry = ER.m;
+  for (const gr of all.sort((a, b) => a.id.localeCompare(b.id))) {
+    const node = data.nodes.find(n => n.id === gr.id);
+    const nrec = recs.get(gr.id);
+    const bcols = [...new Set(gr.links.flatMap(l => l.nbCols))];
+    const types = new Map((nrec?.columns || []).map(c => [c.name, c.type]));
+    const hgt = ER.head + Math.max(1, bcols.length) * ER.row + ER.pad;
+    const left = gr.side === 'left';
+    boxes.push({ ...gr, node, bcols, types, x: left ? lx : rx, y: left ? ly : ry });
+    if (left) ly += hgt + ER.gap; else ry += hgt + ER.gap;
+  }
+  const centerBox = erBox({
+    x: cx, y: ER.m, w: ER.cw, title: centerId, st: center?.state, center: true, more,
+    note: center?.estimatedRows !== null && center?.estimatedRows !== undefined ? `~${compact(center.estimatedRows)} ${t('rows')}` : null,
+    rows: shown.map(c => ({ name: c.name, type: c.type, tags: tagsOf(c.name) })),
+  });
+  const H = Math.max(ly, ry, ER.m + centerBox.hgt + ER.m) + ER.m;
+  const root = svg('svg', { class: 'er', width: W, height: H, viewBox: `0 0 ${W} ${H}` });
+  const linkLayer = svg('g'), boxLayer = svg('g');
+  root.append(linkLayer, boxLayer);
+  const centerRows = shown.map(c => c.name);
+  boxes.forEach((b, i) => {
+    const box = erBox({ x: b.x, y: b.y, w: ER.nbw, title: b.id, st: b.node?.state, delay: reduceMotion ? 0 : Math.min(i * 25, 900),
+      note: b.node?.state === 'explored' ? null : stateLabel(b.node?.state || 'unexplored'),
+      rows: b.bcols.map(c => ({ name: c, type: b.types.get(c) || '' })) });
+    box.g.dataset.id = b.id;
+    boxLayer.append(box.g);
+    for (const l of b.links) {
+      for (let k = 0; k < Math.max(l.centerCols.length, l.nbCols.length, 1); k++) {
+        const ci = centerRows.indexOf(l.centerCols[k] ?? l.centerCols[0]);
+        const cyA = ci >= 0 ? rowY(ER.m, ci) : ER.m + ER.head / 2;
+        const ny = rowY(b.y, Math.max(0, b.bcols.indexOf(l.nbCols[k] ?? l.nbCols[0])));
+        const [x1, y1, x2, y2] = b.side === 'left' ? [b.x + ER.nbw, ny, cx, cyA] : [cx + ER.cw, cyA, b.x, ny];
+        linkLayer.append(svg('path', { class: 'er-link ' + l.level, 'data-id': b.id, d: `M${x1},${y1} C${x1 + 70},${y1} ${x2 - 70},${y2} ${x2},${y2}` }));
+      }
+    }
+  });
+  boxLayer.append(centerBox.g);
+  root.addEventListener('mouseover', ev => {
+    const id = ev.target.closest('.er-box')?.dataset.id || null;
+    root.classList.toggle('hovering', !!id);
+    root.querySelectorAll('.er-box, .er-link').forEach(el => el.classList.toggle('hot', !!id && el.dataset.id === id));
+  });
+  root.addEventListener('mouseleave', () => { root.classList.remove('hovering'); });
+  root.addEventListener('click', ev => {
+    if (ev.target.dataset?.more) { state.memErAll = !state.memErAll; renderSchema(); return; }
+    const id = ev.target.closest('.er-box')?.dataset.id;
+    if (id) { setMemSel(id); state.memErAll = false; renderSchema(); }
+  });
+  return root;
+}
+
+// ---------- schema tab ----------
+function memChooser(profiles) {
+  if (!profiles.length) {
+    return h('div', { class: 'panel' }, h('div', { class: 'rep-empty' }, h('b', {}, t('No schema memory yet')),
+      h('p', {}, t('It fills as your agent describes tables (describe_table) and runs reports.')),
+      h('p', {}, t('Memory: '), h('code', {}, state.memory?.memoryDir || '~/.auspex/memory'))));
+  }
+  return [h('div', { class: 'muted', style: 'margin:0 0 10px' }, t('Pick a database')),
+    h('div', { class: 'mem-cards' }, profiles.map((p, i) => h('button', { class: 'panel mem-card', style: reduceMotion ? null : `animation-delay:${i * 60}ms`, onclick: () => setDb(p.name) },
+      h('h3', {}, p.name, newChanges(p) ? h('span', { class: 'badge inference', style: 'margin-left:8px' }, t('{n} new schema changes', { n: newChanges(p) })) : null),
+      h('div', { class: 'sch-stats' }, h('span', {}, h('b', {}, fmt(p.explored)), t('explored')), h('span', {}, h('b', {}, fmt(p.unexplored)), t('not explored')),
+        h('span', {}, h('b', {}, fmt(p.edges)), t('relations')), h('span', {}, h('b', {}, fmt(p.notes)), t('notes'))),
+      p.lastActivity ? h('div', { class: 'muted', style: 'font-size:12px;margin-top:8px' }, t('last activity {w}', { w: ago(p.lastActivity) })) : null)))];
+}
+
+function timelinePanel(data) {
+  const since = state.memTimelineSince ?? '';
+  const items = data.changelog.slice().reverse().slice(0, 200);
+  return h('div', { class: 'tl' }, items.length ? items.map(e => h('div', { class: 'tl-item' + (e.event === 'changed' && e.at > since ? ' new' : '') },
+    h('div', { class: 'when' }, dateTimeOf(e.at)),
+    h('div', {}, h('b', { onclick: () => focusTable(`${e.schema}.${e.table}`) }, `${e.schema}.${e.table}`), ' ', h('span', { class: 'muted' }, eventLabel(e)),
+      e.changes ? h('ul', {}, e.changes.map(c => h('li', {}, changeLabel(c)))) : null))) : h('div', { class: 'muted', style: 'padding:10px 0' }, t('No events yet.')));
+}
+
+function renderSchema() {
+  const profiles = memProfiles();
+  const sum = state.db ? memSummaryFor(state.db) : null;
+  const explored = state.db ? (sum?.explored || 0) : profiles.reduce((a, p) => a + (p.explored || 0), 0);
+  $('cSchema').textContent = explored ? fmt(explored) : '';
+  renderChangeBadge();
+  const view = $('v-schema');
+  if (state.tab !== 'schema') { stopGraph(); state.schemaKey = null; return; }
+  if (state.memory?.error) { stopGraph(); state.schemaKey = null; put(view, h('div', { class: 'panel' }, h('div', { class: 'error-box', style: 'margin:16px' }, state.memory.error))); return; }
+  if (!state.db) { stopGraph(); state.schemaKey = null; put(view, memChooser(profiles)); return; }
+  if (!sum) {
+    stopGraph(); state.schemaKey = null;
+    put(view, h('div', { class: 'panel' }, h('div', { class: 'rep-empty' }, h('b', {}, t('No schema memory for {db} yet', { db: state.db })),
+      h('p', {}, t('It fills as your agent describes tables (describe_table) and runs reports.')))));
+    return;
+  }
+  const mv = state.memView;
+  if (!mv || mv.profile !== state.db || (mv.data && mv.data.generatedAt !== sum.generatedAt)) {
+    ensureMemView(state.db);
+    if (!mv || mv.profile !== state.db) { stopGraph(); state.schemaKey = null; put(view, h('div', { class: 'panel' }, h('div', { class: 'rep-empty' }, t('Loading…')))); return; }
+  }
+  if (mv.error) { stopGraph(); state.schemaKey = null; put(view, h('div', { class: 'panel' }, h('div', { class: 'error-box', style: 'margin:16px' }, mv.error))); return; }
+
+  const data = mv.data;
+  const g = memGraph(data);
+  let sel = memSel();
+  if (!sel || !data.nodes.some(n => n.id === sel)) sel = defaultRoot(g);
+  let focus = memFocus();
+  if (!focus || !g.byId.has(focus)) focus = sel && g.byId.has(sel) ? sel : defaultRoot(g);
+  const key = [state.db, data.generatedAt, state.memMode, g.schema, lang, !!state.memTimeline,
+    state.memMode === 'er' ? `${sel}|${!!state.memErAll}` : `${focus}|${!!state.memShowAll}`].join('|');
+  if (state.schemaKey === key && view.firstChild) { applyMemSearch(); return; }
+  state.schemaKey = key;
+  stopGraph();
+  if (sel !== memSel()) setMemSel(sel);
+
+  const S = data.summary;
+  const schemas = [...new Set(data.nodes.map(n => n.schema))].sort();
+  const schemaSel = schemas.length > 1 ? h('div', { class: 'field' }, h('label', {}, t('Schema')), (() => {
+    const s = h('select', { onchange: ev => { state.memSchema = ev.target.value; renderSchema(); } }, h('option', { value: '' }, t('All')), schemas.map(x => h('option', { value: x }, x)));
+    s.value = g.schema;
+    return s;
+  })()) : null;
+  const nNew = newChanges(sum);
+  const bar = h('div', { class: 'panel' },
+    h('div', { class: 'sch-bar' },
+      h('div', { class: 'seg', role: 'group', 'aria-label': t('View') }, [['graph', t('Graph')], ['er', t('ER diagram')]].map(([k, label]) =>
+        h('button', { class: state.memMode === k ? 'on' : '', onclick: () => { state.memMode = k; if (k === 'graph' && sel) setMemFocus(sel); persist(); renderSchema(); } }, label))),
+      schemaSel,
+      state.memMode === 'graph' ? h('button', { class: 'icon-btn', onclick: () => { state.memShowAll = !state.memShowAll; state.memAnimateIn = true; renderSchema(); } }, state.memShowAll ? t('Focus view') : t('Show all')) : null,
+      h('div', { class: 'sch-stats' },
+        h('span', {}, h('b', {}, fmt(S.explored)), t('explored')), h('span', {}, h('b', {}, fmt(S.seen)), t('seen')),
+        h('span', {}, h('b', {}, fmt(S.unexplored)), t('not explored')), h('span', {}, h('b', {}, fmt(S.edges)), t('relations')),
+        h('span', {}, h('b', {}, fmt(S.notes)), t('notes'))),
+      h('span', { class: 'grow' }),
+      h('button', { class: 'icon-btn', onclick: () => { if (state.memTimeline) state.memTimeline = false; else openTimeline(state.db); renderSchema(); } },
+        t('Timeline'), nNew ? h('span', { class: 'badge inference' }, fmt(nNew)) : null)),
+    state.memTimeline ? timelinePanel(data) : null);
+
+  state.memInspHost = h('div');
+  put(state.memInspHost, inspector(data, sel));
+  let canvas;
+  if (state.memMode === 'er' && sel) {
+    canvas = h('div', { class: 'panel sch-canvas er' }, h('div', { class: 'rep-empty' }, t('Loading…')));
+  } else {
+    let visible, depth;
+    if (state.memShowAll) {
+      const b = bfs(g, focus, 1500, Infinity);
+      visible = [...b.order, ...g.nodes.map(n => n.id).filter(id => !b.depth.has(id))].slice(0, 1500);
+      depth = b.depth;
+    } else {
+      ({ order: visible, depth } = bfs(g, focus, 300, 2));
+    }
+    canvas = visible.length ? graphCanvas(g, visible, depth, data) : h('div', { class: 'panel sch-canvas' }, emptyState(t('No tables match.')));
+  }
+  put(view, bar, h('div', { class: 'sch' }, canvas, state.memInspHost));
+  if (graphSim && state.memMode !== 'er') graphSim.start();
+  if (state.memMode === 'er' && sel) buildEr(canvas, data, sel, key);
+  applyMemSearch();
+}
+
 function render() {
   hideTip();
   const rows = filtered();
@@ -1135,6 +1933,7 @@ function render() {
   renderTables(rows);
   renderProfiles(rows);
   renderReports();
+  renderSchema();
   if (state.tab === 'overview') renderOverview(rows);
   if (state.tab === 'ops') renderOps(rows);
   if (state.open && state.tab === 'ops') requestAnimationFrame(() => document.querySelector('tr.r.open')?.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' }));
@@ -1145,7 +1944,8 @@ function moveInk() {
   const b = document.querySelector(`#tabs button[data-tab="${state.tab}"]`), ink = $('tabInk');
   ink.style.left = b.offsetLeft + 'px'; ink.style.width = b.offsetWidth + 'px';
 }
-const tabNames = ['overview', 'ops', 'tables', 'reports', 'profiles'];
+const tabNames = ['overview', 'ops', 'tables', 'reports', 'schema', 'profiles'];
+const ownToolbarTabs = ['reports', 'profiles', 'schema'];
 function switchTab(tab) {
   if (!tabNames.includes(tab)) tab = 'overview';
   state.tab = tab; persist();
@@ -1154,8 +1954,8 @@ function switchTab(tab) {
     const v = $('v-' + t); v.hidden = t !== tab;
     if (t === tab) { v.classList.remove('view'); void v.offsetWidth; v.classList.add('view'); }
   }
-  $('filterRow').dataset.mode = tab === 'reports' || tab === 'profiles' ? tab : 'ops';
-  $('chips').style.display = tab === 'reports' || tab === 'profiles' ? 'none' : '';
+  $('filterRow').dataset.mode = ownToolbarTabs.includes(tab) ? tab : 'ops';
+  $('chips').style.display = ownToolbarTabs.includes(tab) ? 'none' : '';
   if (tab === 'reports') state.reportViewNode = null;
   state.animateRows = tab === 'ops';
   moveInk();
@@ -1196,7 +1996,7 @@ document.addEventListener('keydown', ev => {
   else if (ev.key === 'Escape') { closeDbMenu(); if (typing) document.activeElement.blur(); else if (state.open) { state.open = null; render(); } }
   else if (!typing && (ev.key === 'r' || ev.key === 'R') && !ev.ctrlKey && !ev.metaKey) load();
   else if (!typing && (ev.key === 'd' || ev.key === 'D') && !ev.ctrlKey && !ev.metaKey) { $('dbsel').classList.contains('open') ? closeDbMenu() : openDbMenu(); }
-  else if (!typing && ['1', '2', '3', '4', '5'].includes(ev.key)) switchTab(tabNames[Number(ev.key) - 1]);
+  else if (!typing && ['1', '2', '3', '4', '5', '6'].includes(ev.key)) switchTab(tabNames[Number(ev.key) - 1]);
 });
 addEventListener('resize', moveInk);
 addEventListener('scroll', hideTip, { passive: true });

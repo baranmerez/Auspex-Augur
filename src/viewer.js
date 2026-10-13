@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Local, read-only viewer for the Auspex audit log and profiles.
+// Local, read-only viewer for the Auspex audit log, profiles, report library
+// and schema memory.
 // Listens on 127.0.0.1 only, never connects to a database, never shows
 // passwords. Run with: npm run viewer (port: AUSPEX_VIEWER_PORT, default 4719).
 import http from 'node:http';
@@ -13,6 +14,8 @@ const port = Number.parseInt(process.env.AUSPEX_VIEWER_PORT || '4719', 10);
 const host = '127.0.0.1';
 const pagePath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'viewer.html');
 const dayPattern = /^\d{4}-\d{2}-\d{2}$/;
+const profilePattern = /^[a-z][a-z0-9_-]{0,39}$/;
+const memoryFilePattern = /^tables\/[a-z0-9_~-]+\/[a-z0-9_~-]+\.json$/;
 
 // Re-read on every request so edits to profiles.json show up without restart.
 function readConfig() {
@@ -76,6 +79,42 @@ function library() {
   return new Library(config?.libraryDir ?? path.join(auspexHome(), 'library'));
 }
 
+// Schema memory: graph.json is the derived view the memory module writes
+// after every change; table files hold the full structure for the ER view.
+function memoryDir() {
+  const { config } = readConfig();
+  return config?.memoryDir ?? path.join(auspexHome(), 'memory');
+}
+
+function memoryProfile(params) {
+  const name = params.get('profile') || '';
+  if (!profilePattern.test(name)) throw new LibraryError('Invalid profile name');
+  return path.join(memoryDir(), name);
+}
+
+function readJsonFile(file) {
+  return JSON.parse(fs.readFileSync(file, 'utf8'));
+}
+
+function memorySummary() {
+  const dir = memoryDir();
+  const names = fs.existsSync(dir) ? fs.readdirSync(dir, { withFileTypes: true }).filter(d => d.isDirectory() && profilePattern.test(d.name)).map(d => d.name).sort() : [];
+  const profiles = [];
+  for (const name of names) {
+    const file = path.join(dir, name, 'graph.json');
+    if (!fs.existsSync(file)) continue;
+    const view = readJsonFile(file);
+    profiles.push({ name, generatedAt: view.generatedAt, ...view.summary });
+  }
+  return { memoryDir: dir, profiles };
+}
+
+function memoryTable(params) {
+  const file = params.get('file') || '';
+  if (!memoryFilePattern.test(file)) throw new LibraryError('Invalid memory file');
+  return readJsonFile(path.join(memoryProfile(params), ...file.split('/')));
+}
+
 // One report file: the generated HTML for SELECT/draft reports, the SQL text for
 // EXECUTE scripts. Library.paths validates every segment, so this cannot leave
 // the library folder.
@@ -125,13 +164,16 @@ const server = http.createServer((req, res) => {
       return send(res, 200, { libraryDir: lib.root, reports: lib.list() });
     }
     if (url.pathname === '/api/report') return send(res, 200, reportContent(url.searchParams));
+    if (url.pathname === '/api/memory') return send(res, 200, memorySummary());
+    if (url.pathname === '/api/memory/graph') return send(res, 200, readJsonFile(path.join(memoryProfile(url.searchParams), 'graph.json')));
+    if (url.pathname === '/api/memory/table') return send(res, 200, memoryTable(url.searchParams));
     if (url.pathname === '/api/health') {
       const days = listDays();
       return send(res, 200, { ok: true, latestDay: days[0]?.day ?? null, latestCount: days[0]?.count ?? 0, totalDays: days.length });
     }
     return send(res, 404, { error: 'Not found' });
   } catch (err) {
-    return send(res, err instanceof LibraryError || err.code === 'ENOENT' ? 400 : 500, { error: err.code === 'ENOENT' ? 'Report file not found' : err.message });
+    return send(res, err instanceof LibraryError || err.code === 'ENOENT' ? 400 : 500, { error: err.code === 'ENOENT' ? 'File not found' : err.message });
   }
 });
 

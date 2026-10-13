@@ -6,6 +6,8 @@
 //   tables/<schema>/<table>.json   structure, used columns, change history
 //   notes.json                     rules, observations and inferences
 //   changelog.jsonl                explored tables and schema changes, for timelines
+//   graph.json                     derived view for the viewer and desktop app;
+//                                  rebuilt after every change, safe to delete
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -231,6 +233,7 @@ export class SchemaMemory {
     this.writeTable(profile, record);
     if (firstTime) this.appendChangelog(profile, { at, schema: next.schema, table: next.table, event: 'explored' });
     else if (changes.length) this.appendChangelog(profile, { at, schema: next.schema, table: next.table, event: 'changed', changes });
+    this.rebuildView(profile);
     return {
       recorded: firstTime ? 'first time' : 'updated',
       ...(firstTime ? {} : { lastDescribedAt: prev.describedAt }),
@@ -257,6 +260,7 @@ export class SchemaMemory {
       }
       this.writeTable(profile, record);
     }
+    if (relations.length) this.rebuildView(profile);
     return {
       ...this.notesSection(profile, relations),
       ...this.neighborsSection(profile, relations),
@@ -301,6 +305,7 @@ export class SchemaMemory {
     data.nextId += 1;
     this.writeNotes(profile, data);
     if (note.table) this.appendChangelog(profile, { at, schema: note.schema, table: note.table, event: 'note', noteId: note.id, kind });
+    this.rebuildView(profile);
     return note;
   }
 
@@ -314,6 +319,7 @@ export class SchemaMemory {
     const at = this.now();
     Object.assign(note, { kind, confirmedAt: at, ...(kind === 'observation' && !note.asOf ? { asOf: at.slice(0, 10) } : {}) });
     this.writeNotes(profile, data);
+    this.rebuildView(profile);
     return note;
   }
 
@@ -326,6 +332,7 @@ export class SchemaMemory {
     if (!note) throw new MemoryError(`Note #${id} not found.`);
     Object.assign(note, { status: 'archived', archivedAt: this.now(), archivedReason: why });
     this.writeNotes(profile, data);
+    this.rebuildView(profile);
     return note;
   }
 
@@ -452,6 +459,7 @@ export class SchemaMemory {
     const notes = this.activeNotes(profile);
     const nodes = new Map(tables.map(t => [tableKey(t.schema, t.table), {
       id: tableKey(t.schema, t.table), schema: t.schema, table: t.table,
+      file: `tables/${fileSegment(t.schema)}/${fileSegment(t.table)}.json`,
       state: t.describedAt ? 'explored' : 'seen', kind: t.kind, estimatedRows: t.estimatedRows,
       columnCount: t.columns.length, changes: (t.history || []).length,
       notes: notes.filter(n => n.schema === t.schema && n.table === t.table).length,
@@ -464,6 +472,30 @@ export class SchemaMemory {
       }
     }
     return { profile, nodes: [...nodes.values()], edges };
+  }
+
+  // Everything the viewer shows for one profile, in one file the viewer and
+  // the desktop app read as is (no relation logic outside this module).
+  view(profile) {
+    const { nodes, edges } = this.graph(profile);
+    const notes = this.readNotes(profile).notes;
+    const changelog = this.readChangelog(profile, 300);
+    const count = state => nodes.filter(n => n.state === state).length;
+    return {
+      profile,
+      generatedAt: this.now(),
+      summary: {
+        explored: count('explored'), seen: count('seen'), unexplored: count('unexplored'),
+        edges: edges.length, notes: notes.filter(n => n.status === 'active').length,
+        changeTimes: changelog.filter(e => e.event === 'changed').map(e => e.at),
+        lastActivity: changelog.at(-1)?.at ?? null,
+      },
+      nodes, edges, notes, changelog,
+    };
+  }
+
+  rebuildView(profile) {
+    this.writeJson(path.join(this.profileDir(profile), 'graph.json'), this.view(profile));
   }
 }
 
