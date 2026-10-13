@@ -25,10 +25,31 @@ const forbiddenFunctions = [
 
 class SqlGuardError extends Error {}
 
+// Decodes the body of a U&"..." identifier: \XXXX and \+XXXXXX code points and
+// a doubled escape character, with the escape character from UESCAPE if given.
+function decodeUnicodeIdentifier(body, escape) {
+  let out = '';
+  for (let i = 0; i < body.length; i++) {
+    if (body[i] !== escape) { out += body[i]; continue; }
+    if (body[i + 1] === escape) { out += escape; i++; continue; }
+    const long = body[i + 1] === '+';
+    const hex = long ? body.slice(i + 2, i + 8) : body.slice(i + 1, i + 5);
+    if (!/^[0-9A-Fa-f]+$/.test(hex) || hex.length !== (long ? 6 : 4)) {
+      throw new SqlGuardError('Invalid Unicode escape in quoted identifier.');
+    }
+    out += String.fromCodePoint(parseInt(hex, 16));
+    i += long ? 7 : 4;
+  }
+  return out;
+}
+
 // Masks string literals, quoted identifiers and comments so the keyword scan
 // only sees real SQL tokens. Output length equals input length, so positions
-// found in the masked text are valid in the original.
-function stripLiteralsAndComments(sql) {
+// found in the masked text are valid in the original. When `identifiers` is
+// an array, every quoted identifier is pushed to it as { end, name }, where
+// end is the index after the closing quote and name is the real (decoded,
+// case-preserved) identifier.
+function stripLiteralsAndComments(sql, identifiers = null) {
   let out = '';
   let i = 0;
   const n = sql.length;
@@ -81,6 +102,17 @@ function stripLiteralsAndComments(sql) {
         i++;
       }
       if (!closed) throw new SqlGuardError('Unterminated quoted identifier.');
+      if (identifiers) {
+        let name = sql.slice(start + 1, i - 1).replace(/""/g, '"');
+        const unicode = /^[uU]&$/.test(sql.slice(start - 2, start)) && !/[A-Za-z0-9_$]/.test(sql[start - 3] || '');
+        if (unicode) {
+          const uescape = /^\s*uescape\s*'([^'])'/i.exec(sql.slice(i));
+          name = decodeUnicodeIdentifier(name, uescape ? uescape[1] : '\\');
+          // With UESCAPE the token before "(" is the escape literal.
+          if (uescape) identifiers.push({ end: i + uescape[0].length, name });
+        }
+        identifiers.push({ end: i, name });
+      }
       mask(start, quoted('"'));
     } else if (c === '$') {
       const m = /^\$([A-Za-z_][A-Za-z0-9_]*)?\$/.exec(sql.slice(i));
@@ -102,11 +134,32 @@ function stripLiteralsAndComments(sql) {
   return out;
 }
 
+// Names of everything called like a function: the identifier right before each
+// "(" (comments are already blanked). Unquoted names fold to lower case like
+// PostgreSQL does; quoted names keep their exact spelling, so "pg_sleep"(0),
+// pg_catalog."pg_sleep"(0) and U&"pg\005fsleep"(0) all yield pg_sleep.
+function functionNames(masked, identifiers) {
+  const byEnd = new Map(identifiers.map(q => [q.end, q.name]));
+  const names = [];
+  for (let p = masked.indexOf('('); p >= 0; p = masked.indexOf('(', p + 1)) {
+    let j = p - 1;
+    while (j >= 0 && /\s/.test(masked[j])) j--;
+    if (byEnd.has(j + 1)) {
+      names.push(byEnd.get(j + 1));
+      continue;
+    }
+    const m = /[A-Za-z_][A-Za-z0-9_$]*$/.exec(masked.slice(0, j + 1));
+    if (m) names.push(m[0].toLowerCase());
+  }
+  return names;
+}
+
 // Returns the query without a trailing semicolon, or throws SqlGuardError.
 export function assertReadOnlyQuery(sql) {
   if (typeof sql !== 'string' || !sql.trim()) throw new SqlGuardError('Query is empty.');
 
-  const stripped = stripLiteralsAndComments(sql);
+  const identifiers = [];
+  const stripped = stripLiteralsAndComments(sql, identifiers);
   const body = stripped.replace(/;\s*$/, '');
   if (body.includes(';')) throw new SqlGuardError('Only a single statement is allowed.');
 
@@ -119,8 +172,7 @@ export function assertReadOnlyQuery(sql) {
   const badKeyword = words.find(w => forbiddenKeywords.has(w));
   if (badKeyword) throw new SqlGuardError(`Keyword "${badKeyword.toUpperCase()}" is not allowed.`);
 
-  const calls = body.toLowerCase().matchAll(/([a-z_][a-z0-9_$]*)\s*\(/g);
-  for (const [, fn] of calls) {
+  for (const fn of functionNames(body, identifiers)) {
     if (forbiddenFunctions.some(re => re.test(fn))) throw new SqlGuardError(`Function "${fn}" is not allowed.`);
   }
 

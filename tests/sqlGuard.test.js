@@ -23,6 +23,12 @@ const allowed = [
   ['jsonb_set is not set', "select jsonb_set('{}'::jsonb, '{a}', '1')", null],
   ['created_at column', 'select created_at, updated_by from t', null],
   ['leading comment', '-- note\nselect 1', null],
+  ['quoted table and column names', 'select "Ad", "pg_sleep" from "Müşteri" m', null],
+  ['quoted safe function', 'select "lower"(\'A\')', null],
+  ['quoted name differing only in case', 'select "PG_SLEEP"(0)', null],
+  ['forbidden name inside a string', "select 'pg_sleep(0)'", null],
+  ['forbidden name inside a comment', 'select 1 -- pg_sleep(0)', null],
+  ['unicode-escaped safe identifier', String.raw`select U&"d\0061ta" from t`, null],
 ];
 
 for (const [name, sql, expected] of allowed) {
@@ -59,6 +65,14 @@ const rejected = [
   ['unterminated string', "select 'abc"],
   ['unterminated comment', 'select 1 /* x'],
   ['comment hides second statement start', 'select 1 /* */; delete from t'],
+  ['quoted function name', 'select "pg_sleep"(0)'],
+  ['schema-qualified quoted function name', 'select pg_catalog."pg_sleep"(0)'],
+  ['schema-qualified function name', 'select pg_catalog.pg_sleep(0)'],
+  ['unicode-escaped function name', String.raw`select U&"pg\005fsleep"(0)`],
+  ['unicode-escaped name with uescape', "select U&\"pg!005fsleep\" UESCAPE '!'(0)"],
+  ['comment between name and parenthesis', 'select "pg_sleep" /* x */ (0)'],
+  ['quoted name with mixed-case unquoted call', 'select PG_SLEEP(0)'],
+  ['quoted set_config', `select "set_config"('role', 'postgres', false)`],
 ];
 
 for (const [name, sql] of rejected) {
