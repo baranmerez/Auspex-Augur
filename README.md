@@ -446,7 +446,7 @@ Windows; override with `AUSPEX_PROFILES_FILE`):
 
 | Field | Required | Meaning |
 |---|---|---|
-| `url` | yes | `postgresql://user@host:port/db`; a password here (user-info or query option) is rejected |
+| `url` | yes | `postgresql://user@host:port/db`; a password here (user-info or query option) is rejected. Query options are limited to `host`, `port`, `ssl`, `sslmode`, `sslcert`, `sslkey`, `sslrootcert`, `sslnegotiation`, `uselibpqcompat`, `application_name`, `fallback_application_name`, `connect_timeout`, `keepalives`, `keepalives_idle`; anything else (for example `options=-c ...`, `replication`, `client_encoding`, `user`, `db`) stops the server at startup, as does the same URL in `AUSPEX_DB_<NAME>` |
 | `description` | no | Shown by `list_profiles` when the model asks which database to use; mark production clearly |
 | `maxTimeoutSeconds` | no | Ceiling for `timeoutSeconds` on this profile (1-3600) |
 

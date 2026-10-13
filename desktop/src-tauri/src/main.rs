@@ -273,6 +273,14 @@ fn profile_problem(name: &str, url_text: &str) -> Option<String> {
     if u.password().is_some() || query_password {
         return Some("Password in the URL; move it to pgpass. The server will not start.".into());
     }
+    // Same allowlist as allowedQueryOptions in config.js.
+    const ALLOWED: [&str; 14] = [
+        "host", "port", "ssl", "sslmode", "sslcert", "sslkey", "sslrootcert", "sslnegotiation", "uselibpqcompat",
+        "application_name", "fallback_application_name", "connect_timeout", "keepalives", "keepalives_idle",
+    ];
+    if let Some((k, _)) = u.query_pairs().find(|(k, _)| !ALLOWED.contains(&k.as_ref())) {
+        return Some(format!("Query option \"{k}\" is not allowed in the URL; the server will not start."));
+    }
     None
 }
 

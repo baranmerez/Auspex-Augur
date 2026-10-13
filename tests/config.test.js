@@ -112,6 +112,36 @@ test('pgpass-style profiles with harmless query options still load', () => {
   assert.deepEqual([...config.profiles.keys()].sort(), ['local', 'shop']);
 });
 
+test('every allowlisted query option is accepted', () => {
+  const query = 'host=/var/run/postgresql&port=5433&ssl=true&sslmode=verify-full&sslcert=c.crt&sslkey=c.key&sslrootcert=ca.crt'
+    + '&sslnegotiation=direct&uselibpqcompat=true&application_name=auspex&fallback_application_name=x&connect_timeout=5'
+    + '&keepalives=1&keepalives_idle=30';
+  const file = profilesFile({ shop: { url: `postgresql://Auspex@h/db?${query}` } });
+  assert.equal(readProfilesFile(file).length, 1);
+});
+
+const forbiddenOptions = [
+  ['session settings through options', 'options=-c%20default_transaction_read_only%3Doff', 'options'],
+  ['search_path through options', 'options=-c%20search_path%3Devil', 'options'],
+  ['replication', 'replication=database', 'replication'],
+  ['client_encoding', 'client_encoding=LATIN1', 'client_encoding'],
+  ['encoding alias', 'encoding=LATIN1', 'encoding'],
+  ['user override', 'user=postgres', 'user'],
+  ['database override', 'db=other', 'db'],
+  ['statement_timeout', 'statement_timeout=0', 'statement_timeout'],
+  ['upper-case spelling of an allowed name', 'SSLMODE=disable', 'SSLMODE'],
+];
+
+for (const [name, query, option] of forbiddenOptions) {
+  test(`file and env profiles both reject the ${name} query option`, () => {
+    const url = `postgresql://Auspex@localhost/postgres?sslmode=require&${query}`;
+    const file = profilesFile({ local: { url } });
+    const message = err => err.message.includes(`"${option}"`) && /not allowed/.test(err.message) && !err.message.includes('evil') && !err.message.includes('LATIN1');
+    assert.throws(() => readProfilesFile(file), message);
+    assert.throws(() => loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: path.join(dir, 'missing.json'), AUSPEX_DB_LOCAL: url }), message);
+  });
+}
+
 test('connection summary flags a password in the query string without showing it', async () => {
   const { describeConnection } = await import('../src/config.js');
   const info = describeConnection(`postgresql://Auspex@h/db?password=${secret}`);
