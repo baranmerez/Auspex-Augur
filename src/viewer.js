@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig, describeConnection, auspexHome } from './config.js';
+import { Library, LibraryError } from './reports/library.js';
 
 const port = Number.parseInt(process.env.AUSPEX_VIEWER_PORT || '4719', 10);
 const host = '127.0.0.1';
@@ -70,6 +71,28 @@ function profiles() {
   };
 }
 
+function library() {
+  const { config } = readConfig();
+  return new Library(config?.libraryDir ?? path.join(auspexHome(), 'library'));
+}
+
+// One report file: the generated HTML for SELECT/draft reports, the SQL text for
+// EXECUTE scripts. Library.paths validates every segment, so this cannot leave
+// the library folder.
+function reportContent(params) {
+  const stage = params.get('stage');
+  const ref = { db: params.get('db'), schema: params.get('schema'), category: params.get('category'), name: params.get('name') };
+  const lib = library();
+  if (stage === 'execute') {
+    const file = `${lib.base('execute', ref)}.sql`;
+    return { kind: 'sql', content: fs.readFileSync(file, 'utf8') };
+  }
+  if (stage !== 'draft' && stage !== 'approved') throw new Error('stage must be draft, approved or execute');
+  const p = lib.paths(stage, ref);
+  if (!fs.existsSync(p.html)) return { kind: 'sql', content: fs.readFileSync(p.sql, 'utf8') };
+  return { kind: 'html', content: fs.readFileSync(p.html, 'utf8') };
+}
+
 function send(res, status, body, type = 'application/json; charset=utf-8') {
   res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
   res.end(typeof body === 'string' ? body : JSON.stringify(body));
@@ -97,13 +120,18 @@ const server = http.createServer((req, res) => {
       if (days.length > 400) return send(res, 400, { error: 'range too large' });
       return send(res, 200, days.flatMap(d => readDay(d)));
     }
+    if (url.pathname === '/api/reports') {
+      const lib = library();
+      return send(res, 200, { libraryDir: lib.root, reports: lib.list() });
+    }
+    if (url.pathname === '/api/report') return send(res, 200, reportContent(url.searchParams));
     if (url.pathname === '/api/health') {
       const days = listDays();
       return send(res, 200, { ok: true, latestDay: days[0]?.day ?? null, latestCount: days[0]?.count ?? 0, totalDays: days.length });
     }
     return send(res, 404, { error: 'Not found' });
   } catch (err) {
-    return send(res, 500, { error: err.message });
+    return send(res, err instanceof LibraryError || err.code === 'ENOENT' ? 400 : 500, { error: err.code === 'ENOENT' ? 'Report file not found' : err.message });
   }
 });
 

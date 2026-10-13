@@ -227,6 +227,67 @@
   .empty svg { width: 42px; height: 42px; opacity: .5; display: block; margin: 0 auto 8px; }
   .muted { color: var(--text-3); }
   .view { animation: fade .3s var(--ease); }
+
+  /* Database switcher */
+  .dbsel { position: relative; }
+  .dbsel > button { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line-strong); background: var(--surface);
+    border-radius: 999px; padding: 5px 12px 5px 10px; font-size: 13px; transition: border-color .15s, box-shadow .15s; }
+  .dbsel > button:hover, .dbsel.open > button { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .dbsel .lbl { color: var(--text-3); font-size: 12px; }
+  .dbsel .val { font-weight: 650; }
+  .dbsel .caret { color: var(--text-3); transition: transform .2s var(--ease); }
+  .dbsel.open .caret { transform: rotate(180deg); }
+  .db-ico { width: 18px; height: 18px; flex: none; color: var(--accent); }
+  .dbmenu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 40; min-width: 300px; max-width: 380px; background: var(--surface);
+    border: 1px solid var(--line-strong); border-radius: 12px; box-shadow: var(--shadow-lg); padding: 6px; display: none; animation: pop .18s var(--ease); }
+  .dbsel.open .dbmenu { display: block; }
+  .dbmenu button { width: 100%; display: grid; grid-template-columns: 18px 1fr auto; gap: 2px 10px; align-items: center; text-align: left;
+    border: 0; background: none; border-radius: 8px; padding: 8px 10px; }
+  .dbmenu button:hover { background: var(--surface-2); }
+  .dbmenu button.on { background: var(--accent-soft); }
+  .dbmenu .n { font-weight: 600; }
+  .dbmenu .d { grid-column: 2 / 4; font-size: 12px; color: var(--text-3); }
+  .dbmenu .c { font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .dbmenu .chk { color: var(--accent); font-weight: 700; }
+  .dbmenu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 6px; }
+
+  /* Toolbar */
+  .toolbar { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: 10px 12px; display: grid; gap: 8px; margin-bottom: 10px; }
+  .toolbar .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .toolbar .field { background: var(--bg); }
+  .toolbar[data-mode="reports"] .when, .toolbar[data-mode="reports"] .opsonly,
+  .toolbar[data-mode="profiles"] .when, .toolbar[data-mode="profiles"] .opsonly { display: none; }
+  .toolbar[data-mode="profiles"] { display: none; }
+  .field select { background: transparent; color: var(--text); cursor: pointer; }
+  select option { background: var(--surface); color: var(--text); }
+
+  /* Reports */
+  .rep { display: grid; grid-template-columns: minmax(280px, 340px) 1fr; gap: 14px; align-items: start; }
+  .rep-list { max-height: calc(100vh - 250px); overflow: auto; position: sticky; top: 130px; }
+  .rep-list .stagebar { padding: 10px 12px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--surface); z-index: 1; }
+  .rep-group { padding: 8px 12px 2px; font-size: 11px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--text-3); }
+  .rep-group .path { text-transform: none; letter-spacing: 0; font-weight: 600; color: var(--text-2); }
+  .rep-item { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 8px 12px 8px 14px; border-left: 3px solid transparent;
+    transition: background .15s, border-color .15s; }
+  .rep-item:hover { background: var(--surface-2); }
+  .rep-item.on { background: var(--accent-soft); border-left-color: var(--accent); }
+  .rep-item .t { font-weight: 600; display: flex; gap: 6px; align-items: center; }
+  .rep-item .s { font-size: 12px; color: var(--text-3); display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+  .badge.draft { background: var(--warn-soft); color: var(--warn-ink); }
+  .badge.approved { background: var(--good-soft); color: var(--good-ink); }
+  .badge.execute { background: var(--critical-soft); color: var(--critical); }
+  .rep-view { min-height: 420px; display: flex; flex-direction: column; overflow: hidden; }
+  .rep-view .bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .rep-view .bar .grow { flex: 1; }
+  .rep-view .crumbs { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--text-3); }
+  .rep-view .crumb { border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; color: var(--text-2); }
+  .rep-view iframe { width: 100%; height: calc(100vh - 230px); min-height: 520px; border: 0; background: var(--bg); display: block; }
+  .rep-view pre { margin: 0; padding: 14px 16px; font: 12.5px/1.6 var(--mono); white-space: pre-wrap; word-break: break-word; max-height: calc(100vh - 230px); overflow: auto; }
+  .rep-empty { padding: 60px 30px; text-align: center; color: var(--text-3); }
+  .rep-empty b { color: var(--text); }
+  .rep-empty code { font: 12px var(--mono); background: var(--surface-2); padding: 1px 6px; border-radius: 4px; }
+  @media (max-width: 900px) { .rep { grid-template-columns: 1fr; } .rep-list { position: static; max-height: 360px; } }
   .loading .view { opacity: .55; transition: opacity .2s; }
 
   .toast { position: fixed; bottom: 24px; left: 50%; transform: translate(-50%, 20px); opacity: 0; z-index: 60;
@@ -267,6 +328,14 @@
         <circle cx="16" cy="16" r="5" fill="var(--accent)"/>
       </svg>
       <h1>Auspex Augur</h1>
+      <div class="dbsel" id="dbsel">
+        <button id="dbBtn" aria-haspopup="listbox" aria-expanded="false" title="Choose the database for every tab (d)">
+          <svg class="db-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
+          <span class="lbl">Database</span><span class="val" id="dbVal">All databases</span>
+          <svg class="caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div class="dbmenu" id="dbMenu" role="listbox"></div>
+      </div>
       <span class="sub">read-only database access log</span>
       <span class="spacer"></span>
       <span class="live" id="live" title="Live refresh"><span class="dot"></span><span id="liveText">Live off</span></span>
@@ -287,6 +356,7 @@
       <button data-tab="overview" class="on">Overview</button>
       <button data-tab="ops">Operations<span class="count" id="cOps"></span></button>
       <button data-tab="tables">Tables<span class="count" id="cTables"></span></button>
+      <button data-tab="reports">Reports<span class="count" id="cReports"></span></button>
       <button data-tab="profiles">Profiles<span class="count" id="cProfiles"></span></button>
       <span class="tab-ink" id="tabInk"></span>
     </nav>
@@ -294,27 +364,31 @@
 </header>
 
 <main id="main">
-  <div class="filters" id="filterRow">
-    <div class="seg" id="range" role="group" aria-label="Date range">
-      <button data-r="today" class="on">Today</button>
-      <button data-r="yesterday">Yesterday</button>
-      <button data-r="7">7 days</button>
-      <button data-r="30">30 days</button>
-      <button data-r="all">All</button>
+  <div class="toolbar" id="filterRow" data-mode="ops">
+    <div class="row when">
+      <div class="seg" id="range" role="group" aria-label="Date range">
+        <button data-r="today" class="on">Today</button>
+        <button data-r="yesterday">Yesterday</button>
+        <button data-r="7">7 days</button>
+        <button data-r="30">30 days</button>
+        <button data-r="all">All</button>
+      </div>
+      <div class="field"><label for="from">From</label><input type="date" id="from"></div>
+      <div class="field"><label for="to">To</label><input type="date" id="to"></div>
     </div>
-    <div class="field"><label for="from">From</label><input type="date" id="from"></div>
-    <div class="field"><label for="to">To</label><input type="date" id="to"></div>
-    <div class="field"><label for="fProfile">Profile</label><select id="fProfile"><option value="">All</option></select></div>
-    <div class="field"><label for="fSource">Source</label><select id="fSource"><option value="">All</option><option value="mcp">mcp</option><option value="script">script</option><option value="old">legacy entry</option></select></div>
-    <div class="field"><label for="fTool">Tool</label><select id="fTool"><option value="">All</option></select></div>
-    <div class="field"><label for="fStatus">Status</label><select id="fStatus"><option value="">All</option><option value="ok">Succeeded</option><option value="err">Error / rejected</option></select></div>
-    <div class="field search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--text-3)"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" id="fText" placeholder="Search SQL, tables, errors" aria-label="Search"><kbd>/</kbd></div>
+    <div class="row">
+      <div class="field opsonly"><label for="fSource">Source</label><select id="fSource"><option value="">All</option><option value="mcp">mcp</option><option value="script">script</option><option value="old">legacy entry</option></select></div>
+      <div class="field opsonly"><label for="fTool">Tool</label><select id="fTool"><option value="">All</option></select></div>
+      <div class="field opsonly"><label for="fStatus">Status</label><select id="fStatus"><option value="">All</option><option value="ok">Succeeded</option><option value="err">Error / rejected</option></select></div>
+      <div class="field search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--text-3)"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" id="fText" placeholder="Search SQL, tables, errors, reports" aria-label="Search"><kbd>/</kbd></div>
+    </div>
   </div>
   <div class="chips" id="chips"></div>
 
   <section id="v-overview" class="view"></section>
   <section id="v-ops" class="view" hidden></section>
   <section id="v-tables" class="view" hidden></section>
+  <section id="v-reports" class="view" hidden></section>
   <section id="v-profiles" class="view" hidden></section>
 </main>
 
@@ -350,7 +424,10 @@ const locale = 'en-GB';
 const nf = new Intl.NumberFormat(locale);
 const fmt = n => (n === null || n === undefined || Number.isNaN(n)) ? '–' : nf.format(n);
 const compact = n => n >= 10000 ? new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(n) : fmt(n);
-const fmtMs = ms => !Number.isFinite(ms) ? '–' : ms >= 1000 ? (ms / 1000).toLocaleString(locale, { maximumFractionDigits: 1 }) + ' s' : fmt(Math.round(ms)) + ' ms';
+const fmtMs = ms => !Number.isFinite(ms) ? '–'
+  : ms >= 1000 ? (ms / 1000).toLocaleString(locale, { maximumFractionDigits: 1 }) + ' s'
+  : ms < 10 ? ms.toLocaleString(locale, { maximumFractionDigits: ms < 1 ? 2 : 1 }) + ' ms'
+  : fmt(Math.round(ms)) + ' ms';
 const pad = n => String(n).padStart(2, '0');
 const localDay = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const addDays = (s, n) => { const d = new Date(s + 'T00:00:00'); d.setDate(d.getDate() + n); return localDay(d); };
@@ -377,9 +454,11 @@ function relationsOf(e) {
   if (e.tool === 'describe_table' && e.table) out.add(`${e.schema}.${e.table}`);
   if (e.sql) {
     const sql = e.sql.replace(/'(?:[^']|'')*'/g, "''").replace(/--[^\n]*/g, ' ');
+    // CTE names (WITH x AS (...), y AS (...)) are not tables.
+    const ctes = new Set([...sql.matchAll(/(?:\bwith(?:\s+recursive)?|,)\s*("?[a-z_][\w$]*"?)\s*(?:\([^)]*\)\s*)?as\s+(?:not\s+)?(?:materialized\s+)?\(/gi)].map(m => m[1].replace(/"/g, '').toLowerCase()));
     for (const m of sql.matchAll(relRe)) {
       const name = m[1].replace(/\s+/g, '').replace(/"/g, '').toLowerCase();
-      if (/^(select|lateral|unnest|generate_series)$/.test(name)) continue;
+      if (/^(select|lateral|unnest|generate_series)$/.test(name) || ctes.has(name)) continue;
       out.add(name);
     }
   }
@@ -449,9 +528,10 @@ const state = {
   all: [], days: [], profiles: null,
   tab: 'overview', sort: { key: 'ts', dir: 'desc' }, page: 0, pageSize: 50,
   open: null, live: false, seen: new Set(), firstLoad: true, systemTables: false,
+  db: '', reports: null, reportSel: null, stageFilter: 'all', reportDoc: null,
 };
-try { Object.assign(state, JSON.parse(localStorage.getItem('auspex.viewer') || '{}'), { all: [], seen: new Set(), firstLoad: true, open: null }); } catch {}
-const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme })); } catch {} };
+try { Object.assign(state, JSON.parse(localStorage.getItem('auspex.viewer') || '{}'), { all: [], seen: new Set(), firstLoad: true, open: null, reports: null, reportDoc: null }); } catch {}
+const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel })); } catch {} };
 
 // In the Tauri desktop app the same routes are served by the Rust `api` command.
 const tauriCore = window.__TAURI__?.core;
@@ -492,6 +572,7 @@ async function load({ quiet = false } = {}) {
     state.all = rows.filter(e => { if (!e.ts) return true; const d = localDay(new Date(e.ts)); return d >= from && d <= to; })
       .map((e, i) => ({ ...e, _id: (e.ts || '') + '|' + (e.tool || '') + '|' + i }));
     if (!state.profiles || !quiet) state.profiles = await getJson('/api/profiles');
+    try { state.reports = await getJson('/api/reports'); } catch (err) { state.reports = { error: err.message, reports: [] }; }
     const fresh = new Set();
     if (!state.firstLoad) for (const e of state.all) if (!state.seen.has(e._id)) fresh.add(e._id);
     state.seen = new Set(state.all.map(e => e._id));
@@ -509,16 +590,58 @@ async function load({ quiet = false } = {}) {
 }
 
 // ---------- filters ----------
-const F = { profile: $('fProfile'), source: $('fSource'), tool: $('fTool'), status: $('fStatus'), text: $('fText') };
+// The database switcher in the header is the profile filter for every tab.
+const F = {
+  profile: { get value() { return state.db || ''; }, set value(v) { setDb(v || '', { render: false }); } },
+  source: $('fSource'), tool: $('fTool'), status: $('fStatus'), text: $('fText'),
+};
 function syncFilterOptions() {
   const fill = (sel, values, labelOf = v => v) => {
     const cur = sel.value;
     sel.replaceChildren(h('option', { value: '' }, 'All'), ...values.map(v => h('option', { value: v }, labelOf(v))));
     sel.value = values.includes(cur) ? cur : '';
   };
-  fill(F.profile, [...new Set(state.all.map(e => e.profile).filter(Boolean))].sort());
   fill(F.tool, [...new Set(state.all.map(e => e.tool).filter(Boolean))].sort(), toolName);
+  renderDbMenu();
 }
+
+// ---------- database switcher ----------
+function knownDbs() {
+  const names = new Set((state.profiles?.profiles || []).map(p => p.name));
+  for (const e of state.all) if (e.profile) names.add(e.profile);
+  for (const r of state.reports?.reports || []) names.add(r.db);
+  return [...names].sort();
+}
+function setDb(db, { render: doRender = true } = {}) {
+  state.db = db;
+  state.reportSel = null; state.reportDoc = null;
+  persist();
+  $('dbVal').textContent = db || 'All databases';
+  closeDbMenu();
+  if (doRender) render();
+}
+function renderDbMenu() {
+  $('dbVal').textContent = state.db || 'All databases';
+  const info = new Map((state.profiles?.profiles || []).map(p => [p.name, p]));
+  const opsBy = groupCount(state.all, e => e.profile);
+  const opsCount = name => opsBy.find(g => g.key === name)?.count || 0;
+  const repCount = name => (state.reports?.reports || []).filter(r => !name || r.db === name).length;
+  const item = (name, title, desc) => h('button', { role: 'option', class: state.db === name ? 'on' : '', 'aria-selected': state.db === name ? 'true' : 'false', onclick: () => setDb(name) },
+    h('span', { class: 'chk' }, state.db === name ? '✓' : ''), h('span', { class: 'n' }, title),
+    h('span', { class: 'c' }, `${fmt(name ? opsCount(name) : state.all.length)} ops · ${fmt(repCount(name))} reports`),
+    desc ? h('span', { class: 'd' }, desc) : null);
+  put($('dbMenu'),
+    item('', 'All databases', 'Every profile together'),
+    h('hr'),
+    knownDbs().map(name => {
+      const p = info.get(name);
+      return item(name, name, p ? [p.description, `${p.host}:${p.port}/${p.database}`].filter(Boolean).join(' · ') : 'not in the profiles file');
+    }));
+}
+function openDbMenu() { $('dbsel').classList.add('open'); $('dbBtn').setAttribute('aria-expanded', 'true'); renderDbMenu(); }
+function closeDbMenu() { $('dbsel').classList.remove('open'); $('dbBtn').setAttribute('aria-expanded', 'false'); }
+$('dbBtn').addEventListener('click', ev => { ev.stopPropagation(); $('dbsel').classList.contains('open') ? closeDbMenu() : openDbMenu(); });
+document.addEventListener('click', ev => { if (!$('dbsel').contains(ev.target)) closeDbMenu(); });
 function filtered() {
   const p = F.profile.value, s = F.source.value, t = F.tool.value, st = F.status.value, q = F.text.value.trim().toLowerCase();
   return state.all.filter(e => (!p || e.profile === p) && (!s || sourceOf(e) === s) && (!t || e.tool === t)
@@ -527,14 +650,14 @@ function filtered() {
 function renderChips(rows) {
   const chips = [];
   const add = (label, clear) => chips.push(h('span', { class: 'chip' }, label, h('button', { title: 'Remove', 'aria-label': 'Remove filter', onclick: () => { clear(); render(); } }, '×')));
-  if (F.profile.value) add(`Profile: ${F.profile.value}`, () => F.profile.value = '');
+  if (state.db) add(`Database: ${state.db}`, () => setDb('', { render: false }));
   if (F.source.value) add(`Source: ${sourceLabel(F.source.value)}`, () => F.source.value = '');
   if (F.tool.value) add(`Tool: ${toolName(F.tool.value)}`, () => F.tool.value = '');
   if (F.status.value) add(F.status.value === 'err' ? 'Errors only' : 'Succeeded only', () => F.status.value = '');
   if (F.text.value.trim()) add(`“${F.text.value.trim()}”`, () => F.text.value = '');
   const [from, to] = resolveRange();
   const scope = h('span', { class: 'scope' }, `${from === to ? from : from + ' → ' + to} · ${fmt(rows.length)} / ${fmt(state.all.length)} operations`);
-  if (chips.length > 1) chips.push(h('button', { class: 'clear', onclick: () => { Object.values(F).forEach(f => f.value = ''); render(); } }, 'Clear all'));
+  if (chips.length > 1) chips.push(h('button', { class: 'clear', onclick: () => { for (const k of ['source', 'tool', 'status', 'text']) F[k].value = ''; render(); } }, 'Clear filters'));
   $('chips').replaceChildren(scope, ...chips);
 }
 
@@ -707,7 +830,7 @@ function renderOverview(rows) {
     h('div', { class: 'grid g-tiles' }, t1, t2, t3, t4, t5, t6),
     h('div', { class: 'grid g-main' },
       panel('Operations over time', from === to ? 'by hour' : 'by day · click a column to drill into that day', h('div', {}, activityChart(rows), h('div', { style: 'margin-top:10px' }, legend))),
-      panel('By profile', 'click to filter', hbarChart(groupCount(rows, e => e.profile), { onPick: v => pick(F.profile, v), limit: 6 }))),
+      panel('By database', 'click to switch', hbarChart(groupCount(rows, e => e.profile), { onPick: v => setDb(v), limit: 6 }))),
     h('div', { class: 'grid g-2' },
       panel('By tool', 'click to filter', hbarChart(groupCount(rows, e => e.tool), { labelOf: g => toolName(g.key), onPick: v => pick(F.tool, v), limit: 8 })),
       panel('Most accessed tables', 'click to search', hbarChart(groupCount(rows, e => relationsOf(e).filter(r => !isSystemRel(r))), { onPick: v => { F.text.value = v; render(); }, unit: 'accesses', limit: 8 }))),
@@ -842,6 +965,99 @@ function renderProfiles(rows) {
   $('cProfiles').textContent = cards.length ? fmt(cards.length) : '';
 }
 
+// ---------- reports ----------
+const repKey = r => [r.stage, r.db, r.schema, r.category, r.name].join('|');
+function ago(ts) {
+  if (!ts) return '';
+  const s = (Date.now() - new Date(ts).getTime()) / 1000;
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+  return `${Math.round(s / 86400)} d ago`;
+}
+async function loadReport(r) {
+  const key = repKey(r);
+  state.reportSel = key; state.reportDoc = { key, loading: true }; state.reportViewNode = null;
+  persist();
+  renderReports();
+  try {
+    const q = new URLSearchParams({ stage: r.stage, db: r.db, schema: r.schema, category: r.category, name: r.name });
+    const doc = await getJson('/api/report?' + q);
+    if (state.reportSel === key) state.reportDoc = { key, ...doc };
+  } catch (err) {
+    if (state.reportSel === key) state.reportDoc = { key, error: err.message };
+  }
+  state.reportViewNode = null;
+  renderReports();
+}
+// Report HTML follows the viewer theme when the viewer forces one.
+function themedReport(html) {
+  const t = state.theme && state.theme !== 'auto' ? state.theme : null;
+  return t ? html.replace('<html lang="en">', `<html lang="en" data-theme="${t}">`) : html;
+}
+function reportView(r) {
+  if (!r) return h('div', { class: 'panel rep-view' }, h('div', { class: 'rep-empty' }, h('b', {}, 'Select a report'), h('div', {}, 'Its plan, joins, timings, preview and history open here.')));
+  if (state.reportViewNode && state.reportViewKey === repKey(r) && state.reportViewTheme === state.theme) return state.reportViewNode;
+  const doc = state.reportDoc && state.reportDoc.key === repKey(r) ? state.reportDoc : null;
+  const body = !doc || doc.loading ? h('div', { class: 'rep-empty' }, 'Loading…')
+    : doc.error ? h('div', { class: 'error-box', style: 'margin:16px' }, doc.error)
+    : doc.kind === 'html' ? (() => { const f = h('iframe', { sandbox: 'allow-scripts allow-popups allow-modals', title: r.title, loading: 'eager' }); f.srcdoc = themedReport(doc.content); return f; })()
+    : h('pre', {}, doc.content);
+  const actions = [];
+  if (doc && doc.content && doc.kind === 'sql') actions.push(h('button', { class: 'icon-btn', onclick: () => copy(doc.content, 'SQL') }, 'Copy SQL'));
+  if (doc && doc.kind === 'html' && !tauriCore) actions.push(h('button', { class: 'icon-btn', onclick: () => window.open(URL.createObjectURL(new Blob([doc.content], { type: 'text/html' })), '_blank') }, 'Open in new tab'));
+  // HTML reports carry their own header; the bar only adds actions then.
+  const heading = doc && doc.kind === 'html' ? h('span', { class: 'muted', style: 'font-size:12px' }, `${r.db} › ${r.schema} › ${r.category} › ${r.name}`) : h('div', {},
+    h('div', { class: 'crumbs' }, h('span', { class: 'crumb' }, r.db), '›', h('span', { class: 'crumb' }, r.schema), '›', h('span', { class: 'crumb' }, r.category)),
+    h('div', { style: 'font-weight:650;margin-top:3px' }, r.title, ' ', h('span', { class: 'badge ' + r.stage }, r.stage === 'approved' ? `approved v${r.approvedVersion ?? '?'}` : r.stage)));
+  const node = h('div', { class: 'panel rep-view' }, h('div', { class: 'bar' }, heading, h('span', { class: 'grow' }), actions), body);
+  if (doc && !doc.loading) { state.reportViewNode = node; state.reportViewKey = repKey(r); state.reportViewTheme = state.theme; }
+  return node;
+}
+function renderReports() {
+  const data = state.reports;
+  const all = (data?.reports || []).filter(r => !state.db || r.db === state.db);
+  $('cReports').textContent = all.length ? fmt(all.length) : '';
+  if (state.tab !== 'reports') return;
+  if (data?.error) { put($('v-reports'), h('div', { class: 'panel' }, h('div', { class: 'error-box', style: 'margin:16px' }, 'Could not read the report library: ' + data.error))); return; }
+  if (!all.length) {
+    put($('v-reports'), h('div', { class: 'panel' }, h('div', { class: 'rep-empty' },
+      h('b', {}, state.db ? `No reports for ${state.db} yet` : 'The report library is empty'),
+      h('p', {}, 'Ask your agent to save an analysis query with ', h('code', {}, 'save_report'), ' and run it with ', h('code', {}, 'run_report'), '.'),
+      h('p', {}, 'Library: ', h('code', {}, data?.libraryDir || '~/.auspex/library')))));
+    return;
+  }
+  const q = F.text.value.trim().toLowerCase();
+  const list = all.filter(r => (state.stageFilter === 'all' || r.stage === state.stageFilter)
+    && (!q || [r.title, r.name, r.category, r.schema, r.db, r.description].join(' ').toLowerCase().includes(q)));
+  const count = st => all.filter(r => st === 'all' || r.stage === st).length;
+  const stagebar = h('div', { class: 'stagebar' }, h('div', { class: 'seg', role: 'group', 'aria-label': 'Stage' },
+    [['all', 'All'], ['draft', 'Drafts'], ['approved', 'Approved'], ['execute', 'Execute']].map(([k, label]) =>
+      h('button', { class: state.stageFilter === k ? 'on' : '', onclick: () => { state.stageFilter = k; persist(); renderReports(); } }, `${label} ${count(k)}`))));
+  const groups = new Map();
+  for (const r of list) {
+    const key = (state.db ? '' : r.db + ' › ') + r.schema + ' › ' + r.category;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(r);
+  }
+  const left = h('div', { class: 'panel rep-list' }, stagebar,
+    list.length ? [...groups.keys()].sort((a, b) => a.localeCompare(b, 'tr')).map(key => [
+      h('div', { class: 'rep-group' }, h('span', { class: 'path' }, key)),
+      groups.get(key).sort((a, b) => String(a.title).localeCompare(String(b.title), 'tr')).map(r => {
+        const lr = r.lastRun;
+        return h('button', { class: 'rep-item' + (state.reportSel === repKey(r) ? ' on' : ''), onclick: () => loadReport(r), title: r.description || r.title },
+          h('div', { class: 't' }, r.title, h('span', { class: 'badge ' + r.stage }, r.stage)),
+          h('div', { class: 's' },
+            r.versions ? h('span', {}, `v${r.versions}`) : null,
+            lr ? h('span', {}, `${lr.analyzed === false ? 'plan only' : fmtMs(lr.durationMs)} · ${fmt(lr.rows)} rows`) : (r.stage === 'execute' ? h('span', {}, 'change script') : h('span', {}, 'not run yet')),
+            lr?.warnings ? h('span', { style: 'color:var(--warn-ink)' }, `⚠ ${lr.warnings}`) : null,
+            h('span', {}, ago(lr?.at || r.updatedAt))));
+      })]) : h('div', { class: 'rep-empty' }, 'No reports match.'));
+  const selected = all.find(r => repKey(r) === state.reportSel);
+  if (selected && (!state.reportDoc || state.reportDoc.key !== state.reportSel)) { loadReport(selected); return; }
+  put($('v-reports'), h('div', { class: 'rep' }, left, reportView(selected)));
+}
+
 function render() {
   hideTip();
   const rows = filtered();
@@ -849,6 +1065,7 @@ function render() {
   $('cOps').textContent = rows.length ? fmt(rows.length) : '';
   renderTables(rows);
   renderProfiles(rows);
+  renderReports();
   if (state.tab === 'overview') renderOverview(rows);
   if (state.tab === 'ops') renderOps(rows);
   if (state.open && state.tab === 'ops') requestAnimationFrame(() => document.querySelector('tr.r.open')?.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' }));
@@ -859,14 +1076,18 @@ function moveInk() {
   const b = document.querySelector(`#tabs button[data-tab="${state.tab}"]`), ink = $('tabInk');
   ink.style.left = b.offsetLeft + 'px'; ink.style.width = b.offsetWidth + 'px';
 }
+const tabNames = ['overview', 'ops', 'tables', 'reports', 'profiles'];
 function switchTab(tab) {
+  if (!tabNames.includes(tab)) tab = 'overview';
   state.tab = tab; persist();
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
-  for (const t of ['overview', 'ops', 'tables', 'profiles']) {
+  for (const t of tabNames) {
     const v = $('v-' + t); v.hidden = t !== tab;
     if (t === tab) { v.classList.remove('view'); void v.offsetWidth; v.classList.add('view'); }
   }
-  $('filterRow').style.display = tab === 'profiles' ? '' : '';
+  $('filterRow').dataset.mode = tab === 'reports' || tab === 'profiles' ? tab : 'ops';
+  $('chips').style.display = tab === 'reports' || tab === 'profiles' ? 'none' : '';
+  if (tab === 'reports') state.reportViewNode = null;
   state.animateRows = tab === 'ops';
   moveInk();
   render();
@@ -881,14 +1102,14 @@ for (const id of ['from', 'to']) $(id).addEventListener('change', () => {
   let f = $('from').value, t = $('to').value; if (!f || !t) return; if (f > t) [f, t] = [t, f];
   state.range = 'custom'; state.from = f; state.to = t; state.page = 0; syncRangeButtons(); load();
 });
-for (const f of Object.values(F)) f.addEventListener(f.type === 'search' ? 'input' : 'change', () => { state.page = 0; state.open = null; render(); });
+for (const k of ['source', 'tool', 'status', 'text']) F[k].addEventListener(F[k].type === 'search' ? 'input' : 'change', () => { state.page = 0; state.open = null; render(); });
 
 function applyTheme() {
   const t = state.theme || 'auto';
   if (t === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', t);
   document.querySelectorAll('#theme button').forEach(b => b.classList.toggle('on', b.dataset.v === t));
 }
-document.querySelectorAll('#theme button').forEach(b => b.addEventListener('click', () => { state.theme = b.dataset.v; persist(); applyTheme(); }));
+document.querySelectorAll('#theme button').forEach(b => b.addEventListener('click', () => { state.theme = b.dataset.v; persist(); applyTheme(); if (state.tab === 'reports') renderReports(); }));
 
 let liveTimer = null;
 function applyLive() {
@@ -903,9 +1124,10 @@ $('refreshBtn').addEventListener('click', () => load());
 document.addEventListener('keydown', ev => {
   const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName);
   if (ev.key === '/' && !typing) { ev.preventDefault(); F.text.focus(); }
-  else if (ev.key === 'Escape') { if (typing) document.activeElement.blur(); else if (state.open) { state.open = null; render(); } }
+  else if (ev.key === 'Escape') { closeDbMenu(); if (typing) document.activeElement.blur(); else if (state.open) { state.open = null; render(); } }
   else if (!typing && (ev.key === 'r' || ev.key === 'R') && !ev.ctrlKey && !ev.metaKey) load();
-  else if (!typing && ['1', '2', '3', '4'].includes(ev.key)) switchTab(['overview', 'ops', 'tables', 'profiles'][Number(ev.key) - 1]);
+  else if (!typing && (ev.key === 'd' || ev.key === 'D') && !ev.ctrlKey && !ev.metaKey) { $('dbsel').classList.contains('open') ? closeDbMenu() : openDbMenu(); }
+  else if (!typing && ['1', '2', '3', '4', '5'].includes(ev.key)) switchTab(tabNames[Number(ev.key) - 1]);
 });
 addEventListener('resize', moveInk);
 addEventListener('scroll', hideTip, { passive: true });
