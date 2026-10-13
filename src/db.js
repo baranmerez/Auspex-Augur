@@ -125,9 +125,11 @@ export class ReadOnlyDatabase {
       () => this._explain(profile, sql, params, analyze, timeoutSeconds));
   }
 
-  exportCsv(profile, sql, params, fileName, delimiter, timeoutSeconds) {
-    return this.audited('export_csv', { profile: profile ?? null, sql, params, fileName, timeoutSeconds },
-      () => this._exportCsv(profile, sql, params, fileName, delimiter, timeoutSeconds));
+  // mode 'raw' (default) writes values exactly; 'spreadsheet' neutralizes
+  // text cells a spreadsheet would run as a formula (see spreadsheetSafe).
+  exportCsv(profile, sql, params, fileName, delimiter, timeoutSeconds, mode = 'raw') {
+    return this.audited('export_csv', { profile: profile ?? null, sql, params, fileName, timeoutSeconds, mode },
+      () => this._exportCsv(profile, sql, params, fileName, delimiter, timeoutSeconds, mode));
   }
 
   runReport(profile, sql, options = {}) {
@@ -207,7 +209,8 @@ export class ReadOnlyDatabase {
     }, timeoutSeconds);
   }
 
-  async _exportCsv(profile, sql, params, fileName, delimiter, timeoutSeconds) {
+  async _exportCsv(profile, sql, params, fileName, delimiter, timeoutSeconds, mode = 'raw') {
+    if (mode !== 'raw' && mode !== 'spreadsheet') throw new Error('mode must be "raw" or "spreadsheet".');
     const query = assertReadOnlyQuery(sql);
     const target = this.exportPath(fileName);
     return this.withReadOnly(profile, async (client, name) => {
@@ -225,6 +228,7 @@ export class ReadOnlyDatabase {
       const write = chunk => (out.write(chunk) ? null : Promise.race([once(out, 'drain'), failed]));
       let rowCount = 0;
       let columns = [];
+      let textColumn = [];
       let truncated = false;
       try {
         await write('﻿'); // BOM so Excel opens UTF-8 (Turkish characters) correctly
@@ -232,11 +236,12 @@ export class ReadOnlyDatabase {
           const res = await Promise.race([client.query({ text: `FETCH ${exportBatchSize} FROM ${cursorName}`, rowMode: 'array' }), failed]);
           if (rowCount === 0) {
             columns = res.fields.map(f => f.name);
+            textColumn = res.fields.map(f => mode === 'spreadsheet' && !nonTextTypes.has(f.dataTypeID));
             await write(columns.map(c => csvCell(c, delimiter)).join(delimiter) + '\r\n');
           }
           for (const row of res.rows) {
             if (rowCount >= this.config.exportMaxRows) { truncated = true; break; }
-            await write(row.map(v => csvCell(rawCell(v), delimiter)).join(delimiter) + '\r\n');
+            await write(row.map((v, i) => csvCell(textColumn[i] ? spreadsheetSafe(rawCell(v)) : rawCell(v), delimiter)).join(delimiter) + '\r\n');
             rowCount++;
           }
           if (truncated || res.rows.length < exportBatchSize) break;
@@ -286,6 +291,17 @@ function rawCell(value) {
   if (value instanceof Date) return value.toISOString();
   if (typeof value === 'object') return JSON.stringify(value);
   return value;
+}
+
+// Type OIDs whose values are never free text (numbers, dates, booleans,
+// uuid...). They stay exact in spreadsheet mode, so a real negative number is
+// not turned into text. Any other type, including unknown ones, counts as text.
+const nonTextTypes = new Set([16, 20, 21, 23, 26, 700, 701, 790, 1082, 1083, 1114, 1184, 1186, 1266, 1700, 2950]);
+
+// A cell starting with = + - @ or a tab/carriage return can run as a formula
+// in Excel, LibreOffice or Google Sheets; a leading apostrophe makes it text.
+export function spreadsheetSafe(value) {
+  return typeof value === 'string' && /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
 }
 
 function csvCell(value, delimiter) {
