@@ -33,6 +33,7 @@ auspex/
 │   ├── catalog.js      list_schemas / list_tables / describe_table / search
 │   ├── config.js       ~/.auspex, profiles.json, environment variables
 │   ├── auditLog.js     Daily JSONL audit log
+│   ├── fileLock.js     Cross-process lock for the library and the schema memory
 │   ├── viewer.js       Local viewer server (127.0.0.1:4719)
 │   ├── viewer.html     Viewer UI (shared by browser and desktop app)
 │   ├── reports/        Report library: library, plan summary, masking, HTML template
@@ -78,7 +79,9 @@ database to use unless they named one in the current conversation.
    keyword SELECT/WITH/VALUES/TABLE; data-modifying CTEs, `SELECT INTO`,
    `FOR UPDATE` and side-effect functions (`set_config`,
    `pg_terminate_backend`, `pg_sleep`, `lo_*`, `dblink*`, `pg_read_*`,
-   `nextval`, ...) are rejected.
+   `nextval`, ...) are rejected, also when the name is quoted,
+   schema-qualified or Unicode-escaped (lexical check; user-defined functions
+   that call them are limited by the role's grants, not by the guard).
 3. **READ ONLY transaction** — every call runs in `BEGIN ... READ ONLY` with
    `SET LOCAL statement_timeout / lock_timeout / idle_in_transaction...` and
    always ends with `ROLLBACK`.
@@ -168,8 +171,8 @@ Desktop build: Rust (MSVC toolchain), VS 2022 C++ Build Tools, WebView2;
 
 | Command | Scope | Last result |
 |---|---|---|
-| `npm test` | SQL guard, profiles, config, timeouts, explain, audit, reports, schema memory (no database) | 103/103 |
-| `npm run test:local` | Local PG16 + `auspex_test` schema: writes rejected by the database, unprivileged table, CTE, stacked statements, timeout, EXPLAIN ANALYZE, CSV, search, reports, memory | 26/26 |
+| `npm test` | SQL guard, profiles, config, timeouts, explain, audit (incl. MCP server end to end), reports, change-script lint, CSV export, file lock with child processes, schema memory (no database) | 188/188 |
+| `npm run test:local` | Local PG16 + `auspex_test` schema: writes rejected by the database, unprivileged table, CTE, stacked statements, timeout, EXPLAIN ANALYZE, CSV, search, reports, memory | 28/28 |
 | `cargo test` (in `desktop/src-tauri`) | Path validation of the desktop API | 1/1 |
 
 Local test setup: `scripts/local-test-setup.sql` (+ a `local` profile and a
@@ -216,3 +219,18 @@ The public repository starts from a single initial commit
 (`feat(auspex): initial release of Auspex Augur`). Development before the
 first release (MCP server, SQL guard, profiles file, audit log, viewer, Tauri
 desktop app, English translation, client-agnostic docs) was squashed into it.
+
+### Review fixes (2026-10-13, uncommitted at the time of writing)
+
+The 13 GitHub issues from the external review were fixed one by one:
+quoted/Unicode function names in the guard (#1), one profile URL policy for the
+file and AUSPEX_DB_<NAME> with no password in user-info or query (#2), the
+omitted timeout clamped to the profile ceiling (#3), a fail-closed change-script
+lint (#4), metadata kept inside header comments (#5), approval bound to the
+saved SQL revision with a stale-result notice (#6), no query execution for
+previewRows 0 (#7), unique CSV names, owned-file cleanup and backpressure (#8),
+a spreadsheet-safe CSV mode (#9), a cross-process lock with safe stale takeover
+and Windows rename retries (#10), library and memory changes in the audit log
+(#12), database-wide notes in table_knowledge (#13) and share_report for a
+sanitized copy (#11).
+
