@@ -204,8 +204,8 @@ tool('run_report', {
   description: 'Runs a library report read-only: EXPLAIN (FORMAT JSON, with ANALYZE unless skipped) plus a masked preview, appends the run to its history and regenerates its HTML. Returns a compact summary (timings, hotspots, joins, warnings, first preview rows) and the HTML path.',
   inputSchema: {
     ...refArgs,
-    analyze: z.enum(['auto', 'always', 'never']).optional().describe('auto (default): ANALYZE unless the previous run took more than 30 s. always: ask the user first for slow reports. never: plan only.'),
-    previewRows: z.number().int().min(0).max(config.maxRows).optional().describe('Rows stored in the HTML preview. Default 50.'),
+    analyze: z.enum(['auto', 'always', 'never']).optional().describe('auto (default): ANALYZE unless the previous run took more than 30 s. always: ask the user first for slow reports. never: estimated plan without EXPLAIN ANALYZE; the query itself still runs once for the preview unless previewRows is 0.'),
+    previewRows: z.number().int().min(0).max(config.maxRows).optional().describe('Rows stored in the HTML preview. Default 50. With 0 the query is not executed for a preview; only its column names are read (LIMIT 0).'),
     returnRows: z.number().int().min(0).max(100).optional().describe('Preview rows returned to you. Default 20.'),
     params: paramsArg,
     timeoutSeconds: timeoutArg,

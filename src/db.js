@@ -147,9 +147,17 @@ export class ReadOnlyDatabase {
       const raw = ex.rows[0]['QUERY PLAN'];
       const plan = typeof raw === 'string' ? JSON.parse(raw) : raw;
 
+      // previewRows = 0: no cursor and no FETCH. Column names come from the
+      // query wrapped in LIMIT 0, which plans it but produces no rows. The
+      // newline keeps a trailing -- comment from swallowing the wrapper.
       const t1 = performance.now();
-      await this.declareCursor(client, query, params);
-      const res = await client.query({ text: `FETCH ${limit + 1} FROM ${cursorName}`, rowMode: 'array' });
+      let res;
+      if (limit === 0) {
+        res = await client.query({ text: `SELECT * FROM (${query}\n) auspex_columns LIMIT 0`, values: params || [], rowMode: 'array', queryMode: 'extended' });
+      } else {
+        await this.declareCursor(client, query, params);
+        res = await client.query({ text: `FETCH ${limit + 1} FROM ${cursorName}`, rowMode: 'array' });
+      }
       const previewMs = performance.now() - t1;
       const truncated = res.rows.length > limit;
       const rows = (truncated ? res.rows.slice(0, limit) : res.rows).map(row => row.map(v => this.formatCell(v)));
@@ -164,6 +172,7 @@ export class ReadOnlyDatabase {
         plan,
         explainMs,
         previewMs,
+        previewExecuted: limit > 0,
         columns: res.fields.map(f => ({ name: f.name, type: types.get(f.dataTypeID) || String(f.dataTypeID) })),
         rows,
         rowCount: rows.length,

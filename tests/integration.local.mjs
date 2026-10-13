@@ -157,6 +157,22 @@ test('statement timeout cancels long queries', async () => {
   }
 });
 
+test('run report with previewRows 0 and no ANALYZE does not execute the query', async () => {
+  // Executing this would hit the 1 s timeout; with previewRows 0 only the plan
+  // and the LIMIT 0 column probe run, so it returns at once with the columns.
+  const fast = new ReadOnlyDatabase({ ...config, statementTimeoutMs: 1000 });
+  const heavy = 'select count(*) as n from generate_series(1, 100000000) a -- trailing comment';
+  try {
+    const r = await fast.runReport('local', heavy, { analyze: false, previewRows: 0 });
+    assert.equal(r.previewExecuted, false);
+    assert.deepEqual(r.columns.map(c => c.name), ['n']);
+    assert.deepEqual(r.rows, []);
+    await assert.rejects(fast.runReport('local', heavy, { analyze: false, previewRows: 1 }), /statement timeout|canceling statement/);
+  } finally {
+    await fast.close();
+  }
+});
+
 test('explain returns a plan with params and does not execute', async () => {
   const res = await db.explain('local', 'select * from auspex_test.worker where id = $1', [1]);
   assert.match(res.plan, /Scan/);
