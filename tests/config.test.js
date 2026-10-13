@@ -71,6 +71,55 @@ for (const [name, content, message] of invalid) {
   });
 }
 
+// The same synthetic secret is used everywhere so we can assert it never
+// appears in an error message.
+const secret = 'S3cret-marker';
+const passwordUrls = [
+  ['user-info password', `postgresql://Auspex:${secret}@localhost/postgres`],
+  ['password query option', `postgresql://Auspex@localhost/postgres?password=${secret}`],
+  ['upper-case query option', `postgresql://Auspex@localhost/postgres?PASSWORD=${secret}`],
+  ['percent-encoded option name', `postgresql://Auspex@localhost/postgres?pass%77ord=${secret}`],
+  ['repeated query option', `postgresql://Auspex@localhost/postgres?sslmode=disable&password=a&password=${secret}`],
+  ['sslpassword option', `postgresql://Auspex@localhost/postgres?sslpassword=${secret}`],
+];
+
+for (const [name, url] of passwordUrls) {
+  test(`file and env profiles both reject a ${name} without echoing it`, () => {
+    const file = profilesFile({ local: { url } });
+    const fromFile = assert.throws.bind(null, () => readProfilesFile(file));
+    fromFile(err => /pgpass/.test(err.message) && !err.message.includes(secret));
+    const env = { ...baseEnv, AUSPEX_PROFILES_FILE: path.join(dir, 'missing.json'), AUSPEX_DB_LOCAL: url };
+    assert.throws(() => loadConfig(env), err => /pgpass/.test(err.message) && !err.message.includes(secret) && /AUSPEX_DB_LOCAL/.test(err.message));
+  });
+}
+
+const invalidEnv = [
+  ['bad name', { AUSPEX_DB_1ST: 'postgresql://u@h/db' }, /AUSPEX_DB_1ST: profile names use a-z/],
+  ['name with a dot', { 'AUSPEX_DB_A.B': 'postgresql://u@h/db' }, /profile names use a-z/],
+  ['non-postgres url', { AUSPEX_DB_LOCAL: 'mysql://u@h/db' }, /must start with postgresql/],
+  ['not a url', { AUSPEX_DB_LOCAL: 'host=h dbname=db' }, /must look like postgresql/],
+];
+
+for (const [name, vars, message] of invalidEnv) {
+  test(`rejects env profile with ${name}`, () => {
+    assert.throws(() => loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: path.join(dir, 'missing.json'), ...vars }), message);
+  });
+}
+
+test('pgpass-style profiles with harmless query options still load', () => {
+  const file = profilesFile({ shop: { url: 'postgresql://Auspex@10.0.0.5:5432/shopdb?sslmode=require&application_name=auspex' } });
+  const config = loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: file, AUSPEX_DB_LOCAL: 'postgresql://Auspex@localhost/postgres?sslmode=disable' });
+  assert.deepEqual([...config.profiles.keys()].sort(), ['local', 'shop']);
+});
+
+test('connection summary flags a password in the query string without showing it', async () => {
+  const { describeConnection } = await import('../src/config.js');
+  const info = describeConnection(`postgresql://Auspex@h/db?password=${secret}`);
+  assert.equal(info.passwordInString, true);
+  assert.ok(!JSON.stringify(info).includes(secret));
+  assert.equal(describeConnection('postgresql://Auspex@h/db?sslmode=require').passwordInString, false);
+});
+
 test('files live under AUSPEX_HOME, by default ~/.auspex (never AppData)', () => {
   assert.equal(defaultProfilesFile({ AUSPEX_HOME: 'D:\\data\\auspex' }), path.join('D:\\data\\auspex', 'profiles.json'));
   assert.equal(defaultProfilesFile({ APPDATA: 'C:\\x\\Roaming' }), path.join(os.homedir(), '.auspex', 'profiles.json'));
