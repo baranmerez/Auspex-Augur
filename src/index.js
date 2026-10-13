@@ -173,9 +173,10 @@ tool('export_csv', {
     params: paramsArg,
     fileName: z.string().optional().describe('Base file name; a timestamp and a random part are added, so an existing file is never overwritten.'),
     delimiter: z.enum([',', ';', '\t']).optional().describe('Default ",". Use ";" for Turkish-locale Excel.'),
+    mode: z.enum(['raw', 'spreadsheet']).optional().describe('raw (default): exact values, for scripts and other tools. spreadsheet: text cells starting with = + - @, tab or carriage return get a leading apostrophe so Excel, LibreOffice or Google Sheets do not run them as formulas; numbers and dates stay exact. Use spreadsheet when a person will open the file in a spreadsheet.'),
     timeoutSeconds: timeoutArg,
   },
-}, async ({ profile, sql, params, fileName, delimiter, timeoutSeconds }) => db.exportCsv(profile, sql, params, fileName, delimiter || ',', timeoutSeconds));
+}, async ({ profile, sql, params, fileName, delimiter, mode, timeoutSeconds }) => db.exportCsv(profile, sql, params, fileName, delimiter || ',', timeoutSeconds, mode || 'raw'));
 
 // ---------- report library ----------
 const refArgs = {

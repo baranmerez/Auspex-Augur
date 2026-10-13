@@ -19,9 +19,8 @@ const exportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-csv-test-'));
 
 // Fake pg client: FETCH returns `batches` in order; failFetchAt makes that
 // FETCH reject; fetchDelayMs delays every FETCH.
-function fakeDb({ batches = [[[1, 'a'], [2, 'b']]], failFetchAt = -1, fetchDelayMs = 0 } = {}) {
+function fakeDb({ batches = [[[1, 'a'], [2, 'b']]], failFetchAt = -1, fetchDelayMs = 0, fields = [{ name: 'id', dataTypeID: 23 }, { name: 'ad', dataTypeID: 25 }] } = {}) {
   let fetches = 0;
-  const fields = [{ name: 'id', dataTypeID: 23 }, { name: 'ad', dataTypeID: 25 }];
   const client = {
     async query(q) {
       const text = typeof q === 'string' ? q : q.text;
@@ -100,4 +99,54 @@ test('a slow writer applies backpressure and still gets every row', async () => 
   assert.ok(text.startsWith('﻿id,ad\r\n'));
   assert.equal(text.trim().split('\r\n').length, 1001);
   assert.ok(maxBuffered < 1024, `buffer stayed small (${maxBuffered} bytes)`);
+});
+
+// Columns: text, varchar, int4, numeric, date, jsonb (unknown to the type list
+// counts as text). Rows mix formula-like text, real negatives and Turkish.
+const mixedFields = [
+  { name: 'note', dataTypeID: 25 }, { name: 'code', dataTypeID: 1043 }, { name: 'n', dataTypeID: 23 },
+  { name: 'amount', dataTypeID: 1700 }, { name: 'day', dataTypeID: 1082 }, { name: 'doc', dataTypeID: 3802 },
+];
+const mixedRows = [
+  ['=1+1', '+1+1', -5, '-12.50', '2026-10-13', '{"a":1}'],
+  ['@SUM(1,1)', '-2+3', 0, '7', null, '=x'],
+  ['\tTAB', '\rCR', 1, '-0.5', '2026-01-01', null],
+  ['Şükrü, "Öz"\nİkinci satır', 'ığüşöç', 2, '3', '2026-02-02', '[1]'],
+];
+
+async function exportText(mode, delimiter = ',') {
+  const db = fakeDb({ batches: [mixedRows], fields: mixedFields });
+  const chunks = [];
+  db.exportPath = () => path.join(exportDir, `mixed-${mode}.csv`);
+  db.openExportStream = () => new Writable({ write(chunk, enc, cb) { chunks.push(chunk.toString()); cb(); } });
+  await db._exportCsv('local', 'select 1', [], 'x', delimiter, undefined, mode);
+  return chunks.join('');
+}
+
+test('raw mode keeps every value exactly (default)', async () => {
+  const text = await exportText('raw');
+  assert.ok(text.startsWith('﻿note,code,n,amount,day,doc\r\n'));
+  assert.match(text, /\r\n=1\+1,\+1\+1,-5,-12\.50,2026-10-13,"\{""a"":1\}"\r\n/);
+  assert.ok(text.includes('\r\n"@SUM(1,1)",-2+3,0,7,,=x\r\n'));
+  assert.ok(text.includes('"Şükrü, ""Öz""\nİkinci satır",ığüşöç,2,3,2026-02-02,[1]\r\n'));
+});
+
+test('spreadsheet mode neutralizes formula-like text but keeps numbers and dates', async () => {
+  const text = await exportText('spreadsheet');
+  const lines = text.slice(1).split('\r\n');
+  assert.equal(lines[0], 'note,code,n,amount,day,doc');
+  assert.equal(lines[1], `'=1+1,'+1+1,-5,-12.50,2026-10-13,"{""a"":1}"`);
+  assert.equal(lines[2], `"'@SUM(1,1)",'-2+3,0,7,,'=x`);
+  assert.equal(lines[3], `'\tTAB,"'\rCR",1,-0.5,2026-01-01,`);
+  assert.equal(lines[4], '"Şükrü, ""Öz""\nİkinci satır",ığüşöç,2,3,2026-02-02,[1]');
+});
+
+test('spreadsheet mode works with the semicolon delimiter', async () => {
+  const text = await exportText('spreadsheet', ';');
+  assert.equal(text.slice(1).split('\r\n')[2], `'@SUM(1,1);'-2+3;0;7;;'=x`);
+});
+
+test('an unknown mode is rejected before touching the database', async () => {
+  const db = fakeDb();
+  await assert.rejects(db._exportCsv('local', 'select 1', [], 'x', ',', undefined, 'excel'), /mode must be/);
 });

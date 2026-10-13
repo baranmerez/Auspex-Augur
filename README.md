@@ -161,6 +161,18 @@ database to use unless the user named one in the current conversation, and to
 confirm before switching. The code guarantees the explicit choice; asking the
 user is model behavior.
 
+### CSV for spreadsheets
+
+`export_csv` writes exact values by default (`mode: "raw"`), which is right
+for scripts and other tools. When a person will open the file in a
+spreadsheet, use `mode: "spreadsheet"`: text cells that start with `=`, `+`,
+`-`, `@`, a tab or a carriage return get a leading apostrophe so they are
+shown as text instead of being run as a formula. Number, date, time, boolean
+and uuid columns are never changed, so a real `-5` stays a number. Columns of
+any other type count as text. The rule follows the common CSV-injection
+guidance; it is covered by unit tests on the generated text, not yet checked by
+opening the files in Excel, LibreOffice or Google Sheets.
+
 ### Large tables and long queries
 
 `query`, `explain` and `export_csv` accept `timeoutSeconds`. Without it the
