@@ -65,10 +65,11 @@ export class ReadOnlyDatabase {
   }
 
   // Statement timeout for one call: the configured default, or a per-call
-  // value that may not exceed the profile's ceiling.
+  // value. Neither may exceed the profile's ceiling; a default above a lower
+  // per-profile ceiling is clamped to that ceiling.
   timeoutMs(name, timeoutSeconds) {
-    if (timeoutSeconds === undefined || timeoutSeconds === null) return this.config.statementTimeoutMs;
     const ceiling = this.config.maxTimeoutByProfile?.get(name) ?? this.config.maxStatementTimeoutMs ?? this.config.statementTimeoutMs;
+    if (timeoutSeconds === undefined || timeoutSeconds === null) return Math.min(this.config.statementTimeoutMs, ceiling);
     const ms = Math.round(Number(timeoutSeconds) * 1000);
     if (!Number.isFinite(ms) || ms < 1000) throw new Error('timeoutSeconds must be at least 1.');
     if (ms > ceiling) throw new Error(`timeoutSeconds ${timeoutSeconds} exceeds the ${ceiling / 1000} s limit for profile "${name}".`);

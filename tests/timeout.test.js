@@ -25,6 +25,33 @@ test('per-profile ceiling overrides the global one', () => {
   assert.throws(() => db.timeoutMs('prod', 180), /exceeds the 120 s limit for profile "prod"/);
 });
 
+test('omitted timeout never exceeds a per-profile ceiling below the default', () => {
+  const tight = new ReadOnlyDatabase({
+    profiles: new Map([['strict', 'postgresql://u@127.0.0.1:1/c'], ['local', 'postgresql://u@127.0.0.1:1/a']]),
+    statementTimeoutMs: 30000,
+    maxStatementTimeoutMs: 300000,
+    maxTimeoutByProfile: new Map([['strict', 5000]]),
+  });
+  assert.equal(tight.timeoutMs('strict', undefined), 5000);
+  assert.equal(tight.timeoutMs('strict', null), 5000);
+  assert.equal(tight.timeoutMs('local', undefined), 30000);
+  assert.throws(() => tight.timeoutMs('strict', 6), /exceeds the 5 s limit/);
+});
+
+test('omitted timeout reaches SET LOCAL statement_timeout clamped', async () => {
+  const sent = [];
+  const fakeClient = { query: async sql => { sent.push(sql); return { rows: [] }; }, release: () => {} };
+  const tight = new ReadOnlyDatabase({
+    profiles: new Map([['strict', 'postgresql://u@127.0.0.1:1/c']]),
+    statementTimeoutMs: 30000,
+    maxStatementTimeoutMs: 300000,
+    maxTimeoutByProfile: new Map([['strict', 5000]]),
+  });
+  tight.pool = () => ({ connect: async () => fakeClient });
+  await tight.withReadOnly('strict', async () => null);
+  assert.ok(sent.includes('SET LOCAL statement_timeout = 5000'), sent.join(' | '));
+});
+
 test('invalid timeouts are rejected', () => {
   assert.throws(() => db.timeoutMs('local', 0), /at least 1/);
   assert.throws(() => db.timeoutMs('local', Number.NaN), /at least 1/);
