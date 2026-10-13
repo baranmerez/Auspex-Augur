@@ -171,8 +171,8 @@ Desktop build: Rust (MSVC toolchain), VS 2022 C++ Build Tools, WebView2;
 
 | Command | Scope | Last result |
 |---|---|---|
-| `npm test` | SQL guard, profiles, config, timeouts, explain, audit (incl. MCP server end to end), reports, change-script lint, CSV export, file lock with child processes, schema memory (no database) | 188/188 |
-| `npm run test:local` | Local PG16 + `auspex_test` schema: writes rejected by the database, unprivileged table, CTE, stacked statements, timeout, EXPLAIN ANALYZE, CSV, search, reports, memory | 28/28 |
+| `npm test` | SQL guard, profiles, config, timeouts, explain, audit (incl. MCP server end to end), reports, change-script lint, CSV export, file lock with child processes, schema memory (no database) | 205/205 |
+| `npm run test:local` | Local PG16 + `auspex_test` schema: writes rejected by the database, unprivileged table, CTE, stacked statements, timeout, EXPLAIN ANALYZE, CSV, search, reports, memory | 29/29 |
 | `cargo test` (in `desktop/src-tauri`) | Path validation of the desktop API | 1/1 |
 
 Local test setup: `scripts/local-test-setup.sql` (+ a `local` profile and a
