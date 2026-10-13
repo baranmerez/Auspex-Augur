@@ -15,6 +15,11 @@ export const templateVersion = 1;
 // Embeds the report JSON into the fixed template; the page reads it on load.
 export function renderReport(meta) {
   const template = fs.readFileSync(templatePath, 'utf8');
+  // Recompute the summary from the stored raw plan so older reports pick up
+  // summary improvements (e.g. structured warnings) when re-rendered.
+  if (meta.last?.plan) {
+    try { meta = { ...meta, last: { ...meta.last, summary: summarizePlan(meta.last.plan) } }; } catch { /* keep stored summary */ }
+  }
   const json = JSON.stringify({ templateVersion, generatedAt: new Date().toISOString(), report: meta })
     .replace(/</g, '\\u003c')
     .split(String.fromCharCode(0x2028)).join('\\u2028')

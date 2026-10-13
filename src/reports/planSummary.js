@@ -87,9 +87,15 @@ export function summarizePlan(explainJson) {
     const est = (n['Plan Rows'] ?? 0) * (analyzed ? (n['Actual Loops'] ?? 1) : 1);
     const act = analyzed ? actualRows(n) : null;
     let misestimate = null;
+    let misDir = null;
+    let misFactor = null;
     if (analyzed && Math.max(est, act) >= misestimateMinRows) {
       const ratio = Math.max(est, 1) / Math.max(act, 1);
-      if (ratio >= misestimateFactor || 1 / ratio >= misestimateFactor) misestimate = ratio >= 1 ? `over ${Math.round(ratio)}x` : `under ${Math.round(1 / ratio)}x`;
+      if (ratio >= misestimateFactor || 1 / ratio >= misestimateFactor) {
+        misDir = ratio >= 1 ? 'over' : 'under';
+        misFactor = Math.round(ratio >= 1 ? ratio : 1 / ratio);
+        misestimate = `${misDir} ${misFactor}x`;
+      }
     }
     const join = joinTypes.has(n['Node Type']);
     return {
@@ -117,6 +123,8 @@ export function summarizePlan(explainJson) {
       ownCost: analyzed ? null : own,
       share: rootTotal > 0 ? own / rootTotal : 0,
       misestimate,
+      misDir,
+      misFactor,
       workers: n['Workers Launched'] ?? n['Workers Planned'] ?? null,
       isJoin: join,
     };
@@ -158,25 +166,25 @@ export function summarizePlan(explainJson) {
   for (const n of nodes) {
     const where = n.relation ? ` on ${n.relation}` : '';
     const rows = n.actualRows ?? n.estRows;
-    if (n.type === 'Seq Scan' && rows >= bigScanRows) warnings.push({ nodeId: n.id, kind: 'seq-scan', text: `Sequential scan of ${rows.toLocaleString('en-US')} rows${where}` });
+    if (n.type === 'Seq Scan' && rows >= bigScanRows) warnings.push({ nodeId: n.id, kind: 'seq-scan', data: { relation: n.relation, rows }, text: `Sequential scan of ${rows.toLocaleString('en-US')} rows${where}` });
     // Report only where a misestimate starts; parents inherit it from children.
     const childMisestimated = entries[n.id].children.some(c => nodes[c].misestimate);
     if (n.misestimate && !childMisestimated) {
       const hint = n.relation ? '; statistics may be stale, consider ANALYZE on the table' : '';
-      warnings.push({ nodeId: n.id, kind: 'misestimate', text: `${n.type}${where}: row estimate ${n.misestimate} (estimated ${n.estRows.toLocaleString('en-US')}, actual ${n.actualRows.toLocaleString('en-US')})${hint}` });
+      warnings.push({ nodeId: n.id, kind: 'misestimate', data: { nodeType: n.type, relation: n.relation, dir: n.misDir, factor: n.misFactor, est: n.estRows, actual: n.actualRows }, text: `${n.type}${where}: row estimate ${n.misestimate} (estimated ${n.estRows.toLocaleString('en-US')}, actual ${n.actualRows.toLocaleString('en-US')})${hint}` });
     }
-    if (n.sort && n.sort.spaceType === 'Disk') warnings.push({ nodeId: n.id, kind: 'disk-sort', text: `Sort spilled to disk (${n.sort.space} kB)${where}` });
+    if (n.sort && n.sort.spaceType === 'Disk') warnings.push({ nodeId: n.id, kind: 'disk-sort', data: { relation: n.relation, kb: n.sort.space }, text: `Sort spilled to disk (${n.sort.space} kB)${where}` });
     if (n.rowsRemovedByFilter && n.rowsRemovedByFilter >= 10000 && n.rowsRemovedByFilter > 10 * (n.actualRows || 0)) {
-      warnings.push({ nodeId: n.id, kind: 'filter', text: `Filter discarded ${n.rowsRemovedByFilter.toLocaleString('en-US')} rows${where}; an index on the filtered columns may help` });
+      warnings.push({ nodeId: n.id, kind: 'filter', data: { relation: n.relation, rows: n.rowsRemovedByFilter }, text: `Filter discarded ${n.rowsRemovedByFilter.toLocaleString('en-US')} rows${where}; an index on the filtered columns may help` });
     }
     if (n.type === 'Nested Loop' && (n.loops ?? 0) <= 1) {
       const inner = entries[n.id].children[1];
       if (inner !== undefined && (entries[inner].node['Actual Loops'] ?? 0) >= 10000 && entries[inner].node['Node Type'] === 'Seq Scan') {
-        warnings.push({ nodeId: n.id, kind: 'nested-seq', text: `Nested loop runs a sequential scan ${entries[inner].node['Actual Loops'].toLocaleString('en-US')} times` });
+        warnings.push({ nodeId: n.id, kind: 'nested-seq', data: { loops: entries[inner].node['Actual Loops'] }, text: `Nested loop runs a sequential scan ${entries[inner].node['Actual Loops'].toLocaleString('en-US')} times` });
       }
     }
   }
-  if ((buffers.tempWritten ?? 0) > 0) warnings.push({ nodeId: 0, kind: 'temp', text: `Query wrote ${buffers.tempWritten.toLocaleString('en-US')} temp blocks` });
+  if ((buffers.tempWritten ?? 0) > 0) warnings.push({ nodeId: 0, kind: 'temp', data: { blocks: buffers.tempWritten }, text: `Query wrote ${buffers.tempWritten.toLocaleString('en-US')} temp blocks` });
 
   return {
     analyzed,

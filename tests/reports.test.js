@@ -171,7 +171,7 @@ test('rendered HTML embeds the report safely', () => {
   const html = renderReport({ title: 'A <b>&</b> "report"', name: 'x', sqlVersions: [{ version: 1, sql: "select '</script><script>alert(1)</script>'" }], runs: [], last: null });
   assert.ok(!html.includes('"__AUSPEX_DATA__"'));
   assert.ok(!html.includes('</script><script>alert(1)'), 'closing script tags in data are escaped');
-  assert.match(html, /<title>A &lt;b&gt;&amp;&lt;\/b&gt; &quot;report&quot; · Auspex Augur report<\/title>/);
+  assert.match(html, /<title>A &lt;b&gt;&amp;&lt;\/b&gt; &quot;report&quot; · Auspex Augur<\/title>/);
   const json = html.match(/<script id="auspex-report" type="application\/json">([\s\S]*?)<\/script>/)[1];
   assert.equal(JSON.parse(json).report.sqlVersions[0].sql, "select '</script><script>alert(1)</script>'");
 });
