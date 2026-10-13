@@ -531,8 +531,8 @@ writes are refused by the database itself, even with the SQL guard bypassed.
 GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs
 both on every pull request and every push to `main`: the unit tests on Ubuntu
 (Node 20, 22, 24) and Windows (Node 22, 24), and the integration tests against
-a PostgreSQL 16 service container set up with the same script. The desktop app
-is not built in CI.
+a PostgreSQL 16 service container set up with the same script. A separate
+"Desktop build (Windows)" job runs `cargo test` and builds the desktop app.
 
 ## 📄 License
 

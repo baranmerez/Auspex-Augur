@@ -77,3 +77,28 @@ jobs:
           AUSPEX_HOME: ${{ runner.temp }}/auspex-home
           AUSPEX_DB_LOCAL: postgresql://Auspex@localhost:5432/postgres
           PGPASSFILE: ${{ runner.temp }}/pgpass
+
+  desktop:
+    name: Desktop build (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+      - name: Install desktop dependencies
+        run: npm ci
+        working-directory: desktop
+      - name: Rust tests
+        run: cargo test
+        working-directory: desktop/src-tauri
+      - name: Build desktop app
+        run: npm run build
+        working-directory: desktop
