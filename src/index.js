@@ -6,6 +6,7 @@ import { loadConfig, describeConnection } from './config.js';
 import { ReadOnlyDatabase } from './db.js';
 import { listSchemas, listTables, describeTable, search } from './catalog.js';
 import { ReportService } from './reports/service.js';
+import { sqlHash } from './reports/library.js';
 import { SchemaMemory, noteKinds } from './memory/store.js';
 import { relationsFromTextPlan } from './memory/planUsage.js';
 
@@ -60,7 +61,8 @@ function learn(fn) {
 }
 
 // Wraps a handler: JSON output and error reporting. Audit logging happens in
-// ReadOnlyDatabase, so every database call is recorded exactly once.
+// ReadOnlyDatabase (database calls) or in the handler via db.audited (library
+// and memory changes), so each call is recorded exactly once.
 function tool(name, toolConfig, handler) {
   server.registerTool(name, toolConfig, async args => {
     try {
@@ -179,6 +181,10 @@ tool('export_csv', {
 }, async ({ profile, sql, params, fileName, delimiter, mode, timeoutSeconds }) => db.exportCsv(profile, sql, params, fileName, delimiter || ',', timeoutSeconds, mode || 'raw'));
 
 // ---------- report library ----------
+// Audit details for a library change: which report, never its SQL text (the
+// SQL is identified by its hash; the library keeps the text itself).
+const reportDetails = args => ({ profile: args.db, report: [args.db, args.schema, args.category, args.name].join('/') });
+
 const refArgs = {
   db: z.string().min(1).describe('Database = the profile name the report runs on (first folder level).'),
   schema: z.string().min(1).describe('Main schema of the report (second folder level).'),
@@ -198,7 +204,8 @@ tool('save_report', {
     mask: z.array(z.string()).optional().describe('Extra result columns to mask in previews.'),
     unmask: z.array(z.string()).optional().describe('Columns to exempt from automatic masking (only when the user agreed).'),
   },
-}, async args => reports.save(args));
+}, async args => db.audited('save_report', { ...reportDetails(args), sqlHash: sqlHash(args.sql) }, () => reports.save(args),
+  r => ({ version: r.version, stage: r.stage })));
 
 tool('run_report', {
   title: 'Run report',
@@ -218,7 +225,7 @@ tool('approve_report', {
   title: 'Approve report',
   description: 'Moves a report draft into SELECT/<db>/<schema>/<category>/. Only call this after the user explicitly approved the report in this conversation.',
   inputSchema: refArgs,
-}, async args => reports.approve(args));
+}, async args => db.audited('approve_report', reportDetails(args), () => reports.approve(args), r => ({ version: r.version })));
 
 tool('list_reports', {
   title: 'List reports',
@@ -233,7 +240,7 @@ tool('render_reports', {
   title: 'Re-render report HTML',
   description: 'Regenerates every report HTML from its stored JSON (for example after a template update). Does not touch the database.',
   inputSchema: {},
-}, async () => reports.renderAll());
+}, async () => db.audited('render_reports', {}, () => reports.renderAll(), r => ({ rendered: r.rendered })));
 
 tool('save_execute_script', {
   title: 'Save change script',
@@ -247,7 +254,8 @@ tool('save_execute_script', {
     expectedRows: z.union([z.number(), z.string()]).optional().describe('Expected affected rows.'),
     replace: z.boolean().optional().describe('Overwrite an existing script with the same name.'),
   },
-}, async args => reports.saveExecute(args));
+}, async args => db.audited('save_execute_script', { ...reportDetails(args), sqlHash: sqlHash(args.sql), replace: args.replace === true },
+  () => reports.saveExecute(args), r => ({ warnings: r.warnings?.length ?? 0 })));
 
 // ---------- schema memory ----------
 tool('table_knowledge', {
@@ -277,16 +285,18 @@ tool('remember', {
     id: z.number().int().optional().describe('confirm / archive: the note id.'),
     reason: z.string().optional().describe('archive: why the note is no longer valid.'),
   },
-}, async ({ profile, action, kind, schema, table, column, text, evidenceSql, evidenceFigures, id, reason }) => {
-  const name = db.resolveProfile(profile);
-  if (action === 'add') {
-    const evidence = evidenceSql || evidenceFigures ? { sql: evidenceSql, figures: evidenceFigures } : undefined;
-    return { note: memory.addNote(name, { kind, schema, table, column, text, evidence }) };
-  }
-  if (id === undefined) throw new Error(`action=${action} needs id.`);
-  if (action === 'confirm') return { note: memory.confirmNote(name, id, kind) };
-  return { note: memory.archiveNote(name, id, reason) };
-});
+}, async ({ profile, action, kind, schema, table, column, text, evidenceSql, evidenceFigures, id, reason }) =>
+  // Logged without the note text, evidence or reason: only what was changed.
+  db.audited('remember', { profile: profile ?? null, action, kind, schema, table, column, noteId: id }, async () => {
+    const name = db.resolveProfile(profile);
+    if (action === 'add') {
+      const evidence = evidenceSql || evidenceFigures ? { sql: evidenceSql, figures: evidenceFigures } : undefined;
+      return { note: memory.addNote(name, { kind, schema, table, column, text, evidence }) };
+    }
+    if (id === undefined) throw new Error(`action=${action} needs id.`);
+    if (action === 'confirm') return { note: memory.confirmNote(name, id, kind) };
+    return { note: memory.archiveNote(name, id, reason) };
+  }, r => ({ noteId: r.note.id, noteKind: r.note.kind, noteStatus: r.note.status })));
 
 async function shutdown() {
   await db.close().catch(() => {});

@@ -27,12 +27,13 @@ export class ReadOnlyDatabase {
 
   // Runs one operation and records it: tool, profile, request details,
   // duration, and row count / file or the error. Failures are logged too.
-  async audited(tool, details, fn) {
+  // summarize(result) adds safe result fields (ids, versions), never content.
+  async audited(tool, details, fn, summarize = null) {
     const started = Date.now();
     const entry = { source: this.source, tool, ...details };
     try {
       const result = await fn();
-      this.auditFn({ ...entry, ms: Date.now() - started, rowCount: result?.rowCount, file: result?.file });
+      this.auditFn({ ...entry, ms: Date.now() - started, rowCount: result?.rowCount, file: result?.file, ...(summarize ? summarize(result) : {}) });
       return result;
     } catch (err) {
       this.auditFn({ ...entry, ms: Date.now() - started, error: err.message });
