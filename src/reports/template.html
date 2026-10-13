@@ -54,6 +54,7 @@
   h1 { margin: 6px 0 2px; font-size: 24px; letter-spacing: -.2px; }
   .desc { color: var(--text-2); margin: 0; max-width: 900px; }
   .meta { color: var(--text-3); font-size: 12px; margin-top: 6px; }
+  .stale { margin-top: 8px; padding: 8px 10px; border-radius: 8px; font-size: 12.5px; border: 1px solid var(--warn); background: var(--warn-soft); color: var(--warn-ink); }
   .badge { display: inline-flex; align-items: center; gap: 5px; padding: 1px 9px; border-radius: 999px; font-size: 11px; font-weight: 650; white-space: nowrap; }
   .b-draft { background: var(--warn-soft); color: var(--warn-ink); }
   .b-approved { background: var(--good-soft); color: var(--good-ink); }
@@ -200,7 +201,7 @@ const R = DATA && DATA.report;
 const I18N = {
   en: {
     auto: 'Auto', light: 'Light', dark: 'Dark', help: 'How to read this report',
-    approved: 'approved v{v}', draft: 'draft', lastRun: 'Last run {at} · profile {p} · PostgreSQL {pg}', notRun: 'Not run yet', runs: '{n} runs',
+    approved: 'approved v{v}', draft: 'draft', lastRun: 'Last run {at} · profile {p} · PostgreSQL {pg}', notRun: 'Not run yet', runs: '{n} runs', lastRunVersion: 'results of SQL v{v}', staleResult: 'The results below come from SQL v{v}; the current SQL is v{c} and has not been run yet.',
     runFirst: 'Run the report to see its plan, joins, timings and preview.',
     execTime: 'Execution time', planning: 'planning {v}', planOnly: 'Plan only', firstRows: 'time to first rows (no ANALYZE)',
     rowsReturned: 'Rows returned', rowsEst: 'Rows (estimated)', previewShows: 'preview shows {n}', totalCost: 'Total cost', plannerUnits: 'planner units',
@@ -234,7 +235,7 @@ const I18N = {
   },
   tr: {
     auto: 'Oto', light: 'Açık', dark: 'Koyu', help: 'Bu rapor nasıl okunur',
-    approved: 'onaylı v{v}', draft: 'taslak', lastRun: 'Son çalıştırma {at} · profil {p} · PostgreSQL {pg}', notRun: 'Henüz çalıştırılmadı', runs: '{n} çalıştırma',
+    approved: 'onaylı v{v}', draft: 'taslak', lastRun: 'Son çalıştırma {at} · profil {p} · PostgreSQL {pg}', notRun: 'Henüz çalıştırılmadı', runs: '{n} çalıştırma', lastRunVersion: 'SQL v{v} sonuçları', staleResult: 'Aşağıdaki sonuçlar SQL v{v} ile üretildi; güncel SQL v{c} henüz çalıştırılmadı.',
     runFirst: 'Plan, join, süre ve önizleme için raporu çalıştırın.',
     execTime: 'Çalışma süresi', planning: 'planlama {v}', planOnly: 'Sadece plan', firstRows: 'ilk satırlara kadar geçen süre (ANALYZE yok)',
     rowsReturned: 'Dönen satır', rowsEst: 'Satır (tahmini)', previewShows: 'önizlemede {n} satır', totalCost: 'Toplam maliyet', plannerUnits: 'planlayıcı birimi',
@@ -394,15 +395,18 @@ function render() {
   if (!R) { put($('view'), h('div', { class: 'empty' }, t('noData'))); return; }
   const last = R.last;
   const S = last && last.summary;
-  const currentSql = (R.sqlVersions || []).at(-1)?.sql || '';
+  const current = activeVersion();
+  const currentSql = current?.sql || '';
+  const stale = last && current && last.sqlHash !== current.hash;
 
   put($('head'),
     h('div', { class: 'crumbs' }, h('span', { class: 'crumb' }, R.db), '›', h('span', { class: 'crumb' }, R.schema), '›', h('span', { class: 'crumb' }, R.category),
       h('span', { class: 'badge ' + (R.status === 'approved' ? 'b-approved' : 'b-draft') }, R.status === 'approved' ? t('approved', { v: R.approvedVersion ?? '?' }) : t('draft')),
-      R.sqlVersions?.length ? h('span', { class: 'badge b-plan' }, `SQL v${R.sqlVersions.at(-1).version}`) : null),
+      current ? h('span', { class: 'badge b-plan' }, `SQL v${current.version}`) : null),
     h('h1', {}, R.title || R.name),
     R.description ? h('p', { class: 'desc' }, R.description) : null,
-    h('div', { class: 'meta' }, last ? t('lastRun', { at: fmtWhen(last.at), p: last.profile, pg: last.serverVersion }) : t('notRun'), ' · ', t('runs', { n: R.runs?.length || 0 })));
+    h('div', { class: 'meta' }, last ? t('lastRun', { at: fmtWhen(last.at), p: last.profile, pg: last.serverVersion }) : t('notRun'), ' · ', t('runs', { n: R.runs?.length || 0 }), last ? ' · ' + t('lastRunVersion', { v: last.version ?? '?' }) : null),
+    stale ? h('div', { class: 'stale' }, '⚠ ', t('staleResult', { v: last.version ?? '?', c: current.version })) : null);
 
   if (!last) {
     put($('tiles')); put($('warns')); put($('tabs'));
@@ -429,6 +433,13 @@ function render() {
   const labels = { plan: 'tabPlan', joins: 'tabJoins', tables: 'tabTables', preview: 'tabPreview', history: 'tabHistory', sql: 'tabSql' };
   put($('tabs'), TABS.map(k => h('button', { 'data-k': k, class: state.tab === k ? 'on' : '', onclick: () => { state.tab = k; renderTab(); } }, t(labels[k]), h('span', { class: 'n' }, counts[k]))));
   renderTab();
+}
+
+// The SQL revision the report stands for: activeHash (set on save and
+// approval), or the newest version for reports written before that field.
+function activeVersion() {
+  const vs = R.sqlVersions || [];
+  return vs.find(v => v.hash === R.activeHash) || vs.at(-1);
 }
 
 function renderTab() {
@@ -517,10 +528,10 @@ function renderTab() {
         vs.length > 1 ? [h('div', { class: 'diff-bar' }, sel('diffA'), h('span', { class: 'arrow' }, '→'), sel('diffB')),
           h('div', { class: 'diff panel-b' }, diffLines(vs[state.diffA].sql, vs[state.diffB].sql).map(([k, line]) => h('div', { class: k === '+' ? 'add' : k === '-' ? 'del' : '' }, (k === ' ' ? '  ' : k + ' ') + line)))] : null));
   } else if (state.tab === 'sql') {
-    put(view, h('div', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', {}, `SQL v${R.sqlVersions.at(-1)?.version ?? '?'}`), h('span', { style: 'flex:1' }),
-      h('button', { class: 'btn', onclick: () => copy(R.sqlVersions.at(-1)?.sql || '', 'SQL') }, t('copySql')),
+    put(view, h('div', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', {}, `SQL v${activeVersion()?.version ?? '?'}`), h('span', { style: 'flex:1' }),
+      h('button', { class: 'btn', onclick: () => copy(activeVersion()?.sql || '', 'SQL') }, t('copySql')),
       h('button', { class: 'btn', onclick: () => copy(JSON.stringify(R.last.plan, null, 2), 'Plan JSON') }, t('copyPlan'))),
-      h('pre', { class: 'sql' }, highlight(R.sqlVersions.at(-1)?.sql || ''))));
+      h('pre', { class: 'sql' }, highlight(activeVersion()?.sql || ''))));
   }
 }
 
