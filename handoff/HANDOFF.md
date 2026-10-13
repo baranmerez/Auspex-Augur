@@ -188,7 +188,8 @@ UTF-8 handling.
 CI: `.github/workflows/ci.yml` runs `npm test` on Ubuntu (Node 20/22/24) and
 Windows (Node 22/24) and `npm run test:local` against a PostgreSQL 16 service
 container (same setup script, run through the container socket with a random
-password). Desktop build and `cargo test` are not in CI.
+password). The "Desktop build (Windows)" job runs `cargo test` and `npm run build` in
+`desktop`; it is not a required check.
 
 ## 10. Client-side setup (outside this repo)
 
