@@ -121,7 +121,7 @@ test('drafts must be read-only SQL', () => {
 test('approve moves the draft into SELECT and prunes empty draft folders', () => {
   const lib = tempLibrary();
   lib.saveDraft({ ref, sql: 'select 1' });
-  lib.appendRun('draft', ref, { at: new Date().toISOString(), durationMs: 5, rows: 1, warnings: [] }, null);
+  lib.appendRun('draft', ref, { at: new Date().toISOString(), sqlHash: sqlHash('select 1'), durationMs: 5, rows: 1, warnings: [] }, null);
   const res = lib.approve(ref);
   assert.equal(res.meta.status, 'approved');
   assert.equal(res.meta.approvedVersion, 1);
@@ -286,10 +286,10 @@ test('editing without running labels the old result as stale and drops its joins
   assert.equal(report.activeHash, sqlHash('select 2'));
   assert.notEqual(report.last.sqlHash, report.activeHash);
 
-  svc.approve(ref);
-  assert.deepEqual(svc.approvedJoinPairs('local'), [], 'stale result from v1 does not count for approved v2');
+  assert.throws(() => svc.approve(ref), /no successful run/);
   await svc.run(ref);
-  assert.equal(svc.approvedJoinPairs('local').length, 1, 'a run of v2 makes it count again');
+  svc.approve(ref);
+  assert.equal(svc.approvedJoinPairs('local').length, 1, 'a run of v2 makes it count');
 });
 
 test('a failed run leaves the previous result and its revision untouched', async () => {
@@ -301,6 +301,20 @@ test('a failed run leaves the previous result and its revision untouched', async
   const meta = svc.library.readMeta('draft', ref);
   assert.equal(meta.runs.length, 1);
   assert.equal(meta.last.sqlHash, meta.activeHash);
+});
+
+test('approval needs a successful run of the current SQL', async () => {
+  const { svc, fake } = tempService();
+  svc.save({ ...ref, sql: 'select 1' });
+  assert.throws(() => svc.approve(ref), /Version 1 .*run_report/);
+  fake.failNext = true;
+  await assert.rejects(svc.run(ref), /statement timeout/);
+  assert.throws(() => svc.approve(ref), /no successful run/, 'a failed run does not count');
+  await svc.run(ref);
+  svc.save({ ...ref, sql: 'select 2' });
+  assert.throws(() => svc.approve(ref), /Version 2 .*run_report/, 'a run of v1 does not count for v2');
+  svc.save({ ...ref, sql: 'select 1' });
+  assert.equal(svc.approve(ref).version, 1, 'reverting to a run revision is accepted');
 });
 
 test('approval refuses draft SQL that matches no saved version', () => {
