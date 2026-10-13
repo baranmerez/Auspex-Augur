@@ -17,6 +17,7 @@ export const noteKinds = ['rule', 'observation', 'inference'];
 const historyLimit = 50;
 const neighborLimit = 10;
 const noteLineLimit = 10;
+const databaseNoteLimit = 10;
 const profilePattern = /^[a-z][a-z0-9_-]{0,39}$/;
 const reservedFileName = /^(con|prn|aux|nul|com\d|lpt\d)$/;
 
@@ -342,6 +343,27 @@ export class SchemaMemory {
     return notes.filter(n => n.table && tables.some(t => n.schema === t.schema && n.table === t.table));
   }
 
+  // Active notes about the whole database (no table). Rules are mandatory and
+  // always returned in full; observations and inferences share a fixed budget
+  // and the rest is counted, never dropped silently.
+  databaseNotesSection(profile) {
+    const order = { rule: 0, observation: 1, inference: 2 };
+    const all = this.readNotes(profile).notes
+      .filter(n => n.status === 'active' && !n.table)
+      .sort((a, b) => (order[a.kind] ?? 3) - (order[b.kind] ?? 3) || a.id - b.id);
+    if (!all.length) return {};
+    const rules = all.filter(n => n.kind === 'rule');
+    const others = all.filter(n => n.kind !== 'rule');
+    const shown = [...rules, ...others.slice(0, databaseNoteLimit)];
+    return {
+      databaseNotes: shown.map(n => ({
+        id: n.id, scope: 'database', kind: n.kind, confirmed: n.kind !== 'inference', text: n.text,
+        ...(n.asOf ? { asOf: n.asOf } : {}),
+      })),
+      ...(others.length > databaseNoteLimit ? { moreDatabaseNotes: others.length - databaseNoteLimit } : {}),
+    };
+  }
+
   notesSection(profile, tables) {
     const notes = this.activeNotes(profile, tables);
     if (!notes.length) return {};
@@ -411,7 +433,7 @@ export class SchemaMemory {
     const rec = this.readTable(profile, schema, table);
     if (!rec) {
       const notes = this.activeNotes(profile, [{ schema, table }]).map(n => ({ id: n.id, kind: n.kind, column: n.column, text: n.text }));
-      return { relation: tableKey(schema, table), known: false, hint: 'Not in memory yet. describe_table records it (reads the catalog only).', ...(notes.length ? { notes } : {}) };
+      return { relation: tableKey(schema, table), known: false, hint: 'Not in memory yet. describe_table records it (reads the catalog only).', ...(notes.length ? { notes } : {}), ...this.databaseNotesSection(profile) };
     }
     const tables = this.listTables(profile);
     const key = tableKey(schema, table);
@@ -447,6 +469,7 @@ export class SchemaMemory {
       },
       notes: notes.map(n => ({ id: n.id, kind: n.kind, column: n.column, text: n.text, ...(n.asOf ? { asOf: n.asOf } : {}), ...(n.evidence?.figures ? { figures: n.evidence.figures } : {}) })),
       recentChanges: (rec.history || []).slice(-5).map(h => `${h.at.slice(0, 10)}: ${h.changes.map(changeText).join('; ')}`),
+      ...this.databaseNotesSection(profile),
       ...this.neighborsSection(profile, [rec], tables),
     };
   }
