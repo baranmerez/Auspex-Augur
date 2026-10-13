@@ -6,7 +6,7 @@ import path from 'node:path';
 import { summarizePlan, planDigest } from '../src/reports/planSummary.js';
 import { isPersonalColumn, maskRows, maskValue } from '../src/reports/mask.js';
 import { Library, LibraryError, slugify, validateSegment, lintExecuteScript, sqlHash } from '../src/reports/library.js';
-import { renderReport } from '../src/reports/service.js';
+import { renderReport, ReportService } from '../src/reports/service.js';
 import { SqlGuardError } from '../src/sqlGuard.js';
 
 // Minimal EXPLAIN (ANALYZE, FORMAT JSON) shape: Sort <- Hash Join(orders o, customers c).
@@ -235,4 +235,74 @@ test('rendered HTML embeds the report safely', () => {
   assert.match(html, /<title>A &lt;b&gt;&amp;&lt;\/b&gt; &quot;report&quot; · Auspex Augur<\/title>/);
   const json = html.match(/<script id="auspex-report" type="application\/json">([\s\S]*?)<\/script>/)[1];
   assert.equal(JSON.parse(json).report.sqlVersions[0].sql, "select '</script><script>alert(1)</script>'");
+});
+
+// A ReportService over a temp library and a fake database: runReport returns
+// the analyzed plan above, or throws when failNext is set.
+function tempService() {
+  const fake = {
+    failNext: false,
+    resolveProfile: name => String(name).toLowerCase(),
+    async runReport(profile) {
+      if (fake.failNext) { fake.failNext = false; throw new Error('canceling statement due to statement timeout'); }
+      return { profile, serverVersion: '16.0', analyzed: true, plan: analyzedPlan, explainMs: 1, previewMs: 1,
+        columns: [{ name: 'id', type: 'integer' }], rows: [[1]], rowCount: 1, truncated: false };
+    },
+  };
+  const svc = new ReportService(fake, fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-svc-test-')));
+  return { svc, fake };
+}
+const embedded = html => JSON.parse(html.match(/<script id="auspex-report" type="application\/json">([\s\S]*?)<\/script>/)[1]).report;
+
+test('reverting to an earlier SQL approves that version, not the newest entry', async () => {
+  const { svc } = tempService();
+  svc.save({ ...ref, sql: 'select 1' });
+  svc.save({ ...ref, sql: 'select 2' });
+  assert.equal(svc.save({ ...ref, sql: 'select 1' }).version, 1);
+  await svc.run(ref);
+  const res = svc.approve(ref);
+  assert.equal(res.version, 1);
+  const meta = svc.library.readMeta('approved', ref);
+  assert.equal(meta.approvedVersion, 1);
+  assert.equal(meta.activeVersion, 1);
+  assert.equal(svc.library.readSql('approved', ref).trim(), 'select 1');
+});
+
+test('editing without running labels the old result as stale and drops its joins', async () => {
+  const { svc } = tempService();
+  svc.save({ ...ref, sql: 'select 1' });
+  await svc.run(ref);
+  svc.approve(ref);
+  assert.equal(svc.approvedJoinPairs('local').length, 1, 'matching approved run teaches its join');
+
+  svc.save({ ...ref, sql: 'select 2' });
+  const draft = svc.library.readMeta('draft', ref);
+  assert.equal(draft.activeVersion, 2);
+  assert.equal(draft.last.version, 1, 'previous result is kept, labelled by its own version');
+  const report = embedded(fs.readFileSync(svc.library.paths('draft', ref).html, 'utf8'));
+  assert.equal(report.activeHash, sqlHash('select 2'));
+  assert.notEqual(report.last.sqlHash, report.activeHash);
+
+  svc.approve(ref);
+  assert.deepEqual(svc.approvedJoinPairs('local'), [], 'stale result from v1 does not count for approved v2');
+  await svc.run(ref);
+  assert.equal(svc.approvedJoinPairs('local').length, 1, 'a run of v2 makes it count again');
+});
+
+test('a failed run leaves the previous result and its revision untouched', async () => {
+  const { svc, fake } = tempService();
+  svc.save({ ...ref, sql: 'select 1' });
+  await svc.run(ref);
+  fake.failNext = true;
+  await assert.rejects(svc.run(ref), /statement timeout/);
+  const meta = svc.library.readMeta('draft', ref);
+  assert.equal(meta.runs.length, 1);
+  assert.equal(meta.last.sqlHash, meta.activeHash);
+});
+
+test('approval refuses draft SQL that matches no saved version', () => {
+  const { svc } = tempService();
+  svc.save({ ...ref, sql: 'select 1' });
+  fs.writeFileSync(svc.library.paths('draft', ref).sql, 'select 99\n');
+  assert.throws(() => svc.approve(ref), /matches no saved version/);
 });

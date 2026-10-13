@@ -41,9 +41,15 @@ export class ReportService {
   // Join column pairs of approved reports on one database: the "used" level
   // of relations in the schema memory.
   approvedJoinPairs(profile) {
+    // Only results produced by the approved SQL count; a stale last run from
+    // an older revision teaches nothing.
     return this.library.list()
       .filter(i => i.stage === 'approved' && i.db === profile)
-      .flatMap(i => this.library.readMeta('approved', i)?.last?.summary?.joins ?? [])
+      .flatMap(i => {
+        const meta = this.library.readMeta('approved', i);
+        if (!meta?.last || meta.last.sqlHash !== this.library.activeHash('approved', i, meta)) return [];
+        return meta.last.summary?.joins ?? [];
+      })
       .flatMap(j => j.columnPairs ?? []);
   }
 
