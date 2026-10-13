@@ -80,7 +80,10 @@ tool('list_profiles', {
   description: 'Lists configured database profiles with description, host, database, user and timeout limit (never passwords). Call this and ask the user which profile to use when they have not named one in this conversation; show each description so production databases are clearly marked.',
   inputSchema: {},
 }, async () => ({
-  limits: { maxRows: config.maxRows, exportMaxRows: config.exportMaxRows, defaultTimeoutSeconds: defaultTimeoutS },
+  limits: {
+    maxRows: config.maxRows, exportMaxRows: config.exportMaxRows, exportMaxBytes: config.exportMaxBytes,
+    exportMaxSeconds: config.exportMaxMs / 1000, defaultTimeoutSeconds: defaultTimeoutS,
+  },
   exportDir: config.exportDir,
   profilesFile: config.profilesFile,
   profiles: [...config.profiles].map(([name, cs]) => ({
@@ -184,7 +187,7 @@ tool('explain', {
 
 tool('export_csv', {
   title: 'Export query to CSV',
-  description: `Streams a read-only query result to a UTF-8 CSV file in ${config.exportDir} (up to ${config.exportMaxRows} rows) and returns only the file path, columns and row count. Use for large results; analyze the file locally instead of reading rows into the conversation.`,
+  description: `Streams a read-only query result to a UTF-8 CSV file in ${config.exportDir} (up to ${config.exportMaxRows} rows, ${Math.round(config.exportMaxBytes / 1048576)} MB and ${config.exportMaxMs / 1000} s in total) and returns only the file path, columns, row count and size. When a limit is hit the file ends cleanly at a row: truncated is true and stopReason says rows, bytes or time; tell the user and narrow the query. Use for large results; analyze the file locally instead of reading rows into the conversation.`,
   inputSchema: {
     profile: profileArg,
     sql: z.string(),

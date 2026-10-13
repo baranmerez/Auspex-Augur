@@ -152,3 +152,48 @@ test('an unknown mode is rejected before touching the database', async () => {
   const db = fakeDb();
   await assert.rejects(db._exportCsv('local', 'select 1', [], 'x', ',', undefined, 'excel'), /mode must be/);
 });
+
+// Collects what an export writes instead of touching the disk.
+function capture(db) {
+  const chunks = [];
+  db.exportPath = () => path.join(exportDir, 'budget.csv');
+  db.openExportStream = () => new Writable({ write(chunk, enc, cb) { chunks.push(chunk.toString()); cb(); } });
+  return () => chunks.join('');
+}
+const batch = n => Array.from({ length: n }, (_, i) => [i, 'satır ' + i]);
+
+test('the row cap ends the file at a row and says why', async () => {
+  const db = fakeDb({ batches: [batch(5)] });
+  db.config.exportMaxRows = 3;
+  const text = capture(db);
+  const r = await db._exportCsv('local', 'select 1', [], 'x', ',');
+  assert.deepEqual([r.rowCount, r.truncated, r.stopReason], [3, true, 'rows']);
+  assert.equal(text().trim().split('\r\n').length, 4, 'header + 3 rows');
+});
+
+test('the size cap never writes past the limit and stops at a row boundary', async () => {
+  const db = fakeDb({ batches: [batch(100)] });
+  db.config.exportMaxBytes = 200;
+  const text = capture(db);
+  const r = await db._exportCsv('local', 'select 1', [], 'x', ',');
+  assert.equal(r.stopReason, 'bytes');
+  assert.equal(r.truncated, true);
+  assert.ok(r.bytes <= 200 && Buffer.byteLength(text()) === r.bytes, `${r.bytes} bytes written`);
+  assert.ok(text().endsWith('\r\n'), 'last line is complete');
+  assert.equal(text().trim().split('\r\n').length, r.rowCount + 1);
+});
+
+test('the total time cap stops between batches', async () => {
+  const db = fakeDb({ batches: [batch(1000), batch(1000), batch(1000)], fetchDelayMs: 20 });
+  db.config.exportMaxMs = 10;
+  capture(db);
+  const r = await db._exportCsv('local', 'select 1', [], 'x', ',');
+  assert.deepEqual([r.rowCount, r.truncated, r.stopReason], [1000, true, 'time']);
+});
+
+test('an export within every limit is complete and not truncated', async () => {
+  const db = fakeDb({ batches: [batch(10)] });
+  capture(db);
+  const r = await db._exportCsv('local', 'select 1', [], 'x', ',');
+  assert.deepEqual([r.rowCount, r.truncated, r.stopReason], [10, false, null]);
+});
