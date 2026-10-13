@@ -237,6 +237,12 @@ library/
   needs its own `WHERE` (one inside a subquery does not count). It is a
   structural check, not a proof that the script is right: a human still
   reviews every script.
+- **Several Auspex processes:** two MCP clients or a script can share one
+  library and memory folder. Every change runs under a lock file
+  (`<library>/.lock`, `<memory>/<profile>/.lock`), so no update is lost and
+  SQL, metadata and HTML stay in step. A second writer waits up to 5 s, then
+  gets a "try again" error. A lock left by a crashed process (or older than
+  30 s) is taken over automatically.
 
 > [!NOTE]
 > Masking is a name-based safety net (English and Turkish names, including
