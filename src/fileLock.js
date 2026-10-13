@@ -99,6 +99,10 @@ function acquire(lockPath, { waitMs, staleMs }) {
     const seen = snapshot(lockPath);
     if (isStale(seen, staleMs)) {
       takeOver(lockPath, seen, staleMs);
+      // A takeover that keeps failing (file held open, fresh marker of another
+      // taker) must not spin past the deadline.
+      if (Date.now() >= deadline) throw new LockBusyError(lockPath);
+      if (attempt > 0) sleep(Math.min(10 + attempt * 5, 50));
       continue;
     }
     if (Date.now() >= deadline) throw new LockBusyError(lockPath);

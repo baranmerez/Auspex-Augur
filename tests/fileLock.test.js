@@ -185,3 +185,24 @@ test('atomic writes keep landing next to a reader polling every millisecond (Win
   }
   assert.equal(lib.readMeta('draft', ref).runs.at(-1).n, 199, 'every write landed');
 });
+
+test('a stale lock that cannot be removed ends in LockBusyError instead of spinning', () => {
+  const dir = tempDir('auspex-lock-stuck-');
+  const lockPath = path.join(dir, '.lock');
+  fs.writeFileSync(lockPath, JSON.stringify({ pid: 2 ** 30, host: os.hostname(), token: '4444444444444444' }));
+  // Every takeover attempt fails as if the file were held open (EPERM).
+  const original = fs.renameSync;
+  let attempts = 0;
+  fs.renameSync = (from, ...rest) => {
+    if (String(from) === lockPath) { attempts++; throw Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' }); }
+    return original.call(fs, from, ...rest);
+  };
+  const started = Date.now();
+  try {
+    assert.throws(() => withFileLock(lockPath, () => 'never', { waitMs: 200 }), LockBusyError);
+  } finally {
+    fs.renameSync = original;
+  }
+  assert.ok(attempts > 1, 'it retried');
+  assert.ok(Date.now() - started < 2000, 'it gave up close to waitMs');
+});
