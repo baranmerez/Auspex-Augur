@@ -132,6 +132,11 @@ flowchart LR
 | ▶️ `query` | One read-only statement, max `AUSPEX_MAX_ROWS` rows, `$1..$n` params, optional `timeoutSeconds` |
 | 🧠 `explain` | Estimated plan by default; `analyze: true` runs `EXPLAIN (ANALYZE, BUFFERS)` read-only, under the timeout, rolled back |
 | 📤 `export_csv` | Streams the result to a UTF-8 CSV file; returns only path, columns and row count |
+| 📝 `save_report` | Saves a read-only query as a versioned report draft in the library |
+| 🏁 `run_report` | Runs a report: plan + timings + masked preview, history, regenerated HTML; returns a compact summary |
+| ✅ `approve_report` | Moves a draft into `SELECT/` after the user approved it |
+| 📚 `list_reports` / 🎨 `render_reports` | Lists the library; re-renders every report HTML from stored JSON |
+| 🧾 `save_execute_script` | Writes a change script into `EXECUTE/` for a human to run — never executed by Auspex |
 
 ### Choosing the database
 
@@ -150,6 +155,46 @@ per-profile ceiling, and a larger value is rejected before connecting. The
 server instructions tell the model to prefer estimated row counts over
 `count(*)`, check plans with `explain` first, and tell the user before running
 anything longer than the default.
+
+## 📚 Report library
+
+When an analysis query is worth keeping, the agent saves it as a report.
+Reports are grouped by database (profile), schema and category, and live in a
+user-specific folder outside any repository (`~/.auspex/library`, override
+with `AUSPEX_LIBRARY_DIR`):
+
+```
+library/
+├── _drafts/<db>/<schema>/<category>/<name>.sql|.report.json|.html   work in progress
+├── SELECT/<db>/<schema>/<category>/<name>.sql|.report.json|.html    approved reports
+└── EXECUTE/<db>/<schema>/<category>/<name>.sql                      change scripts for a human
+```
+
+- **The agent only writes SQL.** `run_report` executes it read-only in one
+  snapshot (`EXPLAIN (ANALYZE, BUFFERS, VERBOSE, SETTINGS, FORMAT JSON)` plus a
+  cursor preview), summarizes the plan, masks personal columns, appends the run
+  to the history and fills one fixed HTML template. Rendering costs no tokens.
+- **The HTML is self-contained** (data embedded, no external files): stat tiles,
+  plan warnings, a plan tree with time share and misestimates, joins read from
+  the plan (with the column pairs they use), tables touched, the masked preview,
+  run history with a duration chart, and a diff between SQL versions.
+- **Develop a query like a car:** every saved SQL change becomes a new version,
+  every run is kept (last 100), so you can see what each change did to time,
+  cost and plan.
+- **Heavy reports:** with `analyze: "auto"` the plan is still read but
+  `EXPLAIN ANALYZE` is skipped when the previous run took more than 30 s, so a
+  slow query is not executed twice without asking.
+- **Approval:** drafts move to `SELECT/` only through `approve_report`, which
+  the server instructions restrict to an explicit user approval.
+- **Change scripts:** `save_execute_script` only writes files. A script must
+  start with `BEGIN`, end with `ROLLBACK`, contain no `COMMIT` and have `WHERE`
+  on every `UPDATE`/`DELETE`; whoever runs it with a privileged role swaps the
+  final `ROLLBACK` for `COMMIT` after checking the results.
+
+> [!NOTE]
+> Masking is a name-based safety net (English and Turkish names, including
+> compounds such as `aliciadi`). Free-text and JSON columns can still contain
+> personal data; add them to a report's `mask` list.
 
 ## 🔌 Register with an MCP client
 
@@ -308,6 +353,7 @@ naming the problem.
 | `AUSPEX_DATA_DIR` | `<home>` | Base for `exports/` and `logs/` |
 | `AUSPEX_EXPORT_DIR`, `AUSPEX_LOG_DIR` | under data dir | Override each folder |
 | `AUSPEX_VIEWER_PORT` | 4719 | Port of the local viewer |
+| `AUSPEX_LIBRARY_DIR` | `<home>/library` | Report library (`SELECT/`, `EXECUTE/`, `_drafts/`) |
 
 Files are kept out of AppData on purpose: MSIX-packaged desktop apps
 (including some AI clients) redirect AppData writes of their child processes

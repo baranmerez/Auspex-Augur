@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { loadConfig, describeConnection } from './config.js';
 import { ReadOnlyDatabase } from './db.js';
 import { listSchemas, listTables, describeTable, search } from './catalog.js';
+import { ReportService } from './reports/service.js';
 
 let config;
 try {
@@ -14,6 +15,7 @@ try {
   process.exit(1);
 }
 const db = new ReadOnlyDatabase(config, { source: 'mcp' });
+const reports = new ReportService(db, config.libraryDir);
 
 const defaultTimeoutS = config.statementTimeoutMs / 1000;
 const maxTimeoutS = config.maxStatementTimeoutMs / 1000;
@@ -26,9 +28,13 @@ const instructions = [
   'When switching to a different profile mid-conversation, confirm with the user first.',
   'Some tables are very large. Use search to find tables and columns, use estimated_rows instead of count(*) on big tables, check plans with explain (without analyze) first, and narrow by indexed columns.',
   `Queries time out after ${defaultTimeoutS} s by default. Before running a query with a longer timeoutSeconds, or explain analyze on a large table, tell the user which table, the estimated rows and why it may take long.`,
+  'Report library: when an analysis query is worth keeping, save it with save_report (it becomes a draft under <db>/<schema>/<category>), run it with run_report and show the user the summary and the HTML file path; iterate by saving new SQL versions.',
+  'Call approve_report only after the user explicitly approved that report in this conversation.',
+  'Change scripts (INSERT/UPDATE/DELETE/DDL) are never executed through Auspex: write them with save_execute_script for the user to run with a privileged role.',
+  'run_report with analyze="auto" skips EXPLAIN ANALYZE when the previous run took longer than 30 s; ask the user before forcing analyze="always" on such reports.',
 ].join(' ');
 
-const server = new McpServer({ name: 'auspex', version: '0.7.0' }, { instructions });
+const server = new McpServer({ name: 'auspex', version: '0.8.0' }, { instructions });
 
 const profileArg = z.string().min(1).describe('Required profile name (see list_profiles). Use only a profile the user named in this conversation; otherwise ask the user first.');
 const paramsArg = z.array(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional()
@@ -139,6 +145,77 @@ tool('export_csv', {
     timeoutSeconds: timeoutArg,
   },
 }, async ({ profile, sql, params, fileName, delimiter, timeoutSeconds }) => db.exportCsv(profile, sql, params, fileName, delimiter || ',', timeoutSeconds));
+
+// ---------- report library ----------
+const refArgs = {
+  db: z.string().min(1).describe('Database = the profile name the report runs on (first folder level).'),
+  schema: z.string().min(1).describe('Main schema of the report (second folder level).'),
+  category: z.string().min(1).describe('Category folder, e.g. "Barcode reports" or "General".'),
+  name: z.string().min(1).describe('Report name; stored as an ASCII kebab-case file name.'),
+};
+
+tool('save_report', {
+  title: 'Save report draft',
+  description: 'Saves a read-only SQL query as a report draft in the library (_drafts/<db>/<schema>/<category>/<name>.sql) with a fixed HTML template. Saving changed SQL adds a new version. Then call run_report.',
+  inputSchema: {
+    ...refArgs,
+    sql: z.string().min(1).describe('A single read-only SQL statement.'),
+    title: z.string().optional().describe('Human-readable title shown in the report.'),
+    description: z.string().optional().describe('What the report answers and how to read it.'),
+    note: z.string().optional().describe('What changed in this SQL version.'),
+    mask: z.array(z.string()).optional().describe('Extra result columns to mask in previews.'),
+    unmask: z.array(z.string()).optional().describe('Columns to exempt from automatic masking (only when the user agreed).'),
+  },
+}, async args => reports.save(args));
+
+tool('run_report', {
+  title: 'Run report',
+  description: 'Runs a library report read-only: EXPLAIN (FORMAT JSON, with ANALYZE unless skipped) plus a masked preview, appends the run to its history and regenerates its HTML. Returns a compact summary (timings, hotspots, joins, warnings, first preview rows) and the HTML path.',
+  inputSchema: {
+    ...refArgs,
+    analyze: z.enum(['auto', 'always', 'never']).optional().describe('auto (default): ANALYZE unless the previous run took more than 30 s. always: ask the user first for slow reports. never: plan only.'),
+    previewRows: z.number().int().min(0).max(config.maxRows).optional().describe('Rows stored in the HTML preview. Default 50.'),
+    returnRows: z.number().int().min(0).max(100).optional().describe('Preview rows returned to you. Default 20.'),
+    params: paramsArg,
+    timeoutSeconds: timeoutArg,
+  },
+}, async ({ analyze, previewRows, returnRows, params, timeoutSeconds, ...ref }) =>
+  reports.run(ref, { analyze: analyze === 'never' ? false : analyze === 'always' ? 'always' : 'auto', previewRows, returnRows, params, timeoutSeconds }));
+
+tool('approve_report', {
+  title: 'Approve report',
+  description: 'Moves a report draft into SELECT/<db>/<schema>/<category>/. Only call this after the user explicitly approved the report in this conversation.',
+  inputSchema: refArgs,
+}, async args => reports.approve(args));
+
+tool('list_reports', {
+  title: 'List reports',
+  description: 'Lists library reports and change scripts with stage (draft, approved, execute), db, schema, category, versions and last run.',
+  inputSchema: {
+    db: z.string().optional().describe('Only this database (profile).'),
+    stage: z.enum(['draft', 'approved', 'execute']).optional(),
+  },
+}, async filter => ({ libraryDir: config.libraryDir, reports: reports.list(filter) }));
+
+tool('render_reports', {
+  title: 'Re-render report HTML',
+  description: 'Regenerates every report HTML from its stored JSON (for example after a template update). Does not touch the database.',
+  inputSchema: {},
+}, async () => reports.renderAll());
+
+tool('save_execute_script', {
+  title: 'Save change script',
+  description: 'Writes an INSERT/UPDATE/DELETE/DDL script to EXECUTE/<db>/<schema>/<category>/<name>.sql for the user to run with a privileged role. Auspex never executes it. The script must start with BEGIN, end with ROLLBACK, contain no COMMIT and have WHERE on every UPDATE/DELETE.',
+  inputSchema: {
+    ...refArgs,
+    sql: z.string().min(1).describe('The change script (BEGIN ... MATCH checks ... ROLLBACK).'),
+    title: z.string().optional(),
+    purpose: z.string().optional().describe('What the script changes and why.'),
+    relatedReport: z.string().optional().describe('Report that motivated the change, e.g. db/schema/category/name.'),
+    expectedRows: z.union([z.number(), z.string()]).optional().describe('Expected affected rows.'),
+    replace: z.boolean().optional().describe('Overwrite an existing script with the same name.'),
+  },
+}, async args => reports.saveExecute(args));
 
 async function shutdown() {
   await db.close().catch(() => {});

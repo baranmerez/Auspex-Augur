@@ -138,6 +138,8 @@ export function loadConfig(env = process.env) {
     maxCellChars: intFromEnv(env, 'AUSPEX_MAX_CELL_CHARS', 2000, 50, 100000),
     exportDir: env.AUSPEX_EXPORT_DIR || path.join(dataDir, 'exports'),
     logDir: env.AUSPEX_LOG_DIR || path.join(dataDir, 'logs'),
+    // Report library (SELECT/, EXECUTE/, _drafts/): user-specific, never in a repo.
+    libraryDir: env.AUSPEX_LIBRARY_DIR || path.join(auspexHome(env), 'library'),
   };
 }
 
