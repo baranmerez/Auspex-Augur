@@ -377,7 +377,10 @@ function applyTheme(t) {
   try { localStorage.setItem('auspex.report.theme', t); } catch {}
 }
 document.querySelectorAll('#theme button').forEach(b => b.addEventListener('click', () => applyTheme(b.dataset.v)));
-let savedTheme = 'auto'; try { savedTheme = localStorage.getItem('auspex.report.theme') || 'auto'; } catch {}
+// A host page (the Auspex viewer) may force a theme through <html data-theme>.
+const forcedTheme = document.documentElement.getAttribute('data-theme');
+let savedTheme = forcedTheme || 'auto';
+if (!forcedTheme) { try { savedTheme = localStorage.getItem('auspex.report.theme') || 'auto'; } catch {} }
 applyTheme(savedTheme);
 put($('foot'), `Generated ${fmtWhen(DATA && DATA.generatedAt)} by Auspex Augur · template v${DATA && DATA.templateVersion}`);
 render();

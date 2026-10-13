@@ -46,6 +46,90 @@ fn profiles_file() -> PathBuf {
     env("AUSPEX_PROFILES_FILE").map(PathBuf::from).unwrap_or_else(|| auspex_home().join("profiles.json"))
 }
 
+fn library_dir() -> PathBuf {
+    env("AUSPEX_LIBRARY_DIR").map(PathBuf::from).unwrap_or_else(|| auspex_home().join("library"))
+}
+
+const STAGES: [(&str, &str); 3] = [("draft", "_drafts"), ("approved", "SELECT"), ("execute", "EXECUTE")];
+
+// One folder level (db, schema, category) or a report name; same rules as library.js.
+fn valid_segment(s: &str) -> bool {
+    !s.is_empty()
+        && s.chars().count() <= 80
+        && !s.starts_with('.')
+        && !s.ends_with('.')
+        && !s.chars().any(|c| c.is_control() || "<>:\"/\\|?*".contains(c))
+}
+
+fn sub_dirs(p: &std::path::Path) -> Vec<String> {
+    let mut v: Vec<String> = fs::read_dir(p)
+        .map(|it| it.filter_map(|e| e.ok()).filter(|e| e.path().is_dir()).map(|e| e.file_name().to_string_lossy().to_string()).collect())
+        .unwrap_or_default();
+    v.sort();
+    v
+}
+
+fn list_reports() -> Value {
+    let root = library_dir();
+    let mut out = Vec::new();
+    for (stage, dir) in STAGES {
+        let base = root.join(dir);
+        for db in sub_dirs(&base) {
+            for schema in sub_dirs(&base.join(&db)) {
+                for category in sub_dirs(&base.join(&db).join(&schema)) {
+                    let folder = base.join(&db).join(&schema).join(&category);
+                    let mut files: Vec<String> = fs::read_dir(&folder)
+                        .map(|it| it.filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().to_string()).filter(|n| n.ends_with(".sql")).collect())
+                        .unwrap_or_default();
+                    files.sort();
+                    for f in files {
+                        let name = f.trim_end_matches(".sql").to_string();
+                        let meta: Value = if stage == "execute" {
+                            Value::Null
+                        } else {
+                            fs::read_to_string(folder.join(format!("{name}.report.json"))).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or(Value::Null)
+                        };
+                        let last = meta.get("runs").and_then(Value::as_array).and_then(|r| r.last()).cloned();
+                        let updated = meta.get("updatedAt").cloned().unwrap_or(Value::Null);
+                        out.push(json!({
+                            "stage": stage, "db": db, "schema": schema, "category": category, "name": name,
+                            "title": meta.get("title").cloned().unwrap_or(json!(name)),
+                            "description": meta.get("description").cloned().unwrap_or(Value::Null),
+                            "versions": meta.get("sqlVersions").and_then(Value::as_array).map(|a| a.len()),
+                            "approvedVersion": meta.get("approvedVersion").cloned().unwrap_or(Value::Null),
+                            "updatedAt": updated,
+                            "runs": meta.get("runs").and_then(Value::as_array).map(|a| a.len()).unwrap_or(0),
+                            "lastRun": last.map(|r| json!({
+                                "at": r.get("at"), "durationMs": r.get("durationMs"), "rows": r.get("rows"),
+                                "analyzed": r.get("analyzed"), "warnings": r.get("warnings").and_then(Value::as_array).map(|a| a.len()).unwrap_or(0)
+                            })),
+                        }));
+                    }
+                }
+            }
+        }
+    }
+    json!({ "libraryDir": root.to_string_lossy(), "reports": out })
+}
+
+fn report_content(query: &HashMap<String, String>) -> Result<Value, String> {
+    let get = |k: &str| query.get(k).cloned().unwrap_or_default();
+    let stage = get("stage");
+    let dir = STAGES.iter().find(|(s, _)| *s == stage).map(|(_, d)| *d).ok_or("stage must be draft, approved or execute")?;
+    let (db, schema, category, name) = (get("db").to_lowercase(), get("schema"), get("category"), get("name"));
+    for s in [&db, &schema, &category, &name] {
+        if !valid_segment(s) {
+            return Err(format!("Invalid path segment \"{s}\""));
+        }
+    }
+    let base = library_dir().join(dir).join(&db).join(&schema).join(&category);
+    let html = base.join(format!("{name}.html"));
+    if stage != "execute" && html.exists() {
+        return fs::read_to_string(html).map(|c| json!({ "kind": "html", "content": c })).map_err(|e| e.to_string());
+    }
+    fs::read_to_string(base.join(format!("{name}.sql"))).map(|c| json!({ "kind": "sql", "content": c })).map_err(|e| e.to_string())
+}
+
 fn is_day(s: &str) -> bool {
     let b = s.as_bytes();
     b.len() == 10
@@ -176,6 +260,8 @@ fn api(path: String, query: HashMap<String, String>) -> Result<Value, String> {
             Ok(json!({ "ok": true, "latestDay": days.first().map(|d| d.0.clone()), "latestCount": days.first().map(|d| d.1).unwrap_or(0), "totalDays": days.len() }))
         }
         "/api/profiles" => Ok(profiles()),
+        "/api/reports" => Ok(list_reports()),
+        "/api/report" => report_content(&query),
         "/api/logs" => {
             let day = query.get("day");
             let from = day.or_else(|| query.get("from")).cloned().unwrap_or_default();

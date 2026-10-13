@@ -188,9 +188,13 @@ export class Library {
           const ref = { db, schema, category, name: f.slice(0, -4) };
           const meta = stage === 'execute' ? null : this.readMeta(stage, ref);
           const lastRun = meta?.runs?.at(-1);
+          const file = path.join(base, db, schema, category, f);
           out.push({
-            stage, ...ref, title: meta?.title ?? ref.name, versions: meta?.sqlVersions?.length ?? null,
-            lastRun: lastRun ? { at: lastRun.at, durationMs: lastRun.durationMs, rows: lastRun.rows } : null,
+            stage, ...ref, title: meta?.title ?? ref.name, description: meta?.description || null,
+            versions: meta?.sqlVersions?.length ?? null, approvedVersion: meta?.approvedVersion ?? null,
+            updatedAt: meta?.updatedAt ?? fs.statSync(file).mtime.toISOString(),
+            runs: meta?.runs?.length ?? 0,
+            lastRun: lastRun ? { at: lastRun.at, durationMs: lastRun.durationMs, rows: lastRun.rows, analyzed: lastRun.analyzed, warnings: lastRun.warnings?.length ?? 0 } : null,
           });
         }
       }
