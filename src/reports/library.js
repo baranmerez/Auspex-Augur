@@ -184,6 +184,8 @@ export class Library {
     const hash = sqlHash(fs.readFileSync(from.sql, 'utf8'));
     const version = meta.sqlVersions.find(v => v.hash === hash)?.version;
     if (version === undefined) throw new LibraryError(`The draft SQL of "${refLabel(r)}" matches no saved version; save it with save_report first.`);
+    // Only SQL that has run successfully (every entry in meta.runs is a success) can be approved.
+    if (!(meta.runs || []).some(x => x.sqlHash === hash)) throw new LibraryError(`Version ${version} of "${refLabel(r)}" has no successful run; run it with run_report before approving.`);
     meta.status = 'approved';
     meta.approvedAt = new Date().toISOString();
     meta.activeHash = hash;

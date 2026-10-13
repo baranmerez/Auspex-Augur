@@ -239,7 +239,7 @@ tool('run_report', {
 
 tool('approve_report', {
   title: 'Approve report',
-  description: 'Moves a report draft into SELECT/<db>/<schema>/<category>/. Only call this after the user explicitly approved the report in this conversation.',
+  description: 'Moves a report draft into SELECT/<db>/<schema>/<category>/. Requires a successful run_report of the current SQL; refused otherwise. Only call this after the user explicitly approved the report in this conversation.',
   inputSchema: refArgs,
 }, async args => db.audited('approve_report', reportDetails(args), () => reports.approve(args), r => ({ version: r.version })));
 
