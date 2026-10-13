@@ -19,11 +19,12 @@ function child(code) {
     let err = '';
     p.stderr.on('data', d => { err += d; });
     p.on('error', reject);
-    p.on('exit', code => resolve({ code, err, pid: p.pid }));
+    // 'close' fires after stdio is drained, so err is complete.
+    p.on('close', code => resolve({ code, err, pid: p.pid }));
   });
 }
 
-test('two processes appending runs to one report keep every run', async () => {
+test('two processes appending runs to one report keep every run', { timeout: 30000 }, async () => {
   const root = tempDir('auspex-lock-lib-');
   const ref = { db: 'local', schema: 's', category: 'c', name: 'r' };
   new Library(root).saveDraft({ ref, sql: 'select 1' });
@@ -39,7 +40,7 @@ test('two processes appending runs to one report keep every run', async () => {
   assert.equal(fs.existsSync(path.join(root, '.lock')), false, 'lock released');
 });
 
-test('two processes adding notes get unique ids and lose none', async () => {
+test('two processes adding notes get unique ids and lose none', { timeout: 30000 }, async () => {
   const root = tempDir('auspex-lock-mem-');
   const writer = tag => `
     import { SchemaMemory } from '${srcUrl('memory/store.js')}';
@@ -52,7 +53,7 @@ test('two processes adding notes get unique ids and lose none', async () => {
   assert.equal(new Set(notes.map(n => n.id)).size, 60);
 });
 
-test('a lock left by a crashed process is taken over', async () => {
+test('a lock left by a crashed process is taken over', { timeout: 30000 }, async () => {
   const lockPath = path.join(tempDir('auspex-lock-crash-'), '.lock');
   const crashed = await child(`
     import { withFileLock } from '${srcUrl('fileLock.js')}';
@@ -158,7 +159,7 @@ function seededReport() {
   return { lib, ref, target: lib.paths('draft', ref).meta };
 }
 
-test('a write waits for a reader that holds the file open (Windows)', { skip: process.platform !== 'win32' }, async () => {
+test('a write waits for a reader that holds the file open (Windows)', { skip: process.platform !== 'win32', timeout: 30000 }, async () => {
   const { lib, ref, target } = seededReport();
   const { reader, ready } = startReader(`const fs=require('fs');const fd=fs.openSync(${JSON.stringify(target)},'r');console.log('ready');setTimeout(()=>fs.closeSync(fd),300)`);
   await ready;
@@ -172,11 +173,11 @@ test('a write waits for a reader that holds the file open (Windows)', { skip: pr
   reader.kill();
 });
 
-test('atomic writes keep landing next to a reader polling every millisecond (Windows)', { skip: process.platform !== 'win32' }, async () => {
+test('atomic writes keep landing next to a reader polling every millisecond (Windows)', { skip: process.platform !== 'win32', timeout: 30000 }, async () => {
   const { lib, ref, target } = seededReport();
   // Atomics.wait(1) wakes on the same Windows clock tick as the writer's
   // retries; this is the case that used to fail every time.
-  const { reader, ready } = startReader(`const fs=require('fs');const b=new Int32Array(new SharedArrayBuffer(4));const end=Date.now()+8000;let first=true;while(Date.now()<end){try{fs.readFileSync(${JSON.stringify(target)});if(first){first=false;console.log('ready')}}catch{};Atomics.wait(b,0,0,1)}`);
+  const { reader, ready } = startReader(`const fs=require('fs');const b=new Int32Array(new SharedArrayBuffer(4));const end=Date.now()+60000;let first=true;while(Date.now()<end){try{fs.readFileSync(${JSON.stringify(target)});if(first){first=false;console.log('ready')}}catch{};Atomics.wait(b,0,0,1)}`);
   await ready;
   try {
     for (let i = 0; i < 200; i++) lib.appendRun('draft', ref, { at: new Date().toISOString(), n: i, warnings: [] }, null);
