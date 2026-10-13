@@ -199,6 +199,12 @@ outside the repository. The current setup is described in
 - **Catalog visibility:** PostgreSQL shows table names to everyone; tables in
   unprivileged schemas appear in search (`can_select = false`) but cannot be
   read.
+- **Deliberate gaps from the review fixes:** change scripts are checked
+  structurally only, never rehearsed against a database (`WHERE true` passes);
+  spreadsheet-mode CSVs were not opened in Excel, LibreOffice or Sheets; some
+  CSV error paths are tested with in-process fakes rather than child
+  processes; database-wide notes come back only from `table_knowledge`, not
+  with `query` / `run_report` responses.
 - **Personal data:** SELECT was granted per schema. Personal-data columns are
   to be inventoried during the first exploration, then revoked or moved
   behind masked views. Reports never contain personal values.
@@ -220,7 +226,7 @@ The public repository starts from a single initial commit
 first release (MCP server, SQL guard, profiles file, audit log, viewer, Tauri
 desktop app, English translation, client-agnostic docs) was squashed into it.
 
-### Review fixes (2026-10-13, uncommitted at the time of writing)
+### Review fixes (2026-10-13, merged in #14)
 
 The 13 GitHub issues from the external review were fixed one by one:
 quoted/Unicode function names in the guard (#1), one profile URL policy for the
