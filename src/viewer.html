@@ -568,6 +568,8 @@ const TR = {
   'Library: ': 'Kütüphane: ', 'Stage': 'Aşama', 'Drafts': 'Taslaklar', 'Approved': 'Onaylı', 'Execute': 'Execute', 'No reports match.': 'Eşleşen rapor yok.',
   'estimated plan': 'tahmini plan', '{n} rows': '{n} satır', 'change script': 'değişiklik script\'i', 'not run yet': 'henüz çalıştırılmadı',
   ' · schema {s}': ' · şema {s}', 'Language': 'Dil', 'Run report': 'Rapor çalıştırma',
+  'Save report': 'Rapor kaydetme', 'Approve report': 'Rapor onayı', 'Save change script': 'Değişiklik script\'i kaydetme',
+  'Re-render reports': 'Raporları yeniden üretme', 'Memory note': 'Hafıza notu', ' · note #{id} {s}': ' · not #{id} {s}',
   'Schema': 'Şema', '1 new schema change': '1 yeni şema değişikliği', '{n} new schema changes': '{n} yeni şema değişikliği',
   'Graph': 'Graph', 'ER diagram': 'ER diyagramı', 'Show all': 'Hepsini göster',
   'Focus view': 'Odak görünümü', 'View': 'Görünüm', 'explored': 'keşfedildi',
@@ -633,7 +635,8 @@ const addDays = (s, n) => { const d = new Date(s + 'T00:00:00'); d.setDate(d.get
 const timeOf = ts => ts ? new Date(ts).toLocaleTimeString(locale, { hour12: false }) : '?';
 const dateTimeOf = ts => ts ? new Date(ts).toLocaleString(locale, { hour12: false }) : '?';
 const toolNames = { query: 'Query', explain: 'Plan', export_csv: 'CSV export', search: 'Search',
-  list_schemas: 'Schemas', list_tables: 'Tables', describe_table: 'Table structure', list_profiles: 'Profiles', run_report: 'Run report' };
+  list_schemas: 'Schemas', list_tables: 'Tables', describe_table: 'Table structure', list_profiles: 'Profiles', run_report: 'Run report',
+  save_report: 'Save report', approve_report: 'Approve report', save_execute_script: 'Save change script', render_reports: 'Re-render reports', remember: 'Memory note' };
 const toolName = k => t(toolNames[k] || k || '?');
 const sourceOf = e => e.source || 'old';
 const sourceLabel = s => s === 'old' ? t('legacy entry') : s;
@@ -643,6 +646,10 @@ function summaryOf(e) {
   if (e.tool === 'search' && e.text) return `"${e.text}"` + (e.schema ? t(' · schema {s}', { s: e.schema }) : '');
   if (e.tool === 'describe_table' && e.table) return `${e.schema}.${e.table}`;
   if (e.tool === 'list_tables' && e.schema) return e.schema + (e.pattern ? ` · ${e.pattern}` : '');
+  if (e.report) return e.report + (e.version ? ` · v${e.version}` : '') + (e.sqlHash ? ` · ${e.sqlHash}` : '');
+  if (e.tool === 'render_reports') return e.rendered !== undefined ? `${e.rendered} HTML` : '';
+  if (e.tool === 'remember') return [e.action, e.noteKind || e.kind, e.schema && e.table ? `${e.schema}.${e.table}` : null].filter(Boolean).join(' · ')
+    + (e.noteId ? t(' · note #{id} {s}', { id: e.noteId, s: e.noteStatus || '' }).trimEnd() : '');
   return '';
 }
 
