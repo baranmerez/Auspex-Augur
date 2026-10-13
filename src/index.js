@@ -252,7 +252,7 @@ tool('save_execute_script', {
 // ---------- schema memory ----------
 tool('table_knowledge', {
   title: 'Table knowledge from memory',
-  description: 'Answers from the local schema memory, without touching the database: structure summary (key, used and noted columns first), foreign keys, relations used in approved reports, name-based suggestions (unconfirmed), notes, recent schema changes and unexplored neighbors. If the table is not in memory, describe_table records it.',
+  description: 'Answers from the local schema memory, without touching the database: structure summary (key, used and noted columns first), foreign keys, relations used in approved reports, name-based suggestions (unconfirmed), notes on the table, database-wide notes (databaseNotes: rules always in full, then observations and unconfirmed inferences; follow the rules), recent schema changes and unexplored neighbors. If the table is not in memory, describe_table records it; database-wide notes are returned either way.',
   inputSchema: {
     profile: profileArg,
     schema: z.string(),
