@@ -1,0 +1,117 @@
+#!/usr/bin/env node
+// Local, read-only viewer for the Auspex audit log and profiles.
+// Listens on 127.0.0.1 only, never connects to a database, never shows
+// passwords. Run with: npm run viewer (port: AUSPEX_VIEWER_PORT, default 4719).
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { loadConfig, describeConnection, auspexHome } from './config.js';
+
+const port = Number.parseInt(process.env.AUSPEX_VIEWER_PORT || '4719', 10);
+const host = '127.0.0.1';
+const pagePath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'viewer.html');
+const dayPattern = /^\d{4}-\d{2}-\d{2}$/;
+
+// Re-read on every request so edits to profiles.json show up without restart.
+function readConfig() {
+  try {
+    return { config: loadConfig() };
+  } catch (err) {
+    return { error: err.message };
+  }
+}
+
+function logDir() {
+  const { config } = readConfig();
+  return config?.logDir ?? path.join(auspexHome(), 'logs');
+}
+
+function listDays() {
+  const dir = logDir();
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir)
+    .filter(f => /^\d{4}-\d{2}-\d{2}\.jsonl$/.test(f))
+    .map(f => {
+      const text = fs.readFileSync(path.join(dir, f), 'utf8');
+      return { day: f.slice(0, 10), count: text.split('\n').filter(Boolean).length };
+    })
+    .sort((a, b) => b.day.localeCompare(a.day));
+}
+
+function readDay(day) {
+  const file = path.join(logDir(), `${day}.jsonl`);
+  if (!fs.existsSync(file)) return [];
+  return fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map((line, i) => {
+    try {
+      return JSON.parse(line);
+    } catch {
+      return { ts: null, tool: '?', error: `Unreadable log line ${i + 1}` };
+    }
+  });
+}
+
+function profiles() {
+  const { config, error } = readConfig();
+  if (error) return { error, home: auspexHome() };
+  return {
+    home: auspexHome(),
+    profilesFile: config.profilesFile,
+    logDir: config.logDir,
+    exportDir: config.exportDir,
+    defaultTimeoutSeconds: config.statementTimeoutMs / 1000,
+    profiles: [...config.profiles].map(([name, cs]) => ({
+      name,
+      description: config.profileInfo.get(name)?.description ?? null,
+      source: config.profileInfo.get(name)?.source,
+      ...describeConnection(cs),
+      maxTimeoutSeconds: (config.maxTimeoutByProfile.get(name) ?? config.maxStatementTimeoutMs) / 1000,
+    })),
+  };
+}
+
+function send(res, status, body, type = 'application/json; charset=utf-8') {
+  res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+  res.end(typeof body === 'string' ? body : JSON.stringify(body));
+}
+
+const server = http.createServer((req, res) => {
+  // Only same-machine browsers addressing us by loopback name (blocks DNS rebinding).
+  const allowedHosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
+  if (!allowedHosts.has(req.headers.host)) return send(res, 403, { error: 'Forbidden host' });
+  if (req.method !== 'GET') return send(res, 405, { error: 'Read-only viewer' });
+
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  try {
+    if (url.pathname === '/') return send(res, 200, fs.readFileSync(pagePath, 'utf8'), 'text/html; charset=utf-8');
+    if (url.pathname === '/api/days') return send(res, 200, listDays());
+    if (url.pathname === '/api/profiles') return send(res, 200, profiles());
+    if (url.pathname === '/api/logs') {
+      // ?day=YYYY-MM-DD or ?from=YYYY-MM-DD&to=YYYY-MM-DD (inclusive, at most 400 days)
+      const day = url.searchParams.get('day');
+      const from = day ?? url.searchParams.get('from') ?? '';
+      const to = day ?? url.searchParams.get('to') ?? '';
+      if (!dayPattern.test(from) || !dayPattern.test(to)) return send(res, 400, { error: 'day, or from and to, must be YYYY-MM-DD' });
+      if (from > to) return send(res, 400, { error: 'from must not be after to' });
+      const days = listDays().map(d => d.day).filter(d => d >= from && d <= to).sort();
+      if (days.length > 400) return send(res, 400, { error: 'range too large' });
+      return send(res, 200, days.flatMap(d => readDay(d)));
+    }
+    if (url.pathname === '/api/health') {
+      const days = listDays();
+      return send(res, 200, { ok: true, latestDay: days[0]?.day ?? null, latestCount: days[0]?.count ?? 0, totalDays: days.length });
+    }
+    return send(res, 404, { error: 'Not found' });
+  } catch (err) {
+    return send(res, 500, { error: err.message });
+  }
+});
+
+server.on('error', err => {
+  process.stderr.write(`auspex viewer: ${err.message}\n`);
+  process.exit(1);
+});
+
+server.listen(port, host, () => {
+  process.stdout.write(`Auspex viewer: http://127.0.0.1:${port}  (logs: ${logDir()})\n`);
+});

@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="360" viewBox="0 0 1280 360" role="img" aria-label="Auspex Augur: read-only PostgreSQL access for AI agents">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1220"/>
+      <stop offset="1" stop-color="#14294a"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.22" cy="0.5" r="0.42">
+      <stop offset="0" stop-color="#3987e5" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#3987e5" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="sweepGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#6da7ec" stop-opacity="0"/>
+      <stop offset="1" stop-color="#6da7ec" stop-opacity="0.55"/>
+    </linearGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#ffffff" stroke-opacity="0.05"/>
+    </pattern>
+    <clipPath id="card"><rect width="1280" height="360" rx="24"/></clipPath>
+    <style>
+      text { font-family: "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif; }
+      .ring { transform-origin: 280px 180px; animation: spin 22s linear infinite; }
+      .sweep { transform-origin: 280px 180px; animation: spin 5s linear infinite; }
+      .blip { animation: blip 5s ease-in-out infinite; }
+      .b2 { animation-delay: 1.6s; }
+      .b3 { animation-delay: 3.1s; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      @keyframes blip { 0%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
+      @media (prefers-reduced-motion: reduce) { .ring, .sweep, .blip { animation: none; } }
+    </style>
+  </defs>
+
+  <g clip-path="url(#card)">
+    <rect width="1280" height="360" fill="url(#bg)"/>
+    <rect width="1280" height="360" fill="url(#grid)"/>
+    <rect width="1280" height="360" fill="url(#glow)"/>
+  </g>
+
+  <!-- Auspex scanner -->
+  <circle cx="280" cy="180" r="128" fill="none" stroke="#3987e5" stroke-opacity="0.18" stroke-width="2"/>
+  <circle cx="280" cy="180" r="84" fill="none" stroke="#3987e5" stroke-opacity="0.18" stroke-width="2"/>
+  <line x1="152" y1="180" x2="408" y2="180" stroke="#3987e5" stroke-opacity="0.14" stroke-width="2"/>
+  <line x1="280" y1="52" x2="280" y2="308" stroke="#3987e5" stroke-opacity="0.14" stroke-width="2"/>
+  <path class="sweep" d="M280 180 L280 52 A128 128 0 0 1 390.9 116 Z" fill="url(#sweepGrad)"/>
+  <circle class="ring" cx="280" cy="180" r="106" fill="none" stroke="#3987e5" stroke-width="10" stroke-dasharray="120 46" stroke-linecap="round"/>
+  <circle cx="280" cy="180" r="44" fill="#3987e5"/>
+  <circle cx="296" cy="164" r="13" fill="#ffffff" fill-opacity="0.85"/>
+  <circle class="blip" cx="352" cy="116" r="7" fill="#eb6834"/>
+  <circle class="blip b2" cx="205" cy="232" r="6" fill="#1baf7a"/>
+  <circle class="blip b3" cx="338" cy="250" r="5" fill="#9085e9"/>
+
+  <!-- Wordmark -->
+  <text x="470" y="166" font-size="76" font-weight="700" fill="#ffffff" letter-spacing="-1">Auspex Augur</text>
+  <text x="472" y="214" font-size="28" fill="#b7d3f6">Read-only PostgreSQL access for AI agents</text>
+
+  <!-- Chips -->
+  <g font-size="15" font-weight="700" letter-spacing="1.5">
+    <rect x="472" y="246" width="138" height="38" rx="19" fill="#1baf7a" fill-opacity="0.16" stroke="#1baf7a" stroke-opacity="0.7"/>
+    <text x="541" y="270" text-anchor="middle" fill="#7fe0b8">READ-ONLY</text>
+    <rect x="622" y="246" width="122" height="38" rx="19" fill="#eb6834" fill-opacity="0.16" stroke="#eb6834" stroke-opacity="0.7"/>
+    <text x="683" y="270" text-anchor="middle" fill="#f6b393">AUDITED</text>
+    <rect x="756" y="246" width="196" height="38" rx="19" fill="#9085e9" fill-opacity="0.18" stroke="#9085e9" stroke-opacity="0.75"/>
+    <text x="854" y="270" text-anchor="middle" fill="#c9c2ff">ANY MCP CLIENT</text>
+  </g>
+</svg>

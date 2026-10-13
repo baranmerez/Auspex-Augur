@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="520" viewBox="0 0 960 520" role="img" aria-label="Five safety layers between an AI agent and PostgreSQL">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0f1726"/>
+      <stop offset="1" stop-color="#16243b"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#b7d3f6"/>
+    </marker>
+    <style>
+      text { font-family: "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif; }
+      .title { font-size: 22px; font-weight: 700; fill: #ffffff; }
+      .sub { font-size: 14px; fill: #98a2b3; }
+      .name { font-size: 18px; font-weight: 700; fill: #ffffff; }
+      .desc { font-size: 14px; fill: #c3c8d2; }
+      .num { font-size: 16px; font-weight: 700; fill: #0b1220; }
+      .end { font-size: 15px; font-weight: 700; fill: #e6e9ee; }
+      .flow { stroke-dasharray: 6 8; animation: flow 1.2s linear infinite; }
+      @keyframes flow { to { stroke-dashoffset: -14; } }
+      @media (prefers-reduced-motion: reduce) { .flow { animation: none; } }
+    </style>
+  </defs>
+
+  <rect width="960" height="520" rx="20" fill="url(#bg)"/>
+  <text x="40" y="48" class="title">Five layers between an AI agent and your data</text>
+  <text x="40" y="74" class="sub">Every query passes all of them. Writes are refused at every layer that can see them.</text>
+
+  <!-- request path -->
+  <rect x="40" y="96" width="104" height="34" rx="17" fill="#3987e5" fill-opacity="0.2" stroke="#3987e5"/>
+  <text x="92" y="118" class="end" text-anchor="middle">AI agent</text>
+  <line class="flow" x1="92" y1="134" x2="92" y2="466" stroke="#b7d3f6" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <rect x="32" y="472" width="120" height="34" rx="17" fill="#1baf7a" fill-opacity="0.2" stroke="#1baf7a"/>
+  <text x="92" y="494" class="end" text-anchor="middle">PostgreSQL</text>
+
+  <!-- layer 1 -->
+  <g transform="translate(176 104)">
+    <rect width="744" height="62" rx="12" fill="#eb6834" fill-opacity="0.12" stroke="#eb6834" stroke-opacity="0.55"/>
+    <rect width="8" height="62" rx="4" fill="#eb6834"/>
+    <circle cx="40" cy="31" r="15" fill="#eb6834"/><text x="40" y="37" class="num" text-anchor="middle">1</text>
+    <text x="70" y="27" class="name">SQL guard</text>
+    <text x="70" y="48" class="desc">Before connecting: one statement, SELECT/WITH/VALUES/TABLE only, no side-effect functions</text>
+  </g>
+  <!-- layer 2 -->
+  <g transform="translate(176 176)">
+    <rect width="744" height="62" rx="12" fill="#1baf7a" fill-opacity="0.12" stroke="#1baf7a" stroke-opacity="0.55"/>
+    <rect width="8" height="62" rx="4" fill="#1baf7a"/>
+    <circle cx="40" cy="31" r="15" fill="#1baf7a"/><text x="40" y="37" class="num" text-anchor="middle">2</text>
+    <text x="70" y="27" class="name">READ ONLY transaction</text>
+    <text x="70" y="48" class="desc">Statement, lock and idle timeouts; every call ends with ROLLBACK</text>
+  </g>
+  <!-- layer 3 -->
+  <g transform="translate(176 248)">
+    <rect width="744" height="62" rx="12" fill="#9085e9" fill-opacity="0.14" stroke="#9085e9" stroke-opacity="0.6"/>
+    <rect width="8" height="62" rx="4" fill="#9085e9"/>
+    <circle cx="40" cy="31" r="15" fill="#9085e9"/><text x="40" y="37" class="num" text-anchor="middle">3</text>
+    <text x="70" y="27" class="name">Cursor + extended protocol</text>
+    <text x="70" y="48" class="desc">DECLARE CURSOR FOR the query; the server rejects stacked statements and data-modifying CTEs</text>
+  </g>
+  <!-- layer 4 -->
+  <g transform="translate(176 320)">
+    <rect width="744" height="62" rx="12" fill="#3987e5" fill-opacity="0.16" stroke="#3987e5" stroke-opacity="0.7"/>
+    <rect width="8" height="62" rx="4" fill="#3987e5"/>
+    <circle cx="40" cy="31" r="15" fill="#3987e5"/><text x="40" y="37" class="num" text-anchor="middle">4</text>
+    <text x="70" y="27" class="name">Read-only database role — the real guarantee</text>
+    <text x="70" y="48" class="desc">CONNECT, USAGE and SELECT only; default_transaction_read_only on; no superuser, no create</text>
+  </g>
+  <!-- layer 5 -->
+  <g transform="translate(176 392)">
+    <rect width="744" height="62" rx="12" fill="#e87ba4" fill-opacity="0.12" stroke="#e87ba4" stroke-opacity="0.55"/>
+    <rect width="8" height="62" rx="4" fill="#e87ba4"/>
+    <circle cx="40" cy="31" r="15" fill="#e87ba4"/><text x="40" y="37" class="num" text-anchor="middle">5</text>
+    <text x="70" y="27" class="name">Audit log</text>
+    <text x="70" y="48" class="desc">Every call recorded: time, source, tool, profile, SQL, params, duration, rows, error</text>
+  </g>
+</svg>
