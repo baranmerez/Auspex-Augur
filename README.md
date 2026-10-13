@@ -1,0 +1,365 @@
+<p align="center">
+  <img src="docs/assets/banner.svg" alt="Auspex Augur — read-only PostgreSQL access for AI agents" width="100%">
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-2a78d6"></a>
+  <img alt="Node.js 20+" src="https://img.shields.io/badge/node-%E2%89%A520-1baf7a?logo=node.js&amp;logoColor=white">
+  <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-read--only-336791?logo=postgresql&amp;logoColor=white">
+  <img alt="MCP over stdio" src="https://img.shields.io/badge/MCP-stdio-eb6834">
+  <img alt="Desktop app: Tauri 2" src="https://img.shields.io/badge/desktop-Tauri%202-24c8db?logo=tauri&amp;logoColor=white">
+</p>
+
+<p align="center">
+  <b>Let AI agents explore and analyze your PostgreSQL databases — without ever being able to write.</b><br>
+  Guarded queries · full audit log · local viewer · desktop app · works with any MCP client
+</p>
+
+<p align="center">
+  <a href="#-quick-start">Quick start</a> ·
+  <a href="#-how-it-works">How it works</a> ·
+  <a href="#%EF%B8%8F-safety-layers">Safety</a> ·
+  <a href="#-tools">Tools</a> ·
+  <a href="#-register-with-an-mcp-client">MCP clients</a> ·
+  <a href="#-viewer-and-desktop-app">Viewer</a> ·
+  <a href="#%EF%B8%8F-configuration">Configuration</a>
+</p>
+
+---
+
+> [!IMPORTANT]
+> Auspex Augur is **read-only by design**. The guarantee comes from a database
+> role that only has `SELECT`; four code layers and an audit log sit on top of
+> it. Nothing in this project can insert, update, delete or change a schema.
+
+## ✨ Features
+
+<table>
+  <tr>
+    <td width="33%" valign="top"><h3>🛡️ Safe by construction</h3>Read-only role, SQL guard, <code>READ ONLY</code> transactions, cursor-only execution. Writes are refused at every layer that can see them.</td>
+    <td width="33%" valign="top"><h3>🔎 Built for exploration</h3>Search tables and columns across schemas, describe structure and relationships, sample data, read plans with <code>EXPLAIN ANALYZE</code>.</td>
+    <td width="33%" valign="top"><h3>📜 Everything audited</h3>Every call — including rejected ones — lands in a daily JSONL log with SQL, parameters, duration, row count and errors.</td>
+  </tr>
+  <tr>
+    <td valign="top"><h3>🗂️ Many databases</h3>Named profiles in one file, no default database: the agent must name the database, and is told to ask you first.</td>
+    <td valign="top"><h3>📊 Viewer &amp; desktop app</h3>Charts, filters and per-query details in a local web viewer or a 3 MB Tauri tray app.</td>
+    <td valign="top"><h3>🔌 Any MCP client</h3>Plain stdio MCP server: Claude Code, Codex, Cursor, VS Code or anything else that speaks the protocol.</td>
+  </tr>
+</table>
+
+## 🚀 Quick start
+
+```bash
+git clone https://github.com/baranmerez/Auspex-Augur.git auspex
+cd auspex && npm install && npm test
+```
+
+1. **Create a read-only role** on your server with
+   [`scripts/create-auspex-role.sql`](scripts/create-auspex-role.sql), then grant
+   schemas with [`scripts/grant-schemas-readonly.sql`](scripts/grant-schemas-readonly.sql).
+2. **Store the password in pgpass** (`%APPDATA%\postgresql\pgpass.conf` on
+   Windows, `~/.pgpass` elsewhere): `host:port:database:Auspex:password`.
+3. **Add a profile** to `~/.auspex/profiles.json` (see
+   [`profiles.example.json`](profiles.example.json)).
+4. **Register the server** in your MCP client ([see below](#-register-with-an-mcp-client)).
+
+> [!TIP]
+> Start the agent with "work on the `shop` database" and it goes straight to
+> work. If you don't name one, it lists the profiles and asks.
+
+## 🧭 How it works
+
+```mermaid
+flowchart LR
+    A["🤖 AI agent"] -->|MCP tool call| C["MCP client"]
+    C -->|stdio| S["Auspex Augur<br/>guard · read-only tx · cursor"]
+    S -->|role: Auspex, SELECT only| D[("🐘 PostgreSQL")]
+    S -->|every call| L["📜 Audit log<br/>~/.auspex/logs"]
+    L --> V["📊 Viewer / desktop app"]
+    P["🗂️ profiles.json + pgpass"] -.-> S
+
+    classDef agent fill:#3987e5,stroke:#1c5cab,color:#fff
+    classDef core fill:#eb6834,stroke:#b84a1d,color:#fff
+    classDef db fill:#1baf7a,stroke:#127a55,color:#fff
+    classDef log fill:#9085e9,stroke:#4a3aa7,color:#fff
+    classDef cfg fill:#f0efec,stroke:#a7a59e,color:#222
+    class A,C agent
+    class S core
+    class D db
+    class L,V log
+    class P cfg
+```
+
+## 🛡️ Safety layers
+
+<p align="center">
+  <img src="docs/assets/safety-layers.svg" alt="Five safety layers: SQL guard, READ ONLY transaction, cursor and extended protocol, read-only database role, audit log" width="100%">
+</p>
+
+<details>
+<summary><b>Details of each layer</b></summary>
+
+1. **SQL guard** (`src/sqlGuard.js`): single statement only; must start with
+   `SELECT`/`WITH`/`VALUES`/`TABLE`; rejects data-modifying CTEs, `SELECT INTO`,
+   `FOR UPDATE` and side-effect functions (`set_config`, `pg_terminate_backend`,
+   `pg_sleep`, `lo_*`, `dblink*`, `pg_read_*`, `nextval`...). Runs before connecting.
+2. **Transaction wrapper** (`src/db.js`): every call runs in
+   `BEGIN ... READ ONLY` with `statement_timeout`, `lock_timeout` and
+   `idle_in_transaction_session_timeout`, and always ends with `ROLLBACK`.
+3. **Cursor + extended protocol:** queries run as `DECLARE CURSOR FOR <query>`
+   over the extended protocol, which rejects stacked statements and
+   data-modifying CTEs at the server.
+4. **Database role (the real guarantee):** the role only has `CONNECT`, `USAGE`
+   and `SELECT`. Everything else is defense in depth.
+5. **Audit log:** every call is appended to `<data dir>/logs/YYYY-MM-DD.jsonl`
+   (time, source, tool, profile, SQL, params, row count, duration, error).
+
+</details>
+
+> [!WARNING]
+> Never put a password in a connection string or in `profiles.json` — Auspex
+> refuses to start if it finds one. Passwords belong in pgpass only.
+
+## 🧰 Tools
+
+| Tool | What it does |
+|---|---|
+| 🗂️ `list_profiles` | Configured profiles (description, host, database, user, timeout limit; never passwords) |
+| 🔎 `search` | Tables, views and columns whose name or comment matches a text, across all schemas; with estimated rows and SELECT privilege |
+| 📁 `list_schemas` | Non-system schemas with owner, relation count, usage privilege, comment |
+| 📋 `list_tables` | Tables/views in a schema with estimated rows, size, SELECT privilege, comment; optional ILIKE filter |
+| 🧬 `describe_table` | Columns, types, defaults, comments, constraints, indexes, incoming FKs, view definition |
+| ▶️ `query` | One read-only statement, max `AUSPEX_MAX_ROWS` rows, `$1..$n` params, optional `timeoutSeconds` |
+| 🧠 `explain` | Estimated plan by default; `analyze: true` runs `EXPLAIN (ANALYZE, BUFFERS)` read-only, under the timeout, rolled back |
+| 📤 `export_csv` | Streams the result to a UTF-8 CSV file; returns only path, columns and row count |
+
+### Choosing the database
+
+There is no default profile. Every tool except `list_profiles` requires an
+explicit `profile`, and a call without one is rejected with the list of known
+profiles. The server instructions tell the model to ask the user which
+database to use unless the user named one in the current conversation, and to
+confirm before switching. The code guarantees the explicit choice; asking the
+user is model behavior.
+
+### Large tables and long queries
+
+`query`, `explain` and `export_csv` accept `timeoutSeconds`. Without it the
+default (30 s) applies; with it the value may not exceed the global or
+per-profile ceiling, and a larger value is rejected before connecting. The
+server instructions tell the model to prefer estimated row counts over
+`count(*)`, check plans with `explain` first, and tell the user before running
+anything longer than the default.
+
+## 🔌 Register with an MCP client
+
+Auspex is a stdio MCP server. Register it once; databases are managed in the
+profiles file, not in the client. Most clients accept this shape:
+
+```json
+{
+  "mcpServers": {
+    "auspex": {
+      "command": "node",
+      "args": ["/path/to/auspex/src/index.js"]
+    }
+  }
+}
+```
+
+Use the server name `auspex` to get tool names like `mcp__auspex__query` in
+clients that prefix tools with the server name. Environment variables
+(`AUSPEX_HOME`, `AUSPEX_DB_<NAME>`, ...) can go in the client's `env` block.
+
+<details>
+<summary><b>Claude Code</b></summary>
+
+```bash
+claude mcp add auspex --scope user -- node /path/to/auspex/src/index.js
+```
+
+From PowerShell, where `--` is swallowed by the `claude.ps1` shim:
+
+```powershell
+claude mcp add-json auspex '{"type":"stdio","command":"node","args":["C:/path/to/auspex/src/index.js"]}' --scope user
+```
+
+</details>
+
+<details>
+<summary><b>Codex CLI</b></summary>
+
+In `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.auspex]
+command = "node"
+args = ["/path/to/auspex/src/index.js"]
+```
+
+</details>
+
+<details>
+<summary><b>Cursor</b></summary>
+
+In `~/.cursor/mcp.json` (or `.cursor/mcp.json` in a project), use the
+`mcpServers` JSON shown above.
+
+</details>
+
+<details>
+<summary><b>VS Code</b></summary>
+
+In `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "auspex": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["/path/to/auspex/src/index.js"]
+    }
+  }
+}
+```
+
+</details>
+
+Other MCP clients work the same way: a stdio server started with
+`node src/index.js`.
+
+## 📊 Viewer and desktop app
+
+```bash
+npm run viewer
+```
+
+Opens a local page at http://127.0.0.1:4719 (port: `AUSPEX_VIEWER_PORT`):
+
+- **Overview** — stat tiles, activity over time, usage by profile, tool and table, slowest operations, recent errors
+- **Operations** — sortable, paged log with full SQL, parameters and errors; copy and CSV/JSON download
+- **Tables** — which tables were accessed, how often and by which profile
+- **Profiles** — configured databases with connection details (never passwords)
+
+It binds to 127.0.0.1 only, accepts only GET, rejects other Host headers,
+never connects to a database and never shows passwords.
+
+### 🖥️ Desktop app (Tauri)
+
+`desktop/` wraps the same viewer in a small native app (about 3 MB) that reads
+`~/.auspex` directly through a Rust command, so no Node server is needed.
+Closing the window keeps it in the tray; the tray menu has *Open*, *Show log
+folder*, *Start with Windows* (starts hidden in the tray) and *Quit*.
+
+```bash
+cd desktop && npm install && npm run build
+```
+
+Needs Rust (MSVC toolchain on Windows), the platform C++ build tools and
+WebView2. Output: `desktop/src-tauri/target/release/auspex-augur.exe`.
+
+> [!NOTE]
+> Start the desktop app from Explorer. When it is launched from inside an
+> MSIX-packaged app, Windows may redirect its "Start with Windows" entry.
+
+## 🗂️ Profiles file
+
+Databases are listed in `~/.auspex/profiles.json` (`C:\Users\<you>\.auspex` on
+Windows; override with `AUSPEX_PROFILES_FILE`):
+
+```json
+{
+  "shop": {
+    "url": "postgresql://Auspex@10.0.0.5:5432/shopdb",
+    "description": "Shop PRODUCTION (VPN)",
+    "maxTimeoutSeconds": 180
+  }
+}
+```
+
+| Field | Required | Meaning |
+|---|---|---|
+| `url` | yes | `postgresql://user@host:port/db`; a password here is rejected |
+| `description` | no | Shown by `list_profiles` when the model asks which database to use; mark production clearly |
+| `maxTimeoutSeconds` | no | Ceiling for `timeoutSeconds` on this profile (1-3600) |
+
+Profile names are case-insensitive and use `a-z`, `0-9`, `-`, `_`. Restart
+your MCP client session after editing (profiles are read at start). A missing
+file means no file profiles; an invalid file stops the server with a message
+naming the problem.
+
+## ⚙️ Configuration
+
+<details>
+<summary><b>Environment variables</b></summary>
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `AUSPEX_HOME` | `~/.auspex` | Folder for `profiles.json`, `logs/` and `exports/` |
+| `AUSPEX_PROFILES_FILE` | `<home>/profiles.json` | Profiles file location |
+| `AUSPEX_DB_<NAME>` | none | Extra profile from the environment, e.g. `AUSPEX_DB_LOCAL`; the same name in the file and env is an error |
+| `AUSPEX_MAX_ROWS` | 500 | Row cap for `query` |
+| `AUSPEX_EXPORT_MAX_ROWS` | 100000 | Row cap for `export_csv` |
+| `AUSPEX_STATEMENT_TIMEOUT_MS` | 30000 | Default statement timeout per call |
+| `AUSPEX_MAX_STATEMENT_TIMEOUT_MS` | 300000 | Ceiling for the per-call `timeoutSeconds` |
+| `AUSPEX_MAX_STATEMENT_TIMEOUT_MS_<NAME>` | global ceiling | Ceiling for one profile, e.g. `_SHOP=120000` |
+| `AUSPEX_MAX_CELL_CHARS` | 2000 | Long text values are cut in `query` output |
+| `AUSPEX_DATA_DIR` | `<home>` | Base for `exports/` and `logs/` |
+| `AUSPEX_EXPORT_DIR`, `AUSPEX_LOG_DIR` | under data dir | Override each folder |
+| `AUSPEX_VIEWER_PORT` | 4719 | Port of the local viewer |
+
+Files are kept out of AppData on purpose: MSIX-packaged desktop apps
+(including some AI clients) redirect AppData writes of their child processes
+into a hidden per-package folder.
+
+</details>
+
+**Passwords live in pgpass**, which node-postgres reads automatically:
+`%APPDATA%\postgresql\pgpass.conf` on Windows, `~/.pgpass` (mode 600)
+elsewhere. Line format: `host:port:database:user:password`.
+
+If the server is behind a VPN, calls fail fast (10 s connect timeout) with a
+hint to check the VPN.
+
+## 🐘 Recommended database role
+
+The role is named `Auspex` with a capital A, so in SQL it must always be
+written in double quotes: `"Auspex"`. Connection strings and pgpass use the
+plain name `Auspex`.
+
+```sql
+CREATE ROLE "Auspex" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT CONNECTION LIMIT 3;
+ALTER ROLE "Auspex" SET default_transaction_read_only = on;
+ALTER ROLE "Auspex" SET statement_timeout = '30s';
+ALTER ROLE "Auspex" SET idle_in_transaction_session_timeout = '60s';
+GRANT CONNECT ON DATABASE <db> TO "Auspex";
+GRANT USAGE ON SCHEMA <schema> TO "Auspex";
+GRANT SELECT ON ALL TABLES IN SCHEMA <schema> TO "Auspex";  -- or a column/view subset for personal data
+```
+
+> [!CAUTION]
+> If a schema grants `CREATE` to `PUBLIC`, the role inherits it. Writes are
+> still blocked by the read-only transaction, but check `PUBLIC` grants,
+> `EXECUTE` on `SECURITY DEFINER` functions that write, and `pg_hba.conf`
+> rules for the role. Prefer a read replica for heavy analysis.
+
+The scripts in [`scripts/`](scripts) do all of this with a
+`BEGIN → DEFINE → PROCESS → MATCH → CORRECT/FAIL → ROLLBACK` flow, so you can
+review every result before committing.
+
+## 🧪 Tests
+
+```bash
+npm test             # unit tests, no database needed
+npm run test:local   # integration tests against a local PostgreSQL
+```
+
+The integration tests need a one-time setup with
+[`scripts/local-test-setup.sql`](scripts/local-test-setup.sql) (role `"Auspex"`,
+schema `auspex_test`) plus a `local` profile and a pgpass line. They prove that
+writes are refused by the database itself, even with the SQL guard bypassed.
+
+## 📄 License
+
+MIT, see [LICENSE](LICENSE).

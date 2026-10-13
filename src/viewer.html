@@ -1,0 +1,921 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Auspex Augur</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%232a78d6'/%3E%3Ccircle cx='16' cy='16' r='6' fill='white'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f4f5f7; --surface: #fcfcfb; --surface-2: #f0f1f3; --line: #e3e5e9; --line-strong: #d3d6dc;
+    --text: #0b0b0b; --text-2: #52514e; --text-3: #7a7974;
+    --accent: #2a78d6; --accent-soft: #e6f0fc; --accent-ink: #1c5cab;
+    --series-1: #2a78d6; --series-2: #eb6834;
+    --good: #0ca30c; --good-ink: #006300; --good-soft: #e6f6e6;
+    --critical: #d03b3b; --critical-soft: #fbeaea;
+    --warn-soft: #fff4dc; --warn-ink: #8a5a00;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 1px 3px rgba(16, 24, 40, .08);
+    --shadow-lg: 0 12px 32px rgba(16, 24, 40, .16);
+    --mono: ui-monospace, "Cascadia Code", "Cascadia Mono", Consolas, monospace;
+    --radius: 10px;
+    --ease: cubic-bezier(.2, .8, .2, 1);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --bg: #121211; --surface: #1a1a19; --surface-2: #222220; --line: #2c2c2a; --line-strong: #3a3a37;
+      --text: #ffffff; --text-2: #c3c2b7; --text-3: #8f8e86;
+      --accent: #3987e5; --accent-soft: #1b2b42; --accent-ink: #86b6ef;
+      --series-1: #3987e5; --series-2: #d95926;
+      --good-ink: #4cc76a; --good-soft: #15301c; --critical-soft: #3a1a1a; --warn-soft: #362a12; --warn-ink: #f0b64a;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4); --shadow-lg: 0 12px 32px rgba(0, 0, 0, .5);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #121211; --surface: #1a1a19; --surface-2: #222220; --line: #2c2c2a; --line-strong: #3a3a37;
+    --text: #ffffff; --text-2: #c3c2b7; --text-3: #8f8e86;
+    --accent: #3987e5; --accent-soft: #1b2b42; --accent-ink: #86b6ef;
+    --series-1: #3987e5; --series-2: #d95926;
+    --good-ink: #4cc76a; --good-soft: #15301c; --critical-soft: #3a1a1a; --warn-soft: #362a12; --warn-ink: #f0b64a;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4); --shadow-lg: 0 12px 32px rgba(0, 0, 0, .5);
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif; }
+  button, input, select { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+
+  /* Header */
+  .top { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: saturate(1.4) blur(10px); border-bottom: 1px solid var(--line); }
+  .top-inner { max-width: 1440px; margin: 0 auto; padding: 12px 24px 0; }
+  .brand { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .logo { width: 30px; height: 30px; flex: none; }
+  .logo .ring { transform-origin: 16px 16px; animation: spin 14s linear infinite; }
+  .brand h1 { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: .2px; }
+  .brand .sub { color: var(--text-3); font-size: 13px; }
+  .brand .spacer { flex: 1; }
+  .live { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-2);
+    padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); }
+  .live .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); position: relative; }
+  .live.on .dot { background: var(--good); }
+  .live.on .dot::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--good);
+    animation: pulse 1.8s var(--ease) infinite; }
+  .icon-btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--surface);
+    border-radius: 8px; padding: 5px 10px; font-size: 13px; color: var(--text-2); transition: background .15s, border-color .15s; }
+  .icon-btn:hover { background: var(--surface-2); border-color: var(--line-strong); color: var(--text); }
+  .icon-btn svg { width: 15px; height: 15px; }
+  .icon-btn.spin svg { animation: spin .8s linear infinite; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 2px; }
+  .seg button { border: 0; background: none; padding: 4px 10px; border-radius: 6px; font-size: 13px; color: var(--text-2); transition: background .15s, color .15s; }
+  .seg button:hover { color: var(--text); }
+  .seg button.on { background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
+
+  nav.tabs { display: flex; gap: 2px; margin-top: 10px; position: relative; }
+  nav.tabs button { border: 0; background: none; padding: 10px 14px; color: var(--text-2); font-weight: 500; position: relative; }
+  nav.tabs button:hover { color: var(--text); }
+  nav.tabs button.on { color: var(--text); }
+  nav.tabs .count { font-size: 11px; color: var(--text-3); margin-left: 4px; font-variant-numeric: tabular-nums; }
+  .tab-ink { position: absolute; bottom: -1px; height: 2px; background: var(--accent); border-radius: 2px; transition: left .3s var(--ease), width .3s var(--ease); }
+
+  main { max-width: 1440px; margin: 0 auto; padding: 16px 24px 60px; }
+
+  /* Filters */
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .field { display: inline-flex; align-items: center; gap: 6px; background: var(--surface); border: 1px solid var(--line);
+    border-radius: 8px; padding: 0 8px; height: 32px; transition: border-color .15s; }
+  .field:focus-within { border-color: var(--accent); }
+  .field label { font-size: 12px; color: var(--text-3); }
+  .field select, .field input { border: 0; background: none; outline: none; height: 30px; font-size: 13px; }
+  .field input[type=date] { width: 128px; }
+  .search { flex: 1; min-width: 220px; max-width: 420px; }
+  .search input { width: 100%; }
+  .search kbd { font: 11px var(--mono); color: var(--text-3); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; min-height: 24px; margin-bottom: 14px; align-items: center; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 2px 4px 2px 10px; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent-ink); animation: pop .25s var(--ease); }
+  .chip button { border: 0; background: none; color: inherit; width: 18px; height: 18px; border-radius: 50%; line-height: 1; }
+  .chip button:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+  .chips .clear { border: 0; background: none; color: var(--text-3); font-size: 12px; text-decoration: underline; }
+  .chips .scope { font-size: 12px; color: var(--text-3); }
+
+  /* Panels */
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+  .panel-h { display: flex; align-items: baseline; gap: 10px; padding: 14px 16px 0; }
+  .panel-h h2 { margin: 0; font-size: 14px; font-weight: 600; }
+  .panel-h .hint { color: var(--text-3); font-size: 12px; }
+  .panel-h .grow { flex: 1; }
+  .panel-b { padding: 12px 16px 16px; }
+  .grid { display: grid; gap: 14px; }
+  .g-tiles { grid-template-columns: 1.4fr repeat(5, 1fr); }
+  .g-2 { grid-template-columns: 1fr 1fr; }
+  .g-main { grid-template-columns: 2fr 1fr; }
+  .stack > * + * { margin-top: 14px; }
+
+  .tile { padding: 14px 16px; }
+  .tile .k { font-size: 12px; color: var(--text-2); }
+  .tile .v { font-size: 26px; font-weight: 600; margin-top: 2px; letter-spacing: -.3px; }
+  .tile .d { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+  .tile.hero .v { font-size: 48px; line-height: 1.05; letter-spacing: -1px; }
+  .tile .v.bad { color: var(--critical); }
+  .status-ico { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+
+  /* Charts */
+  .chart { position: relative; }
+  .chart svg { display: block; width: 100%; overflow: visible; }
+  .chart .grid-line { stroke: var(--line); stroke-width: 1; }
+  .chart .axis-text { fill: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .chart .bar { transition: opacity .15s, transform .7s var(--ease); }
+  .chart .bar.grow-y { transform: scaleY(0); }
+  .chart .bar.grow-x { transform: scaleX(0); }
+  .chart.ready .bar.grow-y, .chart.ready .bar.grow-x { transform: none; }
+  .chart .hit { fill: transparent; }
+  .chart .hit:hover + .bar, .chart .col:hover .bar { opacity: .82; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-2); }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  .hbars { display: grid; grid-template-columns: minmax(90px, max-content) 1fr auto; gap: 7px 10px; align-items: center; font-size: 13px; }
+  .hbars .lbl { color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
+  .hbars .track { height: 14px; position: relative; }
+  .hbars .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--series-1); border-radius: 0 4px 4px 0;
+    transform-origin: left; transform: scaleX(0); transition: transform .7s var(--ease), opacity .15s; }
+  .ready .hbars .fill { transform: scaleX(1); }
+  .hbars .row:hover .fill, .hbars .fill:hover { opacity: .82; }
+  .hbars .val { font-variant-numeric: tabular-nums; color: var(--text); font-weight: 600; text-align: right; }
+  .hbars .sub { color: var(--text-3); font-weight: 400; margin-left: 6px; }
+  .hbars .row { display: contents; cursor: pointer; }
+
+  .tip { position: fixed; z-index: 50; pointer-events: none; background: var(--surface); border: 1px solid var(--line-strong);
+    border-radius: 8px; box-shadow: var(--shadow-lg); padding: 8px 10px; font-size: 12px; min-width: 140px;
+    opacity: 0; transform: translateY(4px); transition: opacity .12s, transform .12s; }
+  .tip.show { opacity: 1; transform: none; }
+  .tip .t { color: var(--text-3); margin-bottom: 4px; }
+  .tip .r { display: flex; align-items: center; gap: 8px; }
+  .tip .r b { font-variant-numeric: tabular-nums; margin-left: auto; padding-left: 12px; }
+  .tip .key { width: 12px; height: 2px; border-radius: 1px; }
+
+  /* Lists */
+  .mini { list-style: none; margin: 0; padding: 0; }
+  .mini li { display: flex; gap: 10px; align-items: baseline; padding: 8px 0; border-top: 1px solid var(--line); cursor: pointer; }
+  .mini li:first-child { border-top: 0; }
+  .mini li:hover .sql { color: var(--text); }
+  .mini .sql { font: 12px var(--mono); color: var(--text-2); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color .15s; }
+  .mini .ms { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+  .mini .when { color: var(--text-3); font-size: 12px; white-space: nowrap; }
+  .mini .err { color: var(--critical); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
+
+  /* Table */
+  .tbl-tools { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .tbl-tools .grow { flex: 1; }
+  .tbl-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  th { font-size: 12px; color: var(--text-2); font-weight: 600; white-space: nowrap; user-select: none; background: var(--surface); }
+  th.sort { cursor: pointer; }
+  th.sort:hover { color: var(--text); }
+  th .arr { display: inline-block; margin-left: 4px; color: var(--accent); transition: transform .2s; }
+  th .arr.desc { transform: rotate(180deg); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.time { font: 12px var(--mono); color: var(--text-2); white-space: nowrap; }
+  td.sum { font: 12px var(--mono); max-width: 520px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  tr.r { cursor: pointer; transition: background .15s; }
+  tr.r:hover { background: var(--surface-2); }
+  tr.r.open { background: var(--accent-soft); }
+  tr.r.enter { animation: rowin .35s var(--ease) both; }
+  tr.r.fresh td { animation: flash 2.4s var(--ease); }
+  .dur { display: inline-flex; align-items: center; gap: 8px; justify-content: flex-end; }
+  .dur .bar { height: 4px; border-radius: 2px; background: var(--series-1); opacity: .55; min-width: 2px; }
+  tr.d td { background: var(--surface-2); padding: 0; }
+  .detail { padding: 14px 16px; animation: open .25s var(--ease); }
+  .detail pre { margin: 0; padding: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+    font: 12px/1.55 var(--mono); white-space: pre-wrap; word-break: break-word; max-height: 360px; overflow: auto; }
+  .detail .meta { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px 16px; margin: 10px 0; font-size: 12px; }
+  .detail .meta span { color: var(--text-3); }
+  .detail .acts { display: flex; gap: 8px; margin-top: 10px; }
+  .error-box { background: var(--critical-soft); color: var(--critical); padding: 10px 12px; border-radius: 8px; margin-top: 10px; font-size: 13px; }
+  .pager { display: flex; align-items: center; gap: 8px; padding: 10px 16px; font-size: 13px; color: var(--text-2); }
+  .pager .grow { flex: 1; }
+
+  .badge { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .badge.mcp { background: var(--accent-soft); color: var(--accent-ink); }
+  .badge.script { background: var(--warn-soft); color: var(--warn-ink); }
+  .badge.old { background: var(--surface-2); color: var(--text-3); }
+  .badge.ok { background: var(--good-soft); color: var(--good-ink); }
+  .badge.err { background: var(--critical-soft); color: var(--critical); }
+  .badge .sw { width: 6px; height: 6px; border-radius: 50%; }
+
+  /* Profiles */
+  .profiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+  .pcard { padding: 16px; transition: transform .2s var(--ease), box-shadow .2s; animation: rise .4s var(--ease) both; }
+  .pcard:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+  .pcard h3 { margin: 0; font-size: 16px; display: flex; align-items: center; gap: 8px; }
+  .pcard .desc { color: var(--text-2); margin: 4px 0 12px; }
+  .pcard .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; }
+  .pcard .stats div { background: var(--surface-2); border-radius: 8px; padding: 8px; }
+  .pcard .stats b { display: block; font-size: 17px; }
+  .pcard .stats span { font-size: 11px; color: var(--text-3); }
+  .pcard dl { display: grid; grid-template-columns: 100px 1fr; gap: 4px 10px; margin: 0; font-size: 13px; }
+  .pcard dt { color: var(--text-3); }
+  .pcard dd { margin: 0; font: 12px var(--mono); word-break: break-all; }
+  .paths { margin-top: 18px; font: 12px var(--mono); color: var(--text-3); }
+  .paths div { margin: 3px 0; }
+
+  .empty { padding: 40px 20px; text-align: center; color: var(--text-3); }
+  .empty svg { width: 42px; height: 42px; opacity: .5; display: block; margin: 0 auto 8px; }
+  .muted { color: var(--text-3); }
+  .view { animation: fade .3s var(--ease); }
+  .loading .view { opacity: .55; transition: opacity .2s; }
+
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translate(-50%, 20px); opacity: 0; z-index: 60;
+    background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 13px; box-shadow: var(--shadow-lg);
+    transition: opacity .2s, transform .25s var(--ease); pointer-events: none; }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { 0% { transform: scale(.6); opacity: .9; } 100% { transform: scale(1.8); opacity: 0; } }
+  @keyframes pop { from { transform: scale(.85); opacity: 0; } }
+  @keyframes fade { from { opacity: 0; transform: translateY(4px); } }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+  @keyframes rowin { from { opacity: 0; transform: translateY(-3px); } }
+  @keyframes open { from { opacity: 0; transform: translateY(-4px); } }
+  @keyframes flash { 0% { background: color-mix(in srgb, var(--accent) 22%, transparent); } 100% { background: transparent; } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .chart .bar.grow-y, .chart .bar.grow-x, .hbars .fill { transform: none !important; }
+  }
+  @media (max-width: 1100px) { .g-tiles { grid-template-columns: repeat(3, 1fr); } .g-main, .g-2 { grid-template-columns: 1fr; } }
+  @media (max-width: 640px) {
+    .top-inner, main { padding-left: 16px; padding-right: 16px; }
+    .g-tiles { grid-template-columns: 1fr 1fr; }
+    .tile.hero { grid-column: 1 / -1; }
+    .hide-sm { display: none; }
+    td.sum { max-width: 160px; }
+    .brand .sub { display: none; }
+  }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-inner">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+        <circle cx="16" cy="16" r="15" fill="var(--accent)" opacity=".14"/>
+        <g class="ring"><circle cx="16" cy="16" r="11" fill="none" stroke="var(--accent)" stroke-width="2" stroke-dasharray="14 6" stroke-linecap="round"/></g>
+        <circle cx="16" cy="16" r="5" fill="var(--accent)"/>
+      </svg>
+      <h1>Auspex Augur</h1>
+      <span class="sub">read-only database access log</span>
+      <span class="spacer"></span>
+      <span class="live" id="live" title="Live refresh"><span class="dot"></span><span id="liveText">Live off</span></span>
+      <button class="icon-btn" id="liveBtn" title="Toggle live refresh">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12a7 7 0 0 1 12-5l2 2M19 12a7 7 0 0 1-12 5l-2-2"/><path d="M19 4v5h-5M5 20v-5h5"/></svg>
+        <span>Live</span>
+      </button>
+      <button class="icon-btn" id="refreshBtn" title="Refresh (r)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+      </button>
+      <div class="seg" id="theme" role="group" aria-label="Theme">
+        <button data-v="auto" title="Follow system theme">Auto</button>
+        <button data-v="light">Light</button>
+        <button data-v="dark">Dark</button>
+      </div>
+    </div>
+    <nav class="tabs" id="tabs">
+      <button data-tab="overview" class="on">Overview</button>
+      <button data-tab="ops">Operations<span class="count" id="cOps"></span></button>
+      <button data-tab="tables">Tables<span class="count" id="cTables"></span></button>
+      <button data-tab="profiles">Profiles<span class="count" id="cProfiles"></span></button>
+      <span class="tab-ink" id="tabInk"></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="filters" id="filterRow">
+    <div class="seg" id="range" role="group" aria-label="Date range">
+      <button data-r="today" class="on">Today</button>
+      <button data-r="yesterday">Yesterday</button>
+      <button data-r="7">7 days</button>
+      <button data-r="30">30 days</button>
+      <button data-r="all">All</button>
+    </div>
+    <div class="field"><label for="from">From</label><input type="date" id="from"></div>
+    <div class="field"><label for="to">To</label><input type="date" id="to"></div>
+    <div class="field"><label for="fProfile">Profile</label><select id="fProfile"><option value="">All</option></select></div>
+    <div class="field"><label for="fSource">Source</label><select id="fSource"><option value="">All</option><option value="mcp">mcp</option><option value="script">script</option><option value="old">legacy entry</option></select></div>
+    <div class="field"><label for="fTool">Tool</label><select id="fTool"><option value="">All</option></select></div>
+    <div class="field"><label for="fStatus">Status</label><select id="fStatus"><option value="">All</option><option value="ok">Succeeded</option><option value="err">Error / rejected</option></select></div>
+    <div class="field search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--text-3)"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" id="fText" placeholder="Search SQL, tables, errors" aria-label="Search"><kbd>/</kbd></div>
+  </div>
+  <div class="chips" id="chips"></div>
+
+  <section id="v-overview" class="view"></section>
+  <section id="v-ops" class="view" hidden></section>
+  <section id="v-tables" class="view" hidden></section>
+  <section id="v-profiles" class="view" hidden></section>
+</main>
+
+<div class="tip" id="tip" role="status" aria-live="polite"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+// ---------- helpers ----------
+const $ = id => document.getElementById(id);
+const h = (tag, attrs = {}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v === null || v === undefined || v === false) continue;
+    if (k === 'class') n.className = v;
+    else if (k === 'style') n.style.cssText = v;
+    else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v === true ? '' : v);
+  }
+  for (const k of kids.flat(Infinity)) if (k !== null && k !== undefined && k !== false) n.append(k instanceof Node ? k : String(k));
+  return n;
+};
+const svg = (tag, attrs = {}, ...kids) => {
+  const n = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) if (v !== null && v !== undefined) n.setAttribute(k, v);
+  for (const k of kids.flat()) if (k) n.append(k);
+  return n;
+};
+// replaceChildren that skips null/false (DOM would print them as text).
+const put = (node, ...kids) => node.replaceChildren(...kids.flat(Infinity).filter(k => k !== null && k !== undefined && k !== false));
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const locale = 'en-GB';
+const nf = new Intl.NumberFormat(locale);
+const fmt = n => (n === null || n === undefined || Number.isNaN(n)) ? '–' : nf.format(n);
+const compact = n => n >= 10000 ? new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(n) : fmt(n);
+const fmtMs = ms => !Number.isFinite(ms) ? '–' : ms >= 1000 ? (ms / 1000).toLocaleString(locale, { maximumFractionDigits: 1 }) + ' s' : fmt(Math.round(ms)) + ' ms';
+const pad = n => String(n).padStart(2, '0');
+const localDay = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const addDays = (s, n) => { const d = new Date(s + 'T00:00:00'); d.setDate(d.getDate() + n); return localDay(d); };
+const timeOf = ts => ts ? new Date(ts).toLocaleTimeString(locale, { hour12: false }) : '?';
+const dateTimeOf = ts => ts ? new Date(ts).toLocaleString(locale, { hour12: false }) : '?';
+const toolNames = { query: 'Query', explain: 'Plan', export_csv: 'CSV export', search: 'Search',
+  list_schemas: 'Schemas', list_tables: 'Tables', describe_table: 'Table structure', list_profiles: 'Profiles' };
+const toolName = t => toolNames[t] || t || '?';
+const sourceOf = e => e.source || 'old';
+const sourceLabel = s => s === 'old' ? 'legacy entry' : s;
+
+function summaryOf(e) {
+  if (e.sql) return e.sql.replace(/\s+/g, ' ').trim();
+  if (e.tool === 'search' && e.text) return `"${e.text}"` + (e.schema ? ` · schema ${e.schema}` : '');
+  if (e.tool === 'describe_table' && e.table) return `${e.schema}.${e.table}`;
+  if (e.tool === 'list_tables' && e.schema) return e.schema + (e.pattern ? ` · ${e.pattern}` : '');
+  return '';
+}
+
+// Relations referenced by an entry: FROM/JOIN targets in SQL plus describe_table.
+const relRe = /\b(?:from|join)\s+((?:"[^"]+"|[a-z_][\w$]*)(?:\s*\.\s*(?:"[^"]+"|[a-z_][\w$]*))?)/gi;
+function relationsOf(e) {
+  const out = new Set();
+  if (e.tool === 'describe_table' && e.table) out.add(`${e.schema}.${e.table}`);
+  if (e.sql) {
+    const sql = e.sql.replace(/'(?:[^']|'')*'/g, "''").replace(/--[^\n]*/g, ' ');
+    for (const m of sql.matchAll(relRe)) {
+      const name = m[1].replace(/\s+/g, '').replace(/"/g, '').toLowerCase();
+      if (/^(select|lateral|unnest|generate_series)$/.test(name)) continue;
+      out.add(name);
+    }
+  }
+  return [...out];
+}
+const isSystemRel = r => /^(pg_|information_schema\.)|^pg_catalog\./.test(r) || /^(pg_\w+)$/.test(r);
+
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => t.classList.remove('show'), 1600);
+}
+async function copy(text, what) {
+  try { await navigator.clipboard.writeText(text); toast(`${what} copied`); }
+  catch { toast('Copy failed'); }
+}
+function download(name, text, type) {
+  const a = h('a', { href: URL.createObjectURL(new Blob([text], { type })), download: name });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+function countUp(node, to, format = fmt) {
+  const from = Number(node.dataset.v || 0);
+  node.dataset.v = to;
+  if (reduceMotion || from === to || !Number.isFinite(to)) { node.textContent = format(to); return; }
+  const start = performance.now(), dur = 650;
+  let done = false;
+  const step = now => {
+    if (done) return;
+    const p = Math.min(1, (now - start) / dur), k = 1 - Math.pow(1 - p, 3);
+    node.textContent = format(from + (to - from) * k);
+    if (p < 1) requestAnimationFrame(step); else { done = true; node.textContent = format(to); }
+  };
+  requestAnimationFrame(step);
+  // rAF does not run in a hidden window; make sure the final value lands anyway.
+  setTimeout(() => { if (!done) { done = true; node.textContent = format(to); } }, dur + 100);
+}
+// Starts the grow-in animation; the timeout covers windows where rAF is paused.
+function reveal(node) {
+  requestAnimationFrame(() => requestAnimationFrame(() => node.classList.add('ready')));
+  setTimeout(() => node.classList.add('ready'), 120);
+}
+function emptyState(text) {
+  return h('div', { class: 'empty' },
+    (() => { const s = svg('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.5' },
+      svg('circle', { cx: 12, cy: 12, r: 9 }), svg('circle', { cx: 12, cy: 12, r: 3 })); return s; })(), text);
+}
+
+// ---------- tooltip ----------
+const tip = $('tip');
+function showTip(ev, title, rows) {
+  tip.replaceChildren(h('div', { class: 't' }, title), ...rows.map(([key, label, value]) =>
+    h('div', { class: 'r' }, key ? h('span', { class: 'key', style: `background:${key}` }) : null, h('span', {}, label), h('b', {}, value))));
+  const x = ev.clientX ?? ev.target.getBoundingClientRect().right, y = ev.clientY ?? ev.target.getBoundingClientRect().top;
+  const w = tip.offsetWidth || 180, ht = tip.offsetHeight || 60;
+  tip.style.left = Math.min(innerWidth - w - 8, x + 14) + 'px';
+  tip.style.top = Math.max(8, y - ht - 10) + 'px';
+  tip.classList.add('show');
+}
+const hideTip = () => tip.classList.remove('show');
+
+// ---------- state ----------
+const state = {
+  range: 'today', from: null, to: null,
+  all: [], days: [], profiles: null,
+  tab: 'overview', sort: { key: 'ts', dir: 'desc' }, page: 0, pageSize: 50,
+  open: null, live: false, seen: new Set(), firstLoad: true, systemTables: false,
+};
+try { Object.assign(state, JSON.parse(localStorage.getItem('auspex.viewer') || '{}'), { all: [], seen: new Set(), firstLoad: true, open: null }); } catch {}
+const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme })); } catch {} };
+
+// In the Tauri desktop app the same routes are served by the Rust `api` command.
+const tauriCore = window.__TAURI__?.core;
+async function getJson(url) {
+  if (tauriCore) {
+    const u = new URL(url, 'http://auspex.local');
+    try { return await tauriCore.invoke('api', { path: u.pathname, query: Object.fromEntries(u.searchParams) }); }
+    catch (err) { throw new Error(typeof err === 'string' ? err : err?.message || String(err)); }
+  }
+  const r = await fetch(url, { cache: 'no-store' });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error || r.statusText);
+  return d;
+}
+
+// ---------- range ----------
+function resolveRange() {
+  const today = localDay(new Date());
+  switch (state.range) {
+    case 'today': return [today, today];
+    case 'yesterday': { const y = addDays(today, -1); return [y, y]; }
+    case '7': return [addDays(today, -6), today];
+    case '30': return [addDays(today, -29), today];
+    case 'all': return [state.days.length ? state.days[state.days.length - 1].day : today, today];
+    default: return [state.from || today, state.to || today];
+  }
+}
+
+async function load({ quiet = false } = {}) {
+  document.body.classList.add('loading');
+  $('refreshBtn').classList.add('spin');
+  try {
+    state.days = (await getJson('/api/days')).sort((a, b) => a.day.localeCompare(b.day));
+    const [from, to] = resolveRange();
+    $('from').value = from; $('to').value = to;
+    // Log files are named by UTC day; fetch one extra day each side, filter by local day.
+    const rows = await getJson(`/api/logs?from=${addDays(from, -1)}&to=${addDays(to, 1)}`);
+    state.all = rows.filter(e => { if (!e.ts) return true; const d = localDay(new Date(e.ts)); return d >= from && d <= to; })
+      .map((e, i) => ({ ...e, _id: (e.ts || '') + '|' + (e.tool || '') + '|' + i }));
+    if (!state.profiles || !quiet) state.profiles = await getJson('/api/profiles');
+    const fresh = new Set();
+    if (!state.firstLoad) for (const e of state.all) if (!state.seen.has(e._id)) fresh.add(e._id);
+    state.seen = new Set(state.all.map(e => e._id));
+    state.fresh = fresh;
+    if (fresh.size && quiet) toast(`${fresh.size} new operation${fresh.size === 1 ? '' : 's'}`);
+    state.firstLoad = false;
+    syncFilterOptions();
+    render();
+  } catch (err) {
+    $('v-' + state.tab).replaceChildren(h('div', { class: 'panel' }, h('div', { class: 'error-box', style: 'margin:16px' }, 'Could not load data: ' + err.message)));
+  } finally {
+    document.body.classList.remove('loading');
+    $('refreshBtn').classList.remove('spin');
+  }
+}
+
+// ---------- filters ----------
+const F = { profile: $('fProfile'), source: $('fSource'), tool: $('fTool'), status: $('fStatus'), text: $('fText') };
+function syncFilterOptions() {
+  const fill = (sel, values, labelOf = v => v) => {
+    const cur = sel.value;
+    sel.replaceChildren(h('option', { value: '' }, 'All'), ...values.map(v => h('option', { value: v }, labelOf(v))));
+    sel.value = values.includes(cur) ? cur : '';
+  };
+  fill(F.profile, [...new Set(state.all.map(e => e.profile).filter(Boolean))].sort());
+  fill(F.tool, [...new Set(state.all.map(e => e.tool).filter(Boolean))].sort(), toolName);
+}
+function filtered() {
+  const p = F.profile.value, s = F.source.value, t = F.tool.value, st = F.status.value, q = F.text.value.trim().toLowerCase();
+  return state.all.filter(e => (!p || e.profile === p) && (!s || sourceOf(e) === s) && (!t || e.tool === t)
+    && (!st || (st === 'err' ? !!e.error : !e.error)) && (!q || JSON.stringify(e).toLowerCase().includes(q)));
+}
+function renderChips(rows) {
+  const chips = [];
+  const add = (label, clear) => chips.push(h('span', { class: 'chip' }, label, h('button', { title: 'Remove', 'aria-label': 'Remove filter', onclick: () => { clear(); render(); } }, '×')));
+  if (F.profile.value) add(`Profile: ${F.profile.value}`, () => F.profile.value = '');
+  if (F.source.value) add(`Source: ${sourceLabel(F.source.value)}`, () => F.source.value = '');
+  if (F.tool.value) add(`Tool: ${toolName(F.tool.value)}`, () => F.tool.value = '');
+  if (F.status.value) add(F.status.value === 'err' ? 'Errors only' : 'Succeeded only', () => F.status.value = '');
+  if (F.text.value.trim()) add(`“${F.text.value.trim()}”`, () => F.text.value = '');
+  const [from, to] = resolveRange();
+  const scope = h('span', { class: 'scope' }, `${from === to ? from : from + ' → ' + to} · ${fmt(rows.length)} / ${fmt(state.all.length)} operations`);
+  if (chips.length > 1) chips.push(h('button', { class: 'clear', onclick: () => { Object.values(F).forEach(f => f.value = ''); render(); } }, 'Clear all'));
+  $('chips').replaceChildren(scope, ...chips);
+}
+
+// ---------- aggregates ----------
+function stats(rows) {
+  const ms = rows.map(e => e.ms).filter(Number.isFinite);
+  const errors = rows.filter(e => e.error).length;
+  return {
+    count: rows.length, errors,
+    errRate: rows.length ? errors / rows.length * 100 : 0,
+    avg: ms.length ? ms.reduce((a, b) => a + b, 0) / ms.length : NaN,
+    p95: ms.length ? [...ms].sort((a, b) => a - b)[Math.min(ms.length - 1, Math.floor(ms.length * .95))] : NaN,
+    max: ms.length ? Math.max(...ms) : NaN,
+    rowsOut: rows.reduce((a, e) => a + (Number.isFinite(e.rowCount) ? e.rowCount : 0), 0),
+    profiles: new Set(rows.map(e => e.profile).filter(Boolean)).size,
+  };
+}
+function groupCount(rows, keyFn) {
+  const m = new Map();
+  for (const e of rows) for (const k of [].concat(keyFn(e))) {
+    if (k === null || k === undefined || k === '') continue;
+    const g = m.get(k) || { key: k, count: 0, errors: 0, ms: 0, last: null };
+    g.count++; if (e.error) g.errors++; if (Number.isFinite(e.ms)) g.ms += e.ms;
+    if (!g.last || (e.ts && e.ts > g.last)) g.last = e.ts;
+    m.set(k, g);
+  }
+  return [...m.values()].sort((a, b) => b.count - a.count || String(a.key).localeCompare(String(b.key)));
+}
+
+// ---------- charts ----------
+function timeBuckets(rows) {
+  const [from, to] = resolveRange();
+  const single = from === to;
+  const buckets = [];
+  if (single) {
+    for (let i = 0; i < 24; i++) buckets.push({ key: i, label: pad(i), title: `${from} ${pad(i)}:00–${pad(i)}:59`, mcp: 0, script: 0, old: 0, err: 0 });
+  } else {
+    const days = Math.round((new Date(to) - new Date(from)) / 864e5) + 1;
+    const step = days > 62 ? 7 : 1;
+    for (let d = from; d <= to; d = addDays(d, step)) {
+      const end = step === 1 ? d : (addDays(d, step - 1) > to ? to : addDays(d, step - 1));
+      buckets.push({ key: d, end, label: d.slice(8, 10) + '.' + d.slice(5, 7), title: step === 1 ? d : `${d} – ${end}`, mcp: 0, script: 0, old: 0, err: 0 });
+    }
+  }
+  for (const e of rows) {
+    if (!e.ts) continue;
+    const dt = new Date(e.ts);
+    const b = single ? buckets[dt.getHours()] : buckets.find(x => { const d = localDay(dt); return d >= x.key && d <= (x.end || x.key); });
+    if (!b) continue;
+    b[sourceOf(e)]++; if (e.error) b.err++;
+  }
+  return { buckets, single };
+}
+function niceMax(v) {
+  if (v <= 4) return 4;
+  const p = Math.pow(10, Math.floor(Math.log10(v))), n = v / p;
+  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * p;
+}
+function activityChart(rows) {
+  const { buckets, single } = timeBuckets(rows);
+  const W = 760, H = 220, L = 34, R = 8, T = 10, B = 24;
+  const total = b => b.mcp + b.script + b.old;
+  const max = niceMax(Math.max(1, ...buckets.map(total)));
+  const pw = (W - L - R) / buckets.length, bw = Math.min(24, Math.max(4, pw * .62));
+  const y = v => T + (H - T - B) * (1 - v / max);
+  const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Operations over time' });
+  for (let i = 0; i <= 4; i++) {
+    const v = max / 4 * i, yy = y(v);
+    root.append(svg('line', { class: 'grid-line', x1: L, x2: W - R, y1: yy, y2: yy }));
+    const t = svg('text', { class: 'axis-text', x: L - 6, y: yy + 4, 'text-anchor': 'end' }); t.textContent = fmt(v); root.append(t);
+  }
+  const labelEvery = Math.ceil(buckets.length / (single ? 12 : 10));
+  const series = [['mcp', 'var(--series-1)'], ['script', 'var(--series-2)'], ['old', 'var(--text-3)']];
+  buckets.forEach((b, i) => {
+    const x = L + pw * i + (pw - bw) / 2;
+    const g = svg('g', { class: 'col' });
+    let acc = 0;
+    const segs = series.filter(([k]) => b[k] > 0);
+    segs.forEach(([k, color], si) => {
+      const v = b[k], y1 = y(acc + v), y0 = y(acc);
+      const top = si === segs.length - 1;
+      const hgt = Math.max(0, y0 - y1 - (si > 0 ? 2 : 0));
+      const r = top ? Math.min(4, hgt, bw / 2) : 0;
+      const d = `M${x},${y0 - (si > 0 ? 2 : 0)} V${y1 + r} Q${x},${y1} ${x + r},${y1} H${x + bw - r} Q${x + bw},${y1} ${x + bw},${y1 + r} V${y0 - (si > 0 ? 2 : 0)} Z`;
+      const p = svg('path', { class: 'bar grow-y', d, fill: color, style: `transform-origin:${x}px ${H - B}px; transition-delay:${reduceMotion ? 0 : Math.min(i * 18, 400)}ms` });
+      g.append(p);
+      acc += v;
+    });
+    const hit = svg('rect', { class: 'hit', x: L + pw * i, y: T, width: pw, height: H - T - B, tabindex: total(b) ? 0 : -1 });
+    const show = ev => showTip(ev, b.title, [
+      ['var(--series-1)', 'mcp', fmt(b.mcp)], ['var(--series-2)', 'script', fmt(b.script)],
+      ...(b.old ? [['var(--text-3)', 'legacy', fmt(b.old)]] : []),
+      [null, 'Errors', fmt(b.err)], [null, 'Total', fmt(total(b))]]);
+    hit.addEventListener('pointermove', show); hit.addEventListener('focus', show);
+    hit.addEventListener('pointerleave', hideTip); hit.addEventListener('blur', hideTip);
+    if (total(b)) hit.style.cursor = 'pointer';
+    hit.addEventListener('click', () => {
+      if (!total(b)) return;
+      if (!single) { state.range = 'custom'; state.from = b.key; state.to = b.end || b.key; syncRangeButtons(); load(); }
+    });
+    g.append(hit);
+    root.append(g);
+    if (i % labelEvery === 0) {
+      const t = svg('text', { class: 'axis-text', x: L + pw * i + pw / 2, y: H - 6, 'text-anchor': 'middle' }); t.textContent = b.label; root.append(t);
+    }
+  });
+  const wrap = h('div', { class: 'chart' }, root);
+  reveal(wrap);
+  return wrap;
+}
+function hbarChart(groups, { labelOf = g => g.key, onPick, unit = 'operations', limit = 8, extra } = {}) {
+  if (!groups.length) return emptyState('No data');
+  const shown = groups.slice(0, limit), rest = groups.slice(limit);
+  if (rest.length) shown.push({ key: '__other', count: rest.reduce((a, g) => a + g.count, 0), errors: rest.reduce((a, g) => a + g.errors, 0), ms: rest.reduce((a, g) => a + g.ms, 0), other: rest.length });
+  const max = Math.max(...shown.map(g => g.count));
+  const grid = h('div', { class: 'hbars' });
+  shown.forEach((g, i) => {
+    const label = g.key === '__other' ? `Other (${g.other})` : labelOf(g);
+    const fill = h('div', { class: 'fill', style: `width:${Math.max(1, g.count / max * 100)}%; transition-delay:${reduceMotion ? 0 : i * 50}ms` });
+    const tipRows = () => [[null, unit, fmt(g.count)], [null, 'Errors', fmt(g.errors)], [null, 'Avg. duration', fmtMs(g.count ? g.ms / g.count : NaN)], ...(extra ? extra(g) : [])];
+    const row = h('div', { class: 'row', tabindex: 0, role: 'button', 'aria-label': `${label}: ${g.count} ${unit}`,
+      onpointermove: ev => showTip(ev, label, tipRows()), onpointerleave: hideTip,
+      onfocus: ev => showTip(ev, label, tipRows()), onblur: hideTip,
+      onclick: () => g.key !== '__other' && onPick && onPick(g.key),
+      onkeydown: ev => { if (ev.key === 'Enter' && g.key !== '__other' && onPick) onPick(g.key); } },
+      h('div', { class: 'lbl', title: label }, label),
+      h('div', { class: 'track' }, fill),
+      h('div', { class: 'val' }, fmt(g.count), g.errors ? h('span', { class: 'sub' }, `${fmt(g.errors)} errors`) : null));
+    grid.append(row);
+  });
+  const wrap = h('div', { class: 'chart' }, grid);
+  reveal(wrap);
+  return wrap;
+}
+function panel(title, hint, body, actions) {
+  return h('div', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', {}, title), hint ? h('span', { class: 'hint' }, hint) : null, h('span', { class: 'grow' }), actions || null), h('div', { class: 'panel-b' }, body));
+}
+
+// ---------- views ----------
+function renderOverview(rows) {
+  const s = stats(rows);
+  const tile = (k, d, cls = '', hero = false) => {
+    const v = h('div', { class: 'v ' + cls });
+    return [h('div', { class: 'panel tile' + (hero ? ' hero' : '') }, h('div', { class: 'k' }, k), v, d ? h('div', { class: 'd' }, d) : null), v];
+  };
+  const [t1, v1] = tile('Operations', `${fmt(s.profiles)} profiles · ${fmt(rows.filter(e => sourceOf(e) === 'mcp').length)} via mcp`, '', true);
+  const [t2, v2] = tile('Errors / rejected', null, s.errors ? 'bad' : '');
+  const [t3, v3] = tile('Average duration', null);
+  const [t4, v4] = tile('p95 duration', null);
+  const [t5, v5] = tile('Longest', null);
+  const [t6, v6] = tile('Rows returned', null);
+  t2.querySelector('.k').prepend(h('span', { class: 'status-ico', style: `background:${s.errors ? 'var(--critical)' : 'var(--good)'}` }));
+  t2.append(h('div', { class: 'd' }, s.count ? `${s.errRate.toLocaleString(locale, { maximumFractionDigits: 1 })}% error rate` : '—'));
+  countUp(v1, s.count); countUp(v2, s.errors); countUp(v3, s.avg, fmtMs); countUp(v4, s.p95, fmtMs); countUp(v5, s.max, fmtMs); countUp(v6, s.rowsOut, compact);
+
+  const pick = (sel, val) => { sel.value = val; render(); };
+  const slow = rows.filter(e => Number.isFinite(e.ms)).sort((a, b) => b.ms - a.ms).slice(0, 6);
+  const errs = rows.filter(e => e.error).sort((a, b) => String(b.ts).localeCompare(String(a.ts))).slice(0, 6);
+  const goOp = e => { state.open = e._id; switchTab('ops'); };
+  const miniList = (list, right) => list.length ? h('ul', { class: 'mini' }, list.map(e => h('li', { onclick: () => goOp(e), title: summaryOf(e) },
+    h('span', { class: 'when' }, timeOf(e.ts)), h('span', { class: 'sql' }, summaryOf(e) || toolName(e.tool)), right(e)))) : emptyState('No entries');
+
+  const legend = h('div', { class: 'legend' },
+    h('span', {}, h('i', { style: 'background:var(--series-1)' }), 'mcp (agent)'),
+    h('span', {}, h('i', { style: 'background:var(--series-2)' }), 'script'),
+    rows.some(e => !e.source) ? h('span', {}, h('i', { style: 'background:var(--text-3)' }), 'legacy entry') : null);
+  const [from, to] = resolveRange();
+
+  $('v-overview').replaceChildren(h('div', { class: 'stack' },
+    h('div', { class: 'grid g-tiles' }, t1, t2, t3, t4, t5, t6),
+    h('div', { class: 'grid g-main' },
+      panel('Operations over time', from === to ? 'by hour' : 'by day · click a column to drill into that day', h('div', {}, activityChart(rows), h('div', { style: 'margin-top:10px' }, legend))),
+      panel('By profile', 'click to filter', hbarChart(groupCount(rows, e => e.profile), { onPick: v => pick(F.profile, v), limit: 6 }))),
+    h('div', { class: 'grid g-2' },
+      panel('By tool', 'click to filter', hbarChart(groupCount(rows, e => e.tool), { labelOf: g => toolName(g.key), onPick: v => pick(F.tool, v), limit: 8 })),
+      panel('Most accessed tables', 'click to search', hbarChart(groupCount(rows, e => relationsOf(e).filter(r => !isSystemRel(r))), { onPick: v => { F.text.value = v; render(); }, unit: 'accesses', limit: 8 }))),
+    h('div', { class: 'grid g-2' },
+      panel('Slowest operations', 'click for details', miniList(slow, e => h('span', { class: 'ms' }, fmtMs(e.ms)))),
+      panel('Recent errors', s.errors ? `${fmt(s.errors)} errors` : 'no errors', miniList(errs, e => h('span', { class: 'err', title: e.error }, e.error))))));
+}
+
+function sortRows(rows) {
+  const { key, dir } = state.sort, k = dir === 'asc' ? 1 : -1;
+  const val = e => key === 'summary' ? summaryOf(e) : key === 'source' ? sourceOf(e) : key === 'status' ? (e.error ? 1 : 0) : e[key];
+  return [...rows].sort((a, b) => {
+    const x = val(a), y = val(b);
+    if (x === y) return 0;
+    if (x === undefined || x === null) return 1;
+    if (y === undefined || y === null) return -1;
+    return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), locale)) * k;
+  });
+}
+function exportRows(rows, kind) {
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+  if (kind === 'json') return download(`auspex-log-${stamp}.json`, JSON.stringify(rows.map(({ _id, ...e }) => e), null, 2), 'application/json');
+  const cols = ['ts', 'source', 'tool', 'profile', 'ms', 'rowCount', 'error', 'sql', 'params'];
+  const cell = v => { if (v === null || v === undefined) return ''; const s = typeof v === 'object' ? JSON.stringify(v) : String(v); return /[";\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  download(`auspex-log-${stamp}.csv`, '﻿' + [cols.join(';'), ...rows.map(e => cols.map(c => cell(c === 'source' ? sourceOf(e) : e[c])).join(';'))].join('\r\n'), 'text/csv');
+}
+function renderOps(rows) {
+  const sorted = sortRows(rows);
+  const pages = Math.max(1, Math.ceil(sorted.length / state.pageSize));
+  if (state.open) { const idx = sorted.findIndex(e => e._id === state.open); if (idx >= 0) state.page = Math.floor(idx / state.pageSize); }
+  state.page = Math.min(state.page, pages - 1);
+  const slice = sorted.slice(state.page * state.pageSize, (state.page + 1) * state.pageSize);
+  const maxMs = Math.max(1, ...rows.map(e => e.ms).filter(Number.isFinite));
+  const cols = [['ts', 'Time'], ['source', 'Source'], ['tool', 'Tool'], ['profile', 'Profile', 'hide-sm'], ['summary', 'SQL / details'], ['ms', 'Duration', 'num'], ['rowCount', 'Rows', 'num hide-sm'], ['status', 'Status']];
+  const head = h('tr', {}, cols.map(([k, label, cls]) => h('th', { class: 'sort ' + (cls || ''), onclick: () => {
+    state.sort = { key: k, dir: state.sort.key === k && state.sort.dir === 'desc' ? 'asc' : 'desc' }; state.page = 0; render(); } },
+    label, state.sort.key === k ? h('span', { class: 'arr ' + (state.sort.dir === 'desc' ? 'desc' : '') }, '▲') : null)));
+  const body = h('tbody');
+  slice.forEach((e, i) => {
+    const open = state.open === e._id;
+    const src = sourceOf(e);
+    const tr = h('tr', { class: 'r' + (open ? ' open' : '') + (state.animateRows ? ' enter' : '') + (state.fresh?.has(e._id) ? ' fresh' : ''), style: state.animateRows && !reduceMotion ? `animation-delay:${Math.min(i, 20) * 18}ms` : null,
+      tabindex: 0, onclick: () => { state.open = open ? null : e._id; render(); }, onkeydown: ev => { if (ev.key === 'Enter') { state.open = open ? null : e._id; render(); } } },
+      h('td', { class: 'time', title: dateTimeOf(e.ts) }, (state.range === 'today' || state.range === 'yesterday') ? timeOf(e.ts) : dateTimeOf(e.ts)),
+      h('td', {}, h('span', { class: 'badge ' + src }, sourceLabel(src))),
+      h('td', {}, toolName(e.tool), e.analyze ? h('span', { class: 'muted' }, ' + analyze') : null, e.timeoutSeconds ? h('span', { class: 'muted', title: 'custom timeout' }, ` · ${e.timeoutSeconds} s`) : null),
+      h('td', { class: 'hide-sm' }, e.profile || h('span', { class: 'muted' }, '–')),
+      h('td', { class: 'sum', title: summaryOf(e) }, summaryOf(e) || h('span', { class: 'muted' }, '–')),
+      h('td', { class: 'num' }, h('span', { class: 'dur' }, Number.isFinite(e.ms) ? h('span', { class: 'bar', style: `width:${Math.max(2, e.ms / maxMs * 60)}px` }) : null, fmtMs(e.ms))),
+      h('td', { class: 'num hide-sm' }, Number.isFinite(e.rowCount) ? fmt(e.rowCount) : ''),
+      h('td', {}, e.error ? h('span', { class: 'badge err' }, h('span', { class: 'sw', style: 'background:var(--critical)' }), 'error') : h('span', { class: 'badge ok' }, h('span', { class: 'sw', style: 'background:var(--good)' }), 'ok')));
+    body.append(tr);
+    if (open) {
+      const meta = Object.entries(e).filter(([k, v]) => !['_id', 'sql', 'params', 'error'].includes(k) && v !== null && v !== undefined && v !== '');
+      body.append(h('tr', { class: 'd' }, h('td', { colspan: cols.length }, h('div', { class: 'detail' },
+        e.sql ? h('pre', {}, e.sql) : null,
+        h('div', { class: 'meta' }, meta.map(([k, v]) => h('div', {}, h('span', {}, k + ': '), typeof v === 'object' ? JSON.stringify(v) : (k === 'ts' ? dateTimeOf(v) : k === 'tool' ? toolName(v) : String(v))))),
+        e.params?.length ? h('div', { class: 'meta' }, h('div', {}, h('span', {}, 'Parametreler: '), JSON.stringify(e.params))) : null,
+        e.error ? h('div', { class: 'error-box' }, e.error) : null,
+        h('div', { class: 'acts' },
+          e.sql ? h('button', { class: 'icon-btn', onclick: ev => { ev.stopPropagation(); copy(e.sql, 'SQL'); } }, 'Copy SQL') : null,
+          h('button', { class: 'icon-btn', onclick: ev => { ev.stopPropagation(); const { _id, ...raw } = e; copy(JSON.stringify(raw, null, 2), 'Entry'); } }, 'Copy entry as JSON'),
+          e.profile ? h('button', { class: 'icon-btn', onclick: ev => { ev.stopPropagation(); F.profile.value = e.profile; render(); } }, `Only ${e.profile}`) : null)))));
+    }
+  });
+  state.animateRows = false;
+  const tools = h('div', { class: 'tbl-tools' },
+    h('span', { class: 'muted' }, `${fmt(rows.length)} operations`), h('span', { class: 'grow' }),
+    h('div', { class: 'field' }, h('label', {}, 'Per page'), (() => { const s = h('select', { onchange: ev => { state.pageSize = Number(ev.target.value); state.page = 0; persist(); render(); } },
+      [25, 50, 100, 250].map(n => h('option', { value: n, selected: n === state.pageSize }, n))); return s; })()),
+    h('button', { class: 'icon-btn', onclick: () => exportRows(sortRows(rows), 'csv'), title: 'Download filtered operations as CSV' }, 'Download CSV'),
+    h('button', { class: 'icon-btn', onclick: () => exportRows(sortRows(rows), 'json'), title: 'Download filtered operations as JSON' }, 'Download JSON'));
+  const pager = h('div', { class: 'pager' },
+    h('span', {}, `${fmt(state.page * state.pageSize + (slice.length ? 1 : 0))}–${fmt(state.page * state.pageSize + slice.length)} / ${fmt(rows.length)}`), h('span', { class: 'grow' }),
+    h('button', { class: 'icon-btn', disabled: state.page === 0 ? true : null, onclick: () => { state.page--; state.animateRows = true; render(); } }, '‹ Previous'),
+    h('span', {}, `${state.page + 1} / ${pages}`),
+    h('button', { class: 'icon-btn', disabled: state.page >= pages - 1 ? true : null, onclick: () => { state.page++; state.animateRows = true; render(); } }, 'Next ›'));
+  $('v-ops').replaceChildren(h('div', { class: 'panel' }, tools,
+    rows.length ? h('div', { class: 'tbl-wrap' }, h('table', {}, h('thead', {}, head), body)) : emptyState(state.all.length ? 'No operations match the filters' : 'No entries in this range'),
+    rows.length > state.pageSize ? pager : null));
+}
+
+function renderTables(rows) {
+  const groups = groupCount(rows, e => relationsOf(e).filter(r => state.systemTables || !isSystemRel(r)));
+  const byRel = new Map();
+  for (const e of rows) for (const r of relationsOf(e)) { const s = byRel.get(r) || new Set(); if (e.profile) s.add(e.profile); byRel.set(r, s); }
+  const toggle = h('label', { class: 'muted', style: 'font-size:12px;display:inline-flex;gap:6px;align-items:center;cursor:pointer' },
+    h('input', { type: 'checkbox', checked: state.systemTables ? true : null, onchange: ev => { state.systemTables = ev.target.checked; persist(); render(); } }), 'Show system catalogs');
+  const table = groups.length ? h('div', { class: 'tbl-wrap' }, h('table', {},
+    h('thead', {}, h('tr', {}, h('th', {}, 'Table / view'), h('th', { class: 'num' }, 'Accesses'), h('th', { class: 'num' }, 'Errors'), h('th', { class: 'num hide-sm' }, 'Avg. duration'), h('th', { class: 'hide-sm' }, 'Profiles'), h('th', {}, 'Last access'))),
+    h('tbody', {}, groups.map(g => h('tr', { class: 'r', onclick: () => { F.text.value = g.key; switchTab('ops'); } },
+      h('td', { class: 'sum' }, g.key), h('td', { class: 'num' }, fmt(g.count)), h('td', { class: 'num' }, g.errors ? fmt(g.errors) : '–'),
+      h('td', { class: 'num hide-sm' }, fmtMs(g.ms / g.count)), h('td', { class: 'hide-sm' }, [...(byRel.get(g.key) || [])].join(', ')),
+      h('td', { class: 'time' }, dateTimeOf(g.last))))))) : emptyState('No table access in this range');
+  $('v-tables').replaceChildren(h('div', { class: 'stack' },
+    panel('Most accessed tables', 'from FROM/JOIN in SQL and table structure calls', hbarChart(groups, { onPick: v => { F.text.value = v; switchTab('ops'); }, unit: 'accesses', limit: 12 }), toggle),
+    h('div', { class: 'panel' }, table)));
+  $('cTables').textContent = groups.length ? fmt(groups.length) : '';
+}
+
+function renderProfiles(rows) {
+  const data = state.profiles;
+  if (!data) return;
+  const per = new Map(groupCount(rows, e => e.profile).map(g => [g.key, g]));
+  const cards = (data.profiles || []).map((p, i) => {
+    const g = per.get(p.name);
+    return h('div', { class: 'panel pcard', style: reduceMotion ? null : `animation-delay:${i * 60}ms` },
+      h('h3', {}, p.name, h('span', { class: 'badge ' + (p.source === 'file' ? 'mcp' : 'script') }, p.source === 'file' ? 'file' : 'env')),
+      h('div', { class: 'desc' }, p.description || h('span', { class: 'muted' }, 'no description')),
+      h('div', { class: 'stats' },
+        h('div', {}, h('b', {}, fmt(g?.count || 0)), h('span', {}, 'operations')),
+        h('div', {}, h('b', { style: g?.errors ? 'color:var(--critical)' : null }, fmt(g?.errors || 0)), h('span', {}, 'errors')),
+        h('div', {}, h('b', {}, g ? fmtMs(g.ms / g.count) : '–'), h('span', {}, 'avg. duration')),
+        h('div', {}, h('b', { style: 'font-size:13px' }, g?.last ? timeOf(g.last) : '–'), h('span', {}, 'last'))),
+      h('dl', {},
+        h('dt', {}, 'Server'), h('dd', {}, `${p.host}:${p.port}`),
+        h('dt', {}, 'Database'), h('dd', {}, p.database),
+        h('dt', {}, 'User'), h('dd', {}, p.user),
+        h('dt', {}, 'Timeout'), h('dd', {}, `${data.defaultTimeoutSeconds} s default · max ${p.maxTimeoutSeconds} s`),
+        h('dt', {}, 'Password'), h('dd', {}, p.passwordInString ? 'in URL (move it to pgpass)' : 'pgpass')),
+      h('div', { style: 'margin-top:12px;display:flex;gap:8px' },
+        h('button', { class: 'icon-btn', onclick: () => { F.profile.value = p.name; switchTab('ops'); } }, 'Show operations')));
+  });
+  put($('v-profiles'),
+    data.error ? h('div', { class: 'error-box' }, 'Could not read profiles file: ' + data.error) : null,
+    cards.length ? h('div', { class: 'profiles' }, cards) : h('div', { class: 'panel' }, emptyState('No profiles configured')),
+    h('div', { class: 'paths' },
+      h('div', {}, 'Folder: ' + (data.home || '')),
+      data.profilesFile ? h('div', {}, 'Profiles file: ' + data.profilesFile) : null,
+      data.logDir ? h('div', {}, 'Logs: ' + data.logDir) : null,
+      data.exportDir ? h('div', {}, 'Exports: ' + data.exportDir) : null));
+  $('cProfiles').textContent = cards.length ? fmt(cards.length) : '';
+}
+
+function render() {
+  hideTip();
+  const rows = filtered();
+  renderChips(rows);
+  $('cOps').textContent = rows.length ? fmt(rows.length) : '';
+  renderTables(rows);
+  renderProfiles(rows);
+  if (state.tab === 'overview') renderOverview(rows);
+  if (state.tab === 'ops') renderOps(rows);
+  if (state.open && state.tab === 'ops') requestAnimationFrame(() => document.querySelector('tr.r.open')?.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' }));
+}
+
+// ---------- tabs, range, theme, live ----------
+function moveInk() {
+  const b = document.querySelector(`#tabs button[data-tab="${state.tab}"]`), ink = $('tabInk');
+  ink.style.left = b.offsetLeft + 'px'; ink.style.width = b.offsetWidth + 'px';
+}
+function switchTab(tab) {
+  state.tab = tab; persist();
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+  for (const t of ['overview', 'ops', 'tables', 'profiles']) {
+    const v = $('v-' + t); v.hidden = t !== tab;
+    if (t === tab) { v.classList.remove('view'); void v.offsetWidth; v.classList.add('view'); }
+  }
+  $('filterRow').style.display = tab === 'profiles' ? '' : '';
+  state.animateRows = tab === 'ops';
+  moveInk();
+  render();
+}
+document.querySelectorAll('#tabs button').forEach(b => b.addEventListener('click', () => { state.open = null; switchTab(b.dataset.tab); }));
+
+function syncRangeButtons() {
+  document.querySelectorAll('#range button').forEach(b => b.classList.toggle('on', b.dataset.r === state.range));
+}
+document.querySelectorAll('#range button').forEach(b => b.addEventListener('click', () => { state.range = b.dataset.r; state.page = 0; state.open = null; persist(); syncRangeButtons(); load(); }));
+for (const id of ['from', 'to']) $(id).addEventListener('change', () => {
+  let f = $('from').value, t = $('to').value; if (!f || !t) return; if (f > t) [f, t] = [t, f];
+  state.range = 'custom'; state.from = f; state.to = t; state.page = 0; syncRangeButtons(); load();
+});
+for (const f of Object.values(F)) f.addEventListener(f.type === 'search' ? 'input' : 'change', () => { state.page = 0; state.open = null; render(); });
+
+function applyTheme() {
+  const t = state.theme || 'auto';
+  if (t === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', t);
+  document.querySelectorAll('#theme button').forEach(b => b.classList.toggle('on', b.dataset.v === t));
+}
+document.querySelectorAll('#theme button').forEach(b => b.addEventListener('click', () => { state.theme = b.dataset.v; persist(); applyTheme(); }));
+
+let liveTimer = null;
+function applyLive() {
+  $('live').classList.toggle('on', state.live);
+  $('liveText').textContent = state.live ? 'Live · 5 s' : 'Live off';
+  clearInterval(liveTimer);
+  if (state.live) liveTimer = setInterval(() => { if (!document.hidden) load({ quiet: true }); }, 5000);
+}
+$('liveBtn').addEventListener('click', () => { state.live = !state.live; persist(); applyLive(); });
+$('refreshBtn').addEventListener('click', () => load());
+
+document.addEventListener('keydown', ev => {
+  const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName);
+  if (ev.key === '/' && !typing) { ev.preventDefault(); F.text.focus(); }
+  else if (ev.key === 'Escape') { if (typing) document.activeElement.blur(); else if (state.open) { state.open = null; render(); } }
+  else if (!typing && (ev.key === 'r' || ev.key === 'R') && !ev.ctrlKey && !ev.metaKey) load();
+  else if (!typing && ['1', '2', '3', '4'].includes(ev.key)) switchTab(['overview', 'ops', 'tables', 'profiles'][Number(ev.key) - 1]);
+});
+addEventListener('resize', moveInk);
+addEventListener('scroll', hideTip, { passive: true });
+
+// ---------- start ----------
+applyTheme();
+syncRangeButtons();
+applyLive();
+switchTab(state.tab || 'overview');
+load();
+</script>
+</body>
+</html>
