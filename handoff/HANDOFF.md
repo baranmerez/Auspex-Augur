@@ -189,7 +189,9 @@ CI: `.github/workflows/ci.yml` runs `npm test` on Ubuntu (Node 20/22/24) and
 Windows (Node 22/24) and `npm run test:local` against a PostgreSQL 16 service
 container (same setup script, run through the container socket with a random
 password). The "Desktop build (Windows)" job runs `cargo test` and `npm run build` in
-`desktop`; it is not a required check.
+`desktop`. All seven jobs are required checks on `main` (branch protection,
+admins exempt); PRs are merged with `gh pr merge --auto --rebase` and their
+branch is deleted automatically.
 
 ## 10. Client-side setup (outside this repo)
 
