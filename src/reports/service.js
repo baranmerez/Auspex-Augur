@@ -3,6 +3,7 @@
 // a report never costs tokens to render.
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { Library, normalizeRef, refLabel, sqlHash } from './library.js';
 import { summarizePlan, planDigest } from './planSummary.js';
@@ -27,6 +28,34 @@ export function renderReport(meta) {
     .split(String.fromCharCode(0x2029)).join('\\u2029');
   const title = String(meta.title || meta.name).replace(/[<>&"]/g, ch => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[ch]));
   return template.replace('__AUSPEX_TITLE__', () => title).replace('"__AUSPEX_DATA__"', () => json);
+}
+
+// Data for a shared copy, built from an allowlist instead of the stored
+// metadata: title, description, category, the masked preview and plain
+// figures. Never SQL, plan or plan expressions, parameters, warnings, history,
+// profile, server or database/schema names. Values in preview rows stay as the
+// masking left them; masking is by column name only.
+export function shareableReport(meta) {
+  const last = meta.last;
+  const s = last?.summary;
+  return {
+    shareable: true, name: meta.name, title: meta.title || meta.name, description: meta.description || '',
+    category: meta.category, status: meta.status, sqlVersions: [], runs: [],
+    last: last ? {
+      at: last.at,
+      columns: (last.columns || []).map(c => ({ name: c.name, type: c.type })),
+      preview: last.preview || [],
+      maskedColumns: last.maskedColumns || [],
+      previewTruncated: !!last.previewTruncated,
+      previewMs: last.previewMs,
+      previewExecuted: last.previewExecuted,
+      summary: {
+        analyzed: !!s?.analyzed, planningMs: s?.planningMs, executionMs: s?.executionMs,
+        rows: s?.rows, totalCost: s?.totalCost, buffers: s?.buffers ?? {},
+        nodes: [], joins: [], relations: [], warnings: [],
+      },
+    } : null,
+  };
 }
 
 export class ReportService {
@@ -149,6 +178,21 @@ export class ReportService {
     // Its joins now count as "used" relations in the schema memory view.
     try { this.memory?.rebuildView(ref.db); } catch { /* the view is rebuilt on the next memory change */ }
     return { report: refLabel(ref), stage: 'approved', version: res.meta.approvedVersion, sqlFile: res.paths.sql, htmlFile: res.paths.html };
+  }
+
+  // Writes a shared copy of a report (see shareableReport) into dir as a new
+  // file; the report itself is not changed. No database access.
+  share(input, dir) {
+    const ref = this.ref(input);
+    const stage = this.library.locate(ref);
+    const meta = this.library.readMeta(stage, ref);
+    if (!meta) throw new Error(`Report metadata missing for ${refLabel(ref)}; save the report first.`);
+    if (!meta.last) throw new Error(`${refLabel(ref)} has not been run yet; run it before sharing.`);
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const file = path.join(dir, `${stamp}_${crypto.randomBytes(3).toString('hex')}_${ref.name}.share.html`);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(file, renderReport(shareableReport(meta)), { encoding: 'utf8', flag: 'wx' });
+    return { report: refLabel(ref), stage, file, version: meta.last.version ?? null };
   }
 
   // Re-renders every report's HTML from its JSON (after a template update). No database access.

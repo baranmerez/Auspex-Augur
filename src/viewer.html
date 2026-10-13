@@ -569,7 +569,7 @@ const TR = {
   'estimated plan': 'tahmini plan', '{n} rows': '{n} satır', 'change script': 'değişiklik script\'i', 'not run yet': 'henüz çalıştırılmadı',
   ' · schema {s}': ' · şema {s}', 'Language': 'Dil', 'Run report': 'Rapor çalıştırma',
   'Save report': 'Rapor kaydetme', 'Approve report': 'Rapor onayı', 'Save change script': 'Değişiklik script\'i kaydetme',
-  'Re-render reports': 'Raporları yeniden üretme', 'Memory note': 'Hafıza notu', ' · note #{id} {s}': ' · not #{id} {s}',
+  'Re-render reports': 'Raporları yeniden üretme', 'Share report': 'Rapor paylaşımı', 'Memory note': 'Hafıza notu', ' · note #{id} {s}': ' · not #{id} {s}',
   'Schema': 'Şema', '1 new schema change': '1 yeni şema değişikliği', '{n} new schema changes': '{n} yeni şema değişikliği',
   'Graph': 'Graph', 'ER diagram': 'ER diyagramı', 'Show all': 'Hepsini göster',
   'Focus view': 'Odak görünümü', 'View': 'Görünüm', 'explored': 'keşfedildi',
@@ -636,7 +636,7 @@ const timeOf = ts => ts ? new Date(ts).toLocaleTimeString(locale, { hour12: fals
 const dateTimeOf = ts => ts ? new Date(ts).toLocaleString(locale, { hour12: false }) : '?';
 const toolNames = { query: 'Query', explain: 'Plan', export_csv: 'CSV export', search: 'Search',
   list_schemas: 'Schemas', list_tables: 'Tables', describe_table: 'Table structure', list_profiles: 'Profiles', run_report: 'Run report',
-  save_report: 'Save report', approve_report: 'Approve report', save_execute_script: 'Save change script', render_reports: 'Re-render reports', remember: 'Memory note' };
+  save_report: 'Save report', approve_report: 'Approve report', save_execute_script: 'Save change script', render_reports: 'Re-render reports', share_report: 'Share report', remember: 'Memory note' };
 const toolName = k => t(toolNames[k] || k || '?');
 const sourceOf = e => e.source || 'old';
 const sourceLabel = s => s === 'old' ? t('legacy entry') : s;
