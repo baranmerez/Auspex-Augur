@@ -27,6 +27,7 @@ const maxTimeoutS = config.maxStatementTimeoutMs / 1000;
 const instructions = [
   'Auspex gives read-only access to one or more PostgreSQL databases, each configured as a named profile.',
   'Every tool except list_profiles requires an explicit profile. There is no default database.',
+  'On the first call to a profile Auspex checks that its database role is read-only. If the role could write, every call on that profile fails with an explanation: tell the user which privilege to remove; do not look for a way around it. Warnings (for example CREATE on a schema) do not block; mention them once.',
   'Before the first database call in a conversation, the user must have named the database to work on in this conversation.',
   'If they have not, call list_profiles, show the profiles and ask which one to use. Never guess a profile and never reuse a choice from another conversation.',
   'When switching to a different profile mid-conversation, confirm with the user first.',
@@ -89,8 +90,23 @@ tool('list_profiles', {
     ...describeConnection(cs),
     maxTimeoutSeconds: (config.maxTimeoutByProfile.get(name) ?? config.maxStatementTimeoutMs) / 1000,
     defaultTimeoutSeconds: Math.min(config.statementTimeoutMs, config.maxTimeoutByProfile.get(name) ?? config.maxStatementTimeoutMs) / 1000,
+    roleCheck: roleCheckSummary(db.roleCheck(name)),
   })),
 }));
+
+function roleCheckSummary(r) {
+  if (!r) return 'not checked yet (runs on the first call to this profile; check_profile runs it now)';
+  return { status: r.status, blocking: r.blocking.map(f => f.text), warnings: r.warnings.map(f => f.text), checkedAt: r.checkedAt };
+}
+
+tool('check_profile', {
+  title: 'Check that a profile is read-only',
+  description: 'Checks the database role of a profile from the catalog: superuser, BYPASSRLS, REPLICATION, CREATEROLE, membership in pg_write_all_data / server-file roles, or any table it can write to block the profile (no query runs on it); CREATE on a schema or the database, CREATEDB and default_transaction_read_only off are warnings. Runs automatically on the first call to each profile; use this to see the result or to check again after the role was fixed.',
+  inputSchema: { profile: profileArg },
+}, async ({ profile }) => db.audited('check_profile', { profile: profile ?? null }, async () => {
+  const r = await db.checkProfile(profile);
+  return { profile: r.profile, ...roleCheckSummary(r) };
+}, r => ({ roleStatus: r.status })));
 
 tool('search', {
   title: 'Search tables and columns',

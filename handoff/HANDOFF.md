@@ -34,6 +34,7 @@ auspex/
 │   ├── config.js       ~/.auspex, profiles.json, environment variables
 │   ├── auditLog.js     Daily JSONL audit log
 │   ├── fileLock.js     Cross-process lock for the library and the schema memory
+│   ├── roleCheck.js    Read-only role check on the first call to each profile
 │   ├── viewer.js       Local viewer server (127.0.0.1:4719)
 │   ├── viewer.html     Viewer UI (shared by browser and desktop app)
 │   ├── reports/        Report library: library, plan summary, masking, HTML template
@@ -89,6 +90,11 @@ database to use unless they named one in the current conversation.
    server itself rejects stacked statements and data-modifying CTEs.
 5. **Audit log** — in the database layer, so both MCP and script calls are
    recorded (`source: mcp | script`), rejected queries included.
+6. **Role check** — on the first call to a profile the role is checked from
+   the catalog; a role that could write (superuser, BYPASSRLS, REPLICATION,
+   CREATEROLE, write-data/server-file role membership, any writable table)
+   blocks the profile. Known privilege exceptions that only warn are listed
+   in environment.local.md.
 
 Passwords are in no file of this project: they live in **pgpass**
 (`%APPDATA%\postgresql\pgpass.conf`, line: `host:port:db:Auspex:password`).
