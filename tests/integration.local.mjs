@@ -12,6 +12,7 @@ import path from 'node:path';
 import { loadConfig } from '../src/config.js';
 import { ReadOnlyDatabase } from '../src/db.js';
 import { listSchemas, listTables, describeTable, search } from '../src/catalog.js';
+import { ReportService } from '../src/reports/service.js';
 
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-it-'));
 const env = { ...process.env, AUSPEX_DATA_DIR: dataDir };
@@ -202,4 +203,34 @@ test('export_csv writes UTF-8 CSV with quoting and returns no rows', async () =>
 test('export_csv removes the partial file when the query fails', async () => {
   await assert.rejects(db.exportCsv('local', 'select * from auspex_test.secret_note', [], 'denied', ','), /permission denied/);
   assert.deepEqual(fs.existsSync(config.exportDir) ? fs.readdirSync(config.exportDir).filter(f => f.includes('denied')) : [], []);
+});
+
+test('report library: save, run with ANALYZE, mask, render HTML, version and approve', async () => {
+  const svc = new ReportService(db, fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-it-lib-')));
+  const ref = { db: 'local', schema: 'auspex_test', category: 'Genel Çalışma', name: 'Workers by region' };
+  svc.save({ ...ref, title: 'Workers by region', sql: 'select r.name as region, w.full_name from auspex_test.worker w join auspex_test.region r on r.id = w.region_id order by w.id' });
+  const run = await svc.run(ref);
+  assert.equal(run.analyzed, true);
+  assert.equal(run.rows, 5);
+  assert.ok(run.joins.some(j => /region_id = r\.id|r\.id = w\.region_id/.test(j)), run.joins.join());
+  assert.deepEqual(run.maskedColumns, ['full_name']);
+  assert.match(run.preview[0][1], /^\S\*\*\*/);
+  assert.ok(fs.existsSync(run.htmlFile));
+  assert.match(fs.readFileSync(run.htmlFile, 'utf8'), /"Workers by region"/);
+
+  svc.save({ ...ref, sql: 'select count(*) as n from auspex_test.worker where region_id = $1', note: 'count only' });
+  const second = await svc.run(ref, { params: [1], analyze: false });
+  assert.equal(second.version, 2);
+  assert.equal(second.analyzed, false);
+
+  const approved = svc.approve(ref);
+  assert.equal(approved.stage, 'approved');
+  assert.ok(fs.existsSync(approved.htmlFile));
+  assert.deepEqual(svc.list().map(i => i.stage), ['approved']);
+});
+
+test('report library refuses unknown databases and non-SELECT drafts', async () => {
+  const svc = new ReportService(db, fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-it-lib-')));
+  assert.throws(() => svc.save({ db: 'nope', schema: 's', category: 'c', name: 'n', sql: 'select 1' }), /Unknown profile/);
+  assert.throws(() => svc.save({ db: 'local', schema: 's', category: 'c', name: 'n', sql: 'update t set a = 1' }));
 });

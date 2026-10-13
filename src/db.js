@@ -127,6 +127,50 @@ export class ReadOnlyDatabase {
       () => this._exportCsv(profile, sql, params, fileName, delimiter, timeoutSeconds));
   }
 
+  runReport(profile, sql, options = {}) {
+    return this.audited('run_report', { profile: profile ?? null, sql, params: options.params, analyze: options.analyze, report: options.label, timeoutSeconds: options.timeoutSeconds },
+      () => this._runReport(profile, sql, options));
+  }
+
+  // One READ ONLY transaction, one snapshot: EXPLAIN (FORMAT JSON), with
+  // ANALYZE when asked, then the first rows through a cursor. With analyze the
+  // query runs twice (plan + preview), so callers decide when that is worth it.
+  async _runReport(profile, sql, { params, analyze = true, previewRows = 50, timeoutSeconds } = {}) {
+    const query = assertReadOnlyQuery(sql);
+    const limit = Math.max(0, Math.min(previewRows, this.config.maxRows));
+    const options = analyze ? 'ANALYZE, BUFFERS, VERBOSE, SETTINGS, FORMAT JSON' : 'VERBOSE, SETTINGS, FORMAT JSON';
+    return this.withReadOnly(profile, async (client, name) => {
+      const t0 = performance.now();
+      const ex = await client.query({ text: `EXPLAIN (${options}) ${query}`, values: params || [], queryMode: 'extended' });
+      const explainMs = performance.now() - t0;
+      const raw = ex.rows[0]['QUERY PLAN'];
+      const plan = typeof raw === 'string' ? JSON.parse(raw) : raw;
+
+      const t1 = performance.now();
+      await this.declareCursor(client, query, params);
+      const res = await client.query({ text: `FETCH ${limit + 1} FROM ${cursorName}`, rowMode: 'array' });
+      const previewMs = performance.now() - t1;
+      const truncated = res.rows.length > limit;
+      const rows = (truncated ? res.rows.slice(0, limit) : res.rows).map(row => row.map(v => this.formatCell(v)));
+
+      const oids = [...new Set(res.fields.map(f => f.dataTypeID))];
+      const types = new Map((await client.query('select oid::int as oid, format_type(oid, null) as name from pg_type where oid = any($1::oid[])', [oids])).rows.map(r => [r.oid, r.name]));
+      const version = (await client.query("select current_setting('server_version') as v")).rows[0].v;
+      return {
+        profile: name,
+        serverVersion: version,
+        analyzed: analyze,
+        plan,
+        explainMs,
+        previewMs,
+        columns: res.fields.map(f => ({ name: f.name, type: types.get(f.dataTypeID) || String(f.dataTypeID) })),
+        rows,
+        rowCount: rows.length,
+        truncated,
+      };
+    }, timeoutSeconds);
+  }
+
   async _query(profile, sql, params, maxRows, timeoutSeconds) {
     const limit = Math.min(maxRows || this.config.maxRows, this.config.maxRows);
     const query = assertReadOnlyQuery(sql);

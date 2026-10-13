@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__AUSPEX_TITLE__ · Auspex Augur report</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%232a78d6'/%3E%3Ccircle cx='16' cy='16' r='6' fill='white'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f4f5f7; --surface: #fcfcfb; --surface-2: #f0f1f3; --line: #e3e5e9; --line-strong: #d3d6dc;
+    --text: #0b0b0b; --text-2: #52514e; --text-3: #7a7974;
+    --accent: #2a78d6; --accent-soft: #e6f0fc; --accent-ink: #1c5cab;
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a;
+    --good: #0ca30c; --good-ink: #006300; --good-soft: #e6f6e6;
+    --warn: #fab219; --warn-ink: #8a5a00; --warn-soft: #fff4dc;
+    --critical: #d03b3b; --critical-soft: #fbeaea;
+    --code: #f6f7f9;
+    --shadow: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.08);
+    --mono: ui-monospace, "Cascadia Code", "Cascadia Mono", Consolas, monospace;
+    --ease: cubic-bezier(.2,.8,.2,1);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --bg: #121211; --surface: #1a1a19; --surface-2: #222220; --line: #2c2c2a; --line-strong: #3a3a37;
+      --text: #ffffff; --text-2: #c3c2b7; --text-3: #8f8e86;
+      --accent: #3987e5; --accent-soft: #1b2b42; --accent-ink: #86b6ef;
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+      --good-ink: #4cc76a; --good-soft: #15301c; --warn-ink: #f0b64a; --warn-soft: #362a12; --critical-soft: #3a1a1a;
+      --code: #161615; --shadow: 0 1px 2px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #121211; --surface: #1a1a19; --surface-2: #222220; --line: #2c2c2a; --line-strong: #3a3a37;
+    --text: #ffffff; --text-2: #c3c2b7; --text-3: #8f8e86;
+    --accent: #3987e5; --accent-soft: #1b2b42; --accent-ink: #86b6ef;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+    --good-ink: #4cc76a; --good-soft: #15301c; --warn-ink: #f0b64a; --warn-soft: #362a12; --critical-soft: #3a1a1a;
+    --code: #161615; --shadow: 0 1px 2px rgba(0,0,0,.4);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+  .wrap { max-width: 1320px; margin: 0 auto; padding: 20px 24px 60px; }
+  header.top { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+  .logo { width: 34px; height: 34px; flex: none; margin-top: 4px; }
+  .logo .ring { transform-origin: 16px 16px; animation: spin 16s linear infinite; }
+  .head { flex: 1; min-width: 260px; }
+  .crumbs { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--text-3); }
+  .crumb { background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px; color: var(--text-2); }
+  h1 { margin: 6px 0 2px; font-size: 24px; letter-spacing: -.2px; }
+  .desc { color: var(--text-2); margin: 0; max-width: 900px; }
+  .meta { color: var(--text-3); font-size: 12px; margin-top: 6px; }
+  .badge { display: inline-flex; align-items: center; gap: 5px; padding: 1px 9px; border-radius: 999px; font-size: 11px; font-weight: 650; white-space: nowrap; }
+  .b-draft { background: var(--warn-soft); color: var(--warn-ink); }
+  .b-approved { background: var(--good-soft); color: var(--good-ink); }
+  .b-plan { background: var(--surface-2); color: var(--text-2); }
+  .theme { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 2px; }
+  .theme button { border: 0; background: none; padding: 3px 9px; border-radius: 6px; font-size: 12px; color: var(--text-2); }
+  .theme button.on { background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 18px 0 14px; }
+  .tile { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; box-shadow: var(--shadow); animation: rise .4s var(--ease) both; }
+  .tile .k { font-size: 12px; color: var(--text-2); }
+  .tile .v { font-size: 24px; font-weight: 600; letter-spacing: -.3px; margin-top: 2px; }
+  .tile .d { font-size: 12px; color: var(--text-3); }
+  .tile.hero .v { font-size: 34px; }
+
+  .warns { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 6px; }
+  .warns li { display: flex; gap: 10px; align-items: flex-start; background: var(--warn-soft); color: var(--text); border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); border-radius: 8px; padding: 8px 12px; font-size: 13px; cursor: pointer; }
+  .warns li .ico { color: var(--warn-ink); font-weight: 700; }
+  .ok-note { background: var(--good-soft); color: var(--good-ink); border-radius: 8px; padding: 8px 12px; font-size: 13px; margin-bottom: 14px; }
+
+  nav.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: 14px; position: relative; flex-wrap: wrap; }
+  nav.tabs button { border: 0; background: none; padding: 9px 14px; color: var(--text-2); font-weight: 500; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  nav.tabs button.on { color: var(--text); border-bottom-color: var(--accent); }
+  nav.tabs .n { font-size: 11px; color: var(--text-3); margin-left: 4px; }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); animation: fade .3s var(--ease); }
+  .panel-h { padding: 12px 16px; border-bottom: 1px solid var(--line); display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .panel-h h2 { margin: 0; font-size: 14px; }
+  .panel-h .hint { color: var(--text-3); font-size: 12px; }
+  .panel-b { padding: 12px 16px; }
+  .empty { padding: 40px 16px; text-align: center; color: var(--text-3); }
+
+  /* plan tree */
+  .tree { font-size: 13px; }
+  .node { display: grid; grid-template-columns: minmax(260px, 1.6fr) minmax(120px, 1fr) 110px 110px 90px; gap: 10px; align-items: center; padding: 6px 16px; border-bottom: 1px solid var(--line); cursor: pointer; transition: background .15s; }
+  .node:hover { background: var(--surface-2); }
+  .node.sel { background: var(--accent-soft); }
+  .node .name { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+  .node .name .t { font-weight: 600; white-space: nowrap; }
+  .node .name .r { font-family: var(--mono); font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .node .guide { color: var(--line-strong); font-family: var(--mono); white-space: pre; }
+  .node .bar { height: 8px; background: var(--surface-2); border-radius: 4px; position: relative; overflow: hidden; }
+  .node .bar i { position: absolute; inset: 0 auto 0 0; background: var(--s1); border-radius: 0 4px 4px 0; transform-origin: left; animation: grow .7s var(--ease) both; }
+  .node .bar.hot i { background: var(--s2); }
+  .node .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .node .est { color: var(--text-3); font-size: 12px; }
+  .mis { color: var(--critical); font-weight: 600; font-size: 11px; }
+  .tree-head { display: grid; grid-template-columns: minmax(260px, 1.6fr) minmax(120px, 1fr) 110px 110px 90px; gap: 10px; padding: 8px 16px; font-size: 12px; color: var(--text-2); font-weight: 600; border-bottom: 1px solid var(--line); }
+  .tree-head .num { text-align: right; }
+  .detail { padding: 12px 16px; background: var(--surface-2); border-bottom: 1px solid var(--line); font-size: 12px; animation: fade .2s; }
+  .detail dl { display: grid; grid-template-columns: 170px 1fr; gap: 4px 12px; margin: 0; }
+  .detail dt { color: var(--text-3); }
+  .detail dd { margin: 0; font-family: var(--mono); word-break: break-word; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; color: var(--text-2); font-weight: 600; white-space: nowrap; background: var(--surface); position: sticky; top: 0; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.mono { font-family: var(--mono); font-size: 12px; }
+  .tbl-wrap { overflow: auto; max-height: 640px; }
+  .masked-h { color: var(--warn-ink); }
+  .null { color: var(--text-3); font-style: italic; }
+  .pill { display: inline-block; font-size: 11px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; padding: 0 7px; margin: 1px 2px 1px 0; }
+  .arrow { color: var(--text-3); padding: 0 6px; }
+
+  pre.sql { margin: 0; padding: 14px 16px; background: var(--code); font: 12.5px/1.6 var(--mono); white-space: pre-wrap; word-break: break-word; overflow: auto; }
+  .kw { color: var(--accent-ink); font-weight: 600; }
+  .str { color: var(--good-ink); }
+  .cm { color: var(--text-3); font-style: italic; }
+  .btn { border: 1px solid var(--line); background: var(--surface); border-radius: 7px; padding: 4px 10px; font-size: 12px; color: var(--text-2); }
+  .btn:hover { background: var(--surface-2); color: var(--text); }
+
+  .hist-chart svg { display: block; width: 100%; overflow: visible; }
+  .hist-chart .axis { fill: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .hist-chart .grid { stroke: var(--line); }
+  .diff { font: 12px/1.6 var(--mono); }
+  .diff div { padding: 0 12px; white-space: pre-wrap; word-break: break-word; }
+  .diff .add { background: var(--good-soft); }
+  .diff .del { background: var(--critical-soft); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--critical) 50%, transparent); }
+  .diff-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  select { font: inherit; font-size: 12px; background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
+
+  .tip { position: fixed; z-index: 50; pointer-events: none; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 8px; box-shadow: 0 10px 28px rgba(0,0,0,.18); padding: 7px 10px; font-size: 12px; opacity: 0; transition: opacity .12s; }
+  .tip.show { opacity: 1; }
+  .toast { position: fixed; bottom: 22px; left: 50%; transform: translate(-50%, 16px); opacity: 0; background: var(--text); color: var(--bg); padding: 7px 14px; border-radius: 8px; font-size: 13px; transition: .2s; pointer-events: none; }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  footer { margin-top: 26px; color: var(--text-3); font-size: 12px; text-align: center; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+  @keyframes fade { from { opacity: 0; } }
+  @keyframes grow { from { transform: scaleX(0); } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+  @media (max-width: 760px) {
+    .wrap { padding: 14px 16px 40px; }
+    .node, .tree-head { grid-template-columns: 1fr 70px 70px; }
+    .node .bar, .tree-head .c-bar, .node .est-col, .tree-head .c-est { display: none; }
+    .detail dl { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+      <circle cx="16" cy="16" r="15" fill="var(--accent)" opacity=".14"/>
+      <g class="ring"><circle cx="16" cy="16" r="11" fill="none" stroke="var(--accent)" stroke-width="2" stroke-dasharray="14 6" stroke-linecap="round"/></g>
+      <circle cx="16" cy="16" r="5" fill="var(--accent)"/>
+    </svg>
+    <div class="head" id="head"></div>
+    <div class="theme" id="theme"><button data-v="auto">Auto</button><button data-v="light">Light</button><button data-v="dark">Dark</button></div>
+  </header>
+  <section class="tiles" id="tiles"></section>
+  <section id="warns"></section>
+  <nav class="tabs" id="tabs"></nav>
+  <main id="view"></main>
+  <footer id="foot"></footer>
+</div>
+<div class="tip" id="tip"></div>
+<div class="toast" id="toast"></div>
+
+<script id="auspex-report" type="application/json">"__AUSPEX_DATA__"</script>
+<script>
+'use strict';
+const DATA = JSON.parse(document.getElementById('auspex-report').textContent);
+const R = DATA && DATA.report;
+const $ = id => document.getElementById(id);
+const h = (tag, attrs = {}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v === null || v === undefined || v === false) continue;
+    if (k === 'class') n.className = v; else if (k === 'style') n.style.cssText = v;
+    else if (k.startsWith('on')) n.addEventListener(k.slice(2), v); else n.setAttribute(k, v === true ? '' : v);
+  }
+  for (const k of kids.flat(Infinity)) if (k !== null && k !== undefined && k !== false) n.append(k instanceof Node ? k : String(k));
+  return n;
+};
+const put = (node, ...kids) => node.replaceChildren(...kids.flat(Infinity).filter(k => k !== null && k !== undefined && k !== false));
+const nf = new Intl.NumberFormat('en-GB');
+const fmt = n => (n === null || n === undefined || Number.isNaN(n)) ? '–' : nf.format(Math.round(n * 100) / 100);
+const fmtMs = ms => !Number.isFinite(ms) ? '–' : ms >= 1000 ? (ms / 1000).toFixed(ms >= 10000 ? 1 : 2) + ' s' : (ms < 10 ? ms.toFixed(2) : Math.round(ms)) + ' ms';
+const fmtWhen = ts => ts ? new Date(ts).toLocaleString('en-GB', { hour12: false }) : '–';
+const blocks = b => (b === null || b === undefined) ? '–' : b >= 128 ? (b * 8 / 1024).toFixed(b * 8 >= 10240 ? 0 : 1) + ' MB' : fmt(b * 8) + ' kB';
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 1500); }
+async function copy(text, what) { try { await navigator.clipboard.writeText(text); toast(what + ' copied'); } catch { toast('Copy failed'); } }
+const tip = $('tip');
+function showTip(ev, lines) { put(tip, lines.map(l => h('div', {}, l))); tip.style.left = Math.min(innerWidth - 240, ev.clientX + 14) + 'px'; tip.style.top = Math.max(8, ev.clientY - 46) + 'px'; tip.classList.add('show'); }
+const hideTip = () => tip.classList.remove('show');
+
+// --- tiny SQL highlighter (keywords, strings, comments) ---
+const KW = /\b(select|from|where|join|left|right|full|inner|outer|cross|lateral|on|and|or|not|in|exists|group|by|order|having|limit|offset|with|as|union|all|distinct|case|when|then|else|end|is|null|between|like|ilike|asc|desc|over|partition|filter|values|table|using|coalesce|count|sum|avg|min|max|true|false)\b/gi;
+function highlight(sql) {
+  const out = [];
+  const re = /(--[^\n]*|\/\*[\s\S]*?\*\/)|('(?:[^']|'')*')|([^'-/]+|[\s\S])/g;
+  for (const m of sql.matchAll(re)) {
+    if (m[1]) out.push(h('span', { class: 'cm' }, m[1]));
+    else if (m[2]) out.push(h('span', { class: 'str' }, m[2]));
+    else {
+      let last = 0; const t = m[0];
+      for (const k of t.matchAll(KW)) { out.push(t.slice(last, k.index)); out.push(h('span', { class: 'kw' }, k[0])); last = k.index + k[0].length; }
+      out.push(t.slice(last));
+    }
+  }
+  return out;
+}
+
+// --- line diff (LCS) ---
+function diffLines(a, b) {
+  const A = a.split('\n'), B = b.split('\n');
+  const m = A.length, n = B.length;
+  const dp = Array.from({ length: m + 1 }, () => new Uint32Array(n + 1));
+  for (let i = m - 1; i >= 0; i--) for (let j = n - 1; j >= 0; j--) dp[i][j] = A[i] === B[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const out = []; let i = 0, j = 0;
+  while (i < m && j < n) { if (A[i] === B[j]) { out.push([' ', A[i]]); i++; j++; } else if (dp[i + 1][j] >= dp[i][j + 1]) out.push(['-', A[i++]]); else out.push(['+', B[j++]]); }
+  while (i < m) out.push(['-', A[i++]]); while (j < n) out.push(['+', B[j++]]);
+  return out;
+}
+
+function render() {
+  if (!R) { put($('view'), h('div', { class: 'empty' }, 'No report data.')); return; }
+  const last = R.last;
+  const S = last && last.summary;
+  const currentSql = (R.sqlVersions || []).at(-1)?.sql || '';
+
+  // header
+  put($('head'),
+    h('div', { class: 'crumbs' }, h('span', { class: 'crumb' }, R.db), '›', h('span', { class: 'crumb' }, R.schema), '›', h('span', { class: 'crumb' }, R.category),
+      h('span', { class: 'badge ' + (R.status === 'approved' ? 'b-approved' : 'b-draft') }, R.status === 'approved' ? `approved v${R.approvedVersion ?? '?'}` : 'draft'),
+      R.sqlVersions?.length ? h('span', { class: 'badge b-plan' }, `SQL v${R.sqlVersions.at(-1).version}`) : null),
+    h('h1', {}, R.title || R.name),
+    R.description ? h('p', { class: 'desc' }, R.description) : null,
+    h('div', { class: 'meta' }, last ? `Last run ${fmtWhen(last.at)} · profile ${last.profile} · PostgreSQL ${last.serverVersion}` : 'Not run yet', ' · ', `${R.runs?.length || 0} runs`));
+
+  if (!last) {
+    put($('tiles')); put($('warns')); put($('tabs'));
+    put($('view'), h('div', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', {}, 'SQL')), h('pre', { class: 'sql' }, highlight(currentSql))), h('div', { class: 'empty' }, 'Run the report to see its plan, joins, timings and preview.'));
+    return;
+  }
+
+  // tiles
+  const hit = S.buffers?.sharedHit ?? 0, read = S.buffers?.sharedRead ?? 0;
+  const ratio = hit + read ? Math.round(hit / (hit + read) * 1000) / 10 : null;
+  const tile = (k, v, d, cls = '') => h('div', { class: 'tile ' + cls }, h('div', { class: 'k' }, k), h('div', { class: 'v' }, v), d ? h('div', { class: 'd' }, d) : null);
+  put($('tiles'),
+    S.analyzed ? tile('Execution time', fmtMs(S.executionMs), `planning ${fmtMs(S.planningMs)}`, 'hero') : tile('Plan only', fmtMs(last.previewMs), 'time to first rows (no ANALYZE)', 'hero'),
+    tile(S.analyzed ? 'Rows returned' : 'Rows (estimated)', fmt(S.rows), last.previewTruncated ? `preview shows ${fmt(last.preview.length)}` : null),
+    tile('Total cost', fmt(S.totalCost), 'planner units'),
+    tile('Buffers', S.analyzed ? blocks(hit + read) : '–', ratio !== null ? `${ratio}% from cache` : null),
+    tile('Temp written', S.analyzed ? blocks(S.buffers?.tempWritten ?? 0) : '–', (S.buffers?.tempWritten ?? 0) > 0 ? 'spilled to disk' : 'none'),
+    tile('Joins / tables', `${S.joins.length} / ${S.relations.length}`, S.joins.map(j => j.method.replace(' Join', '')).join(', ') || 'no joins'));
+
+  // warnings
+  put($('warns'), S.warnings.length
+    ? h('ul', { class: 'warns' }, S.warnings.map(w => h('li', { onclick: () => { state.tab = 'plan'; state.sel = w.nodeId; renderTab(); } }, h('span', { class: 'ico' }, '⚠'), h('span', {}, w.text))))
+    : h('div', { class: 'ok-note' }, S.analyzed ? '✓ No plan warnings: no large sequential scans, misestimates, disk sorts or temp spills.' : 'Plan only: run with ANALYZE to check actual rows and timings.'));
+
+  const tabs = [['plan', 'Plan', S.nodes.length], ['joins', 'Joins', S.joins.length], ['tables', 'Tables', S.relations.length], ['preview', 'Preview', last.preview.length], ['history', 'History', R.runs.length], ['sql', 'SQL', R.sqlVersions.length]];
+  put($('tabs'), tabs.map(([k, label, n]) => h('button', { class: state.tab === k ? 'on' : '', onclick: () => { state.tab = k; renderTab(); } }, label, h('span', { class: 'n' }, n))));
+  renderTab();
+}
+
+const state = { tab: 'plan', sel: null, diffA: null, diffB: null };
+function renderTab() {
+  document.querySelectorAll('#tabs button').forEach((b, i) => b.classList.toggle('on', ['plan', 'joins', 'tables', 'preview', 'history', 'sql'][i] === state.tab));
+  const last = R.last, S = last.summary;
+  const view = $('view');
+  if (state.tab === 'plan') {
+    const rows = [];
+    const unit = S.analyzed ? 'own time' : 'own cost';
+    S.nodes.forEach(n => {
+      const guide = n.depth ? '  '.repeat(n.depth - 1) + '└ ' : '';
+      const share = Math.max(0, Math.min(1, n.share));
+      rows.push(h('div', { class: 'node' + (state.sel === n.id ? ' sel' : ''), onclick: () => { state.sel = state.sel === n.id ? null : n.id; renderTab(); },
+        onpointermove: ev => showTip(ev, [`${n.type}${n.relation ? ' · ' + n.relation : ''}`, `${unit}: ${S.analyzed ? fmtMs(n.ownMs) : fmt(n.ownCost)} (${(share * 100).toFixed(1)}%)`, `rows est ${fmt(n.estRows)}${n.actualRows !== null ? ' · actual ' + fmt(n.actualRows) : ''}`]), onpointerleave: hideTip },
+        h('div', { class: 'name' }, h('span', { class: 'guide' }, guide), h('span', { class: 't' }, n.type + (n.joinType && n.isJoin ? ` (${n.joinType})` : '')), n.relation ? h('span', { class: 'r' }, n.relation + (n.alias && n.alias !== n.relation.split('.').pop() ? ' ' + n.alias : '')) : (n.subplan ? h('span', { class: 'r' }, n.subplan) : null)),
+        h('div', { class: 'bar' + (share >= 0.3 ? ' hot' : ''), title: `${(share * 100).toFixed(1)}%` }, h('i', { style: `width:${Math.max(share * 100, 0.5)}%` })),
+        h('div', { class: 'num est-col' }, h('span', { class: 'est' }, fmt(n.estRows)), n.misestimate ? h('div', { class: 'mis' }, n.misestimate) : null),
+        h('div', { class: 'num' }, n.actualRows !== null ? fmt(n.actualRows) : '–'),
+        h('div', { class: 'num' }, S.analyzed ? fmtMs(n.ownMs) : fmt(n.ownCost))));
+      if (state.sel === n.id) {
+        const kv = [['Node', n.type], ['Relation', n.relation], ['Alias', n.alias], ['Index', n.index], ['Join type', n.joinType], ['Condition', n.condition], ['Filter', n.filter],
+          ['Rows removed by filter', n.rowsRemovedByFilter !== null ? fmt(n.rowsRemovedByFilter) : null], ['Sort', n.sort ? `${n.sort.key.join(', ')} · ${n.sort.method || ''} ${n.sort.space ?? ''} kB ${n.sort.spaceType || ''}` : null],
+          ['Cost', `${fmt(n.startupCost)} .. ${fmt(n.totalCost)}`], ['Loops', n.loops], ['Total time (incl. children)', S.analyzed ? fmtMs(n.totalMs) : null], ['Workers', n.workers]];
+        rows.push(h('div', { class: 'detail' }, h('dl', {}, kv.filter(([, v]) => v !== null && v !== undefined && v !== '').map(([k, v]) => [h('dt', {}, k), h('dd', {}, String(v))]))));
+      }
+    });
+    put(view, h('div', { class: 'panel tree' },
+      h('div', { class: 'panel-h' }, h('h2', {}, 'Plan tree'), h('span', { class: 'hint' }, S.analyzed ? 'bar = share of execution time spent in the node itself · click a node for details' : 'plan only · bar = share of estimated cost')),
+      h('div', { class: 'tree-head' }, h('div', {}, 'Node'), h('div', { class: 'c-bar' }, 'Share'), h('div', { class: 'num c-est' }, 'Est. rows'), h('div', { class: 'num' }, 'Actual rows'), h('div', { class: 'num' }, S.analyzed ? 'Own time' : 'Own cost')),
+      rows));
+  } else if (state.tab === 'joins') {
+    put(view, h('div', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', {}, 'Joins'), h('span', { class: 'hint' }, 'read from the plan, not from the SQL text')),
+      S.joins.length ? h('div', { class: 'tbl-wrap' }, h('table', {},
+        h('thead', {}, h('tr', {}, h('th', {}, 'Method'), h('th', {}, 'Type'), h('th', {}, 'Outer'), h('th', {}, ''), h('th', {}, 'Inner'), h('th', {}, 'Condition'), h('th', { class: 'num' }, 'Rows'), h('th', { class: 'num' }, 'Time'))),
+        h('tbody', {}, S.joins.map(j => h('tr', {},
+          h('td', {}, j.method), h('td', {}, j.type), h('td', {}, j.outer.map(r => h('span', { class: 'pill' }, r))), h('td', { class: 'arrow' }, '⋈'),
+          h('td', {}, j.inner.map(r => h('span', { class: 'pill' }, r))), h('td', { class: 'mono' }, j.condition || '–'),
+          h('td', { class: 'num' }, fmt(j.rows)), h('td', { class: 'num' }, fmtMs(j.ms))))))) : h('div', { class: 'empty' }, 'No joins in this plan.'),
+      S.joins.some(j => j.columnPairs.length) ? h('div', { class: 'panel-b' }, h('div', { class: 'hint', style: 'margin-bottom:6px;color:var(--text-3);font-size:12px' }, 'Column relationships used by this report'),
+        S.joins.flatMap(j => j.columnPairs).map(p => h('div', { class: 'mono', style: 'font-family:var(--mono);font-size:12px;margin:2px 0' }, `${p.left}  =  ${p.right}`))) : null));
+  } else if (state.tab === 'tables') {
+    put(view, h('div', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', {}, 'Tables touched')),
+      h('div', { class: 'tbl-wrap' }, h('table', {},
+        h('thead', {}, h('tr', {}, h('th', {}, 'Relation'), h('th', {}, 'Alias'), h('th', {}, 'Access'), h('th', {}, 'Indexes'), h('th', { class: 'num' }, 'Est. rows'), h('th', { class: 'num' }, 'Actual rows'), h('th', { class: 'num' }, 'Own time'))),
+        h('tbody', {}, S.relations.map(r => h('tr', {}, h('td', { class: 'mono' }, r.relation), h('td', { class: 'mono' }, r.aliases.join(', ')), h('td', {}, r.scans.map(s => h('span', { class: 'pill' }, s))),
+          h('td', { class: 'mono' }, r.indexes.join(', ') || '–'), h('td', { class: 'num' }, fmt(r.estRows)), h('td', { class: 'num' }, S.analyzed ? fmt(r.actualRows) : '–'), h('td', { class: 'num' }, S.analyzed ? fmtMs(r.ms) : '–'))))))));
+  } else if (state.tab === 'preview') {
+    const masked = new Set(last.maskedColumns || []);
+    put(view, h('div', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', {}, 'Result preview'),
+      h('span', { class: 'hint' }, `${fmt(last.preview.length)} rows${last.previewTruncated ? ' (first rows only)' : ''}${masked.size ? ` · masked: ${[...masked].join(', ')}` : ''}`)),
+      last.preview.length ? h('div', { class: 'tbl-wrap' }, h('table', {},
+        h('thead', {}, h('tr', {}, last.columns.map(c => h('th', { class: masked.has(c.name) ? 'masked-h' : '', title: c.type }, c.name, masked.has(c.name) ? ' 🔒' : '')))),
+        h('tbody', {}, last.preview.map(row => h('tr', {}, row.map((v, i) => h('td', { class: /int|numeric|double|real|decimal/.test(last.columns[i].type) ? 'num' : '' }, v === null ? h('span', { class: 'null' }, 'null') : String(v)))))))) : h('div', { class: 'empty' }, 'The query returned no rows.')));
+  } else if (state.tab === 'history') {
+    const runs = R.runs;
+    const vals = runs.map(r => Number.isFinite(r.durationMs) ? r.durationMs : null);
+    const max = Math.max(1, ...vals.filter(v => v !== null));
+    const W = 760, H = 180, L = 46, B = 22, pw = (W - L - 8) / Math.max(runs.length, 1), bw = Math.min(24, pw * 0.6);
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    const S2 = (t, a) => { const e = document.createElementNS('http://www.w3.org/2000/svg', t); for (const [k, v] of Object.entries(a)) e.setAttribute(k, v); return e; };
+    for (let i = 0; i <= 3; i++) { const y = 8 + (H - 8 - B) * i / 3; svg.append(S2('line', { class: 'grid', x1: L, x2: W - 8, y1: y, y2: y })); const t = S2('text', { class: 'axis', x: L - 6, y: y + 4, 'text-anchor': 'end' }); t.textContent = fmtMs(max * (1 - i / 3)); svg.append(t); }
+    const versions = [...new Set(runs.map(r => r.version))];
+    runs.forEach((r, i) => {
+      const x = L + pw * i + (pw - bw) / 2;
+      if (r.durationMs === null || !Number.isFinite(r.durationMs)) { const t = S2('text', { class: 'axis', x: x + bw / 2, y: H - B - 4, 'text-anchor': 'middle' }); t.textContent = '·'; svg.append(t); return; }
+      const hgt = Math.max(2, (H - 8 - B) * r.durationMs / max), y = H - B - hgt;
+      const color = versions.indexOf(r.version) % 2 ? 'var(--s2)' : 'var(--s1)';
+      const rect = S2('path', { d: `M${x},${H - B} V${y + 4} Q${x},${y} ${x + 4},${y} H${x + bw - 4} Q${x + bw},${y} ${x + bw},${y + 4} V${H - B} Z`, fill: color });
+      rect.addEventListener('pointermove', ev => showTip(ev, [fmtWhen(r.at), `v${r.version ?? '?'} · ${fmtMs(r.durationMs)}`, `${fmt(r.rows)} rows · cost ${fmt(r.totalCost)}`, `${r.warnings.length} warnings`]));
+      rect.addEventListener('pointerleave', hideTip);
+      svg.append(rect);
+    });
+    const vs = R.sqlVersions || [];
+    if (state.diffA === null && vs.length > 1) { state.diffA = vs.length - 2; state.diffB = vs.length - 1; }
+    const sel = (key) => h('select', { onchange: ev => { state[key] = Number(ev.target.value); renderTab(); } }, vs.map((v, i) => h('option', { value: i, selected: state[key] === i ? true : null }, `v${v.version} · ${fmtWhen(v.savedAt)}${v.note ? ' · ' + v.note : ''}`)));
+    put(view, h('div', { class: 'panel' },
+      h('div', { class: 'panel-h' }, h('h2', {}, 'Run history'), h('span', { class: 'hint' }, 'duration per run · alternating colors mark SQL versions · last 100 runs')),
+      h('div', { class: 'panel-b hist-chart' }, runs.length ? svg : h('div', { class: 'empty' }, 'No runs yet.')),
+      h('div', { class: 'tbl-wrap', style: 'max-height:280px' }, h('table', {},
+        h('thead', {}, h('tr', {}, h('th', {}, 'When'), h('th', {}, 'SQL'), h('th', {}, 'Mode'), h('th', { class: 'num' }, 'Duration'), h('th', { class: 'num' }, 'Rows'), h('th', { class: 'num' }, 'Cost'), h('th', { class: 'num' }, 'Warnings'))),
+        h('tbody', {}, [...runs].reverse().map(r => h('tr', {}, h('td', {}, fmtWhen(r.at)), h('td', {}, `v${r.version ?? '?'}`), h('td', {}, r.analyzed ? 'analyze' : 'plan'),
+          h('td', { class: 'num' }, fmtMs(r.durationMs)), h('td', { class: 'num' }, fmt(r.rows)), h('td', { class: 'num' }, fmt(r.totalCost)), h('td', { class: 'num' }, r.warnings.length))))))),
+      h('div', { class: 'panel', style: 'margin-top:14px' },
+        h('div', { class: 'panel-h' }, h('h2', {}, 'SQL changes'), h('span', { class: 'hint' }, vs.length > 1 ? 'compare two versions' : 'only one version so far')),
+        vs.length > 1 ? [h('div', { class: 'diff-bar' }, sel('diffA'), h('span', { class: 'arrow' }, '→'), sel('diffB')),
+          h('div', { class: 'diff panel-b' }, diffLines(vs[state.diffA].sql, vs[state.diffB].sql).map(([t, line]) => h('div', { class: t === '+' ? 'add' : t === '-' ? 'del' : '' }, (t === ' ' ? '  ' : t + ' ') + line)))] : null));
+  } else if (state.tab === 'sql') {
+    put(view, h('div', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', {}, `SQL v${R.sqlVersions.at(-1)?.version ?? '?'}`), h('span', { style: 'flex:1' }),
+      h('button', { class: 'btn', onclick: () => copy(R.sqlVersions.at(-1)?.sql || '', 'SQL') }, 'Copy SQL'),
+      h('button', { class: 'btn', onclick: () => copy(JSON.stringify(R.last.plan, null, 2), 'Plan JSON') }, 'Copy plan JSON')),
+      h('pre', { class: 'sql' }, highlight(R.sqlVersions.at(-1)?.sql || ''))));
+  }
+}
+
+// theme
+function applyTheme(t) {
+  if (t === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', t);
+  document.querySelectorAll('#theme button').forEach(b => b.classList.toggle('on', b.dataset.v === t));
+  try { localStorage.setItem('auspex.report.theme', t); } catch {}
+}
+document.querySelectorAll('#theme button').forEach(b => b.addEventListener('click', () => applyTheme(b.dataset.v)));
+let savedTheme = 'auto'; try { savedTheme = localStorage.getItem('auspex.report.theme') || 'auto'; } catch {}
+applyTheme(savedTheme);
+put($('foot'), `Generated ${fmtWhen(DATA && DATA.generatedAt)} by Auspex Augur · template v${DATA && DATA.templateVersion}`);
+render();
+</script>
+</body>
+</html>
