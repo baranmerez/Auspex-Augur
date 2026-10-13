@@ -306,3 +306,15 @@ test('approval refuses draft SQL that matches no saved version', () => {
   fs.writeFileSync(svc.library.paths('draft', ref).sql, 'select 99\n');
   assert.throws(() => svc.approve(ref), /matches no saved version/);
 });
+
+test('the slow-report fallback says whether the preview still executed the query', async () => {
+  const { svc } = tempService();
+  svc.save({ ...ref, sql: 'select 1' });
+  svc.library.appendRun('draft', ref, { at: '2026-01-01T00:00:00Z', durationMs: 45000, warnings: [] }, null);
+  const withPreview = await svc.run(ref, { previewRows: 10 });
+  assert.match(withPreview.note, /skipped EXPLAIN ANALYZE/);
+  assert.match(withPreview.note, /still ran once to fetch 10 preview rows/);
+  svc.library.appendRun('draft', ref, { at: '2026-01-01T00:00:01Z', durationMs: 45000, warnings: [] }, null);
+  const noPreview = await svc.run(ref, { previewRows: 0 });
+  assert.match(noPreview.note, /nothing was executed/);
+});
