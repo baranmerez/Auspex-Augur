@@ -21,6 +21,9 @@ const forbiddenFunctions = [
   /^pg_try_advisory/, /^lo_/, /^dblink/, /^pg_read_/, /^pg_ls_/, /^pg_stat_file$/,
   /^nextval$/, /^setval$/, /^pg_notify$/, /^pg_logical_/, /^pg_replication_/,
   /^pg_create_/, /^pg_drop_/, /^pg_switch_wal$/, /^pg_promote$/,
+  // Built-ins that run SQL passed to them as text, which this guard never
+  // sees: query_to_xml('select pg_advisory_lock(1)', ...), ts_stat('...').
+  /^query_to_xml/, /^cursor_to_xml/, /^ts_stat$/, /^ts_rewrite$/,
 ];
 
 class SqlGuardError extends Error {}
@@ -53,6 +56,7 @@ function stripLiteralsAndComments(sql, identifiers = null) {
   let out = '';
   let i = 0;
   const n = sql.length;
+  const unicodeIds = [];
   const mask = (start, fill) => { out += fill(i - start); };
   const blank = len => ' '.repeat(len);
   const quoted = q => len => q + ' '.repeat(Math.max(len - 2, 0)) + (len > 1 ? q : '');
@@ -61,7 +65,8 @@ function stripLiteralsAndComments(sql, identifiers = null) {
     const next = sql[i + 1];
     const start = i;
     if (c === '-' && next === '-') {
-      while (i < n && sql[i] !== '\n') i++;
+      // PostgreSQL and psql end a line comment at LF or CR.
+      while (i < n && sql[i] !== '\n' && sql[i] !== '\r') i++;
       mask(start, blank);
     } else if (c === '/' && next === '*') {
       let depth = 1;
@@ -103,15 +108,12 @@ function stripLiteralsAndComments(sql, identifiers = null) {
       }
       if (!closed) throw new SqlGuardError('Unterminated quoted identifier.');
       if (identifiers) {
-        let name = sql.slice(start + 1, i - 1).replace(/""/g, '"');
+        const name = sql.slice(start + 1, i - 1).replace(/""/g, '"');
         const unicode = /^[uU]&$/.test(sql.slice(start - 2, start)) && !/[A-Za-z0-9_$]/.test(sql[start - 3] || '');
-        if (unicode) {
-          const uescape = /^\s*uescape\s*'([^'])'/i.exec(sql.slice(i));
-          name = decodeUnicodeIdentifier(name, uescape ? uescape[1] : '\\');
-          // With UESCAPE the token before "(" is the escape literal.
-          if (uescape) identifiers.push({ end: i + uescape[0].length, name });
-        }
-        identifiers.push({ end: i, name });
+        // U&"..." is decoded once the whole text is masked (see below), since
+        // a UESCAPE clause may follow after comments.
+        if (unicode) unicodeIds.push({ end: i, body: name });
+        else identifiers.push({ end: i, name });
       }
       mask(start, quoted('"'));
     } else if (c === '$') {
@@ -130,6 +132,20 @@ function stripLiteralsAndComments(sql, identifiers = null) {
       out += c;
       i++;
     }
+  }
+  // Decode U&"..." identifiers on the masked text, where comments are blanks,
+  // so "U&"x" -- c<newline> UESCAPE '!'" is read the way PostgreSQL reads it.
+  for (const u of unicodeIds) {
+    const m = /^\s*uescape\s*'/i.exec(out.slice(u.end));
+    if (!m) {
+      identifiers.push({ end: u.end, name: decodeUnicodeIdentifier(u.body, '\\') });
+      continue;
+    }
+    const quote = u.end + m[0].length - 1; // opening quote of the escape literal
+    if (sql[quote + 2] !== "'" || sql[quote + 1] === "'") throw new SqlGuardError('Invalid UESCAPE clause.');
+    const name = decodeUnicodeIdentifier(u.body, sql[quote + 1]);
+    // With UESCAPE the token before "(" is the escape literal.
+    identifiers.push({ end: u.end, name }, { end: quote + 3, name });
   }
   return out;
 }
