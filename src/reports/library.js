@@ -327,6 +327,9 @@ export function lintExecuteScript(sql) {
     }
     if (w[0] === 'do') errors.push(`Statement ${n} is a DO block; its body cannot be checked, write the statements directly.`);
     if (w[0] === 'call') errors.push(`Statement ${n} is CALL; procedures cannot be checked.`);
+    // MERGE ... THEN DELETE / UPDATE acts on every matched row without a WHERE
+    // of its own; write separate UPDATE/DELETE/INSERT statements instead.
+    if (w.includes('merge') && w.includes('when')) errors.push(`Statement ${n} is a MERGE; its WHEN branches cannot be checked, write UPDATE/DELETE/INSERT with WHERE instead.`);
     if (w[0] === 'create' && w.slice(1, 4).some(x => x === 'function' || x === 'procedure')) {
       errors.push(`Statement ${n} creates a function or procedure; its body cannot be checked.`);
     }
