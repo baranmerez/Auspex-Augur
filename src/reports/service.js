@@ -70,9 +70,12 @@ export class ReportService {
 
   save(input) {
     const ref = this.ref(input);
-    const saved = this.library.saveDraft({ ...input, ref });
-    const meta = this.library.readMeta('draft', ref);
-    this.library.writeHtml('draft', ref, renderReport(meta));
+    // SQL, metadata and HTML are written under one lock, so they always match.
+    const saved = this.library.locked(() => {
+      const s = this.library.saveDraft({ ...input, ref });
+      this.library.writeHtml('draft', ref, renderReport(this.library.readMeta('draft', ref)));
+      return s;
+    });
     return { report: refLabel(ref), stage: 'draft', version: saved.version, sqlFile: saved.paths.sql, htmlFile: saved.paths.html };
   }
 
@@ -115,9 +118,13 @@ export class ReportService {
       summary, plan: result.plan, columns, preview: masked.rows, maskedColumns: masked.maskedColumns,
       previewTruncated: result.truncated, explainMs: run.explainMs, previewMs: run.previewMs, previewExecuted: result.previewExecuted,
     };
-    const updated = this.library.appendRun(stage, ref, run, last);
+    // The run is appended to the metadata as it is now on disk (another
+    // process may have saved meanwhile), and the HTML is rendered from that.
+    this.library.locked(() => {
+      const updated = this.library.appendRun(stage, ref, run, last);
+      this.library.writeHtml(stage, ref, renderReport(updated));
+    });
     const html = this.library.paths(stage, ref).html;
-    this.library.writeHtml(stage, ref, renderReport(updated));
     const learned = this.learn(result.profile, result.plan, summary);
 
     return {
@@ -134,8 +141,11 @@ export class ReportService {
 
   approve(input) {
     const ref = this.ref(input);
-    const res = this.library.approve(ref);
-    this.library.writeHtml('approved', ref, renderReport(res.meta));
+    const res = this.library.locked(() => {
+      const r = this.library.approve(ref);
+      this.library.writeHtml('approved', ref, renderReport(r.meta));
+      return r;
+    });
     // Its joins now count as "used" relations in the schema memory view.
     try { this.memory?.rebuildView(ref.db); } catch { /* the view is rebuilt on the next memory change */ }
     return { report: refLabel(ref), stage: 'approved', version: res.meta.approvedVersion, sqlFile: res.paths.sql, htmlFile: res.paths.html };
@@ -143,14 +153,16 @@ export class ReportService {
 
   // Re-renders every report's HTML from its JSON (after a template update). No database access.
   renderAll() {
-    const out = [];
-    for (const item of this.library.list().filter(i => i.stage !== 'execute')) {
-      const meta = this.library.readMeta(item.stage, item);
-      if (!meta) continue;
-      this.library.writeHtml(item.stage, item, renderReport(meta));
-      out.push(`${item.stage}:${refLabel(normalizeRef(item))}`);
-    }
-    return { rendered: out.length, reports: out };
+    return this.library.locked(() => {
+      const out = [];
+      for (const item of this.library.list().filter(i => i.stage !== 'execute')) {
+        const meta = this.library.readMeta(item.stage, item);
+        if (!meta) continue;
+        this.library.writeHtml(item.stage, item, renderReport(meta));
+        out.push(`${item.stage}:${refLabel(normalizeRef(item))}`);
+      }
+      return { rendered: out.length, reports: out };
+    });
   }
 
   list(filter = {}) {
