@@ -170,7 +170,8 @@ export class ReadOnlyDatabase {
   // text cells a spreadsheet would run as a formula (see spreadsheetSafe).
   exportCsv(profile, sql, params, fileName, delimiter, timeoutSeconds, mode = 'raw') {
     return this.audited('export_csv', { profile: profile ?? null, sql, params, fileName, timeoutSeconds, mode },
-      () => this._exportCsv(profile, sql, params, fileName, delimiter, timeoutSeconds, mode));
+      () => this._exportCsv(profile, sql, params, fileName, delimiter, timeoutSeconds, mode),
+      r => ({ bytes: r.bytes, stopReason: r.stopReason }));
   }
 
   runReport(profile, sql, options = {}) {
@@ -266,11 +267,20 @@ export class ReadOnlyDatabase {
       // Listening from the start: a stream error is never an unhandled rejection.
       const failed = new Promise((_, reject) => out.once('error', reject));
       failed.catch(() => {});
-      const write = chunk => (out.write(chunk) ? null : Promise.race([once(out, 'drain'), failed]));
+      let bytes = 0;
+      const write = chunk => {
+        bytes += Buffer.byteLength(chunk);
+        return out.write(chunk) ? null : Promise.race([once(out, 'drain'), failed]);
+      };
+      // Budget for the whole export, on top of the per-statement timeout: a
+      // row cap, a size cap and a total time cap. Hitting one ends the file
+      // cleanly at a row boundary; stopReason says which.
+      const maxBytes = this.config.exportMaxBytes ?? Infinity;
+      const deadline = Date.now() + (this.config.exportMaxMs ?? Infinity);
       let rowCount = 0;
       let columns = [];
       let textColumn = [];
-      let truncated = false;
+      let stopReason = null;
       try {
         await write('﻿'); // BOM so Excel opens UTF-8 (Turkish characters) correctly
         for (;;) {
@@ -281,11 +291,14 @@ export class ReadOnlyDatabase {
             await write(columns.map(c => csvCell(c, delimiter)).join(delimiter) + '\r\n');
           }
           for (const row of res.rows) {
-            if (rowCount >= this.config.exportMaxRows) { truncated = true; break; }
-            await write(row.map((v, i) => csvCell(textColumn[i] ? spreadsheetSafe(rawCell(v)) : rawCell(v), delimiter)).join(delimiter) + '\r\n');
+            if (rowCount >= this.config.exportMaxRows) { stopReason = 'rows'; break; }
+            const line = row.map((v, i) => csvCell(textColumn[i] ? spreadsheetSafe(rawCell(v)) : rawCell(v), delimiter)).join(delimiter) + '\r\n';
+            if (bytes + Buffer.byteLength(line) > maxBytes) { stopReason = 'bytes'; break; }
+            await write(line);
             rowCount++;
           }
-          if (truncated || res.rows.length < exportBatchSize) break;
+          if (stopReason || res.rows.length < exportBatchSize) break;
+          if (Date.now() >= deadline) { stopReason = 'time'; break; }
         }
         out.end();
         await Promise.race([once(out, 'finish'), failed]);
@@ -295,7 +308,7 @@ export class ReadOnlyDatabase {
         if (owned) fs.rmSync(target, { force: true });
         throw err;
       }
-      return { profile: name, file: target, columns, rowCount, truncated };
+      return { profile: name, file: target, columns, rowCount, bytes, truncated: stopReason !== null, stopReason };
     }, timeoutSeconds);
   }
 

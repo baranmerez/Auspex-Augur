@@ -197,6 +197,20 @@ test('run report with previewRows 0 and no ANALYZE does not execute the query', 
   }
 });
 
+test('export stops at the size budget with a complete last row', async () => {
+  const small = new ReadOnlyDatabase({ ...config, exportMaxBytes: 4096 });
+  try {
+    const r = await small.exportCsv('local', "select g as n, 'satır ' || g as ad from generate_series(1, 100000) g", [], 'budget', ',');
+    assert.equal(r.stopReason, 'bytes');
+    assert.equal(r.truncated, true);
+    const text = fs.readFileSync(r.file, 'utf8');
+    assert.ok(Buffer.byteLength(text) <= 4096 && text.endsWith('\r\n'));
+    assert.equal(text.trim().split('\r\n').length, r.rowCount + 1);
+  } finally {
+    await small.close();
+  }
+});
+
 test('explain returns a plan with params and does not execute', async () => {
   const res = await db.explain('local', 'select * from auspex_test.worker where id = $1', [1]);
   assert.match(res.plan, /Scan/);

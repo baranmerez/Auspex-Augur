@@ -170,7 +170,7 @@ flowchart LR
 | 🧬 `describe_table` | Columns, types, defaults, comments, constraints, indexes, incoming FKs, view definition; records the table in the schema memory and reports changes since the last time |
 | ▶️ `query` | One read-only statement, max `AUSPEX_MAX_ROWS` rows, `$1..$n` params, optional `timeoutSeconds` |
 | 🧠 `explain` | Estimated plan by default; `analyze: true` runs `EXPLAIN (ANALYZE, BUFFERS)` read-only, under the timeout, rolled back |
-| 📤 `export_csv` | Streams the result to a new UTF-8 CSV file (`<time>_<random>_<name>.csv`, never overwrites); returns only path, columns and row count |
+| 📤 `export_csv` | Streams the result to a new UTF-8 CSV file (`<time>_<random>_<name>.csv`, never overwrites) within a row, size and total-time budget; returns only path, columns, row count, size and `stopReason` when a limit cut it short |
 | 📝 `save_report` | Saves a read-only query as a versioned report draft in the library |
 | 🏁 `run_report` | Runs a report: plan + timings + masked preview, history, regenerated HTML; returns a compact summary |
 | ✅ `approve_report` | Moves a draft into `SELECT/` after the user approved it |
@@ -467,6 +467,8 @@ naming the problem.
 | `AUSPEX_DB_<NAME>` | none | Extra profile from the environment, e.g. `AUSPEX_DB_LOCAL`; the same name in the file and env is an error |
 | `AUSPEX_MAX_ROWS` | 500 | Row cap for `query` |
 | `AUSPEX_EXPORT_MAX_ROWS` | 100000 | Row cap for `export_csv` |
+| `AUSPEX_EXPORT_MAX_BYTES` | 104857600 | Size cap for one `export_csv` file (100 MB) |
+| `AUSPEX_EXPORT_MAX_MS` | 300000 | Total time cap for one `export_csv` (5 min), on top of the per-statement timeout |
 | `AUSPEX_STATEMENT_TIMEOUT_MS` | 30000 | Default statement timeout per call |
 | `AUSPEX_MAX_STATEMENT_TIMEOUT_MS` | 300000 | Ceiling for the per-call `timeoutSeconds` |
 | `AUSPEX_MAX_STATEMENT_TIMEOUT_MS_<NAME>` | global ceiling | Ceiling for one profile, e.g. `_SHOP=120000` |
