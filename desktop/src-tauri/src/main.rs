@@ -247,6 +247,35 @@ fn describe(url_text: &str) -> Map<String, Value> {
     m
 }
 
+// Per-profile ceiling override, as in loadConfig(): AUSPEX_MAX_STATEMENT_TIMEOUT_MS_<NAME>.
+fn profile_max_ms(name: &str, fallback: u64) -> u64 {
+    ms_env(&format!("AUSPEX_MAX_STATEMENT_TIMEOUT_MS_{}", name.to_uppercase()), fallback)
+}
+
+// The checks the server applies at startup (validateProfileUrl in config.js);
+// a profile failing them is shown with an error instead of as usable.
+fn profile_problem(name: &str, url_text: &str) -> Option<String> {
+    let mut chars = name.chars();
+    let name_ok = name.len() <= 40
+        && chars.next().is_some_and(|c| c.is_ascii_lowercase())
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-');
+    if !name_ok {
+        return Some("Invalid profile name (a-z, 0-9, - and _, starting with a letter); the server will not start.".into());
+    }
+    let u = match url::Url::parse(url_text) {
+        Ok(u) => u,
+        Err(_) => return Some("Not a postgresql:// URL; the server will not start.".into()),
+    };
+    if u.scheme() != "postgresql" && u.scheme() != "postgres" {
+        return Some("Not a postgresql:// URL; the server will not start.".into());
+    }
+    let query_password = u.query_pairs().any(|(k, _)| matches!(k.to_lowercase().as_str(), "password" | "sslpassword"));
+    if u.password().is_some() || query_password {
+        return Some("Password in the URL; move it to pgpass. The server will not start.".into());
+    }
+    None
+}
+
 fn profiles() -> Value {
     let home = auspex_home().to_string_lossy().to_string();
     let file = profiles_file();
@@ -266,7 +295,11 @@ fn profiles() -> Value {
                         item.insert("description".into(), p.get("description").cloned().unwrap_or(Value::Null));
                         item.insert("source".into(), json!("file"));
                         item.extend(describe(url_text));
-                        let max = p.get("maxTimeoutSeconds").and_then(Value::as_u64).map(|s| s * 1000).unwrap_or(max_ms);
+                        if let Some(problem) = profile_problem(&name.to_lowercase(), url_text) {
+                            item.insert("error".into(), json!(problem));
+                        }
+                        let file_max = p.get("maxTimeoutSeconds").and_then(Value::as_u64).map(|s| s * 1000).unwrap_or(max_ms);
+                        let max = profile_max_ms(&name, file_max);
                         item.insert("maxTimeoutSeconds".into(), json!(max / 1000));
                         item.insert("defaultTimeoutSeconds".into(), json!(default_ms.min(max) / 1000));
                         list.push(Value::Object(item));
@@ -290,8 +323,12 @@ fn profiles() -> Value {
             item.insert("description".into(), Value::Null);
             item.insert("source".into(), json!("env"));
             item.extend(describe(&value));
-            item.insert("maxTimeoutSeconds".into(), json!(max_ms / 1000));
-            item.insert("defaultTimeoutSeconds".into(), json!(default_ms.min(max_ms) / 1000));
+            if let Some(problem) = profile_problem(&name.to_lowercase(), &value) {
+                item.insert("error".into(), json!(problem));
+            }
+            let max = profile_max_ms(name, max_ms);
+            item.insert("maxTimeoutSeconds".into(), json!(max / 1000));
+            item.insert("defaultTimeoutSeconds".into(), json!(default_ms.min(max) / 1000));
             list.push(Value::Object(item));
         }
     }

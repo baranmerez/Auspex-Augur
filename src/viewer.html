@@ -1150,6 +1150,7 @@ function renderProfiles(rows) {
     return h('div', { class: 'panel pcard', style: reduceMotion ? null : `animation-delay:${i * 60}ms` },
       h('h3', {}, p.name, h('span', { class: 'badge ' + (p.source === 'file' ? 'mcp' : 'script') }, p.source === 'file' ? t('file') : t('env'))),
       h('div', { class: 'desc' }, p.description || h('span', { class: 'muted' }, t('no description'))),
+      p.error ? h('div', { class: 'error-box' }, p.error) : null,
       h('div', { class: 'stats' },
         h('div', {}, h('b', {}, fmt(g?.count || 0)), h('span', {}, t('operations'))),
         h('div', {}, h('b', { style: g?.errors ? 'color:var(--critical)' : null }, fmt(g?.errors || 0)), h('span', {}, t('errors'))),
