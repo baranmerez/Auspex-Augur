@@ -143,7 +143,7 @@ flowchart LR
 | 🧬 `describe_table` | Columns, types, defaults, comments, constraints, indexes, incoming FKs, view definition; records the table in the schema memory and reports changes since the last time |
 | ▶️ `query` | One read-only statement, max `AUSPEX_MAX_ROWS` rows, `$1..$n` params, optional `timeoutSeconds` |
 | 🧠 `explain` | Estimated plan by default; `analyze: true` runs `EXPLAIN (ANALYZE, BUFFERS)` read-only, under the timeout, rolled back |
-| 📤 `export_csv` | Streams the result to a UTF-8 CSV file; returns only path, columns and row count |
+| 📤 `export_csv` | Streams the result to a new UTF-8 CSV file (`<time>_<random>_<name>.csv`, never overwrites); returns only path, columns and row count |
 | 📝 `save_report` | Saves a read-only query as a versioned report draft in the library |
 | 🏁 `run_report` | Runs a report: plan + timings + masked preview, history, regenerated HTML; returns a compact summary |
 | ✅ `approve_report` | Moves a draft into `SELECT/` after the user approved it |

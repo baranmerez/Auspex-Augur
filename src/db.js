@@ -1,4 +1,6 @@
 import fs from 'node:fs';
+import crypto from 'node:crypto';
+import { once } from 'node:events';
 import path from 'node:path';
 import pg from 'pg';
 import { assertReadOnlyQuery, SqlGuardError } from './sqlGuard.js';
@@ -211,42 +213,57 @@ export class ReadOnlyDatabase {
     return this.withReadOnly(profile, async (client, name) => {
       await this.declareCursor(client, query, params);
       fs.mkdirSync(path.dirname(target), { recursive: true });
-      const out = fs.createWriteStream(target, { encoding: 'utf8', flags: 'wx' });
-      const done = new Promise((resolve, reject) => { out.on('finish', resolve); out.on('error', reject); });
+      // 'wx' never touches an existing file; only a file this call created is
+      // ever removed again.
+      const out = this.openExportStream(target);
+      let owned = false;
+      out.once('open', () => { owned = true; });
+      const closed = new Promise(resolve => out.once('close', resolve));
+      // Listening from the start: a stream error is never an unhandled rejection.
+      const failed = new Promise((_, reject) => out.once('error', reject));
+      failed.catch(() => {});
+      const write = chunk => (out.write(chunk) ? null : Promise.race([once(out, 'drain'), failed]));
       let rowCount = 0;
       let columns = [];
       let truncated = false;
       try {
-        out.write('﻿'); // BOM so Excel opens UTF-8 (Turkish characters) correctly
+        await write('﻿'); // BOM so Excel opens UTF-8 (Turkish characters) correctly
         for (;;) {
-          const res = await client.query({ text: `FETCH ${exportBatchSize} FROM ${cursorName}`, rowMode: 'array' });
+          const res = await Promise.race([client.query({ text: `FETCH ${exportBatchSize} FROM ${cursorName}`, rowMode: 'array' }), failed]);
           if (rowCount === 0) {
             columns = res.fields.map(f => f.name);
-            out.write(columns.map(c => csvCell(c, delimiter)).join(delimiter) + '\r\n');
+            await write(columns.map(c => csvCell(c, delimiter)).join(delimiter) + '\r\n');
           }
           for (const row of res.rows) {
             if (rowCount >= this.config.exportMaxRows) { truncated = true; break; }
-            out.write(row.map(v => csvCell(rawCell(v), delimiter)).join(delimiter) + '\r\n');
+            await write(row.map(v => csvCell(rawCell(v), delimiter)).join(delimiter) + '\r\n');
             rowCount++;
           }
           if (truncated || res.rows.length < exportBatchSize) break;
         }
-      } catch (err) {
         out.end();
-        await done.catch(() => {});
-        fs.rmSync(target, { force: true });
+        await Promise.race([once(out, 'finish'), failed]);
+      } catch (err) {
+        out.destroy();
+        await closed;
+        if (owned) fs.rmSync(target, { force: true });
         throw err;
       }
-      out.end();
-      await done;
       return { profile: name, file: target, columns, rowCount, truncated };
     }, timeoutSeconds);
   }
 
+  // Separate so tests can substitute a failing or slow stream.
+  openExportStream(target) {
+    return fs.createWriteStream(target, { encoding: 'utf8', flags: 'wx' });
+  }
+
+  // Timestamp plus a random part: two exports with the same name in the same
+  // second get different files.
   exportPath(fileName) {
     const base = String(fileName || 'export').replace(/\.csv$/i, '').replace(/[^A-Za-z0-9_.-]+/g, '_').replace(/^[._]+/, '').slice(0, 80) || 'export';
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    return path.join(this.config.exportDir, `${stamp}_${base}.csv`);
+    return path.join(this.config.exportDir, `${stamp}_${crypto.randomBytes(3).toString('hex')}_${base}.csv`);
   }
 
   formatCell(value) {
