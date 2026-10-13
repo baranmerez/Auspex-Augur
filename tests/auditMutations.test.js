@@ -33,7 +33,7 @@ test('report, script and memory changes are audited on success and failure, with
   const secretSql = 'select 4242 as sql_marker';
 
   assert.ok(!(await call('save_report', { ...ref, sql: secretSql })).isError);
-  assert.ok(!(await call('approve_report', ref)).isError);
+  assert.ok((await call('approve_report', ref)).isError, 'no run yet');
   assert.ok((await call('approve_report', { ...ref, name: 'missing' })).isError);
   assert.ok(!(await call('save_execute_script', { ...ref, name: 'fix', sql: 'BEGIN;\nUPDATE sales.t SET a = 4242 WHERE id = 1;\nROLLBACK;' })).isError);
   assert.ok((await call('save_execute_script', { ...ref, name: 'bad', sql: 'DELETE FROM sales.t;' })).isError);
@@ -52,7 +52,7 @@ test('report, script and memory changes are audited on success and failure, with
 
   const approvals = of('approve_report');
   assert.equal(approvals.length, 2);
-  assert.equal(approvals[0].version, 1);
+  assert.match(approvals[0].error, /no successful run/);
   assert.match(approvals[1].error, /No draft/);
 
   const scripts = of('save_execute_script');

@@ -239,7 +239,9 @@ library/
   `EXPLAIN ANALYZE` is skipped when the previous run took more than 30 s, so a
   slow query is not executed twice without asking.
 - **Approval:** drafts move to `SELECT/` only through `approve_report`, which
-  the server instructions restrict to an explicit user approval.
+  the server instructions restrict to an explicit user approval. Approval also
+  requires a successful run of the current SQL (`run_report`); an older
+  revision's run does not count.
 - **Change scripts:** `save_execute_script` only writes files. A script must
   start with `BEGIN`, end with `ROLLBACK`, contain no `COMMIT` and have `WHERE`
   on every `UPDATE`/`DELETE`; whoever runs it with a privileged role swaps the
