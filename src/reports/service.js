@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { Library, normalizeRef, refLabel, sqlHash } from './library.js';
 import { summarizePlan, planDigest } from './planSummary.js';
 import { maskRows } from './mask.js';
+import { relationsFromJsonPlan } from '../memory/planUsage.js';
 
 export const autoAnalyzeLimitMs = 30000;
 const templatePath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'template.html');
@@ -29,9 +30,30 @@ export function renderReport(meta) {
 }
 
 export class ReportService {
-  constructor(db, libraryDir) {
+  // memory (optional): a SchemaMemory that learns relations and used columns
+  // from each run's plan.
+  constructor(db, libraryDir, memory = null) {
     this.db = db;
     this.library = new Library(libraryDir);
+    this.memory = memory;
+  }
+
+  // Join column pairs of approved reports on one database: the "used" level
+  // of relations in the schema memory.
+  approvedJoinPairs(profile) {
+    return this.library.list()
+      .filter(i => i.stage === 'approved' && i.db === profile)
+      .flatMap(i => this.library.readMeta('approved', i)?.last?.summary?.joins ?? [])
+      .flatMap(j => j.columnPairs ?? []);
+  }
+
+  learn(profile, plan, summary) {
+    if (!this.memory) return {};
+    try {
+      return this.memory.recordSeen(profile, relationsFromJsonPlan(plan, summary.joins));
+    } catch (err) {
+      return { memoryError: err.message };
+    }
   }
 
   ref(input) {
@@ -87,6 +109,7 @@ export class ReportService {
     const updated = this.library.appendRun(stage, ref, run, last);
     const html = this.library.paths(stage, ref).html;
     this.library.writeHtml(stage, ref, renderReport(updated));
+    const learned = this.learn(result.profile, result.plan, summary);
 
     return {
       report: refLabel(ref), stage, version, htmlFile: html, note,
@@ -96,6 +119,7 @@ export class ReportService {
       maskedColumns: masked.maskedColumns,
       preview: masked.rows.slice(0, returnRows),
       previewTruncated: result.truncated || masked.rows.length > returnRows,
+      ...learned,
     };
   }
 

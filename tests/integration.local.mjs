@@ -13,6 +13,7 @@ import { loadConfig } from '../src/config.js';
 import { ReadOnlyDatabase } from '../src/db.js';
 import { listSchemas, listTables, describeTable, search } from '../src/catalog.js';
 import { ReportService } from '../src/reports/service.js';
+import { SchemaMemory } from '../src/memory/store.js';
 
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-it-'));
 const env = { ...process.env, AUSPEX_DATA_DIR: dataDir };
@@ -68,6 +69,23 @@ test('describe_table returns columns, FK and incoming references', async () => {
   assert.ok(region.referencedBy.some(r => r.from_table === 'auspex_test.worker'));
   const view = await describeTable(db, 'local', 'auspex_test', 'v_worker_region');
   assert.match(view.viewDefinition, /join/i);
+});
+
+test('describe_table returns key columns and referenced tables explicitly, and memory records them', async () => {
+  const worker = await describeTable(db, 'local', 'auspex_test', 'worker');
+  assert.equal(worker.kind, 'table');
+  assert.equal(typeof worker.oid, 'number');
+  assert.deepEqual(worker.columns.map(c => c.attnum), [1, 2, 3, 4, 5, 6]);
+  const fk = worker.constraints.find(c => c.type === 'foreign key');
+  assert.deepEqual([fk.columns, fk.ref_schema, fk.ref_table, fk.ref_columns], [['region_id'], 'auspex_test', 'region', ['id']]);
+  const region = await describeTable(db, 'local', 'auspex_test', 'region');
+  const incoming = region.referencedBy.find(r => r.from_name === 'worker');
+  assert.deepEqual([incoming.from_schema, incoming.columns, incoming.ref_columns], ['auspex_test', ['region_id'], ['id']]);
+
+  const memory = new SchemaMemory(path.join(dataDir, 'memory'));
+  assert.equal(memory.recordDescribe(worker).recorded, 'first time');
+  assert.equal(memory.recordDescribe(await describeTable(db, 'local', 'auspex_test', 'worker')).changesSinceLast, undefined);
+  assert.deepEqual(memory.knowledge('local', 'auspex_test', 'worker').relations.fk, ['region_id -> auspex_test.region(id)']);
 });
 
 test('query returns rows with Turkish text, dates as written, and params', async () => {
@@ -227,6 +245,21 @@ test('report library: save, run with ANALYZE, mask, render HTML, version and app
   assert.equal(approved.stage, 'approved');
   assert.ok(fs.existsSync(approved.htmlFile));
   assert.deepEqual(svc.list().map(i => i.stage), ['approved']);
+});
+
+test('report runs teach the schema memory which tables and columns were used', async () => {
+  const memory = new SchemaMemory(fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-it-mem-')));
+  const svc = new ReportService(db, fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-it-lib-')), memory);
+  const ref = { db: 'local', schema: 'auspex_test', category: 'General', name: 'Wages by region' };
+  svc.save({ ...ref, sql: 'select r.name, avg(w.daily_wage) from auspex_test.worker w join auspex_test.region r on r.id = w.region_id group by r.name' });
+  const run = await svc.run(ref);
+  assert.equal(run.memoryError, undefined);
+  const worker = memory.readTable('local', 'auspex_test', 'worker');
+  assert.equal(worker.describedAt, null, 'seen, not described');
+  assert.deepEqual(Object.keys(worker.usedColumns).sort(), ['daily_wage', 'region_id']);
+  assert.ok(memory.readTable('local', 'auspex_test', 'region').usedColumns.name);
+  svc.approve(ref);
+  assert.deepEqual(svc.approvedJoinPairs('local').map(p => [p.left, p.right].sort().join(' = ')), ['auspex_test.region.id = auspex_test.worker.region_id']);
 });
 
 test('report library refuses unknown databases and non-SELECT drafts', async () => {

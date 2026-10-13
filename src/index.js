@@ -6,6 +6,8 @@ import { loadConfig, describeConnection } from './config.js';
 import { ReadOnlyDatabase } from './db.js';
 import { listSchemas, listTables, describeTable, search } from './catalog.js';
 import { ReportService } from './reports/service.js';
+import { SchemaMemory, noteKinds } from './memory/store.js';
+import { relationsFromTextPlan } from './memory/planUsage.js';
 
 let config;
 try {
@@ -15,7 +17,8 @@ try {
   process.exit(1);
 }
 const db = new ReadOnlyDatabase(config, { source: 'mcp' });
-const reports = new ReportService(db, config.libraryDir);
+const memory = new SchemaMemory(config.memoryDir, { approvedJoins: profile => reports.approvedJoinPairs(profile) });
+const reports = new ReportService(db, config.libraryDir, memory);
 
 const defaultTimeoutS = config.statementTimeoutMs / 1000;
 const maxTimeoutS = config.maxStatementTimeoutMs / 1000;
@@ -32,15 +35,29 @@ const instructions = [
   'Call approve_report only after the user explicitly approved that report in this conversation.',
   'Change scripts (INSERT/UPDATE/DELETE/DDL) are never executed through Auspex: write them with save_execute_script for the user to run with a privileged role.',
   'run_report with analyze="auto" skips EXPLAIN ANALYZE when the previous run took longer than 30 s; ask the user before forcing analyze="always" on such reports.',
+  'Schema memory: Auspex keeps local notes per profile about the tables you worked with. describe_table records a table and reports changesSinceLast (tell the user about them); run_report and explain record the tables and columns their plans used. It never crawls the catalog on its own.',
+  'Before describing a table again, call table_knowledge: it answers from memory without touching the database.',
+  'When the user states a business rule, save it with remember kind=rule. Save a finding from data as kind=observation with evidence (the SQL and aggregate figures only, never row values or personal data). Your own interpretations are kind=inference; never present them as fact, and confirm one only after the user agreed.',
+  'Results may carry notes for the tables they touched; take them into account.',
+  'When a report or analysis is finished and results listed unexploredNeighbors, name them and ask the user whether to explore them. Only after a yes, call describe_table on them (structure only); do not query their data unless asked.',
 ].join(' ');
 
-const server = new McpServer({ name: 'auspex', version: '0.8.0' }, { instructions });
+const server = new McpServer({ name: 'auspex', version: '0.9.0' }, { instructions });
 
 const profileArg = z.string().min(1).describe('Required profile name (see list_profiles). Use only a profile the user named in this conversation; otherwise ask the user first.');
 const paramsArg = z.array(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional()
   .describe('Values for $1, $2, ... placeholders. Prefer these over inlining literals.');
 const timeoutArg = z.number().min(1).optional()
   .describe(`Statement timeout in seconds for this call. Default ${defaultTimeoutS}; maximum ${maxTimeoutS} unless the profile has a lower limit (see list_profiles). Tell the user before using more than the default.`);
+
+// Memory is a side effect of database work: it must never fail the tool.
+function learn(fn) {
+  try {
+    return fn() ?? {};
+  } catch (err) {
+    return { memoryError: err.message };
+  }
+}
 
 // Wraps a handler: JSON output and error reporting. Audit logging happens in
 // ReadOnlyDatabase, so every database call is recorded exactly once.
@@ -101,13 +118,20 @@ tool('list_tables', {
 
 tool('describe_table', {
   title: 'Describe table',
-  description: 'Shows columns, types, nullability, defaults, comments, constraints, indexes, incoming foreign keys and (for views) the definition.',
+  description: 'Shows columns, types, nullability, defaults, comments, constraints, indexes, incoming foreign keys and (for views) the definition. Reads the catalog only. Also records the table in the schema memory; the memory field reports changes since the last time and notes on the table.',
   inputSchema: {
     profile: profileArg,
     schema: z.string(),
     table: z.string(),
   },
-}, async ({ profile, schema, table }) => describeTable(db, profile, schema, table));
+}, async ({ profile, schema, table }) => {
+  const { oid, columns, ...result } = await describeTable(db, profile, schema, table);
+  return {
+    ...result,
+    columns: columns.map(({ attnum, ...c }) => c),
+    memory: learn(() => memory.recordDescribe({ ...result, oid, columns })),
+  };
+});
 
 tool('query', {
   title: 'Run read-only query',
@@ -119,7 +143,10 @@ tool('query', {
     maxRows: z.number().int().min(1).max(config.maxRows).optional(),
     timeoutSeconds: timeoutArg,
   },
-}, async ({ profile, sql, params, maxRows, timeoutSeconds }) => db.query(profile, sql, params, maxRows, timeoutSeconds));
+}, async ({ profile, sql, params, maxRows, timeoutSeconds }) => {
+  const result = await db.query(profile, sql, params, maxRows, timeoutSeconds);
+  return { ...result, ...learn(() => memory.notesForSql(result.profile, sql)) };
+});
 
 tool('explain', {
   title: 'Explain query plan',
@@ -131,7 +158,10 @@ tool('explain', {
     analyze: z.boolean().optional().describe('Execute the query and report actual timings (EXPLAIN ANALYZE, BUFFERS). Default false.'),
     timeoutSeconds: timeoutArg,
   },
-}, async ({ profile, sql, params, analyze, timeoutSeconds }) => db.explain(profile, sql, params, analyze === true, timeoutSeconds));
+}, async ({ profile, sql, params, analyze, timeoutSeconds }) => {
+  const result = await db.explain(profile, sql, params, analyze === true, timeoutSeconds);
+  return { ...result, ...learn(() => memory.recordSeen(result.profile, relationsFromTextPlan(result.plan))) };
+});
 
 tool('export_csv', {
   title: 'Export query to CSV',
@@ -216,6 +246,45 @@ tool('save_execute_script', {
     replace: z.boolean().optional().describe('Overwrite an existing script with the same name.'),
   },
 }, async args => reports.saveExecute(args));
+
+// ---------- schema memory ----------
+tool('table_knowledge', {
+  title: 'Table knowledge from memory',
+  description: 'Answers from the local schema memory, without touching the database: structure summary (key, used and noted columns first), foreign keys, relations used in approved reports, name-based suggestions (unconfirmed), notes, recent schema changes and unexplored neighbors. If the table is not in memory, describe_table records it.',
+  inputSchema: {
+    profile: profileArg,
+    schema: z.string(),
+    table: z.string(),
+  },
+}, async ({ profile, schema, table }) => memory.knowledge(db.resolveProfile(profile), schema, table));
+
+tool('remember', {
+  title: 'Remember a fact about the data',
+  description: 'Adds, confirms or archives a note in the local schema memory of a profile (no database access). kind=rule: a business rule the user stated. kind=observation: a finding backed by evidence (SQL plus aggregate figures; dated). kind=inference: your own interpretation, shown as unconfirmed. Notes never contain row values or personal data. action=confirm turns an inference into a rule or observation, only after the user agreed. Notes are archived with a reason, never deleted.',
+  inputSchema: {
+    profile: profileArg,
+    action: z.enum(['add', 'confirm', 'archive']),
+    kind: z.enum(noteKinds).optional().describe('add: rule, observation or inference. confirm: rule or observation.'),
+    schema: z.string().optional().describe('With table: the note is about this table. Leave both out for a database-wide note.'),
+    table: z.string().optional(),
+    column: z.string().optional(),
+    text: z.string().optional().describe('The note, one or two sentences.'),
+    evidenceSql: z.string().optional().describe('Observation: the read-only SQL behind the finding.'),
+    evidenceFigures: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).optional()
+      .describe('Observation: aggregate figures, e.g. {"rows": 223000, "filled": 0}. Never row values.'),
+    id: z.number().int().optional().describe('confirm / archive: the note id.'),
+    reason: z.string().optional().describe('archive: why the note is no longer valid.'),
+  },
+}, async ({ profile, action, kind, schema, table, column, text, evidenceSql, evidenceFigures, id, reason }) => {
+  const name = db.resolveProfile(profile);
+  if (action === 'add') {
+    const evidence = evidenceSql || evidenceFigures ? { sql: evidenceSql, figures: evidenceFigures } : undefined;
+    return { note: memory.addNote(name, { kind, schema, table, column, text, evidence }) };
+  }
+  if (id === undefined) throw new Error(`action=${action} needs id.`);
+  if (action === 'confirm') return { note: memory.confirmNote(name, id, kind) };
+  return { note: memory.archiveNote(name, id, reason) };
+});
 
 async function shutdown() {
   await db.close().catch(() => {});

@@ -29,12 +29,17 @@ order by c.relname
 limit 1000`;
 
 const relationOidSql = `
-select c.oid, c.relkind
+select c.oid::bigint as oid, c.relkind,
+       case when c.reltuples < 0 then null else c.reltuples::bigint end as estimated_rows, -- -1 = never analyzed
+       obj_description(c.oid, 'pg_class') as comment
 from pg_class c join pg_namespace n on n.oid = c.relnamespace
 where n.nspname = $1 and c.relname = $2`;
 
+const relationKinds = { r: 'table', p: 'partitioned', v: 'view', m: 'matview', f: 'foreign' };
+
 const columnsSql = `
 select a.attname as column,
+       a.attnum,
        format_type(a.atttypid, a.atttypmod) as type,
        a.attnotnull as not_null,
        pg_get_expr(d.adbin, d.adrelid) as default,
@@ -45,14 +50,26 @@ left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
 where a.attrelid = $1 and a.attnum > 0 and not a.attisdropped
 order by a.attnum`;
 
+// Key columns and the referenced table are returned explicitly: the text of
+// pg_get_constraintdef omits the schema when it is on the search_path.
+const keyColumns = (keys, rel) => `(select array_agg(a.attname::text order by k.ord)
+        from unnest(${keys}) with ordinality k(attnum, ord)
+        join pg_attribute a on a.attrelid = ${rel} and a.attnum = k.attnum)`;
+
 const constraintsSql = `
-select conname as name,
-       case contype when 'p' then 'primary key' when 'u' then 'unique' when 'f' then 'foreign key'
-                    when 'c' then 'check' when 'x' then 'exclusion' else contype::text end as type,
-       pg_get_constraintdef(oid) as definition
-from pg_constraint
-where conrelid = $1
-order by contype, conname`;
+select con.conname as name,
+       case con.contype when 'p' then 'primary key' when 'u' then 'unique' when 'f' then 'foreign key'
+                        when 'c' then 'check' when 'x' then 'exclusion' else con.contype::text end as type,
+       pg_get_constraintdef(con.oid) as definition,
+       ${keyColumns('con.conkey', 'con.conrelid')} as columns,
+       fn.nspname as ref_schema,
+       fc.relname as ref_table,
+       ${keyColumns('con.confkey', 'con.confrelid')} as ref_columns
+from pg_constraint con
+left join pg_class fc on fc.oid = con.confrelid
+left join pg_namespace fn on fn.oid = fc.relnamespace
+where con.conrelid = $1
+order by con.contype, con.conname`;
 
 const indexesSql = `
 select i.relname as name, pg_get_indexdef(x.indexrelid) as definition
@@ -62,8 +79,12 @@ order by i.relname`;
 
 const referencedBySql = `
 select n.nspname || '.' || c.relname as from_table,
+       n.nspname as from_schema,
+       c.relname as from_name,
        con.conname as name,
-       pg_get_constraintdef(con.oid) as definition
+       pg_get_constraintdef(con.oid) as definition,
+       ${keyColumns('con.conkey', 'con.conrelid')} as columns,
+       ${keyColumns('con.confkey', 'con.confrelid')} as ref_columns
 from pg_constraint con
 join pg_class c on c.oid = con.conrelid
 join pg_namespace n on n.oid = c.relnamespace
@@ -148,7 +169,7 @@ export async function describeTable(db, profile, schema, table) {
   return db.audited('describe_table', { profile: profile ?? null, schema, table }, () => db.withReadOnly(profile, async (client, name) => {
     const rel = await client.query(relationOidSql, [schema, table]);
     if (!rel.rows.length) throw new Error(`Relation ${schema}.${table} not found.`);
-    const { oid, relkind } = rel.rows[0];
+    const { oid, relkind, estimated_rows: estimatedRows, comment } = rel.rows[0];
     const [columns, constraints, indexes, referencedBy] = [
       await client.query(columnsSql, [oid]),
       await client.query(constraintsSql, [oid]),
@@ -158,6 +179,12 @@ export async function describeTable(db, profile, schema, table) {
     const result = {
       profile: name,
       relation: `${schema}.${table}`,
+      schema,
+      table,
+      kind: relationKinds[relkind] ?? relkind,
+      oid: Number(oid),
+      estimated_rows: estimatedRows === null ? null : Number(estimatedRows),
+      comment,
       columns: columns.rows,
       constraints: constraints.rows,
       indexes: indexes.rows,
