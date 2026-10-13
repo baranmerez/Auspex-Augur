@@ -140,6 +140,21 @@ test('quoted and Unicode-escaped spellings of a forbidden function get the same 
   assert.equal(ok.rows[0][0] ?? ok.rows[0].v, 'a');
 });
 
+test('spellings the server reads as pg_sleep are all rejected by the guard', async () => {
+  // EXPLAIN VERBOSE (without ANALYZE) shows what PostgreSQL resolves the call
+  // to without running it; raw() bypasses the guard on purpose.
+  for (const sql of [
+    "select U&\"pg!005fsleep\" -- comment\nUESCAPE '!' (0)",
+    "select U&\"pg!005fsleep\" /* comment */ UESCAPE '!' (0)",
+    'select 1 --x\r, pg_sleep(0)',
+  ]) {
+    const plan = (await raw(`EXPLAIN (VERBOSE) ${sql}`)).rows.map(r => r['QUERY PLAN']).join('\n');
+    assert.match(plan, /pg_sleep/, `server resolves: ${JSON.stringify(sql)}`);
+    await assert.rejects(db.query('local', sql), /pg_sleep|not allowed/, `guard rejects: ${JSON.stringify(sql)}`);
+  }
+  await assert.rejects(db.query('local', "select query_to_xml('select 1', true, false, '')"), /query_to_xml/);
+});
+
 test('extended protocol rejects stacked statements', async () => {
   const attempt = db.withReadOnly('local', client =>
     db.declareCursor(client, 'select 1; delete from auspex_test.worker', []));

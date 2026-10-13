@@ -110,9 +110,12 @@ flowchart LR
    `SELECT`/`WITH`/`VALUES`/`TABLE`; rejects data-modifying CTEs, `SELECT INTO`,
    `FOR UPDATE` and side-effect functions (`set_config`, `pg_terminate_backend`,
    `pg_sleep`, `lo_*`, `dblink*`, `pg_read_*`, `nextval`...), also when the
-   name is quoted, schema-qualified or Unicode-escaped. Runs before connecting.
-   It is a lexical check only: user-defined functions that call these functions
-   internally are not seen, so what the role may EXECUTE is limited by its grants.
+   name is quoted, schema-qualified or Unicode-escaped (comments and a lone
+   carriage return are read the way PostgreSQL reads them), and built-ins that
+   run SQL given as text (`query_to_xml*`, `cursor_to_xml*`, `ts_stat`,
+   `ts_rewrite`). Runs before connecting. It is a lexical check only: functions
+   that call these internally are not seen, so what the role may EXECUTE is
+   limited by its grants.
 2. **Transaction wrapper** (`src/db.js`): every call runs in
    `BEGIN ... READ ONLY` with `statement_timeout`, `lock_timeout` and
    `idle_in_transaction_session_timeout`, and always ends with `ROLLBACK`.

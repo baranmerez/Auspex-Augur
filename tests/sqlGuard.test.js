@@ -29,6 +29,9 @@ const allowed = [
   ['forbidden name inside a string', "select 'pg_sleep(0)'", null],
   ['forbidden name inside a comment', 'select 1 -- pg_sleep(0)', null],
   ['unicode-escaped safe identifier', String.raw`select U&"d\0061ta" from t`, null],
+  ['UESCAPE with a comment on a safe identifier', "select U&\"d!0061ta\" /* c */ UESCAPE '!' from t", null],
+  ['carriage return inside a string', "select 'a\rb'", null],
+  ['table_to_xml on a table (no SQL text)', "select table_to_xml('t', true, false, '')", null],
 ];
 
 for (const [name, sql, expected] of allowed) {
@@ -73,6 +76,16 @@ const rejected = [
   ['comment between name and parenthesis', 'select "pg_sleep" /* x */ (0)'],
   ['quoted name with mixed-case unquoted call', 'select PG_SLEEP(0)'],
   ['quoted set_config', `select "set_config"('role', 'postgres', false)`],
+  ['UESCAPE after a line comment', "select U&\"pg!005fsleep\" -- x\nUESCAPE '!' (10)"],
+  ['UESCAPE after a block comment', "select U&\"pg!005fsleep\" /* x */ UESCAPE '!' (10)"],
+  ['comment between UESCAPE and its literal', "select U&\"pg!005fsleep\" UESCAPE /* x */ '!' (10)"],
+  ['line comment ended by a carriage return', 'select 1 --x\r, pg_sleep(100)'],
+  ['line comment ended by CR hiding a second statement', 'select 1 --x\r; delete from t'],
+  ['dynamic SQL through query_to_xml', "select query_to_xml('select pg_advisory_lock(1)', true, false, '')"],
+  ['dynamic SQL through query_to_xmlschema', "select query_to_xmlschema('select 1', true, false, '')"],
+  ['dynamic SQL through cursor_to_xml', "select cursor_to_xml('c', 1, true, false, '')"],
+  ['dynamic SQL through ts_stat', "select * from ts_stat('select pg_advisory_lock(1)')"],
+  ['invalid UESCAPE literal', "select U&\"a\" UESCAPE 'xy'"],
 ];
 
 for (const [name, sql] of rejected) {
