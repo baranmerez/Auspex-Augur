@@ -1152,7 +1152,7 @@ function renderProfiles(rows) {
         h('dt', {}, t('Server')), h('dd', {}, `${p.host}:${p.port}`),
         h('dt', {}, t('Database')), h('dd', {}, p.database),
         h('dt', {}, t('User')), h('dd', {}, p.user),
-        h('dt', {}, t('Timeout')), h('dd', {}, t('{d} s default · max {m} s', { d: data.defaultTimeoutSeconds, m: p.maxTimeoutSeconds })),
+        h('dt', {}, t('Timeout')), h('dd', {}, t('{d} s default · max {m} s', { d: p.defaultTimeoutSeconds ?? data.defaultTimeoutSeconds, m: p.maxTimeoutSeconds })),
         h('dt', {}, t('Password')), h('dd', {}, p.passwordInString ? t('in URL (move it to pgpass)') : 'pgpass')),
       h('div', { style: 'margin-top:12px;display:flex;gap:8px' },
         h('button', { class: 'icon-btn', onclick: () => { F.profile.value = p.name; switchTab('ops'); } }, t('Show operations'))));

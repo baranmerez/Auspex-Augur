@@ -266,6 +266,7 @@ fn profiles() -> Value {
                         item.extend(describe(url_text));
                         let max = p.get("maxTimeoutSeconds").and_then(Value::as_u64).map(|s| s * 1000).unwrap_or(max_ms);
                         item.insert("maxTimeoutSeconds".into(), json!(max / 1000));
+                        item.insert("defaultTimeoutSeconds".into(), json!(default_ms.min(max) / 1000));
                         list.push(Value::Object(item));
                     }
                 }
@@ -288,6 +289,7 @@ fn profiles() -> Value {
             item.insert("source".into(), json!("env"));
             item.extend(describe(&value));
             item.insert("maxTimeoutSeconds".into(), json!(max_ms / 1000));
+            item.insert("defaultTimeoutSeconds".into(), json!(default_ms.min(max_ms) / 1000));
             list.push(Value::Object(item));
         }
     }
