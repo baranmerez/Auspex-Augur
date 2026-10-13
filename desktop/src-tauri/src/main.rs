@@ -1,6 +1,6 @@
 // Auspex Augur desktop viewer. Shows the shared viewer page (../src/viewer.html) in a
-// window and serves its data through the `api` command: the audit log and the
-// profiles under ~/.auspex. Read-only, never connects to a database, never
+// window and serves its data through the `api` command: the audit log, the
+// profiles, the report library and the schema memory under ~/.auspex. Read-only, never connects to a database, never
 // returns passwords. Mirrors the routes of src/viewer.js; the Node config in
 // src/config.js stays the source of truth for validation.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
@@ -48,6 +48,57 @@ fn profiles_file() -> PathBuf {
 
 fn library_dir() -> PathBuf {
     env("AUSPEX_LIBRARY_DIR").map(PathBuf::from).unwrap_or_else(|| auspex_home().join("library"))
+}
+
+fn memory_dir() -> PathBuf {
+    env("AUSPEX_MEMORY_DIR").map(PathBuf::from).unwrap_or_else(|| auspex_home().join("memory"))
+}
+
+// Profile names: same rule as config.js.
+fn valid_profile(s: &str) -> bool {
+    let mut chars = s.chars();
+    matches!(chars.next(), Some('a'..='z'))
+        && s.len() <= 40
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+}
+
+// A table file of the schema memory: tables/<segment>/<segment>.json, with the
+// segment alphabet of memory/store.js (fileSegment).
+fn valid_memory_file(s: &str) -> bool {
+    let seg = |p: &str| !p.is_empty() && p.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || "_~-".contains(c));
+    let parts: Vec<&str> = s.split('/').collect();
+    parts.len() == 3 && parts[0] == "tables" && seg(parts[1]) && parts[2].strip_suffix(".json").is_some_and(seg)
+}
+
+fn read_json(path: &std::path::Path) -> Result<Value, String> {
+    let text = fs::read_to_string(path).map_err(|e| if e.kind() == std::io::ErrorKind::NotFound { "File not found".to_string() } else { e.to_string() })?;
+    serde_json::from_str(&text).map_err(|e| e.to_string())
+}
+
+// graph.json is the derived view written by the memory module after every change.
+fn memory_summary() -> Value {
+    let root = memory_dir();
+    let mut profiles = Vec::new();
+    for name in sub_dirs(&root).into_iter().filter(|n| valid_profile(n)) {
+        if let Ok(view) = read_json(&root.join(&name).join("graph.json")) {
+            let mut item = Map::new();
+            item.insert("name".into(), json!(name));
+            item.insert("generatedAt".into(), view.get("generatedAt").cloned().unwrap_or(Value::Null));
+            if let Some(Value::Object(summary)) = view.get("summary") {
+                item.extend(summary.clone());
+            }
+            profiles.push(Value::Object(item));
+        }
+    }
+    json!({ "memoryDir": root.to_string_lossy(), "profiles": profiles })
+}
+
+fn memory_profile(query: &HashMap<String, String>) -> Result<PathBuf, String> {
+    let name = query.get("profile").cloned().unwrap_or_default();
+    if !valid_profile(&name) {
+        return Err("Invalid profile name".into());
+    }
+    Ok(memory_dir().join(name))
 }
 
 const STAGES: [(&str, &str); 3] = [("draft", "_drafts"), ("approved", "SELECT"), ("execute", "EXECUTE")];
@@ -262,6 +313,15 @@ fn api(path: String, query: HashMap<String, String>) -> Result<Value, String> {
         "/api/profiles" => Ok(profiles()),
         "/api/reports" => Ok(list_reports()),
         "/api/report" => report_content(&query),
+        "/api/memory" => Ok(memory_summary()),
+        "/api/memory/graph" => read_json(&memory_profile(&query)?.join("graph.json")),
+        "/api/memory/table" => {
+            let file = query.get("file").cloned().unwrap_or_default();
+            if !valid_memory_file(&file) {
+                return Err("Invalid memory file".into());
+            }
+            read_json(&file.split('/').fold(memory_profile(&query)?, |p, part| p.join(part)))
+        }
         "/api/logs" => {
             let day = query.get("day");
             let from = day.or_else(|| query.get("from")).cloned().unwrap_or_default();
@@ -349,4 +409,22 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("error while running Auspex Augur");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn memory_paths_stay_inside_the_memory_folder() {
+        assert!(valid_profile("shop-test_2"));
+        for bad in ["", "Shop", "1shop", "../x", "a/b", "a.b"] {
+            assert!(!valid_profile(bad), "{bad}");
+        }
+        assert!(valid_memory_file("tables/sales/orders.json"));
+        assert!(valid_memory_file("tables/~41b/~con.json"));
+        for bad in ["tables/../x.json", "tables/a/b/c.json", "tables/a/.json", "graph.json", "tables/a/b.JSON", "tables/A/b.json", r"tables\a\b.json"] {
+            assert!(!valid_memory_file(bad), "{bad}");
+        }
+    }
 }

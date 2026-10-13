@@ -149,6 +149,10 @@ test('graph lists explored, seen and unexplored tables', () => {
   assert.deepEqual(state, { 'sales.orders': 'explored', 'sales.regions': 'seen', 'sales.customers': 'unexplored', 'sales.order_lines': 'unexplored' });
   assert.equal(g.edges.length, 2);
   assert.deepEqual(mem.profiles(), ['shop']);
+  assert.equal(g.nodes.find(n => n.id === 'sales.orders').file, 'tables/sales/orders.json');
+  const view = JSON.parse(fs.readFileSync(path.join(mem.root, 'shop', 'graph.json'), 'utf8'));
+  assert.deepEqual([view.summary.explored, view.summary.seen, view.summary.unexplored, view.summary.edges], [1, 1, 2, 2]);
+  assert.deepEqual(view.changelog.map(e => e.event), ['explored']);
   assert.throws(() => mem.readTable('../x', 'a', 'b'), MemoryError);
 });
 

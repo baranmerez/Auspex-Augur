@@ -127,6 +127,8 @@ export class ReportService {
     const ref = this.ref(input);
     const res = this.library.approve(ref);
     this.library.writeHtml('approved', ref, renderReport(res.meta));
+    // Its joins now count as "used" relations in the schema memory view.
+    try { this.memory?.rebuildView(ref.db); } catch { /* the view is rebuilt on the next memory change */ }
     return { report: refLabel(ref), stage: 'approved', version: res.meta.approvedVersion, sqlFile: res.paths.sql, htmlFile: res.paths.html };
   }
 
