@@ -38,7 +38,7 @@
   <tr>
     <td width="33%" valign="top"><h3>🛡️ Safe by construction</h3>Read-only role, SQL guard, <code>READ ONLY</code> transactions, cursor-only execution. Writes are refused at every layer that can see them.</td>
     <td width="33%" valign="top"><h3>🔎 Built for exploration</h3>Search tables and columns across schemas, describe structure and relationships, sample data, read plans with <code>EXPLAIN ANALYZE</code>.</td>
-    <td width="33%" valign="top"><h3>📜 Everything audited</h3>Every call — including rejected ones — lands in a daily JSONL log with SQL, parameters, duration, row count and errors.</td>
+    <td width="33%" valign="top"><h3>📜 Everything audited</h3>Every database call — including ones the SQL guard rejects — and every report, script and memory change lands in a daily JSONL log with duration, row count and errors.</td>
   </tr>
   <tr>
     <td valign="top"><h3>🗂️ Many databases</h3>Named profiles in one file, no default database: the agent must name the database, and is told to ask you first.</td>
@@ -121,8 +121,21 @@ flowchart LR
    data-modifying CTEs at the server.
 4. **Database role (the real guarantee):** the role only has `CONNECT`, `USAGE`
    and `SELECT`. Everything else is defense in depth.
-5. **Audit log:** every call is appended to `<data dir>/logs/YYYY-MM-DD.jsonl`
-   (time, source, tool, profile, SQL, params, row count, duration, error).
+5. **Audit log:** appended to `<data dir>/logs/YYYY-MM-DD.jsonl`.
+   - Database calls (`query`, `explain`, `export_csv`, `run_report`, catalog
+     tools): time, source, tool, profile, SQL, params, row count, duration,
+     error — also when the SQL guard rejects the query.
+   - Library and memory changes (`save_report`, `approve_report`,
+     `save_execute_script`, `render_reports`, `remember`): which report or
+     note, the SQL hash and version or note id and status, and the error.
+     The SQL text, note text, evidence and reasons are not logged.
+   - Not logged: tools that only read local files (`table_knowledge`,
+     `list_reports`, `list_profiles`) and calls the MCP SDK rejects for
+     invalid arguments before any handler runs.
+   - Writing is best effort: if the log cannot be written, the call still
+     runs and the failure goes to stderr. The file is plain appendable JSONL
+     on your disk, readable and editable by your user account; it is a record,
+     not tamper-proof evidence.
 
 </details>
 
