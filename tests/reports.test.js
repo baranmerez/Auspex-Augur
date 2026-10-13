@@ -150,10 +150,50 @@ test('EXECUTE lint: BEGIN first, ROLLBACK last, no COMMIT, WHERE on UPDATE/DELET
   assert.match(bad, /UPDATE without WHERE/);
   assert.match(bad, /DELETE without WHERE/);
   assert.match(bad, /COMMIT is never written/);
-  // comments, strings and DO blocks do not confuse the checks
-  assert.deepEqual(lintExecuteScript("BEGIN; -- commit later\nDO $$ BEGIN UPDATE t SET a = 1; END $$;\nSELECT 'commit; delete from t';\nROLLBACK;").errors, []);
+  // comments and strings do not confuse the checks
+  assert.deepEqual(lintExecuteScript("BEGIN; -- commit later\n/* delete from t; */ SELECT 'commit; delete from t', $$ rollback; $$;\nROLLBACK;").errors, []);
   assert.match(lintExecuteScript('BEGIN; TRUNCATE t; ROLLBACK;').warnings[0], /TRUNCATE/);
 });
+
+const validScripts = [
+  ['subquery in WHERE', 'BEGIN;\nDELETE FROM t WHERE id IN (SELECT id FROM u WHERE flag);\nROLLBACK;'],
+  ['UPDATE with FROM and WHERE', 'BEGIN;\nUPDATE t SET a = u.a FROM u WHERE u.id = t.id;\nROLLBACK;'],
+  ['UPDATE with scalar subquery and WHERE', 'BEGIN;\nUPDATE t SET a = (SELECT max(b) FROM u WHERE u.k = t.k) WHERE t.id = 1;\nROLLBACK;'],
+  ['data-modifying CTE with WHERE', 'BEGIN;\nWITH d AS (DELETE FROM t WHERE id = 1 RETURNING *) INSERT INTO arch SELECT * FROM d;\nROLLBACK;'],
+  ['upsert', 'BEGIN;\nINSERT INTO t (id, a) VALUES (1, 2) ON CONFLICT (id) DO UPDATE SET a = excluded.a;\nROLLBACK;'],
+  ['locking read', 'BEGIN;\nSELECT * FROM t WHERE id = 1 FOR NO KEY UPDATE;\nSELECT * FROM t WHERE id = 1 FOR UPDATE;\nROLLBACK;'],
+  ['savepoints', 'BEGIN;\nSAVEPOINT a;\nUPDATE t SET a = 1 WHERE id = 1;\nROLLBACK TO SAVEPOINT a;\nRELEASE SAVEPOINT a;\nROLLBACK;'],
+  ['rollback variants and start transaction', 'START TRANSACTION ISOLATION LEVEL SERIALIZABLE;\nUPDATE t SET a = 1 WHERE id = 1;\nROLLBACK WORK;'],
+  ['comments and dollar quoting', "BEGIN;\n-- ROLLBACK; DELETE FROM t;\nUPDATE t SET note = $x$ DELETE FROM t; COMMIT; $x$ WHERE id = 1;\nROLLBACK TRANSACTION;"],
+];
+
+for (const [name, sql] of validScripts) {
+  test(`EXECUTE lint accepts ${name}`, () => {
+    assert.deepEqual(lintExecuteScript(sql).errors, []);
+  });
+}
+
+const invalidScripts = [
+  ['early ROLLBACK then a write (issue #4)', 'BEGIN; ROLLBACK; DELETE FROM reviewFixture WHERE id = 1; ROLLBACK;', /only one BEGIN \.\.\. ROLLBACK envelope/],
+  ['WHERE only inside a USING subquery (issue #4)', 'BEGIN; DELETE FROM reviewFixture USING (SELECT 1 WHERE true) AS helper; ROLLBACK;', /a DELETE without WHERE/],
+  ['UPDATE whose only WHERE is in a subquery', 'BEGIN; UPDATE t SET a = (SELECT b FROM u WHERE u.id = 1); ROLLBACK;', /an UPDATE without WHERE/],
+  ['data-modifying CTE without WHERE', 'BEGIN; WITH d AS (DELETE FROM t RETURNING *) SELECT * FROM d WHERE true; ROLLBACK;', /a DELETE without WHERE/],
+  ['second BEGIN', 'BEGIN; BEGIN; UPDATE t SET a = 1 WHERE id = 1; ROLLBACK;', /only one BEGIN/],
+  ['ABORT in the middle', 'BEGIN; ABORT; UPDATE t SET a = 1 WHERE id = 1; ROLLBACK;', /only one BEGIN/],
+  ['END in the middle', 'BEGIN; END; ROLLBACK;', /COMMIT is never written/],
+  ['PREPARE TRANSACTION', "BEGIN; PREPARE TRANSACTION 'x'; ROLLBACK;", /only one BEGIN/],
+  ['ROLLBACK TO as the last statement', 'BEGIN; SAVEPOINT a; ROLLBACK TO a;', /last statement must be ROLLBACK/],
+  ['DO block', 'BEGIN; DO $$ BEGIN DELETE FROM t; END $$; ROLLBACK;', /DO block/],
+  ['CALL', 'BEGIN; CALL purge(); ROLLBACK;', /CALL/],
+  ['CREATE FUNCTION', 'BEGIN; CREATE OR REPLACE FUNCTION f() RETURNS void AS $$ DELETE FROM t $$ LANGUAGE sql; ROLLBACK;', /function or procedure/],
+  ['psql meta command', 'BEGIN;\nUPDATE t SET a = 1 WHERE id = 1;\n\\commit\nROLLBACK;', /backslash command/],
+];
+
+for (const [name, sql, message] of invalidScripts) {
+  test(`EXECUTE lint rejects ${name}`, () => {
+    assert.match(lintExecuteScript(sql).errors.join(' | '), message);
+  });
+}
 
 test('EXECUTE scripts get a header and are not overwritten by accident', () => {
   const lib = tempLibrary();

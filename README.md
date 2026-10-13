@@ -203,7 +203,15 @@ library/
 - **Change scripts:** `save_execute_script` only writes files. A script must
   start with `BEGIN`, end with `ROLLBACK`, contain no `COMMIT` and have `WHERE`
   on every `UPDATE`/`DELETE`; whoever runs it with a privileged role swaps the
-  final `ROLLBACK` for `COMMIT` after checking the results.
+  final `ROLLBACK` for `COMMIT` after checking the results. The check fails
+  closed: no other transaction statement (`END`, `ABORT`, an early `ROLLBACK`,
+  a second `BEGIN`, `PREPARE TRANSACTION`) is allowed in between, only
+  `SAVEPOINT` / `RELEASE` / `ROLLBACK TO`; `DO` blocks, `CALL`, `CREATE
+  FUNCTION/PROCEDURE` and psql backslash commands are rejected because their
+  bodies cannot be checked; and each `UPDATE`/`DELETE`, also inside a CTE,
+  needs its own `WHERE` (one inside a subquery does not count). It is a
+  structural check, not a proof that the script is right: a human still
+  reviews every script.
 
 > [!NOTE]
 > Masking is a name-based safety net (English and Turkish names, including
