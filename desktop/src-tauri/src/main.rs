@@ -236,7 +236,9 @@ fn describe(url_text: &str) -> Map<String, Value> {
             m.insert("port".into(), json!(u.port().map(|p| p.to_string()).unwrap_or_else(|| "5432".into())));
             m.insert("database".into(), json!(decode(u.path().trim_start_matches('/'))));
             m.insert("user".into(), json!(decode(u.username())));
-            m.insert("passwordInString".into(), json!(u.password().is_some()));
+            // A password option in the query string counts too, like describeConnection().
+            let query_password = u.query_pairs().any(|(k, _)| matches!(k.to_lowercase().as_str(), "password" | "sslpassword"));
+            m.insert("passwordInString".into(), json!(u.password().is_some() || query_password));
         }
         Err(_) => {
             m.insert("error".into(), json!("Connection string is not a URL (postgresql://user@host:port/db expected)."));
