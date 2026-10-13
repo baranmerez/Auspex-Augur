@@ -169,6 +169,9 @@ export function loadConfig(env = process.env) {
     profilesFile,
     maxRows: intFromEnv(env, 'AUSPEX_MAX_ROWS', 500, 1, 10000),
     exportMaxRows: intFromEnv(env, 'AUSPEX_EXPORT_MAX_ROWS', 100000, 1, 5000000),
+    // Whole-export budget on top of the per-statement timeout.
+    exportMaxBytes: intFromEnv(env, 'AUSPEX_EXPORT_MAX_BYTES', 100 * 1024 * 1024, 1024, 10 * 1024 * 1024 * 1024),
+    exportMaxMs: intFromEnv(env, 'AUSPEX_EXPORT_MAX_MS', 300000, 1000, 3600000),
     statementTimeoutMs,
     maxStatementTimeoutMs,
     maxTimeoutByProfile,
