@@ -149,7 +149,7 @@ flowchart LR
 | ✅ `approve_report` | Moves a draft into `SELECT/` after the user approved it |
 | 📚 `list_reports` / 🎨 `render_reports` | Lists the library; re-renders every report HTML from stored JSON |
 | 🧾 `save_execute_script` | Writes a change script into `EXECUTE/` for a human to run — never executed by Auspex |
-| 🧠 `table_knowledge` | What the schema memory knows about a table — key and used columns, relations, notes, recent changes, unexplored neighbors — without touching the database |
+| 🧠 `table_knowledge` | What the schema memory knows about a table — key and used columns, relations, table notes, database-wide notes, recent changes, unexplored neighbors — without touching the database |
 | 📌 `remember` | Adds, confirms or archives a note: a rule the user stated, an observation backed by evidence, or an unconfirmed inference |
 
 ### Choosing the database

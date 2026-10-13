@@ -179,3 +179,38 @@ test('relations and columns are read from JSON and text plans', () => {
   ].join('\n');
   assert.deepEqual(relationsFromTextPlan(text).map(r => `${r.schema}.${r.table}`), ['sales.orders', 'sales.customers']);
 });
+
+test('database-wide notes come back from table_knowledge, separate from table notes', () => {
+  const mem = tempMemory();
+  mem.recordDescribe(ordersDescribe());
+  const rule = mem.addNote('shop', { kind: 'rule', text: 'Reports exclude status_id 50 and below.' });
+  const obs = mem.addNote('shop', { kind: 'observation', text: 'Data ends in May 2023 on this copy.', evidence: { sql: 'select max(created_at) from sales.orders', figures: { lastMonth: '2023-05' } } });
+  const inf = mem.addNote('shop', { kind: 'inference', text: 'The copy may be a partial restore.' });
+  const archived = mem.addNote('shop', { kind: 'rule', text: 'Old rule.' });
+  mem.archiveNote('shop', archived.id, 'replaced');
+  mem.addNote('shop', { kind: 'rule', schema: 'sales', table: 'orders', text: 'Table rule.' });
+  mem.addNote('shop', { kind: 'rule', schema: 'sales', table: 'customers', text: 'Other table rule.' });
+
+  const known = mem.knowledge('shop', 'sales', 'orders');
+  assert.deepEqual(known.notes.map(n => n.text), ['Table rule.'], 'table notes stay scoped');
+  assert.deepEqual(known.databaseNotes.map(n => n.id), [rule.id, obs.id, inf.id], 'rules first, archived excluded');
+  assert.deepEqual(known.databaseNotes.map(n => [n.scope, n.kind, n.confirmed]),
+    [['database', 'rule', true], ['database', 'observation', true], ['database', 'inference', false]]);
+
+  const unknown = mem.knowledge('shop', 'sales', 'never_seen');
+  assert.equal(unknown.known, false);
+  assert.equal(unknown.notes, undefined);
+  assert.equal(unknown.databaseNotes.length, 3, 'unknown tables get the database notes too');
+
+  assert.equal(mem.knowledge('other', 'sales', 'orders').databaseNotes, undefined, 'notes are per profile');
+});
+
+test('database rules are never cut; other database notes are capped and counted', () => {
+  const mem = tempMemory();
+  for (let i = 0; i < 15; i++) mem.addNote('shop', { kind: 'rule', text: `Rule ${i}.` });
+  for (let i = 0; i < 14; i++) mem.addNote('shop', { kind: 'inference', text: `Guess ${i}.` });
+  const k = mem.knowledge('shop', 'sales', 'orders');
+  assert.equal(k.databaseNotes.filter(n => n.kind === 'rule').length, 15);
+  assert.equal(k.databaseNotes.filter(n => n.kind === 'inference').length, 10);
+  assert.equal(k.moreDatabaseNotes, 4);
+});
