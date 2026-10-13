@@ -140,6 +140,7 @@ export function loadConfig(env = process.env) {
     logDir: env.AUSPEX_LOG_DIR || path.join(dataDir, 'logs'),
     // Report library (SELECT/, EXECUTE/, _drafts/): user-specific, never in a repo.
     libraryDir: env.AUSPEX_LIBRARY_DIR || path.join(auspexHome(env), 'library'),
+    memoryDir: env.AUSPEX_MEMORY_DIR || path.join(auspexHome(env), 'memory'),
   };
 }
 
