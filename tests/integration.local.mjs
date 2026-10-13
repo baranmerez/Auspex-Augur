@@ -131,6 +131,15 @@ test('DECLARE wrapper rejects a data-modifying CTE at the database', async () =>
   await assert.rejects(attempt, /data-modifying|read-only transaction|permission denied/);
 });
 
+test('the local "Auspex" role passes the read-only role check against the real catalog', async () => {
+  // Warnings depend on the server (an older cluster may still grant CREATE on
+  // public to PUBLIC); what matters is that nothing blocks.
+  const r = await db.checkProfile('local');
+  assert.notEqual(r.status, 'blocked', JSON.stringify(r));
+  assert.equal(r.role, 'Auspex');
+  assert.deepEqual(r.blocking, []);
+});
+
 test('quoted and Unicode-escaped spellings of a forbidden function get the same guard decision', async () => {
   for (const sql of ['select pg_sleep(0)', 'select "pg_sleep"(0)', 'select pg_catalog."pg_sleep"(0)',
     String.raw`select U&"pg\005fsleep"(0)`]) {

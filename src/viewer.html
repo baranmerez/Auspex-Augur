@@ -558,7 +558,8 @@ const TR = {
   'No table access in this range': 'Bu aralıkta tablo erişimi yok', 'from FROM/JOIN in SQL and table structure calls': 'SQL içindeki FROM/JOIN ve tablo yapısı çağrılarından',
   'file': 'dosya', 'env': 'ortam', 'no description': 'açıklama yok', 'errors': 'hata', 'avg. duration': 'ort. süre', 'last': 'son',
   'Server': 'Sunucu', 'User': 'Kullanıcı', 'Timeout': 'Zaman aşımı', '{d} s default · max {m} s': 'varsayılan {d} sn · en fazla {m} sn', 'Password': 'Şifre',
-  'in URL (move it to pgpass)': 'URL içinde (pgpass\'a taşıyın)', 'Show operations': 'İşlemlerini göster', 'Could not read profiles file: ': 'Profil dosyası okunamadı: ',
+  'in URL (move it to pgpass)': 'URL içinde (pgpass\'a taşıyın)', 'Role check': 'Rol kontrolü', 'no check in this range': 'bu aralıkta kontrol yok',
+  'read-only ✓': 'salt okunur ✓', 'BLOCKED': 'ENGELLİ', 'warning': 'uyarı', 'Check profile': 'Profil kontrolü', 'Role check (first use)': 'Rol kontrolü (ilk kullanım)', 'Show operations': 'İşlemlerini göster', 'Could not read profiles file: ': 'Profil dosyası okunamadı: ',
   'No profiles configured': 'Tanımlı profil yok', 'Folder: ': 'Klasör: ', 'Profiles file: ': 'Profil dosyası: ', 'Logs: ': 'Loglar: ', 'Exports: ': 'Dışa aktarımlar: ',
   'just now': 'az önce', '{n} min ago': '{n} dk önce', '{n} h ago': '{n} sa önce', '{n} d ago': '{n} gün önce',
   'Open in new tab': 'Yeni sekmede aç', 'Select a report': 'Bir rapor seçin', 'Its plan, joins, timings, preview and history open here.': 'Planı, joinleri, süreleri, önizlemesi ve geçmişi burada açılır.',
@@ -636,7 +637,8 @@ const timeOf = ts => ts ? new Date(ts).toLocaleTimeString(locale, { hour12: fals
 const dateTimeOf = ts => ts ? new Date(ts).toLocaleString(locale, { hour12: false }) : '?';
 const toolNames = { query: 'Query', explain: 'Plan', export_csv: 'CSV export', search: 'Search',
   list_schemas: 'Schemas', list_tables: 'Tables', describe_table: 'Table structure', list_profiles: 'Profiles', run_report: 'Run report',
-  save_report: 'Save report', approve_report: 'Approve report', save_execute_script: 'Save change script', render_reports: 'Re-render reports', share_report: 'Share report', remember: 'Memory note' };
+  save_report: 'Save report', approve_report: 'Approve report', save_execute_script: 'Save change script', render_reports: 'Re-render reports', share_report: 'Share report', remember: 'Memory note',
+  check_profile: 'Check profile', role_check: 'Role check (first use)' };
 const toolName = k => t(toolNames[k] || k || '?');
 const sourceOf = e => e.source || 'old';
 const sourceLabel = s => s === 'old' ? t('legacy entry') : s;
@@ -648,6 +650,7 @@ function summaryOf(e) {
   if (e.tool === 'list_tables' && e.schema) return e.schema + (e.pattern ? ` · ${e.pattern}` : '');
   if (e.report) return e.report + (e.version ? ` · v${e.version}` : '') + (e.sqlHash ? ` · ${e.sqlHash}` : '');
   if (e.tool === 'render_reports') return e.rendered !== undefined ? `${e.rendered} HTML` : '';
+  if (e.tool === 'role_check' || e.tool === 'check_profile') return [e.roleStatus, ...(e.blocking || []), ...(e.warnings || [])].filter(Boolean).join(' · ');
   if (e.tool === 'remember') return [e.action, e.noteKind || e.kind, e.schema && e.table ? `${e.schema}.${e.table}` : null].filter(Boolean).join(' · ')
     + (e.noteId ? t(' · note #{id} {s}', { id: e.noteId, s: e.noteStatus || '' }).trimEnd() : '');
   return '';
@@ -1145,8 +1148,16 @@ function renderProfiles(rows) {
   const data = state.profiles;
   if (!data) return;
   const per = new Map(groupCount(rows, e => e.profile).map(g => [g.key, g]));
+  // Latest read-only role check per profile, from the audit log (the viewer
+  // never connects to a database itself).
+  const roleChecks = new Map();
+  for (const e of rows) if (e.tool === 'role_check' && (!roleChecks.has(e.profile) || e.ts > roleChecks.get(e.profile).ts)) roleChecks.set(e.profile, e);
+  const roleText = rc => !rc ? t('no check in this range')
+    : rc.roleStatus === 'ok' ? t('read-only ✓')
+    : `${rc.roleStatus === 'blocked' ? t('BLOCKED') : t('warning')}: ${[...(rc.blocking || []), ...(rc.warnings || [])].join(', ')}`;
   const cards = (data.profiles || []).map((p, i) => {
     const g = per.get(p.name);
+    const rc = roleChecks.get(p.name);
     return h('div', { class: 'panel pcard', style: reduceMotion ? null : `animation-delay:${i * 60}ms` },
       h('h3', {}, p.name, h('span', { class: 'badge ' + (p.source === 'file' ? 'mcp' : 'script') }, p.source === 'file' ? t('file') : t('env'))),
       h('div', { class: 'desc' }, p.description || h('span', { class: 'muted' }, t('no description'))),
@@ -1161,7 +1172,8 @@ function renderProfiles(rows) {
         h('dt', {}, t('Database')), h('dd', {}, p.database),
         h('dt', {}, t('User')), h('dd', {}, p.user),
         h('dt', {}, t('Timeout')), h('dd', {}, t('{d} s default · max {m} s', { d: p.defaultTimeoutSeconds ?? data.defaultTimeoutSeconds, m: p.maxTimeoutSeconds })),
-        h('dt', {}, t('Password')), h('dd', {}, p.passwordInString ? t('in URL (move it to pgpass)') : 'pgpass')),
+        h('dt', {}, t('Password')), h('dd', {}, p.passwordInString ? t('in URL (move it to pgpass)') : 'pgpass'),
+        h('dt', {}, t('Role check')), h('dd', { style: rc?.roleStatus === 'blocked' ? 'color:var(--critical)' : null, title: rc ? dateTimeOf(rc.ts) : null }, roleText(rc))),
       h('div', { style: 'margin-top:12px;display:flex;gap:8px' },
         h('button', { class: 'icon-btn', onclick: () => { F.profile.value = p.name; switchTab('ops'); } }, t('Show operations'))));
   });
