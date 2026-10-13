@@ -212,11 +212,11 @@ export class Library {
     if (fs.existsSync(file) && !replace) throw new LibraryError(`EXECUTE script already exists: ${file}. Pass replace=true to overwrite.`);
     const header = [
       '-- =====================================================================',
-      `-- ${title || r.name}`,
+      commentLines('', title || r.name),
       `-- Database       : ${r.db}   Schema: ${r.schema}   Category: ${r.category}`,
-      `-- Purpose        : ${purpose || '-'}`,
-      `-- Related report : ${relatedReport || '-'}`,
-      `-- Expected rows  : ${expectedRows ?? '-'}`,
+      commentLines('Purpose        : ', purpose || '-'),
+      commentLines('Related report : ', relatedReport || '-'),
+      commentLines('Expected rows  : ', expectedRows ?? '-'),
       `-- Written        : ${new Date().toISOString()} by an AI agent via Auspex`,
       '-- NOT executed by Auspex. Run it yourself with a role that has the',
       '-- required privileges, review the MATCH results, then replace the final',
@@ -224,11 +224,23 @@ export class Library {
       '-- =====================================================================',
       '',
     ].join('\n');
-    writeAtomic(file, header + normalizeSql(sql) + '\n');
+    const text = header + normalizeSql(sql) + '\n';
+    // The written file, header included, must pass the same checks as the body.
+    const finalLint = lintExecuteScript(text);
+    if (finalLint.errors.length) throw new LibraryError(`EXECUTE script rejected after adding the header:\n- ${finalLint.errors.join('\n- ')}`);
+    writeAtomic(file, text);
     return { ref: r, file, warnings: lint.warnings };
   }
 }
 
+// Turns metadata into SQL comment lines: every line of the value (LF, CRLF or
+// lone CR) gets its own "-- " prefix, so no metadata can end up as SQL.
+function commentLines(label, value) {
+  const pad = ' '.repeat(label.length);
+  return String(value).split(/\r\n|\r|\n/)
+    .map((line, i) => `-- ${i ? pad : label}${line}`.trimEnd())
+    .join('\n');
+}
 // Structural checks for change scripts: BEGIN first, ROLLBACK last, no COMMIT,
 // WHERE on every UPDATE/DELETE. Comments, string literals and dollar-quoted
 // bodies (DO blocks, functions) are ignored.

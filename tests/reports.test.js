@@ -167,6 +167,27 @@ test('EXECUTE scripts get a header and are not overwritten by accident', () => {
   assert.throws(() => lib.saveExecuteScript({ ref, name: 'x', sql: 'UPDATE t SET a = 1;' }), /rejected/);
 });
 
+test('EXECUTE script metadata stays inside comments for LF, CRLF and lone CR', () => {
+  const lib = tempLibrary();
+  const r = lib.saveExecuteScript({
+    ref: { ...ref, name: 'multiline header' },
+    title: 'Fix\nSELECT 42 AS marker_title;',
+    purpose: 'one\r\nSELECT 43 AS marker_purpose;',
+    relatedReport: 'rep\rSELECT 44 AS marker_related;',
+    expectedRows: '5\nSELECT 45 AS marker_rows;',
+    sql: 'BEGIN;\nUPDATE t SET a = 1 WHERE id = 2;\nROLLBACK;',
+  });
+  const lines = fs.readFileSync(r.file, 'utf8').split('\n');
+  assert.ok(!lines.some(l => l.includes('\r')), 'no carriage returns survive');
+  for (const marker of ['marker_title', 'marker_purpose', 'marker_related', 'marker_rows']) {
+    const line = lines.find(l => l.includes(marker));
+    assert.ok(line.startsWith('-- '), `${marker} is commented`);
+  }
+  const firstSql = lines.find(l => l.trim() && !l.startsWith('--'));
+  assert.equal(firstSql, 'BEGIN;');
+  assert.match(lines.join('\n'), /-- Purpose {8}: one\n-- {18}SELECT 43/);
+});
+
 test('rendered HTML embeds the report safely', () => {
   const html = renderReport({ title: 'A <b>&</b> "report"', name: 'x', sqlVersions: [{ version: 1, sql: "select '</script><script>alert(1)</script>'" }], runs: [], last: null });
   assert.ok(!html.includes('"__AUSPEX_DATA__"'));
