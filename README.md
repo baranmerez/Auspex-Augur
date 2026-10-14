@@ -441,7 +441,8 @@ Windows; override with `AUSPEX_PROFILES_FILE`):
   "shop": {
     "url": "postgresql://Auspex@10.0.0.5:5432/shopdb",
     "description": "Shop PRODUCTION (VPN)",
-    "maxTimeoutSeconds": 180
+    "maxTimeoutSeconds": 180,
+    "maxQueriesPerMinute": 30
   }
 }
 ```
@@ -451,6 +452,7 @@ Windows; override with `AUSPEX_PROFILES_FILE`):
 | `url` | yes | `postgresql://user@host:port/db`; a password here (user-info or query option) is rejected. Query options are limited to `host`, `port`, `ssl`, `sslmode`, `sslcert`, `sslkey`, `sslrootcert`, `sslnegotiation`, `uselibpqcompat`, `application_name`, `fallback_application_name`, `connect_timeout`, `keepalives`, `keepalives_idle`; anything else (for example `options=-c ...`, `replication`, `client_encoding`, `user`, `db`) stops the server at startup, as does the same URL in `AUSPEX_DB_<NAME>` |
 | `description` | no | Shown by `list_profiles` when the model asks which database to use; mark production clearly |
 | `maxTimeoutSeconds` | no | Ceiling for `timeoutSeconds` on this profile (1-3600) |
+| `maxQueriesPerMinute` | no | Query budget for this profile (1-10000); overrides `AUSPEX_MAX_QUERIES_PER_MINUTE` |
 
 Profile names are case-insensitive and use `a-z`, `0-9`, `-`, `_`. Restart
 your MCP client session after editing (profiles are read at start). A missing
@@ -474,6 +476,8 @@ naming the problem.
 | `AUSPEX_STATEMENT_TIMEOUT_MS` | 30000 | Default statement timeout per call |
 | `AUSPEX_MAX_STATEMENT_TIMEOUT_MS` | 300000 | Ceiling for the per-call `timeoutSeconds` |
 | `AUSPEX_MAX_STATEMENT_TIMEOUT_MS_<NAME>` | global ceiling | Ceiling for one profile, e.g. `_SHOP=120000` |
+| `AUSPEX_MAX_QUERIES_PER_MINUTE` | 60 | Query budget: database operations per profile in any sliding minute, per process (1-10000). One tool call or library call counts once, however many statements it runs; over the budget a call is refused before connecting and the refusal is audited |
+| `AUSPEX_MAX_QUERIES_PER_MINUTE_<NAME>` | file value or global | Query budget for one profile, e.g. `_SHOP=30`; overrides `maxQueriesPerMinute` in the profiles file |
 | `AUSPEX_MAX_CELL_CHARS` | 2000 | Long text values are cut in `query` output |
 | `AUSPEX_DATA_DIR` | `<home>` | Base for `exports/` and `logs/` |
 | `AUSPEX_EXPORT_DIR`, `AUSPEX_LOG_DIR` | under data dir | Override each folder |
