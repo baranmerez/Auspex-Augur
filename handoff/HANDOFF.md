@@ -95,6 +95,7 @@ database to use unless they named one in the current conversation.
    CREATEROLE, write-data/server-file role membership, any writable table)
    blocks the profile. Known privilege exceptions that only warn are listed
    in environment.local.md.
+7. **Query budget** — at most `AUSPEX_MAX_QUERIES_PER_MINUTE` (default 60, per-profile override) database operations per profile per sliding minute in one process; more is refused before connecting and audited, so a script loop cannot flood a database.
 
 Passwords are in no file of this project: they live in **pgpass**
 (`%APPDATA%\postgresql\pgpass.conf`, line: `host:port:db:Auspex:password`).
