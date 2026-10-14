@@ -31,6 +31,7 @@ const instructions = [
   'Before the first database call in a conversation, the user must have named the database to work on in this conversation.',
   'If they have not, call list_profiles, show the profiles and ask which one to use. Never guess a profile and never reuse a choice from another conversation.',
   'When switching to a different profile mid-conversation, confirm with the user first.',
+  'Each profile has a query budget (maxQueriesPerMinute in list_profiles); when it is used up calls are refused for a while, so batch work into fewer, set-based queries instead of one query per item, and never retry a refused call in a loop.',
   'Some tables are very large. Use search to find tables and columns, use estimated_rows instead of count(*) on big tables, check plans with explain (without analyze) first, and narrow by indexed columns.',
   `Queries time out after ${defaultTimeoutS} s by default. Before running a query with a longer timeoutSeconds, or explain analyze on a large table, tell the user which table, the estimated rows and why it may take long.`,
   'Report library: when an analysis query is worth keeping, save it with save_report (it becomes a draft under <db>/<schema>/<category>), run it with run_report and show the user the summary and the HTML file path; iterate by saving new SQL versions.',
@@ -77,7 +78,7 @@ function tool(name, toolConfig, handler) {
 
 tool('list_profiles', {
   title: 'List connection profiles',
-  description: 'Lists configured database profiles with description, host, database, user and timeout limit (never passwords). Call this and ask the user which profile to use when they have not named one in this conversation; show each description so production databases are clearly marked.',
+  description: 'Lists configured database profiles with description, host, database, user, timeout limit and query budget per minute (never passwords). Call this and ask the user which profile to use when they have not named one in this conversation; show each description so production databases are clearly marked.',
   inputSchema: {},
 }, async () => ({
   limits: {
@@ -93,6 +94,7 @@ tool('list_profiles', {
     ...describeConnection(cs),
     maxTimeoutSeconds: (config.maxTimeoutByProfile.get(name) ?? config.maxStatementTimeoutMs) / 1000,
     defaultTimeoutSeconds: Math.min(config.statementTimeoutMs, config.maxTimeoutByProfile.get(name) ?? config.maxStatementTimeoutMs) / 1000,
+    maxQueriesPerMinute: db.maxQueriesPerMinute(name),
     roleCheck: roleCheckSummary(db.roleCheck(name)),
   })),
 }));

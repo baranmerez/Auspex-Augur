@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { once } from 'node:events';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import path from 'node:path';
 import pg from 'pg';
 import { assertReadOnlyQuery, SqlGuardError } from './sqlGuard.js';
@@ -14,17 +15,60 @@ for (const oid of [1082, 1083, 1114, 1184, 1266]) pg.types.setTypeParser(oid, va
 const cursorName = 'auspex_cursor';
 const exportBatchSize = 1000;
 const connectTimeoutMs = 10000;
+const budgetWindowMs = 60000;
+export const defaultMaxQueriesPerMinute = 60;
+
+// Refusal of a database operation because the profile used up its query
+// budget (AUSPEX_MAX_QUERIES_PER_MINUTE). Raised before connecting.
+export class QueryBudgetError extends Error {
+  constructor(profile, count, limit, waitMs) {
+    const seconds = Math.max(1, Math.ceil(waitMs / 1000));
+    super(`Query budget exhausted for profile "${profile}": ${count} database operations in the last minute, limit ${limit} per minute. `
+      + `The next slot frees up in ${seconds} s. Do not retry in a loop: batch the work into fewer, set-based queries `
+      + '(one query with a join, IN or = ANY($1) instead of one query per item).');
+    this.name = 'QueryBudgetError';
+    this.profile = profile;
+    this.count = count;
+    this.limit = limit;
+    this.retryAfterMs = waitMs;
+  }
+}
 
 export class ReadOnlyDatabase {
   // Every public operation is written to the audit log here, so database reads
   // are recorded whether they come from the MCP server or from a script.
   // source: 'mcp' for the server, 'script' (default) for direct library use.
-  constructor(config, { audit, source = 'script' } = {}) {
+  // now: clock for the query budget (tests inject a fake one).
+  constructor(config, { audit, source = 'script', now = Date.now } = {}) {
     this.config = config;
     this.pools = new Map();
     this.auditFn = audit ?? (config.logDir ? createAuditLog(config.logDir) : () => {});
     this.source = source;
     this.roleChecks = new Map(); // profile -> result of the read-only role check
+    this.now = now;
+    this.budgetUse = new Map(); // profile -> start times (ms) of operations in the window
+    this.operation = new AsyncLocalStorage(); // profiles already charged by the current audited operation
+  }
+
+  // Effective query budget of a profile: per-profile setting, else the global one.
+  maxQueriesPerMinute(name) {
+    return this.config.maxQueriesByProfile?.get(name) ?? this.config.maxQueriesPerMinute ?? defaultMaxQueriesPerMinute;
+  }
+
+  // Sliding one-minute window per profile and process. One audited operation
+  // costs one unit however many statements or connections it uses; the
+  // internal role check is part of the operation. Refuses before connecting.
+  chargeQueryBudget(name) {
+    const charged = this.operation.getStore();
+    if (charged?.has(name)) return;
+    const now = this.now();
+    const limit = this.maxQueriesPerMinute(name);
+    let used = this.budgetUse.get(name);
+    if (!used) this.budgetUse.set(name, used = []);
+    while (used.length && used[0] <= now - budgetWindowMs) used.shift();
+    if (used.length >= limit) throw new QueryBudgetError(name, used.length, limit, used[used.length - limit] + budgetWindowMs - now);
+    used.push(now);
+    charged?.add(name);
   }
 
   // Result of the role check for a profile in this process, or null when the
@@ -65,11 +109,13 @@ export class ReadOnlyDatabase {
   // Runs one operation and records it: tool, profile, request details,
   // duration, and row count / file or the error. Failures are logged too.
   // summarize(result) adds safe result fields (ids, versions), never content.
+  // A nested call shares the outer operation, so it is charged once.
   async audited(tool, details, fn, summarize = null) {
     const started = Date.now();
     const entry = { source: this.source, tool, ...details };
     try {
-      const result = await fn();
+      const store = this.operation.getStore() ?? new Set();
+      const result = await this.operation.run(store, fn);
       this.auditFn({ ...entry, ms: Date.now() - started, rowCount: result?.rowCount, file: result?.file, ...(summarize ? summarize(result) : {}) });
       return result;
     } catch (err) {
@@ -122,6 +168,7 @@ export class ReadOnlyDatabase {
     const timeoutMs = this.timeoutMs(name, timeoutSeconds);
     const known = this.roleChecks.get(name);
     if (known?.status === 'blocked') throw new RoleCheckError(name, known); // no connection needed
+    this.chargeQueryBudget(name);
     let client;
     try {
       client = await this.pool(name).connect();

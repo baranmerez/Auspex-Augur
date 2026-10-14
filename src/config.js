@@ -6,14 +6,16 @@ import path from 'node:path';
 //   1. A profiles file (default ~/.auspex/profiles.json, override with
 //      AUSPEX_PROFILES_FILE):
 //        { "shop": { "url": "postgresql://Auspex@10.0.0.5:5432/shopdb",
-//                    "description": "Shop prod (VPN)", "maxTimeoutSeconds": 180 } }
+//                    "description": "Shop prod (VPN)", "maxTimeoutSeconds": 180,
+//                    "maxQueriesPerMinute": 30 } }
 //   2. Environment variables AUSPEX_DB_<NAME> holding a connection string.
 // A name defined in both is an error. Passwords never go into either: keep them
 // in pgpass (%APPDATA%\postgresql\pgpass.conf on Windows, ~/.pgpass
 // elsewhere); node-postgres reads it automatically when no password is given.
 const profilePrefix = 'AUSPEX_DB_';
 const profileNamePattern = /^[a-z][a-z0-9_-]{0,39}$/;
-const profileKeys = new Set(['url', 'description', 'maxTimeoutSeconds']);
+const profileKeys = new Set(['url', 'description', 'maxTimeoutSeconds', 'maxQueriesPerMinute']);
+const maxQueriesLimit = 10000;
 
 // Query options node-postgres would read as a password; any spelling or
 // repetition is refused, like a password in the user-info part.
@@ -120,7 +122,15 @@ export function readProfilesFile(file) {
     if (max !== undefined && (!Number.isInteger(max) || max < 1 || max > 3600)) {
       throw new Error(`Invalid ${where}: "maxTimeoutSeconds" must be an integer between 1 and 3600.`);
     }
-    return { name, url: profile.url, description: profile.description || null, maxTimeoutMs: max === undefined ? null : max * 1000 };
+    const queries = profile.maxQueriesPerMinute;
+    if (queries !== undefined && (!Number.isInteger(queries) || queries < 1 || queries > maxQueriesLimit)) {
+      throw new Error(`Invalid ${where}: "maxQueriesPerMinute" must be an integer between 1 and ${maxQueriesLimit}.`);
+    }
+    return {
+      name, url: profile.url, description: profile.description || null,
+      maxTimeoutMs: max === undefined ? null : max * 1000,
+      maxQueriesPerMinute: queries ?? null,
+    };
   });
 }
 
@@ -128,12 +138,14 @@ export function loadConfig(env = process.env) {
   const profiles = new Map();
   const profileInfo = new Map();
   const maxTimeoutByProfile = new Map();
+  const maxQueriesByProfile = new Map();
 
   const profilesFile = env.AUSPEX_PROFILES_FILE || defaultProfilesFile(env);
   for (const p of readProfilesFile(profilesFile)) {
     profiles.set(p.name, p.url);
     profileInfo.set(p.name, { source: 'file', description: p.description });
     if (p.maxTimeoutMs !== null) maxTimeoutByProfile.set(p.name, p.maxTimeoutMs);
+    if (p.maxQueriesPerMinute !== null) maxQueriesByProfile.set(p.name, p.maxQueriesPerMinute);
   }
 
   for (const [key, value] of Object.entries(env)) {
@@ -163,6 +175,14 @@ export function loadConfig(env = process.env) {
     if (env[key]) maxTimeoutByProfile.set(name, intFromEnv(env, key, maxStatementTimeoutMs, 1000, 3600000));
   }
 
+  // Query budget: database operations per profile per minute in one process.
+  // AUSPEX_MAX_QUERIES_PER_MINUTE_<NAME> overrides maxQueriesPerMinute from the file.
+  const maxQueriesPerMinute = intFromEnv(env, 'AUSPEX_MAX_QUERIES_PER_MINUTE', 60, 1, maxQueriesLimit);
+  for (const name of profiles.keys()) {
+    const key = `AUSPEX_MAX_QUERIES_PER_MINUTE_${name.toUpperCase()}`;
+    if (env[key]) maxQueriesByProfile.set(name, intFromEnv(env, key, maxQueriesPerMinute, 1, maxQueriesLimit));
+  }
+
   return {
     profiles,
     profileInfo,
@@ -175,6 +195,8 @@ export function loadConfig(env = process.env) {
     statementTimeoutMs,
     maxStatementTimeoutMs,
     maxTimeoutByProfile,
+    maxQueriesPerMinute,
+    maxQueriesByProfile,
     maxCellChars: intFromEnv(env, 'AUSPEX_MAX_CELL_CHARS', 2000, 50, 100000),
     exportDir: env.AUSPEX_EXPORT_DIR || path.join(dataDir, 'exports'),
     logDir: env.AUSPEX_LOG_DIR || path.join(dataDir, 'logs'),
