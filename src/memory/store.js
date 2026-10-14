@@ -227,7 +227,24 @@ export class SchemaMemory {
     return this.locked(desc.profile, () => this.recordDescribeUnlocked(desc));
   }
 
-  recordDescribeUnlocked(desc) {
+  // describe_tables: records each table like recordDescribe, under one lock
+  // and with one view rebuild. Returns one result per desc, in order; a
+  // failure is reported for that table only.
+  recordDescribeMany(profile, descs) {
+    return this.locked(profile, () => {
+      const out = descs.map(desc => {
+        try {
+          return this.recordDescribeUnlocked({ ...desc, profile }, { rebuild: false });
+        } catch (err) {
+          return { memoryError: err.message };
+        }
+      });
+      this.rebuildViewUnlocked(profile);
+      return out;
+    });
+  }
+
+  recordDescribeUnlocked(desc, { rebuild = true } = {}) {
     const profile = desc.profile;
     const next = recordFromDescribe(desc);
     const prev = this.readTable(profile, next.schema, next.table);
@@ -245,7 +262,7 @@ export class SchemaMemory {
     this.writeTable(profile, record);
     if (firstTime) this.appendChangelog(profile, { at, schema: next.schema, table: next.table, event: 'explored' });
     else if (changes.length) this.appendChangelog(profile, { at, schema: next.schema, table: next.table, event: 'changed', changes });
-    this.rebuildView(profile);
+    if (rebuild) this.rebuildView(profile);
     return {
       recorded: firstTime ? 'first time' : 'updated',
       ...(firstTime ? {} : { lastDescribedAt: prev.describedAt }),

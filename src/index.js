@@ -4,7 +4,10 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { loadConfig, describeConnection } from './config.js';
 import { ReadOnlyDatabase } from './db.js';
-import { listSchemas, listTables, describeTable, search } from './catalog.js';
+import {
+  listSchemas, listTables, describeTable, describeTables, profileTables, search,
+  maxDescribeTables, maxProfileTables, defaultSampleRows, maxSampleRows,
+} from './catalog.js';
 import { ReportService } from './reports/service.js';
 import { sqlHash } from './reports/library.js';
 import { SchemaMemory, noteKinds } from './memory/store.js';
@@ -37,11 +40,12 @@ const instructions = [
   'Call approve_report only after the user explicitly approved that report in this conversation.',
   'Change scripts (INSERT/UPDATE/DELETE/DDL) are never executed through Auspex: write them with save_execute_script for the user to run with a privileged role.',
   'run_report with analyze="auto" skips EXPLAIN ANALYZE when the previous run took longer than 30 s; ask the user before forcing analyze="always" on such reports.',
-  'Schema memory: Auspex keeps local notes per profile about the tables you worked with. describe_table records a table and reports changesSinceLast (tell the user about them); run_report and explain record the tables and columns their plans used. It never crawls the catalog on its own.',
+  'Schema memory: Auspex keeps local notes per profile about the tables you worked with. describe_table and describe_tables record a table and report changesSinceLast (tell the user about them); run_report and explain record the tables and columns their plans used. It never crawls the catalog on its own.',
   'Before describing a table again, call table_knowledge: it answers from memory without touching the database.',
+  `When you need several tables, do not loop over describe_table or send one measuring query per table: use describe_tables for the structure of up to ${maxDescribeTables} tables and profile_tables for row estimates, fill rates, distinct counts and parent-child fan-out of up to ${maxProfileTables} tables. Each takes a constant number of statements however many tables are listed.`,
   'When the user states a business rule, save it with remember kind=rule. Save a finding from data as kind=observation with evidence (the SQL and aggregate figures only, never row values or personal data). Your own interpretations are kind=inference; never present them as fact, and confirm one only after the user agreed.',
   'Results may carry notes for the tables they touched; take them into account.',
-  'When a report or analysis is finished and results listed unexploredNeighbors, name them and ask the user whether to explore them. Only after a yes, call describe_table on them (structure only); do not query their data unless asked.',
+  'When a report or analysis is finished and results listed unexploredNeighbors, name them and ask the user whether to explore them. Only after a yes, call describe_tables on them (structure only); do not query their data unless asked.',
 ].join(' ');
 
 const server = new McpServer({ name: 'auspex', version: '0.9.0' }, { instructions });
@@ -154,6 +158,49 @@ tool('describe_table', {
     memory: learn(() => memory.recordDescribe({ ...result, oid, columns })),
   };
 });
+
+const tableListArg = max => z.array(z.string().min(1)).min(1).max(max);
+
+tool('describe_tables', {
+  title: 'Describe many tables',
+  description: `Like describe_table for up to ${maxDescribeTables} relations at once: columns, types, nullability, defaults, comments, constraints (incl. foreign keys), indexes, incoming foreign keys, estimated rows and (for views) the definition. Reads the catalog only, with a constant number of statements however many tables are listed: 5, or 6 when one of them is a view or materialized view (field statements). Unknown or invalid names are reported per table (field error) without failing the call. Each found table is recorded in the schema memory like describe_table (memory per table, incl. changesSinceLast). Prefer this over calling describe_table in a loop.`,
+  inputSchema: {
+    profile: profileArg,
+    tables: tableListArg(maxDescribeTables).describe('Relations as schema.table, e.g. ["sales.orders", "sales.customers"].'),
+  },
+}, async ({ profile, tables }) => {
+  const result = await describeTables(db, profile, tables);
+  const found = result.tables.filter(t => !t.error);
+  const learned = learn(() => ({ list: memory.recordDescribeMany(result.profile, found) }));
+  return {
+    ...result,
+    tables: result.tables.map(t => {
+      if (t.error) return t;
+      const { profile: _profile, oid: _oid, columns, ...rest } = t;
+      return { ...rest, columns: columns.map(({ attnum, ...c }) => c), memory: learned.list?.[found.indexOf(t)] ?? learned };
+    }),
+  };
+});
+
+tool('profile_tables', {
+  title: 'Profile many tables',
+  description: `Measures up to ${maxProfileTables} relations at once without returning any row values: estimated rows and, per column, fillRate (non-null share) and distinctInSample, computed on a sample of sampleRows rows per table (default ${defaultSampleRows}, max ${maxSampleRows}; TABLESAMPLE SYSTEM plus LIMIT when the estimate exceeds sampleRows, otherwise a plain LIMIT scan; the response field sampling explains it). With parent, also the fan-out of each table over the parent rows (optionally only those inside window on a parent column, from <= column < to): parent rows, parents with children, child rows, average and maximum children per parent. The child column is the single-column foreign key to parent.key; without one, list the table as schema.table:column. All tables together take at most 3 statements in one read-only transaction (1 catalog lookup, 1 column-statistics statement, 1 fan-out statement when parent is given; field statements). Names are checked against the catalog before they are used. Prefer this over one measuring query per table.`,
+  inputSchema: {
+    profile: profileArg,
+    tables: tableListArg(maxProfileTables).describe('Relations as schema.table; with parent, schema.table:column names the column that points at parent.key when there is no foreign key.'),
+    parent: z.object({
+      table: z.string().min(1).describe('Parent relation as schema.table.'),
+      key: z.string().min(1).describe('Parent column the children point at, usually its primary key.'),
+    }).optional().describe('Measure fan-out of each table over this parent.'),
+    window: z.object({
+      column: z.string().min(1).describe('Column of the parent table, e.g. a date.'),
+      from: z.string().min(1).describe('Inclusive lower bound, e.g. 2026-01-01.'),
+      to: z.string().min(1).describe('Exclusive upper bound, e.g. 2026-02-01.'),
+    }).optional().describe('Only parent rows with from <= column < to. Requires parent.'),
+    sampleRows: z.number().int().min(1).max(maxSampleRows).optional().describe(`Rows sampled per table for column statistics; also caps the distinct parent keys used for fan-out. Default ${defaultSampleRows}.`),
+    timeoutSeconds: timeoutArg,
+  },
+}, async ({ profile, ...options }) => profileTables(db, profile, options));
 
 tool('query', {
   title: 'Run read-only query',

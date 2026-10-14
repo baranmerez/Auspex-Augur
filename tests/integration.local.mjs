@@ -11,7 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { loadConfig } from '../src/config.js';
 import { ReadOnlyDatabase } from '../src/db.js';
-import { listSchemas, listTables, describeTable, search } from '../src/catalog.js';
+import { listSchemas, listTables, describeTable, describeTables, profileTables, search } from '../src/catalog.js';
 import { ReportService } from '../src/reports/service.js';
 import { SchemaMemory } from '../src/memory/store.js';
 
@@ -329,4 +329,74 @@ test('report library refuses unknown databases and non-SELECT drafts', async () 
   const svc = new ReportService(db, fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-it-lib-')));
   assert.throws(() => svc.save({ db: 'nope', schema: 's', category: 'c', name: 'n', sql: 'select 1' }), /Unknown profile/);
   assert.throws(() => svc.save({ db: 'local', schema: 's', category: 'c', name: 'n', sql: 'update t set a = 1' }));
+});
+
+test('describe_tables describes region, worker and a view with a constant number of statements and records them', async () => {
+  const r = await describeTables(db, 'local', ['auspex_test.region', 'auspex_test.worker', 'auspex_test.nope']);
+  assert.equal(r.statements, 5);
+  assert.deepEqual([r.found, r.notFound], [2, 1]);
+  const [region, worker, missing] = r.tables;
+  assert.match(missing.error, /auspex_test\.nope not found/);
+  assert.deepEqual(worker.columns.map(c => c.column), ['id', 'region_id', 'full_name', 'daily_wage', 'started_on', 'note']);
+  const fk = worker.constraints.find(c => c.type === 'foreign key');
+  assert.deepEqual([fk.columns, fk.ref_schema, fk.ref_table, fk.ref_columns], [['region_id'], 'auspex_test', 'region', ['id']]);
+  assert.ok(worker.indexes.some(i => i.name === 'worker_region_idx'));
+  const incoming = region.referencedBy.find(x => x.from_name === 'worker');
+  assert.deepEqual([incoming.from_schema, incoming.columns, incoming.ref_columns], ['auspex_test', ['region_id'], ['id']]);
+
+  // Same structure as describe_table.
+  const single = await describeTable(db, 'local', 'auspex_test', 'worker');
+  assert.deepEqual(worker, single);
+
+  const withView = await describeTables(db, 'local', ['auspex_test.worker', 'auspex_test.v_worker_region']);
+  assert.equal(withView.statements, 6);
+  assert.match(withView.tables[1].viewDefinition, /join/i);
+
+  const memory = new SchemaMemory(fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-it-batch-mem-')));
+  const recorded = memory.recordDescribeMany('local', r.tables.filter(t => !t.error));
+  assert.deepEqual(recorded.map(x => x.recorded), ['first time', 'first time']);
+  assert.deepEqual(memory.knowledge('local', 'auspex_test', 'worker').relations.fk, ['region_id -> auspex_test.region(id)']);
+});
+
+test('profile_tables measures fill rates, distinct counts and region -> worker fan-out in 3 statements', async () => {
+  const r = await profileTables(db, 'local', {
+    tables: ['auspex_test.worker', 'auspex_test.secret_note', 'auspex_test.region'],
+    parent: { table: 'auspex_test.region', key: 'id' },
+  });
+  assert.equal(r.statements, 3);
+  const [worker, secret, region] = r.tables;
+  assert.match(secret.error, /No SELECT privilege/);
+  assert.deepEqual(worker.sample, { method: 'limit', rows: 5 });
+  const byName = Object.fromEntries(worker.columns.map(c => [c.column, c]));
+  assert.equal(byName.full_name.fillRate, 1);
+  assert.equal(byName.daily_wage.fillRate, 0.8);
+  assert.equal(byName.note.fillRate, 0.8);
+  assert.equal(byName.region_id.distinctInSample, 3);
+  assert.equal(byName.id.distinctInSample, 5);
+  assert.deepEqual(worker.fanOut, {
+    column: 'region_id', via: 'foreign key worker_region_id_fkey', parentRows: 3, parentRowsCapped: false,
+    parentsWithChildren: 3, childRows: 5, avgPerParent: 1.6667, avgPerParentWithChildren: 1.6667, maxPerParent: 2,
+  });
+  assert.deepEqual(region.fanOut, { skipped: 'this is the parent table' });
+  assert.equal(region.sample.rows, 3);
+  assert.ok(!JSON.stringify(r).includes('Ayşe'), 'no row values');
+});
+
+test('profile_tables applies the parent window and the timeout', async () => {
+  const r = await profileTables(db, 'local', {
+    tables: ['auspex_test.worker'],
+    parent: { table: 'auspex_test.region', key: 'id' },
+    window: { column: 'id', from: '2', to: '4' },
+    sampleRows: 100,
+    timeoutSeconds: 5,
+  });
+  assert.deepEqual(r.tables[0].fanOut, {
+    column: 'region_id', via: 'foreign key worker_region_id_fkey', parentRows: 2, parentRowsCapped: false,
+    parentsWithChildren: 2, childRows: 3, avgPerParent: 1.5, avgPerParentWithChildren: 1.5, maxPerParent: 2,
+  });
+  const capped = await profileTables(db, 'local', { tables: ['auspex_test.worker'], parent: { table: 'auspex_test.region', key: 'id' }, sampleRows: 2 });
+  assert.equal(capped.tables[0].sample.rows, 2);
+  assert.equal(capped.tables[0].fanOut.parentRows, 2);
+  assert.equal(capped.tables[0].fanOut.parentRowsCapped, true);
+  await assert.rejects(profileTables(db, 'local', { tables: ['auspex_test.worker";select 1'] }), /Invalid table/);
 });
