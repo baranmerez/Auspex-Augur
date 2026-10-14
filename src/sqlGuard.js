@@ -117,8 +117,9 @@ function stripLiteralsAndComments(sql, identifiers = null) {
       }
       mask(start, quoted('"'));
     } else if (c === '$') {
-      const m = /^\$([A-Za-z_][A-Za-z0-9_]*)?\$/.exec(sql.slice(i));
-      if (m && !/[A-Za-z0-9_]/.test(sql[i - 1] || '')) {
+      // PostgreSQL tags allow non-ASCII identifier characters, but not an embedded $.
+      const m = /^\$([A-Za-z_\u0080-\uFFFF][A-Za-z0-9_\u0080-\uFFFF]*)?\$/.exec(sql.slice(i));
+      if (m && !/[A-Za-z0-9_$\u0080-\uFFFF]/.test(sql[i - 1] || '')) {
         const tag = m[0];
         const end = sql.indexOf(tag, i + tag.length);
         if (end < 0) throw new SqlGuardError('Unterminated dollar-quoted string.');

@@ -1,10 +1,13 @@
 # Auspex Augur — Handoff
 
-Last updated: 2026-10-13 · Versions: MCP server 0.6.0, desktop app 0.1.0
+Last updated: 2026-10-15 · Versions: MCP server 0.9.0, desktop app 0.1.0
 
 Environment-specific details (servers, databases, schema lists, privilege
 exceptions) are **not** in this file. They live in
 `handoff/environment.local.md`, which is git-ignored.
+
+Current security work: see [Security Analyze handoff](#14-security-analyze-handoff-2026-10-15)
+for the psql fix, verification evidence and proposed next steps.
 
 ---
 
@@ -178,9 +181,13 @@ Desktop build: Rust (MSVC toolchain), VS 2022 C++ Build Tools, WebView2;
 
 | Command | Scope | Last result |
 |---|---|---|
-| `npm test` | SQL guard, profiles, config, timeouts, explain, audit (incl. MCP server end to end), reports, change-script lint, CSV export, file lock with child processes, schema memory (no database) | 205/205 |
-| `npm run test:local` | Local PG16 + `auspex_test` schema: writes rejected by the database, unprivileged table, CTE, stacked statements, timeout, EXPLAIN ANALYZE, CSV, search, reports, memory | 29/29 |
+| `npm test` | SQL guard, profiles, config, timeouts, explain, audit (incl. MCP server end to end), reports, change-script lint, CSV export, file lock with child processes, schema memory (no database) | 262/262 (psql delivery run; Windows, Node 24.18.0) |
+| `npm run test:local` | Local PG16 + `auspex_test` schema: writes rejected by the database, unprivileged table, CTE, stacked statements, timeout, EXPLAIN ANALYZE, CSV, search, reports, memory | 35/35 (psql delivery run) |
 | `cargo test` (in `desktop/src-tauri`) | Path validation of the desktop API | 1/1 |
+
+The package and local PostgreSQL suites passed after integrating upstream
+revision `1608991` with the psql fix. The Cargo result is historical; no desktop
+code was changed by this fix. See section 14 for focused regression evidence.
 
 Local test setup: `scripts/local-test-setup.sql` (+ a `local` profile and a
 pgpass line). The Turkish names in the test data are intentional: they check
@@ -254,4 +261,65 @@ a spreadsheet-safe CSV mode (#9), a cross-process lock with safe stale takeover
 and Windows rename retries (#10), library and memory changes in the audit log
 (#12), database-wide notes in table_knowledge (#13) and share_report for a
 sanitized copy (#11).
+
+## 14. Security Analyze handoff (2026-10-15)
+
+Task: **Auspex Augur / Security Analyze** (`auspex-augur` / `security-analyze`).
+Codex Security scan `8b86b0d7-95e5-42df-90b3-7505b16f878b` completed against
+revision `4d20f27bb227913a527c399dbebca87a0be18bbe` with four low-severity findings.
+The user selected the inline psql lint bypass for the first remediation.
+
+### Implemented fix
+
+- `src/reports/library.js`: reject any backslash left after masking literals,
+  quoted identifiers and comments. Inline or adjacent `\gexec` / `\i` commands
+  can no longer pass EXECUTE-script lint before file creation or replacement.
+- `src/sqlGuard.js`: recognize non-ASCII dollar-quote tags and their identifier
+  boundaries, so valid quoted text remains accepted by the stricter check.
+- `tests/reports.test.js` and `tests/sqlGuard.test.js`: cover LF/CRLF/CR, inline
+  commands, quoted/comment controls, non-ASCII tags, identifier boundaries and
+  rejection before creating or overwriting an EXECUTE file.
+
+The user authorized commit and push on 2026-10-15. These four source/test files
+and this handoff belong to the same delivery. No PR or deployment was performed.
+
+### Verification already completed
+
+- Before the source fix, the psql-focused run reproduced five failures.
+- `node --test tests/reports.test.js tests/sqlGuard.test.js`: **132/132 passed**.
+- Initial `node --test tests/*.test.js`: **238/238 passed**, no failures or skips.
+- After fast-forwarding to upstream `1608991`, the required pre-commit gates
+  passed: `npm test` **262/262** and `npm run test:local` **35/35**, no skips.
+- `git diff --check` and syntax checks on the four changed JavaScript files passed.
+- One independent read-only patch review found no concrete issue.
+
+The original and alternate lint triggers are rejected, while benign controls
+pass. Local integration used the existing localhost test profile, with generated
+files redirected to temporary directories. No privileged psql script,
+spreadsheet end-to-end test or POSIX permission test was executed.
+
+The completed scan report remains unchanged. Supplemental `artifacts/fix_report.md`
+and `artifacts/psql-fix/{before-fix,focused,package-tests}.log` are retained in
+the local Codex Security collection
+`artifacts-7a5cd8370b1a0d9cb938ec6da56de3bbbc3ecd44d78a23bda03808d5eb049eb0`.
+The same collection contains the delivery logs
+`artifacts/psql-fix/{precommit-unit,precommit-integration}.log`.
+
+### Proposed next work
+
+1. Check CI for the delivery commit; keep this psql fix separate from subsequent
+   remediation.
+2. Address the two remaining CSV findings in a small, tested change:
+   spreadsheet-mode column headers in `src/db.js` need the existing formula
+   neutralization before CSV quoting; Operations CSV in `src/viewer.html`
+   needs equivalent protection for untrusted text fields. Preserve raw export
+   semantics and test both malicious prefixes and ordinary values.
+3. Prioritize the conditional POSIX artifact-permission finding according to
+   supported Linux/macOS deployments and local-user access. The scan did not
+   establish a Windows ACL exposure.
+
+This is the recommended order, not authorization to implement the remaining
+findings. The current evidence does not call for another full scan, a new SQL
+parser or a broad architecture refactor. Keep each remediation scoped to its
+finding and regression evidence.
 
