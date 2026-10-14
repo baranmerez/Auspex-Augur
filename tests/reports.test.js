@@ -165,6 +165,9 @@ const validScripts = [
   ['savepoints', 'BEGIN;\nSAVEPOINT a;\nUPDATE t SET a = 1 WHERE id = 1;\nROLLBACK TO SAVEPOINT a;\nRELEASE SAVEPOINT a;\nROLLBACK;'],
   ['rollback variants and start transaction', 'START TRANSACTION ISOLATION LEVEL SERIALIZABLE;\nUPDATE t SET a = 1 WHERE id = 1;\nROLLBACK WORK;'],
   ['comments and dollar quoting', "BEGIN;\n-- ROLLBACK; DELETE FROM t;\nUPDATE t SET note = $x$ DELETE FROM t; COMMIT; $x$ WHERE id = 1;\nROLLBACK TRANSACTION;"],
+  ['psql text inside quotes and comments', String.raw`BEGIN; SELECT '\gexec', E'\\gexec', $$\gexec$$, $x$\i file.sql$x$ AS "\gexec"; /* \i file.sql */ -- \gexec
+ROLLBACK;`],
+  ['psql text inside a non-ASCII dollar quote', String.raw`BEGIN; SELECT $Türk$\gexec$Türk$; ROLLBACK;`],
 ];
 
 for (const [name, sql] of validScripts) {
@@ -187,6 +190,11 @@ const invalidScripts = [
   ['CALL', 'BEGIN; CALL purge(); ROLLBACK;', /CALL/],
   ['CREATE FUNCTION', 'BEGIN; CREATE OR REPLACE FUNCTION f() RETURNS void AS $$ DELETE FROM t $$ LANGUAGE sql; ROLLBACK;', /function or procedure/],
   ['psql meta command', 'BEGIN;\nUPDATE t SET a = 1 WHERE id = 1;\n\\commit\nROLLBACK;', /backslash command/],
+  ['inline psql gexec with LF', "BEGIN;\nSELECT 'COMMIT' \\gexec\nUPDATE t SET a = 1 WHERE id = 1;\nROLLBACK;", /backslash command/],
+  ['adjacent psql gexec with CRLF', "BEGIN;\r\nSELECT 'COMMIT'\\gexec\r\nUPDATE t SET a = 1 WHERE id = 1;\r\nROLLBACK;", /backslash command/],
+  ['inline psql gexec with lone CR', "BEGIN;\rSELECT 'COMMIT' \\gexec\rUPDATE t SET a = 1 WHERE id = 1;\rROLLBACK;", /backslash command/],
+  ['inline psql include', 'BEGIN; SELECT 1 \\i file.sql\nSELECT 1; ROLLBACK;', /backslash command/],
+  ['psql after a non-ASCII dollar quote', 'BEGIN; SELECT $Türk$COMMIT$Türk$ \\gexec\nSELECT 1; ROLLBACK;', /backslash command/],
   ['COMMIT hidden after a comment ended by a lone CR', 'BEGIN;\nUPDATE t SET a = 1 WHERE id = 1; -- note\rCOMMIT;\nROLLBACK;', /COMMIT is never written/],
   ['MERGE with THEN DELETE', 'BEGIN;\nMERGE INTO t USING s ON t.id = s.id WHEN MATCHED THEN DELETE;\nROLLBACK;', /MERGE/],
   ['MERGE with THEN UPDATE', 'BEGIN;\nMERGE INTO t USING s ON t.id = s.id WHEN MATCHED THEN UPDATE SET a = s.a;\nROLLBACK;', /MERGE/],
@@ -197,6 +205,19 @@ for (const [name, sql, message] of invalidScripts) {
     assert.match(lintExecuteScript(sql).errors.join(' | '), message);
   });
 }
+
+test('EXECUTE scripts reject inline psql before creating or replacing a file', () => {
+  const lib = tempLibrary();
+  const sql = "BEGIN;\nSELECT 'COMMIT' \\gexec\nUPDATE t SET a = 1 WHERE id = 1;\nROLLBACK;";
+  const file = lib.paths('execute', ref).sql;
+  assert.throws(() => lib.saveExecuteScript({ ref, sql }), /psql backslash command/);
+  assert.equal(fs.existsSync(file), false);
+
+  lib.saveExecuteScript({ ref, sql: 'BEGIN; SELECT 1; ROLLBACK;' });
+  const original = fs.readFileSync(file, 'utf8');
+  assert.throws(() => lib.saveExecuteScript({ ref, sql, replace: true }), /psql backslash command/);
+  assert.equal(fs.readFileSync(file, 'utf8'), original);
+});
 
 test('EXECUTE scripts get a header and are not overwritten by accident', () => {
   const lib = tempLibrary();
