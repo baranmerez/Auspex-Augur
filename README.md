@@ -168,6 +168,8 @@ flowchart LR
 | 📁 `list_schemas` | Non-system schemas with owner, relation count, usage privilege, comment |
 | 📋 `list_tables` | Tables/views in a schema with estimated rows, size, SELECT privilege, comment; optional ILIKE filter |
 | 🧬 `describe_table` | Columns, types, defaults, comments, constraints, indexes, incoming FKs, view definition; records the table in the schema memory and reports changes since the last time |
+| 🧬 `describe_tables` | The same structure for up to 50 tables in one call, with 5 catalog statements (6 with a view) however many tables; unknown names are reported per table; each table is recorded in the schema memory |
+| 📏 `profile_tables` | Up to 30 tables in one call: estimated rows, per-column fill rate and distinct count on a sample, and fan-out over a parent table (optionally in a window); at most 3 statements; counts and ratios only, never row values |
 | ▶️ `query` | One read-only statement, max `AUSPEX_MAX_ROWS` rows, `$1..$n` params, optional `timeoutSeconds` |
 | 🧠 `explain` | Estimated plan by default; `analyze: true` runs `EXPLAIN (ANALYZE, BUFFERS)` read-only, under the timeout, rolled back |
 | 📤 `export_csv` | Streams the result to a new UTF-8 CSV file (`<time>_<random>_<name>.csv`, never overwrites) within a row, size and total-time budget; returns only path, columns, row count, size and `stopReason` when a limit cut it short |
@@ -201,9 +203,27 @@ any other type count as text. The rule follows the common CSV-injection
 guidance; it is covered by unit tests on the generated text, not yet checked by
 opening the files in Excel, LibreOffice or Google Sheets.
 
+### Exploring many tables
+
+Exploring N tables one by one costs N round trips (a `describe_table` and a
+measuring query per table), all of them in the audit log. `describe_tables`
+and `profile_tables` take a list instead and use a constant number of
+statements in one READ ONLY transaction with one audit entry, whether the list
+has 1 table or 30: `describe_tables` sends 5 catalog statements (6 when a view
+or materialized view is listed); `profile_tables` sends 1 catalog lookup, 1
+column-statistics statement for all tables (`UNION ALL`) and, with `parent`,
+1 fan-out statement, so at most 3 (field `statements`). Column statistics are
+taken on a sample of `sampleRows` rows per table (default 20000, max 200000):
+`TABLESAMPLE SYSTEM` plus `LIMIT` when the estimate is larger, otherwise a
+plain `LIMIT` scan. Fan-out uses the child's single-column foreign key to
+`parent.key`, or a column given as `schema.table:column`. Table and column
+names are checked against the catalog, quoted, and the generated SQL passes the
+same guard as user queries; there is no free SQL. The server instructions tell
+the model to prefer these two tools over per-table loops.
+
 ### Large tables and long queries
 
-`query`, `explain` and `export_csv` accept `timeoutSeconds`. Without it the
+`query`, `explain`, `export_csv` and `profile_tables` accept `timeoutSeconds`. Without it the
 default (30 s) applies; with it the value may not exceed the global or
 per-profile ceiling, and a larger value is rejected before connecting. The
 server instructions tell the model to prefer estimated row counts over

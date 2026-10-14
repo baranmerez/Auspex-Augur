@@ -203,6 +203,14 @@ export class ReadOnlyDatabase {
     await client.query({ text: `DECLARE ${cursorName} NO SCROLL CURSOR FOR ${query}`, values: params || [], queryMode: 'extended' });
   }
 
+  // Runs generated SQL (identifiers checked against the catalog and quoted)
+  // inside an open withReadOnly transaction: through the same guard as user
+  // queries and with the extended protocol, which rejects a second statement.
+  async guardedQuery(client, sql, params) {
+    const text = assertReadOnlyQuery(sql);
+    return client.query({ text, values: params || [], queryMode: 'extended' });
+  }
+
   query(profile, sql, params, maxRows, timeoutSeconds) {
     return this.audited('query', { profile: profile ?? null, sql, params, maxRows, timeoutSeconds },
       () => this._query(profile, sql, params, maxRows, timeoutSeconds));
