@@ -252,6 +252,12 @@ fn profile_max_ms(name: &str, fallback: u64) -> u64 {
     ms_env(&format!("AUSPEX_MAX_STATEMENT_TIMEOUT_MS_{}", name.to_uppercase()), fallback)
 }
 
+// Query budget per minute, as in loadConfig(): AUSPEX_MAX_QUERIES_PER_MINUTE_<NAME>
+// overrides maxQueriesPerMinute from the file, which overrides the global value.
+fn profile_max_queries(name: &str, file_value: Option<u64>, global: u64) -> u64 {
+    ms_env(&format!("AUSPEX_MAX_QUERIES_PER_MINUTE_{}", name.to_uppercase()), file_value.unwrap_or(global))
+}
+
 // The checks the server applies at startup (validateProfileUrl in config.js);
 // a profile failing them is shown with an error instead of as usable.
 fn profile_problem(name: &str, url_text: &str) -> Option<String> {
@@ -289,6 +295,7 @@ fn profiles() -> Value {
     let file = profiles_file();
     let default_ms = ms_env("AUSPEX_STATEMENT_TIMEOUT_MS", 30_000);
     let max_ms = ms_env("AUSPEX_MAX_STATEMENT_TIMEOUT_MS", 300_000);
+    let max_queries = ms_env("AUSPEX_MAX_QUERIES_PER_MINUTE", 60);
     let mut list: Vec<Value> = Vec::new();
 
     match fs::read_to_string(&file) {
@@ -310,6 +317,8 @@ fn profiles() -> Value {
                         let max = profile_max_ms(&name, file_max);
                         item.insert("maxTimeoutSeconds".into(), json!(max / 1000));
                         item.insert("defaultTimeoutSeconds".into(), json!(default_ms.min(max) / 1000));
+                        let file_queries = p.get("maxQueriesPerMinute").and_then(Value::as_u64);
+                        item.insert("maxQueriesPerMinute".into(), json!(profile_max_queries(&name, file_queries, max_queries)));
                         list.push(Value::Object(item));
                     }
                 }
@@ -337,6 +346,7 @@ fn profiles() -> Value {
             let max = profile_max_ms(name, max_ms);
             item.insert("maxTimeoutSeconds".into(), json!(max / 1000));
             item.insert("defaultTimeoutSeconds".into(), json!(default_ms.min(max) / 1000));
+            item.insert("maxQueriesPerMinute".into(), json!(profile_max_queries(name, None, max_queries)));
             list.push(Value::Object(item));
         }
     }
@@ -475,5 +485,13 @@ mod tests {
         for bad in ["tables/../x.json", "tables/a/b/c.json", "tables/a/.json", "graph.json", "tables/a/b.JSON", "tables/A/b.json", r"tables\a\b.json"] {
             assert!(!valid_memory_file(bad), "{bad}");
         }
+    }
+
+    #[test]
+    fn query_budget_prefers_env_then_file_then_global() {
+        assert_eq!(profile_max_queries("budget-none", None, 60), 60);
+        assert_eq!(profile_max_queries("budget-none", Some(30), 60), 30);
+        std::env::set_var("AUSPEX_MAX_QUERIES_PER_MINUTE_BUDGET-ENV", "5");
+        assert_eq!(profile_max_queries("budget-env", Some(30), 60), 5);
     }
 }

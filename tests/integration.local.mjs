@@ -16,7 +16,9 @@ import { ReportService } from '../src/reports/service.js';
 import { SchemaMemory } from '../src/memory/store.js';
 
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-it-'));
-const env = { ...process.env, AUSPEX_DATA_DIR: dataDir };
+// This file makes far more than the default 60 database calls per minute on
+// one profile; the budget itself is tested below with its own instance.
+const env = { ...process.env, AUSPEX_DATA_DIR: dataDir, AUSPEX_MAX_QUERIES_PER_MINUTE: '10000', AUSPEX_MAX_QUERIES_PER_MINUTE_LOCAL: '10000' };
 if (env.AUSPEX_DB_LOCAL) env.AUSPEX_PROFILES_FILE = path.join(dataDir, 'no-profiles.json');
 const config = loadConfig(env);
 if (!config.profiles.has('local')) {
@@ -138,6 +140,21 @@ test('the local "Auspex" role passes the read-only role check against the real c
   assert.notEqual(r.status, 'blocked', JSON.stringify(r));
   assert.equal(r.role, 'Auspex');
   assert.deepEqual(r.blocking, []);
+});
+
+test('the query budget refuses the call over the limit without connecting', async () => {
+  const audit = [];
+  const limited = new ReadOnlyDatabase({ ...config, maxQueriesByProfile: new Map([['local', 2]]) }, { audit: e => audit.push(e) });
+  try {
+    await limited.query('local', 'select 1');
+    await limited.query('local', 'select 2');
+    const connects = limited.pool('local').totalCount;
+    await assert.rejects(limited.query('local', 'select 3'), /Query budget exhausted for profile "local": 2 database operations in the last minute, limit 2/);
+    assert.equal(limited.pool('local').totalCount, connects, 'no new connection');
+    assert.match(audit.at(-1).error, /Query budget exhausted/);
+  } finally {
+    await limited.close();
+  }
 });
 
 test('quoted and Unicode-escaped spellings of a forbidden function get the same guard decision', async () => {
