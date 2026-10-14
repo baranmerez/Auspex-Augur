@@ -335,7 +335,8 @@ export function lintExecuteScript(sql) {
     if (w[0] === 'create' && w.slice(1, 4).some(x => x === 'function' || x === 'procedure')) {
       errors.push(`Statement ${n} creates a function or procedure; its body cannot be checked.`);
     }
-    if (/(^|\n)\s*\\/.test(s)) errors.push(`Statement ${n} contains a psql backslash command.`);
+    // psql commands can follow SQL on the same line; quoted/comment text is masked.
+    if (s.includes('\\')) errors.push(`Statement ${n} contains a psql backslash command.`);
     for (const write of writesWithoutWhere(s)) errors.push(`Statement ${n} has ${write} without WHERE.`);
     if (w[0] === 'truncate' || w[0] === 'drop') warnings.push(`Statement ${n} is ${w[0].toUpperCase()}; double-check it is intended.`);
   });

@@ -17,6 +17,7 @@ const allowed = [
   ['nested comment', 'select 1 /* a /* insert */ b */', null],
   ['dollar quoted', 'select $$drop table x; $$ as s', null],
   ['tagged dollar quote', 'select $t$ delete $t$', null],
+  ['non-ASCII dollar quote', String.raw`select $Türk$ delete; \gexec $Türk$`, null],
   ['escape string', "select E'it\\'s; delete'", null],
   ['doubled quote', "select 'it''s; drop'", null],
   ['placeholder', 'select * from t where id = $1', null],
@@ -44,6 +45,8 @@ for (const [name, sql, expected] of allowed) {
 const rejected = [
   ['empty', '   '],
   ['two statements', 'select 1; select 2'],
+  ['dollar tag inside a non-ASCII identifier', 'select İ$tag$; delete from t; $tag$'],
+  ['dollar tag inside an identifier ending in dollar', 'select a$$tag$; delete from t; $tag$'],
   ['stacked drop', 'select 1; drop table t'],
   ['insert', 'insert into t values (1)'],
   ['update', 'update t set a = 1'],
