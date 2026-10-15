@@ -41,11 +41,11 @@ test('Operations CSV download neutralizes text cells and keeps numbers', () => {
   const viewer = loadViewer();
   const rows = [
     { _id: 1, ts: '2026-10-15T10:00:00.000Z', source: 'mcp', tool: 'query', profile: 'local', ms: -5, rowCount: 0,
-      error: '=1+1 rejected', sql: '=1+1', params: ['=x'] },
+      error: '=1+1 rejected', sql: '=1+1', params: ['=x'], errorCode: 'SQL_REJECTED', sqlState: '25006' },
     { _id: 2, ts: '2026-10-15T10:00:01.000Z', tool: '@tool', profile: '+p', ms: 12, rowCount: null,
       error: '-bad; "quoted"\nnext', sql: 'select \'Şükrü\' as ad', params: null },
     { _id: 3, ts: '2026-10-15T10:00:02.000Z', source: 'script', tool: 'query', profile: 'local', ms: 3, rowCount: 1,
-      error: '\tTAB', sql: '\rselect 1', params: [] },
+      error: '\tTAB', sql: '\rselect 1', params: [], errorCode: '-x' },
   ];
   viewer.exportRows(rows, 'csv');
   const [csv] = viewer.downloads;
@@ -53,10 +53,10 @@ test('Operations CSV download neutralizes text cells and keeps numbers', () => {
   assert.match(csv.name, /^auspex-log-.*\.csv$/);
   assert.ok(csv.text.startsWith('﻿'));
   const lines = csv.text.slice(1).split('\r\n');
-  assert.equal(lines[0], 'ts;source;tool;profile;ms;rowCount;error;sql;params');
-  assert.equal(lines[1], `2026-10-15T10:00:00.000Z;mcp;query;local;-5;0;'=1+1 rejected;'=1+1;"[""=x""]"`);
-  assert.equal(lines[2], `2026-10-15T10:00:01.000Z;old;'@tool;'+p;12;;"'-bad; ""quoted""\nnext";select 'Şükrü' as ad;`);
-  assert.equal(lines[3], `2026-10-15T10:00:02.000Z;script;query;local;3;1;'\tTAB;"'\rselect 1";[]`);
+  assert.equal(lines[0], 'ts;source;tool;profile;ms;rowCount;error;sql;params;errorCode;sqlState');
+  assert.equal(lines[1], `2026-10-15T10:00:00.000Z;mcp;query;local;-5;0;'=1+1 rejected;'=1+1;"[""=x""]";SQL_REJECTED;25006`);
+  assert.equal(lines[2], `2026-10-15T10:00:01.000Z;old;'@tool;'+p;12;;"'-bad; ""quoted""\nnext";select 'Şükrü' as ad;;;`);
+  assert.equal(lines[3], `2026-10-15T10:00:02.000Z;script;query;local;3;1;'\tTAB;"'\rselect 1";[];'-x;`);
 });
 
 test('Operations JSON download stays exact', () => {
