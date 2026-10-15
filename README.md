@@ -280,10 +280,14 @@ library/
   library and memory folder. Every change runs under a lock file
   (`<library>/.lock`, `<memory>/<profile>/.lock`), so concurrent writers do
   not lose each other's updates and SQL, metadata and HTML stay in step. A
-  second writer waits up to 5 s, then gets a "try again" error. A lock left by
-  a crashed process (or older than 30 s) is taken over automatically; a
-  process paused for longer than that while holding it (debugger, sleep) can
-  lose it, and a crash in the middle of an approval can leave it half done.
+  second writer waits up to 5 s, then gets a "try again" error. A lock whose
+  owner process is still alive on this machine is never taken over, however
+  long it is held (debugger, sleep); a lock left by a crashed process is taken
+  over automatically. Only when the owner cannot be checked (unreadable lock
+  file, another host) does a lock older than 30 s expire. Locks are same-host
+  only: sharing one library or memory folder between machines over a network
+  filesystem is not supported. A crash in the middle of an approval can leave
+  it half done.
 
 - **Private report, shared copy:** a report's own HTML is a private working
   file: it embeds the raw SQL, parameters, query plan (with its filter

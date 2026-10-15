@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { withFileLock, LockBusyError } from '../src/fileLock.js';
 import { Library } from '../src/reports/library.js';
@@ -64,12 +64,77 @@ test('a lock left by a crashed process is taken over', { timeout: 30000 }, async
   assert.equal(fs.existsSync(lockPath), false);
 });
 
-test('an old lock is taken over even when its pid is alive', () => {
+test('an old lock whose pid is alive on this host is not taken over', () => {
   const lockPath = path.join(tempDir('auspex-lock-old-'), '.lock');
-  fs.writeFileSync(lockPath, JSON.stringify({ pid: process.pid, host: os.hostname(), token: 'someone-else' }));
+  fs.writeFileSync(lockPath, JSON.stringify({ pid: process.ppid, host: os.hostname(), token: '5555555555555555' }));
+  const old = new Date(Date.now() - 60000);
+  fs.utimesSync(lockPath, old, old);
+  assert.throws(() => withFileLock(lockPath, () => 'never', { waitMs: 150, staleMs: 100 }), LockBusyError);
+  assert.equal(JSON.parse(fs.readFileSync(lockPath, 'utf8')).token, '5555555555555555', 'the live owner keeps its lock');
+});
+
+test('an old lock from another host (liveness unknown) is taken over by age; a fresh one is not', () => {
+  const lockPath = path.join(tempDir('auspex-lock-host-'), '.lock');
+  fs.writeFileSync(lockPath, JSON.stringify({ pid: process.pid, host: `${os.hostname()}-elsewhere`, token: '6666666666666666' }));
+  assert.throws(() => withFileLock(lockPath, () => 'never', { waitMs: 150, staleMs: 30000 }), LockBusyError);
   const old = new Date(Date.now() - 60000);
   fs.utimesSync(lockPath, old, old);
   assert.equal(withFileLock(lockPath, () => 'ran', { waitMs: 200, staleMs: 30000 }), 'ran');
+});
+
+test('a second process cannot enter while a live owner is still inside past staleMs (issue #26)', { timeout: 30000 }, () => {
+  const dir = tempDir('auspex-lock-live-');
+  const lockPath = path.join(dir, '.lock');
+  const activePath = path.join(dir, 'ownerStillInside');
+  const childCode = `
+    import fs from 'node:fs';
+    import { withFileLock, LockBusyError } from '${srcUrl('fileLock.js')}';
+    const started = Date.now();
+    try {
+      withFileLock(${JSON.stringify(lockPath)}, () => {
+        console.log(JSON.stringify({ acquired: true, firstOwnerStillInside: fs.existsSync(${JSON.stringify(activePath)}) }));
+      }, { waitMs: 500, staleMs: 100 });
+    } catch (err) {
+      console.log(JSON.stringify({ busy: err instanceof LockBusyError, ms: Date.now() - started }));
+    }`;
+  let out;
+  withFileLock(lockPath, () => {
+    fs.writeFileSync(activePath, 'inside');
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 150);
+    const res = spawnSync(process.execPath, ['--input-type=module', '-e', childCode], { encoding: 'utf8', timeout: 10000 });
+    assert.equal(res.status, 0, res.stderr);
+    out = JSON.parse(res.stdout);
+    fs.rmSync(activePath);
+  }, { staleMs: 100 });
+  assert.equal(out.busy, true, JSON.stringify(out));
+  assert.ok(out.ms >= 500 && out.ms < 3000, `busy within the wait bound (${out.ms} ms)`);
+});
+
+test('a paused owner in another process keeps the lock; once it is killed the lock is recovered', { timeout: 30000 }, async () => {
+  const dir = tempDir('auspex-lock-paused-');
+  const lockPath = path.join(dir, '.lock');
+  const readyPath = path.join(dir, 'ready');
+  const owner = spawn(process.execPath, ['--input-type=module', '-e', `
+    import fs from 'node:fs';
+    import { withFileLock } from '${srcUrl('fileLock.js')}';
+    withFileLock(${JSON.stringify(lockPath)}, () => {
+      fs.writeFileSync(${JSON.stringify(readyPath)}, 'x');
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20000);
+    });`], { stdio: 'ignore' });
+  const exited = new Promise(resolve => owner.on('exit', resolve));
+  try {
+    for (let i = 0; i < 200 && !fs.existsSync(readyPath); i++) await new Promise(r => setTimeout(r, 25));
+    assert.ok(fs.existsSync(readyPath), 'the owner took the lock');
+    await new Promise(r => setTimeout(r, 200)); // well past staleMs below
+    const started = Date.now();
+    assert.throws(() => withFileLock(lockPath, () => 'never', { waitMs: 300, staleMs: 100 }), LockBusyError);
+    assert.ok(Date.now() - started < 2000, 'busy close to waitMs');
+  } finally {
+    owner.kill('SIGKILL');
+    await exited;
+  }
+  assert.ok(fs.existsSync(lockPath), 'the killed owner left its lock behind');
+  assert.equal(withFileLock(lockPath, () => 'ran', { waitMs: 1000, staleMs: 30000 }), 'ran');
 });
 
 test('a fresh lock held by a live process makes the caller wait, then fail with a retryable error', () => {
