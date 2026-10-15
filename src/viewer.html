@@ -1076,7 +1076,7 @@ function spreadsheetSafe(value) {
 function exportRows(rows, kind) {
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
   if (kind === 'json') return download(`auspex-log-${stamp}.json`, JSON.stringify(rows.map(({ _id, ...e }) => e), null, 2), 'application/json');
-  const cols = ['ts', 'source', 'tool', 'profile', 'ms', 'rowCount', 'error', 'sql', 'params'];
+  const cols = ['ts', 'source', 'tool', 'profile', 'ms', 'rowCount', 'error', 'sql', 'params', 'errorCode', 'sqlState'];
   const cell = v => { if (v === null || v === undefined) return ''; const s = typeof v === 'number' ? String(v) : spreadsheetSafe(typeof v === 'object' ? JSON.stringify(v) : String(v)); return /[";\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
   download(`auspex-log-${stamp}.csv`, '﻿' + [cols.join(';'), ...rows.map(e => cols.map(c => cell(c === 'source' ? sourceOf(e) : e[c])).join(';'))].join('\r\n'), 'text/csv');
 }
