@@ -1,13 +1,13 @@
 # Auspex Augur — Handoff
 
-Last updated: 2026-10-15 · Versions: MCP server 0.9.0, desktop app 0.1.0
+Last updated: 2026-10-16 · Versions: MCP server 0.9.0, desktop app 0.1.0
 
 Environment-specific details (servers, databases, schema lists, privilege
 exceptions) are **not** in this file. They live in
 `handoff/environment.local.md`, which is git-ignored.
 
-Current security work: see [Security Analyze handoff](#14-security-analyze-handoff-2026-10-15)
-for the psql fix, verification evidence and proposed next steps.
+Latest work: see [Report engine and exploration](#15-report-engine-and-exploration-2026-10-1516)
+for the batch exploration tools, table roles, skills and viewer views.
 
 ---
 
@@ -33,7 +33,9 @@ auspex/
 │   ├── index.js        MCP server (stdio): tools, server instructions
 │   ├── db.js           ReadOnlyDatabase: READ ONLY tx, cursor, timeouts, audit
 │   ├── sqlGuard.js     SQL guard (single statement, forbidden keywords/functions)
-│   ├── catalog.js      list_schemas / list_tables / describe_table / search
+│   ├── catalog.js      list_schemas / list_tables / describe_table(s) / describe_functions / profile_tables / relation_stats / search
+│   ├── errors.js       Stable error codes for the tool error envelope
+│   ├── skills.js       Loads skills/ as MCP prompts
 │   ├── config.js       ~/.auspex, profiles.json, environment variables
 │   ├── auditLog.js     Daily JSONL audit log
 │   ├── fileLock.js     Cross-process lock for the library and the schema memory
@@ -43,7 +45,8 @@ auspex/
 │   ├── reports/        Report library: library, plan summary, masking, HTML template
 │   └── memory/         Schema memory: store (tables, notes, relations, view) and plan usage
 ├── desktop/            Tauri 2 desktop app (Rust)
-├── scripts/            SQL: local test setup, role creation, schema grants
+├── skills/             Workflow skills auspex-explore / -report / -ddl (also served as MCP prompts)
+├── scripts/            SQL: local test setup (+ DDL fixture), role creation, schema grants; installSkills.mjs
 ├── tests/              Unit tests (*.test.js) + local integration test
 ├── profiles.example.json
 ├── handoff/            This file (+ environment.local.md, git-ignored)
@@ -54,9 +57,15 @@ auspex/
 
 | Tool | Purpose |
 |---|---|
-| `list_profiles` | Configured profiles (description, host, database, user, timeout ceiling; never passwords) |
-| `search` | Search table/view/column names and comments across all schemas |
+| `list_profiles` | Configured profiles (description, host, database, user, timeout ceiling, query budget, role check; never passwords) |
+| `check_profile` | Runs the read-only role check now |
+| `search` | Search table/view/column names and comments, functions and triggers (optionally function source) across all schemas |
 | `list_schemas`, `list_tables`, `describe_table` | Browse: schemas, tables (estimated rows, size, privilege), columns, FKs, indexes, view definitions |
+| `describe_tables` | Up to 50 relations in 6 statements (7 with a view); `detail: "summary"` (default, compact) or `"full"`; includes triggers, checks, sequences, partitions, RLS |
+| `describe_functions` | Up to 50 functions: signature, properties, triggers using them, definition (1 statement) |
+| `profile_tables` | Up to 30 relations: fill rate, sample distinct counts, fan-out over a parent with `window` and `parentFilter` (at most 3 statements, no row values) |
+| `relation_stats` | Instance (referenced) and dependent (referencing) tables of a center, ranked by estimated linked rows from planner statistics (at most 2 statements); enriches graph.json |
+| `share_report` | Sanitized shareable copy; refused unless the last run matches the active SQL |
 | `query` | One SELECT/WITH/VALUES/TABLE statement; max 500 rows; `$1..$n` params; `timeoutSeconds` |
 | `explain` | Estimated plan; `analyze: true` for real timings and buffers |
 | `export_csv` | Writes the result to CSV under `~/.auspex/exports`, returns only path and row count |
@@ -68,6 +77,11 @@ auspex/
 `describe_table` also records the table in the schema memory and reports
 changes since the last time; `run_report` and `explain` record the tables and
 columns their plans used. The memory never crawls the catalog on its own.
+
+Tool errors carry a structured envelope (`code`, `retryable`,
+`retryAfterSeconds`, `sqlState`, `correlationId`) next to the readable text;
+the correlation ID is also on every audit entry of that call. MCP prompts
+`explore`, `report` and `ddl` serve the workflow skills.
 
 **A profile is mandatory.** There is no default database. Every tool requires
 a profile name, and the server instructions tell the model to ask the user which
@@ -165,9 +179,18 @@ has a hole in that schema.
   for unseen schema changes.
 - Tabs: Overview (stat tiles, activity chart, by profile/tool/table, slowest
   operations, recent errors), Operations (sort, paging, details, copy,
-  CSV/JSON download), Tables (accesses extracted from SQL), Reports (library
-  tree and report HTML), Schema (relation graph, ER diagram, notes inspector,
-  change timeline), Profiles.
+  CSV/JSON download with error codes), Tables (accesses extracted from SQL),
+  Reports (collapsible library list; report with question line, compact
+  metrics strip, warnings badge, sticky tabs, Preview first), Schema (Graph,
+  ER diagram and Flow views, notes inspector, change timeline), Profiles.
+- Schema roles: for the selected table, Reference/Instance tables (it points
+  at them) and Dependent/Beslenen tables (they point at it), ranked by
+  `linkedRows` then estimated rows, top 5 expandable to 10. Graph edges are
+  blue/orange by role and shaded by rank; Flow shows tinted swimlanes
+  Reference → Center → Dependent, depth 2. Colors are theme tokens at the top
+  of `viewer.html` (`--role-ref-*`, `--role-dep-*`, `--lane-*`).
+- After viewer changes rebuild the desktop app (app closed) and run
+  `render_reports` so library HTML uses the current template.
 - The Schema tab reads `graph.json`, which the memory module rebuilds after
   every change, so the viewer and the Rust app contain no relation logic.
 - Binds to 127.0.0.1 only, GET only, foreign Host headers get 403; never
@@ -181,16 +204,14 @@ Desktop build: Rust (MSVC toolchain), VS 2022 C++ Build Tools, WebView2;
 
 | Command | Scope | Last result |
 |---|---|---|
-| `npm test` | SQL guard, profiles, config, timeouts, explain, audit (incl. MCP server end to end), reports, change-script lint, CSV export, file lock with child processes, schema memory (no database) | 262/262 (psql delivery run; Windows, Node 24.18.0) |
-| `npm run test:local` | Local PG16 + `auspex_test` schema: writes rejected by the database, unprivileged table, CTE, stacked statements, timeout, EXPLAIN ANALYZE, CSV, search, reports, memory | 35/35 (psql delivery run) |
-| `cargo test` (in `desktop/src-tauri`) | Path validation of the desktop API | 1/1 |
+| `npm test` | SQL guard, profiles, config, timeouts, explain, audit and errors (incl. MCP server end to end), reports, change-script lint, CSV export, file lock with child processes, schema memory, catalog batch tools, prompts, skills install, viewer roles (no database) | 338/338 (2026-10-16, Windows, Node 24) |
+| `npm run test:local` | Local PG16 + `auspex_test` schema: writes rejected by the database, unprivileged table, CTE, stacked statements, timeout, connection drop, EXPLAIN ANALYZE, CSV budget cancellation, search, reports, memory, DDL catalog | 39 pass, 4 skipped (DDL fixture not applied locally; CI runs them) |
+| `cargo test` (in `desktop/src-tauri`) | Path validation and profile rules of the desktop API | 3/3 |
 
-The package and local PostgreSQL suites passed after integrating upstream
-revision `1608991` with the psql fix. The Cargo result is historical; no desktop
-code was changed by this fix. See section 14 for focused regression evidence.
-
-Local test setup: `scripts/local-test-setup.sql` (+ a `local` profile and a
-pgpass line). The Turkish names in the test data are intentional: they check
+Local test setup: `scripts/local-test-setup.sql`, then
+`scripts/local-test-ddl.sql` (triggers, functions, checks for the DDL catalog
+tests; swap its final ROLLBACK to COMMIT once), plus a `local` profile and a
+pgpass line. The Turkish names in the test data are intentional: they check
 UTF-8 handling.
 
 CI: `.github/workflows/ci.yml` runs `npm test` on Ubuntu (Node 20/22/24) and
@@ -242,13 +263,18 @@ outside the repository. The current setup is described in
 
 ## 12. Next steps
 
-1. Keep exploring with the schema memory: after each report, review the
-   unexplored neighbors it suggests.
-2. Personal-data column inventory and a privilege decision.
-3. Production database: role + schema grants + profile (`description`:
-   "PRODUCTION", lower `maxTimeoutSeconds`).
-4. pgpass deprecation fix.
-5. Optional: file saving in the desktop app, NSIS installer.
+1. Scenario tests on the test database with the Administratum agents: S1
+   combined report (orders by region/personnel with invoice and barcode
+   checks) and S2 integration DDL (study a table family, deliver a
+   BEGIN…ROLLBACK script).
+2. Production readiness review with the user, then production database: role
+   + schema grants + profile (`description`: "PRODUCTION", lower
+   `maxTimeoutSeconds`, lower query budget).
+3. Personal-data column inventory and a privilege decision.
+4. Roadmap #31: T1 evaluation set and T3 approved reports as typed operations
+   (with the remaining T8 per-step timings), then T2; T5–T7 before wide use;
+   T9 deferred.
+5. pgpass deprecation fix; optional desktop file saving and installer.
 
 ## 13. History
 
@@ -328,3 +354,36 @@ findings. The current evidence does not call for another full scan, a new SQL
 parser or a broad architecture refactor. Keep each remediation scoped to its
 finding and regression evidence.
 
+
+## 15. Report engine and exploration (2026-10-15/16)
+
+Goal: make Auspex a fast exploration, combined-report (S1) and integration-DDL
+(S2) tool with low query and token use; it is the base for the user's
+drag-and-drop reporting product built on the order table and its children.
+
+Merged work:
+
+- Review issues #26–#30 (PRs #32, #33): live-owner locks, spreadsheet-safe CSV
+  headers and Operations CSV, current-version sharing, whole-export budgets,
+  host/port URL options rejected.
+- Roadmap #31 T8 (PRs #35–#37): structured error envelope with correlation ID;
+  dropped connections are `CONNECTION_FAILED`; a dropped checked-out
+  connection no longer crashes the server. Remaining: per-step timings.
+- Batch tools and query budget (PRs #24, #25), `relation_stats` and the DDL
+  catalog (`describe_functions`, triggers/checks/sequences/partitions, routine
+  search) (PR #39), compact `describe_tables` summary, `profile_tables`
+  `parentFilter`, lock ceiling `maxHoldMs` (PR #41).
+- Skills `auspex-explore`, `auspex-report`, `auspex-ddl`, MCP prompts and
+  `npm run skills:install` (PR #38); viewer roles, Flow view and compact
+  report header (PR #40).
+
+Working agreements:
+
+- Table roles: Instance = tables the center references; Beslenen (Dependent)
+  = tables referencing the center; ranked by estimated linked rows, then size.
+- Code changes go Gaunt (implement, PR without auto-merge) → Ravenor (review)
+  → Karamazov (READY/HOLD) → merge. PR #41 was the first one through the full
+  chain; #32–#40 were reviewed afterwards (one P3, fixed in #41).
+- Commits and PRs carry no assistant name or attribution trailer.
+- Exploration batches announce their statement count first; the first real
+  test (order table neighbourhood) used 11 statements.
