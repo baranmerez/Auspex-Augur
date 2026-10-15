@@ -1,9 +1,11 @@
 #!/usr/bin/env node
+import crypto from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { loadConfig, describeConnection } from './config.js';
 import { ReadOnlyDatabase } from './db.js';
+import { classifyError, ToolError } from './errors.js';
 import {
   listSchemas, listTables, describeTable, describeTables, profileTables, search,
   maxDescribeTables, maxProfileTables, defaultSampleRows, maxSampleRows,
@@ -66,18 +68,42 @@ function learn(fn) {
   }
 }
 
+// Error result: the readable text first (unchanged), then the machine-readable
+// envelope (src/errors.js) as structuredContent and as a JSON text block for
+// clients that only read text. The envelope never holds the message itself.
+function errorResult(err, correlationId, text = `Error: ${err?.message ?? String(err)}`) {
+  const error = { ...classifyError(err), correlationId };
+  return {
+    content: [{ type: 'text', text }, { type: 'text', text: JSON.stringify({ error }) }],
+    structuredContent: { error },
+    _meta: { correlationId },
+    isError: true,
+  };
+}
+
 // Wraps a handler: JSON output and error reporting. Audit logging happens in
 // ReadOnlyDatabase (database calls) or in the handler via db.audited (library
-// and memory changes), so each call is recorded exactly once.
+// and memory changes), so each call is recorded exactly once. One correlation
+// ID per call links its audit entries and its result (_meta.correlationId).
 function tool(name, toolConfig, handler) {
   server.registerTool(name, toolConfig, async args => {
+    const correlationId = crypto.randomUUID();
     try {
-      const result = await handler(args);
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 1) }] };
+      const result = await db.withCorrelation(correlationId, () => handler(args));
+      return { content: [{ type: 'text', text: JSON.stringify(result, null, 1) }], _meta: { correlationId } };
     } catch (err) {
-      return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+      return errorResult(err, correlationId);
     }
   });
+}
+
+// Failures inside the MCP SDK (input schema validation, unknown tool) never
+// reach tool() and are not audited; they get the same envelope. The SDK's
+// text is kept as is.
+if (typeof server.createToolError === 'function') {
+  server.createToolError = message => errorResult(
+    new ToolError(/-32602|Input validation error|Invalid arguments/.test(message) ? 'INVALID_INPUT' : 'INTERNAL', message),
+    crypto.randomUUID(), message);
 }
 
 tool('list_profiles', {
@@ -367,7 +393,7 @@ tool('remember', {
       const evidence = evidenceSql || evidenceFigures ? { sql: evidenceSql, figures: evidenceFigures } : undefined;
       return { note: memory.addNote(name, { kind, schema, table, column, text, evidence }) };
     }
-    if (id === undefined) throw new Error(`action=${action} needs id.`);
+    if (id === undefined) throw new ToolError('INVALID_INPUT', `action=${action} needs id.`);
     if (action === 'confirm') return { note: memory.confirmNote(name, id, kind) };
     return { note: memory.archiveNote(name, id, reason) };
   }, r => ({ noteId: r.note.id, noteKind: r.note.kind, noteStatus: r.note.status })));

@@ -14,7 +14,13 @@ export const stages = { draft: '_drafts', approved: 'SELECT', execute: 'EXECUTE'
 const maxRuns = 100;
 const reservedChars = /[<>:"/\\|?*\u0000-\u001f]/;
 
-export class LibraryError extends Error {}
+// errorCode (src/errors.js): INVALID_INPUT unless the throw site says otherwise.
+export class LibraryError extends Error {
+  constructor(message, errorCode = 'INVALID_INPUT') {
+    super(message);
+    this.errorCode = errorCode;
+  }
+}
 
 const trMap = { ç: 'c', ğ: 'g', ı: 'i', ö: 'o', ş: 's', ü: 'u', Ç: 'c', Ğ: 'g', İ: 'i', Ö: 'o', Ş: 's', Ü: 'u' };
 
@@ -97,7 +103,7 @@ export class Library {
   locate(ref) {
     if (this.exists('draft', ref)) return 'draft';
     if (this.exists('approved', ref)) return 'approved';
-    throw new LibraryError(`Report "${refLabel(normalizeRef(ref))}" not found in drafts or SELECT.`);
+    throw new LibraryError(`Report "${refLabel(normalizeRef(ref))}" not found in drafts or SELECT.`, 'NOT_FOUND');
   }
 
   readMeta(stage, ref) {
@@ -160,7 +166,7 @@ export class Library {
 
   appendRunUnlocked(stage, ref, run, last) {
     const meta = this.readMeta(stage, ref);
-    if (!meta) throw new LibraryError('Report metadata missing; save the report first.');
+    if (!meta) throw new LibraryError('Report metadata missing; save the report first.', 'NOT_FOUND');
     meta.runs.push(run);
     if (meta.runs.length > maxRuns) meta.runs = meta.runs.slice(-maxRuns);
     meta.last = last;
@@ -176,16 +182,16 @@ export class Library {
 
   approveUnlocked(ref) {
     const r = normalizeRef(ref);
-    if (!this.exists('draft', r)) throw new LibraryError(`No draft "${refLabel(r)}" to approve.`);
+    if (!this.exists('draft', r)) throw new LibraryError(`No draft "${refLabel(r)}" to approve.`, 'NOT_FOUND');
     const from = this.paths('draft', r);
     const to = this.paths('approved', r);
     const meta = this.readMeta('draft', r);
     // Approve exactly the SQL in the draft file, found by its hash.
     const hash = sqlHash(fs.readFileSync(from.sql, 'utf8'));
     const version = meta.sqlVersions.find(v => v.hash === hash)?.version;
-    if (version === undefined) throw new LibraryError(`The draft SQL of "${refLabel(r)}" matches no saved version; save it with save_report first.`);
+    if (version === undefined) throw new LibraryError(`The draft SQL of "${refLabel(r)}" matches no saved version; save it with save_report first.`, 'PRECONDITION_FAILED');
     // Only SQL that has run successfully (every entry in meta.runs is a success) can be approved.
-    if (!(meta.runs || []).some(x => x.sqlHash === hash)) throw new LibraryError(`Version ${version} of "${refLabel(r)}" has no successful run; run it with run_report before approving.`);
+    if (!(meta.runs || []).some(x => x.sqlHash === hash)) throw new LibraryError(`Version ${version} of "${refLabel(r)}" has no successful run; run it with run_report before approving.`, 'PRECONDITION_FAILED');
     meta.status = 'approved';
     meta.approvedAt = new Date().toISOString();
     meta.activeHash = hash;

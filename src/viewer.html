@@ -558,7 +558,7 @@ const TR = {
   'No table access in this range': 'Bu aralıkta tablo erişimi yok', 'from FROM/JOIN in SQL and table structure calls': 'SQL içindeki FROM/JOIN ve tablo yapısı çağrılarından',
   'file': 'dosya', 'env': 'ortam', 'no description': 'açıklama yok', 'errors': 'hata', 'avg. duration': 'ort. süre', 'last': 'son',
   'Server': 'Sunucu', 'User': 'Kullanıcı', 'Timeout': 'Zaman aşımı', '{d} s default · max {m} s': 'varsayılan {d} sn · en fazla {m} sn', 'Query budget': 'Sorgu bütçesi', '{q} per minute': 'dakikada {q}', 'Password': 'Şifre',
-  'in URL (move it to pgpass)': 'URL içinde (pgpass\'a taşıyın)', 'Role check': 'Rol kontrolü', 'no check in this range': 'bu aralıkta kontrol yok',
+  'in URL (move it to pgpass)': 'URL içinde (pgpass\'a taşıyın)', 'Role check': 'Rol kontrolü', 'no check in this range': 'bu aralıkta kontrol yok', 'unable to assess ({c})': 'değerlendirilemedi ({c})',
   'read-only ✓': 'salt okunur ✓', 'BLOCKED': 'ENGELLİ', 'warning': 'uyarı', 'Check profile': 'Profil kontrolü', 'Role check (first use)': 'Rol kontrolü (ilk kullanım)', 'Show operations': 'İşlemlerini göster', 'Could not read profiles file: ': 'Profil dosyası okunamadı: ',
   'No profiles configured': 'Tanımlı profil yok', 'Folder: ': 'Klasör: ', 'Profiles file: ': 'Profil dosyası: ', 'Logs: ': 'Loglar: ', 'Exports: ': 'Dışa aktarımlar: ',
   'just now': 'az önce', '{n} min ago': '{n} dk önce', '{n} h ago': '{n} sa önce', '{n} d ago': '{n} gün önce',
@@ -650,6 +650,7 @@ function summaryOf(e) {
   if (e.tool === 'list_tables' && e.schema) return e.schema + (e.pattern ? ` · ${e.pattern}` : '');
   if (e.report) return e.report + (e.version ? ` · v${e.version}` : '') + (e.sqlHash ? ` · ${e.sqlHash}` : '');
   if (e.tool === 'render_reports') return e.rendered !== undefined ? `${e.rendered} HTML` : '';
+  if (e.tool === 'check_profile' && e.error) return t('unable to assess ({c})', { c: e.errorCode || t('error') });
   if (e.tool === 'role_check' || e.tool === 'check_profile') return [e.roleStatus, ...(e.blocking || []), ...(e.warnings || [])].filter(Boolean).join(' · ');
   if (e.tool === 'remember') return [e.action, e.noteKind || e.kind, e.schema && e.table ? `${e.schema}.${e.table}` : null].filter(Boolean).join(' · ')
     + (e.noteId ? t(' · note #{id} {s}', { id: e.noteId, s: e.noteStatus || '' }).trimEnd() : '');
@@ -1104,7 +1105,7 @@ function renderOps(rows) {
       h('td', { class: 'sum', title: summaryOf(e) }, summaryOf(e) || h('span', { class: 'muted' }, '–')),
       h('td', { class: 'num' }, h('span', { class: 'dur' }, Number.isFinite(e.ms) ? h('span', { class: 'bar', style: `width:${Math.max(2, e.ms / maxMs * 60)}px` }) : null, fmtMs(e.ms))),
       h('td', { class: 'num hide-sm' }, Number.isFinite(e.rowCount) ? fmt(e.rowCount) : ''),
-      h('td', {}, e.error ? h('span', { class: 'badge err' }, h('span', { class: 'sw', style: 'background:var(--critical)' }), t('error')) : h('span', { class: 'badge ok' }, h('span', { class: 'sw', style: 'background:var(--good)' }), 'ok')));
+      h('td', {}, e.error ? h('span', { class: 'badge err', title: e.errorCode || null }, h('span', { class: 'sw', style: 'background:var(--critical)' }), e.errorCode || t('error')) : h('span', { class: 'badge ok' }, h('span', { class: 'sw', style: 'background:var(--good)' }), 'ok')));
     body.append(tr);
     if (open) {
       const meta = Object.entries(e).filter(([k, v]) => !['_id', 'sql', 'params', 'error'].includes(k) && v !== null && v !== undefined && v !== '');
@@ -1159,10 +1160,13 @@ function renderProfiles(rows) {
   if (!data) return;
   const per = new Map(groupCount(rows, e => e.profile).map(g => [g.key, g]));
   // Latest read-only role check per profile, from the audit log (the viewer
-  // never connects to a database itself).
+  // never connects to a database itself). A check_profile that failed (for
+  // example no connection) means the role could not be assessed, which is not
+  // the same as a passed check.
   const roleChecks = new Map();
-  for (const e of rows) if (e.tool === 'role_check' && (!roleChecks.has(e.profile) || e.ts > roleChecks.get(e.profile).ts)) roleChecks.set(e.profile, e);
+  for (const e of rows) if ((e.tool === 'role_check' || (e.tool === 'check_profile' && e.error)) && (!roleChecks.has(e.profile) || e.ts > roleChecks.get(e.profile).ts)) roleChecks.set(e.profile, e);
   const roleText = rc => !rc ? t('no check in this range')
+    : rc.error ? t('unable to assess ({c})', { c: rc.errorCode || t('error') })
     : rc.roleStatus === 'ok' ? t('read-only ✓')
     : `${rc.roleStatus === 'blocked' ? t('BLOCKED') : t('warning')}: ${[...(rc.blocking || []), ...(rc.warnings || [])].join(', ')}`;
   const cards = (data.profiles || []).map((p, i) => {
@@ -1184,7 +1188,7 @@ function renderProfiles(rows) {
         h('dt', {}, t('Timeout')), h('dd', {}, t('{d} s default · max {m} s', { d: p.defaultTimeoutSeconds ?? data.defaultTimeoutSeconds, m: p.maxTimeoutSeconds })),
         p.maxQueriesPerMinute ? h('dt', {}, t('Query budget')) : null, p.maxQueriesPerMinute ? h('dd', {}, t('{q} per minute', { q: p.maxQueriesPerMinute })) : null,
         h('dt', {}, t('Password')), h('dd', {}, p.passwordInString ? t('in URL (move it to pgpass)') : 'pgpass'),
-        h('dt', {}, t('Role check')), h('dd', { style: rc?.roleStatus === 'blocked' ? 'color:var(--critical)' : null, title: rc ? dateTimeOf(rc.ts) : null }, roleText(rc))),
+        h('dt', {}, t('Role check')), h('dd', { style: rc?.roleStatus === 'blocked' ? 'color:var(--critical)' : rc?.error ? 'color:var(--text-3)' : null, title: rc ? dateTimeOf(rc.ts) : null }, roleText(rc))),
       h('div', { style: 'margin-top:12px;display:flex;gap:8px' },
         h('button', { class: 'icon-btn', onclick: () => { F.profile.value = p.name; switchTab('ops'); } }, t('Show operations'))));
   });
