@@ -38,6 +38,29 @@ test('relation_stats is listed with its input schema', async () => {
   assert.match(tool.description, /at most 2 statements/i);
 });
 
+test('describe_functions and the extended search are listed with their input schemas', async () => {
+  const { tools } = await client.listTools();
+  const describe = tools.find(t => t.name === 'describe_functions');
+  assert.ok(describe, 'describe_functions is registered');
+  assert.deepEqual(describe.inputSchema.required, ['profile']);
+  assert.equal(describe.inputSchema.properties.functions.maxItems, 50);
+  assert.equal(describe.inputSchema.properties.maxChars.maximum, 200000);
+  const searchTool = tools.find(t => t.name === 'search');
+  assert.equal(searchTool.inputSchema.properties.searchSource.type, 'boolean');
+  assert.equal(searchTool.inputSchema.properties.includeRoutines.type, 'boolean');
+  assert.match(tools.find(t => t.name === 'describe_tables').description, /6, or 7 when/);
+});
+
+test('describe_functions without functions or pattern is refused before connecting and audited', async () => {
+  const res = await call('describe_functions', { profile: 'shop' });
+  assert.ok(res.isError);
+  assert.equal(res.structuredContent.error.code, 'INVALID_INPUT');
+  const [logged] = auditEntries().filter(e => e.correlationId === res._meta.correlationId);
+  assert.deepEqual([logged.tool, logged.errorCode], ['describe_functions', 'INVALID_INPUT']);
+  const connect = await call('describe_functions', { profile: 'shop', pattern: 'example_co' });
+  assert.equal(connect.structuredContent.error.code, 'CONNECTION_FAILED');
+});
+
 test('relation_stats: oversized input is refused by the schema, a real call is audited once', async () => {
   const before = auditEntries().length;
   const tooMany = await call('relation_stats', { profile: 'shop', tables: Array.from({ length: 51 }, (_, i) => `s.t${i}`) });
