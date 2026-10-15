@@ -240,6 +240,65 @@ test('profile_tables fails as a whole for an unknown parent or parent column', a
   await assert.rejects(profileTables(db, 'shop', { tables: ['shop.order_1'], parent, window: { ...window, column: 'nope' } }), /Window column nope/);
 });
 
+test('profile_tables parentFilter: every value is a parameter, ANDed with the window, still 3 statements', async () => {
+  const { db, sent, audit } = fakeDb();
+  const evil = "x'; drop table shop.customer; --";
+  const parentFilter = [
+    { column: 'id', op: '>', value: 50 },
+    { column: 'name', op: 'in', values: [evil, 'b'] },
+    { column: 'id', op: 'not in', values: [1, 2] },
+    { column: 'created_on', op: 'is not null' },
+    { column: 'name', op: 'NOT  IN', values: ['c'] },
+  ];
+  const r = await profileTables(db, 'shop', { tables: orders(2), parent, window, parentFilter, sampleRows: 1000 });
+  assert.equal(r.statements, 3);
+  const fanOut = sent.find(s => s.text.includes('auspex_parent'));
+  assert.deepEqual(fanOut.params, [1000, '2026-01-01', '2026-02-01', 50, [evil, 'b'], [1, 2], ['c']]);
+  assert.match(fanOut.text, /where "id" is not null and "created_on" >= \$2 and "created_on" < \$3 and "id" > \$4 and "name" = any\(\$5\) and "id" <> all\(\$6\) and "created_on" is not null and "name" <> all\(\$7\) limit \$1/);
+  assert.ok(!fanOut.text.includes('drop table'), 'no value reaches the SQL text');
+  assert.equal(assertReadOnlyQuery(fanOut.text), fanOut.text);
+  assert.deepEqual(r.parent.parentFilter.map(f => f.op), ['>', 'in', 'not in', 'is not null', 'not in']);
+  assert.deepEqual(audit.at(-1).parentFilter, parentFilter, 'the filter is in the audit log');
+
+  const noWindow = fakeDb();
+  await profileTables(noWindow.db, 'shop', { tables: orders(1), parent, parentFilter: [{ column: 'name', op: '=', value: 'Ege' }] });
+  const sql = noWindow.sent.find(s => s.text.includes('auspex_parent'));
+  assert.deepEqual(sql.params, [20000, 'Ege']);
+  assert.match(sql.text, /where "id" is not null and "name" = \$2 limit \$1/);
+});
+
+test('profile_tables parentFilter refuses bad input with INVALID_INPUT', async () => {
+  const before = [
+    [{ column: 'id', op: 'like', value: 'x' }, /op "like" is not one of/],
+    [{ column: 'id', op: '=' }, /needs one value/],
+    [{ column: 'id', op: '=', values: [1] }, /needs one value/],
+    [{ column: 'id', op: '>', value: { sql: 'x' } }, /needs one value/],
+    [{ column: 'id', op: 'in', value: 1 }, /needs values/],
+    [{ column: 'id', op: 'in', values: [] }, /needs values/],
+    [{ column: 'id', op: 'not in', values: [null] }, /needs values/],
+    [{ column: 'id', op: 'is null', value: 1 }, /takes no value/],
+    [{ column: 'id"; drop', op: '=', value: 1 }, /Invalid parentFilter\[0\] column/],
+  ];
+  for (const [f, message] of before) {
+    const { db, sent } = fakeDb();
+    await assert.rejects(profileTables(db, 'shop', { tables: orders(1), parent, parentFilter: [f] }), err => err.errorCode === 'INVALID_INPUT' && message.test(err.message), JSON.stringify(f));
+    assert.equal(sent.length, 0, `refused before any SQL: ${JSON.stringify(f)}`);
+  }
+  for (const bad of [
+    { tables: orders(1), parent, parentFilter: Array.from({ length: 6 }, () => ({ column: 'id', op: 'is null' })) },
+    { tables: orders(1), parent, parentFilter: [] },
+    { tables: orders(1), parentFilter: [{ column: 'id', op: 'is null' }] },
+  ]) {
+    const { db, sent } = fakeDb();
+    await assert.rejects(profileTables(db, 'shop', bad), err => err.errorCode === 'INVALID_INPUT', JSON.stringify(bad));
+    assert.equal(sent.length, 0);
+  }
+  const { db, sent } = fakeDb();
+  await assert.rejects(profileTables(db, 'shop', { tables: orders(1), parent, parentFilter: [{ column: 'nope', op: 'is null' }] }),
+    err => err.errorCode === 'INVALID_INPUT' && /parentFilter\[0\] column nope not found in shop\.customer/.test(err.message));
+  assert.ok(!sent.some(s => s.text.includes('auspex_parent')), 'an unknown column stops before the fan-out statement');
+});
+
 test('profile_tables enforces table and sample limits and the timeout ceiling', async () => {
   const { db } = fakeDb();
   await assert.rejects(profileTables(db, 'shop', { tables: orders(10).concat(Array.from({ length: 21 }, (_, i) => `shop.t${i}`)) }), /1 to 30/);
