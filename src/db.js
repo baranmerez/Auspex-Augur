@@ -343,7 +343,8 @@ export class ReadOnlyDatabase {
           if (rowCount === 0) {
             columns = res.fields.map(f => f.name);
             textColumn = res.fields.map(f => mode === 'spreadsheet' && !nonTextTypes.has(f.dataTypeID));
-            await write(columns.map(c => csvCell(c, delimiter)).join(delimiter) + '\r\n');
+            // Column names are text too: spreadsheet mode neutralizes them like text cells.
+            await write(columns.map(c => csvCell(mode === 'spreadsheet' ? spreadsheetSafe(c) : c, delimiter)).join(delimiter) + '\r\n');
           }
           for (const row of res.rows) {
             if (rowCount >= this.config.exportMaxRows) { stopReason = 'rows'; break; }
@@ -409,6 +410,9 @@ const nonTextTypes = new Set([16, 20, 21, 23, 26, 700, 701, 790, 1082, 1083, 111
 
 // A cell starting with = + - @ or a tab/carriage return can run as a formula
 // in Excel, LibreOffice or Google Sheets; a leading apostrophe makes it text.
+// src/viewer.html keeps an identical copy for its Operations CSV (the page is
+// standalone, also in the desktop app); tests/csvSafety.test.js runs both
+// over the same fixtures so they cannot drift.
 export function spreadsheetSafe(value) {
   return typeof value === 'string' && /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
 }

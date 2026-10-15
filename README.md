@@ -199,9 +199,14 @@ spreadsheet, use `mode: "spreadsheet"`: text cells that start with `=`, `+`,
 `-`, `@`, a tab or a carriage return get a leading apostrophe so they are
 shown as text instead of being run as a formula. Number, date, time, boolean
 and uuid columns are never changed, so a real `-5` stays a number. Columns of
-any other type count as text. The rule follows the common CSV-injection
-guidance; it is covered by unit tests on the generated text, not yet checked by
-opening the files in Excel, LibreOffice or Google Sheets.
+any other type count as text, and column names get the same treatment. The
+viewer's Operations CSV download applies the same rule to every text cell
+(SQL, errors, profile, parameters); its JSON download stays exact. The rule
+follows the common CSV-injection guidance; it is covered by tests on the
+written file and the viewer download, not yet checked by opening the files in
+Excel, LibreOffice or Google Sheets. It is a mitigation, not a guarantee:
+spreadsheet behavior differs per application and the apostrophe can be lost
+when a file is saved and reopened (see the OWASP CSV Injection page).
 
 ### Exploring many tables
 
