@@ -293,9 +293,11 @@ library/
   file: it embeds the raw SQL, parameters, query plan (with its filter
   expressions) and run history, and says so at the top. To send a report to
   someone, `share_report` writes a separate copy into `exports/` built from an
-  allowlist: title, description, category, the masked preview and the
-  timing/row figures. SQL, plan, parameters, warnings, history and database,
-  schema and server names are left out, not redacted. The title and
+  allowlist: title, description, category, the masked preview, the
+  timing/row figures and the result's SQL version number and run time. It is
+  refused when the last results come from a SQL version other than the
+  current one (saved but not run yet); run the current version first. SQL,
+  plan, parameters, warnings, history and database, schema and server names are left out, not redacted. The title and
   description are kept as written, so keep secrets out of them.
 
 > [!NOTE]

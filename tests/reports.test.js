@@ -398,3 +398,56 @@ test('sharing needs a run first', () => {
   svc.save({ ...ref, sql: 'select 1' });
   assert.throws(() => svc.share(ref, fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-share-out-'))), /has not been run yet/);
 });
+
+test('sharing refuses results of an older SQL revision and shows the result version when current', async () => {
+  const { svc } = tempService();
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-share-out-'));
+  svc.save({ ...ref, sql: 'select 1' });
+  await svc.run(ref);
+  svc.save({ ...ref, sql: 'select 2', description: 'now about v2' });
+  assert.throws(() => svc.share(ref, outDir), /come from SQL v1, not the current v2; run the current version/);
+  assert.deepEqual(fs.readdirSync(outDir), [], 'nothing was written');
+
+  await svc.run(ref);
+  const shared = svc.share(ref, outDir);
+  assert.equal(shared.version, 2);
+  const html = fs.readFileSync(shared.file, 'utf8');
+  const report = embedded(html);
+  assert.equal(report.last.version, 2);
+  assert.ok(report.last.at);
+  assert.equal(report.last.sqlHash, undefined, 'no SQL hash in the shared copy');
+  assert.ok(!html.includes('select 2'), 'no SQL in the shared copy');
+  assert.match(html, /Results of SQL v\{v\}, run \{at\}/, 'the shared header renders the version');
+
+  // Back to v1 (same hash as v1): the active revision decides, the v2 result is stale.
+  svc.save({ ...ref, sql: 'select 1' });
+  assert.throws(() => svc.share(ref, outDir), /come from SQL v2, not the current v1/);
+  await svc.run(ref);
+  assert.equal(svc.share(ref, outDir).version, 1);
+});
+
+test('reverting to the SQL of the last result makes it shareable again (v1 run, v2 saved, v1 saved)', async () => {
+  const { svc } = tempService();
+  svc.save({ ...ref, sql: 'select 1' });
+  await svc.run(ref);
+  svc.save({ ...ref, sql: 'select 2' });
+  svc.save({ ...ref, sql: 'select 1' });
+  const shared = svc.share(ref, fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-share-out-')));
+  assert.equal(shared.version, 1);
+  assert.equal(embedded(fs.readFileSync(shared.file, 'utf8')).last.version, 1);
+});
+
+test('sharing reads the report under the library lock', async () => {
+  const { svc } = tempService();
+  svc.save({ ...ref, sql: 'select 1' });
+  await svc.run(ref);
+  const lib = svc.library;
+  let depth = 0;
+  const reads = [];
+  const locked = lib.locked.bind(lib);
+  const readMeta = lib.readMeta.bind(lib);
+  lib.locked = fn => locked(() => { depth++; try { return fn(); } finally { depth--; } });
+  lib.readMeta = (...a) => { reads.push(depth > 0); return readMeta(...a); };
+  svc.share(ref, fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-share-out-')));
+  assert.ok(reads.length > 0 && reads.every(Boolean), 'every metadata read happened while holding the lock');
+});
