@@ -199,6 +199,10 @@ export class ReadOnlyDatabase {
       throw connectionError(err, name);
     }
     let broken = false;
+    // A socket drop while checked out is also emitted as an event on the client;
+    // without a listener it would be an uncaught exception that ends the server.
+    const onClientError = () => { broken = true; };
+    client.on?.('error', onClientError); // test doubles may not be emitters
     try {
       await client.query('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
       await client.query(`SET LOCAL statement_timeout = ${timeoutMs}`);
@@ -215,6 +219,7 @@ export class ReadOnlyDatabase {
       } catch {
         broken = true;
       }
+      client.off?.('error', onClientError);
       client.release(broken);
     }
   }
