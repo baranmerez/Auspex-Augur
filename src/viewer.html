@@ -272,7 +272,11 @@
   /* Reports */
   .rep { display: grid; grid-template-columns: minmax(280px, 340px) 1fr; gap: 14px; align-items: start; }
   .rep-list { max-height: calc(100vh - 250px); overflow: auto; position: sticky; top: 130px; }
-  .rep-list .stagebar { padding: 10px 12px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--surface); z-index: 1; }
+  .rep-list .stagebar { padding: 10px 12px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--surface); z-index: 1; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+  .rep.collapsed { grid-template-columns: auto minmax(0, 1fr); }
+  .rep-rail { position: sticky; top: 130px; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 10px 6px; }
+  .rep-rail .rail-label { writing-mode: vertical-rl; font-size: 12px; color: var(--text-3); white-space: nowrap; }
+  @media (max-width: 900px) { .rep.collapsed { grid-template-columns: 1fr; } .rep-rail { position: static; flex-direction: row; justify-content: flex-start; } .rep-rail .rail-label { writing-mode: horizontal-tb; } }
   .rep-group { padding: 8px 12px 2px; font-size: 11px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--text-3); }
   .rep-group .path { text-transform: none; letter-spacing: 0; font-weight: 600; color: var(--text-2); }
   .rep-item { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 8px 12px 8px 14px; border-left: 3px solid transparent;
@@ -660,6 +664,7 @@ const TR = {
   'Click to make it the center': 'Merkez yapmak için tıklayın', 'Click a table to make it the center': 'Merkez yapmak için bir tabloya tıklayın',
   'Show its dependents ({n})': 'Beslenenlerini göster ({n})', 'No known dependents': 'Bilinen Beslenen yok',
   'Edge width: linked rows, log scale (estimated)': 'Çizgi kalınlığı: bağlı satır, log ölçek (tahmini)',
+  'Show the report list': 'Rapor listesini göster', 'Hide the report list': 'Rapor listesini gizle',
 };
 let lang = 'en';
 try { lang = localStorage.getItem('auspex.viewer.lang') || ((navigator.language || '').toLowerCase().startsWith('tr') ? 'tr' : 'en'); } catch {}
@@ -806,7 +811,7 @@ const state = {
   memSchema: '', memErAll: false, memPos: new Map(), schemaKey: null,
 };
 try { Object.assign(state, JSON.parse(localStorage.getItem('auspex.viewer') || '{}'), { all: [], seen: new Set(), firstLoad: true, open: null, reports: null, reportDoc: null, memory: null, memView: null, memPos: new Map() }); } catch {}
-const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy, memHideFaint: state.memHideFaint, memExpand: state.memExpand })); } catch {} };
+const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy, memHideFaint: state.memHideFaint, memExpand: state.memExpand, repListCollapsed: state.repListCollapsed })); } catch {} };
 
 // In the Tauri desktop app the same routes are served by the Rust `api` command.
 const tauriCore = window.__TAURI__?.core;
@@ -1332,9 +1337,20 @@ function renderReports() {
   const list = all.filter(r => (state.stageFilter === 'all' || r.stage === state.stageFilter)
     && (!q || [r.title, r.name, r.category, r.schema, r.db, r.description].join(' ').toLowerCase().includes(q)));
   const count = st => all.filter(r => st === 'all' || r.stage === st).length;
+  const toggleList = () => { state.repListCollapsed = !state.repListCollapsed; state.reportViewNode = null; persist(); renderReports(); };
+  if (state.repListCollapsed) {
+    const selectedRep = all.find(r => repKey(r) === state.reportSel);
+    if (selectedRep && (!state.reportDoc || state.reportDoc.key !== state.reportSel)) { loadReport(selectedRep); return; }
+    put($('v-reports'), h('div', { class: 'rep collapsed' },
+      h('div', { class: 'panel rep-rail' }, h('button', { class: 'icon-btn', 'aria-expanded': 'false', title: t('Show the report list'), onclick: toggleList }, '»'),
+        h('span', { class: 'rail-label' }, t('Reports'), ' ', fmt(list.length))),
+      reportView(selectedRep)));
+    return;
+  }
   const stagebar = h('div', { class: 'stagebar' }, h('div', { class: 'seg', role: 'group', 'aria-label': t('Stage') },
     [['all', t('All')], ['draft', t('Drafts')], ['approved', t('Approved')], ['execute', t('Execute')]].map(([k, label]) =>
-      h('button', { class: state.stageFilter === k ? 'on' : '', onclick: () => { state.stageFilter = k; persist(); renderReports(); } }, `${label} ${count(k)}`))));
+      h('button', { class: state.stageFilter === k ? 'on' : '', onclick: () => { state.stageFilter = k; persist(); renderReports(); } }, `${label} ${count(k)}`))),
+    h('button', { class: 'icon-btn sm', 'aria-expanded': 'true', title: t('Hide the report list'), onclick: toggleList }, '«'));
   const groups = new Map();
   for (const r of list) {
     const key = (state.db ? '' : r.db + ' › ') + r.schema + ' › ' + r.category;
