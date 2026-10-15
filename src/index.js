@@ -306,7 +306,7 @@ tool('list_reports', {
 
 tool('share_report', {
   title: 'Shared copy of a report',
-  description: `Writes a copy of a report that can be sent to someone, as a new HTML file in ${config.exportDir}. The copy contains only the title, description, category, the masked preview and timing/row figures; SQL, query plan, parameters, run history and database names are left out. The report's own HTML (which has all of those) is unchanged. Masking is by column name only, so tell the user to check the preview before sending. Does not touch the database.`,
+  description: `Writes a copy of a report that can be sent to someone, as a new HTML file in ${config.exportDir}. The copy contains only the title, description, category, the masked preview, timing/row figures and the result's SQL version number and run time; SQL, query plan, parameters, run history and database names are left out. The report's own HTML (which has all of those) is unchanged. It is refused when the last results come from a SQL version other than the current one: run the current version first. Masking is by column name only, so tell the user to check the preview before sending. Does not touch the database.`,
   inputSchema: refArgs,
 }, async args => db.audited('share_report', reportDetails(args), () => reports.share(args, config.exportDir), r => ({ version: r.version })));
 
