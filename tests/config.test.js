@@ -113,7 +113,7 @@ test('pgpass-style profiles with harmless query options still load', () => {
 });
 
 test('every allowlisted query option is accepted', () => {
-  const query = 'host=/var/run/postgresql&port=5433&ssl=true&sslmode=verify-full&sslcert=c.crt&sslkey=c.key&sslrootcert=ca.crt'
+  const query = 'ssl=true&sslmode=verify-full&sslcert=c.crt&sslkey=c.key&sslrootcert=ca.crt'
     + '&sslnegotiation=direct&uselibpqcompat=true&application_name=auspex&fallback_application_name=x&connect_timeout=5'
     + '&keepalives=1&keepalives_idle=30';
   const file = profilesFile({ shop: { url: `postgresql://Auspex@h/db?${query}` } });
@@ -141,6 +141,50 @@ for (const [name, query, option] of forbiddenOptions) {
     assert.throws(() => loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: path.join(dir, 'missing.json'), AUSPEX_DB_LOCAL: url }), message);
   });
 }
+
+const endpointOverrides = [
+  ['host', 'host=production.invalid', ['host']],
+  ['port', 'port=6543', ['port']],
+  ['host and port', 'host=production.invalid&port=6543', ['host', 'port']],
+  ['repeated host', 'host=a.invalid&host=production.invalid', ['host']],
+  ['Unix socket host', 'host=%2Fvar%2Frun%2Fpostgresql', ['host']],
+  ['upper-case HOST', 'HOST=production.invalid', ['HOST']],
+];
+
+for (const [name, query, options] of endpointOverrides) {
+  test(`file and env profiles both reject a ${name} query option that would override the URL authority`, () => {
+    const url = `postgresql://review@staging.invalid:5432/fixture?${query}&sslmode=require`;
+    const file = profilesFile({ local: { url } });
+    const message = err => options.every(o => err.message.includes(`"${o}"`)) && /URL authority/.test(err.message)
+      && !err.message.includes('production.invalid') && !err.message.includes('6543') && !err.message.includes('staging.invalid');
+    assert.throws(() => readProfilesFile(file), message);
+    assert.throws(() => loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: path.join(dir, 'missing.json'), AUSPEX_DB_LOCAL: url }), message);
+  });
+}
+
+test('the connection summary shows the host and port node-postgres uses (no connection)', async () => {
+  const { describeConnection } = await import('../src/config.js');
+  const { default: pg } = await import('pg');
+  const urls = [
+    'postgresql://review@staging.invalid:5432/fixture',
+    'postgresql://review@staging.invalid:6543/fixture?sslmode=verify-full&application_name=auspex',
+    'postgres://review@staging.invalid/fixture',
+    'postgresql://review@[::1]:5433/fixture',
+    'postgresql://review@[2001:db8::1]/fixture',
+    'postgresql://review@10.0.0.5/fixture',
+    'postgresql://review@my%2Dhost/fixture',
+    'postgresql://review@%2Fvar%2Frun%2Fpostgresql/fixture',
+  ];
+  for (const url of urls) {
+    const file = profilesFile({ p: { url } });
+    assert.equal(readProfilesFile(file).length, 1, `${url} is an allowed profile`);
+    const shown = describeConnection(url);
+    const effective = new pg.Client({ connectionString: url }).connectionParameters; // never connected
+    assert.equal(shown.host, effective.host, url);
+    assert.equal(shown.port, String(effective.port), url);
+  }
+  assert.equal(describeConnection('postgresql://review@[::1]/fixture').port, '5432', 'default port');
+});
 
 test('connection summary flags a password in the query string without showing it', async () => {
   const { describeConnection } = await import('../src/config.js');
