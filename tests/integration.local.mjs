@@ -477,7 +477,11 @@ test('relation_stats links region and worker from planner statistics in at most 
   assert.equal(dependent.linkedRows, expected);
   assert.equal(instance.linkedRows, expected);
   assert.equal(dependent.stats, expected === null ? 'missing' : 'ok');
-  assert.equal(dependent.rank, 1);
+  // With scripts/local-test-ddl.sql, region also has import_job (analyzed) as a dependent.
+  assert.equal(region.dependent[0].rank, 1);
+  assert.ok(region.dependent.every((d, i) => i === 0 || d.rank >= region.dependent[i - 1].rank));
+  assert.ok(region.dependent.findIndex(d => d.linkedRows === null) === -1
+    || region.dependent.slice(region.dependent.findIndex(d => d.linkedRows === null)).every(d => d.linkedRows === null), 'missing figures rank last');
 
   const memory = new SchemaMemory(fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-it-relstats-')));
   memory.recordRelationStats('local', r.tables.filter(t => !t.error));
@@ -530,19 +534,20 @@ ddlTest('describe_functions returns signature, properties, calling triggers and 
   const capped = await describeFunctions(db, 'local', { functions: ['auspex_test.import_job_count'], maxChars: 20 });
   assert.deepEqual([capped.functions[0].definition.length, capped.functions[0].truncated], [20, true]);
   assert.ok(capped.functions[0].definitionLength > 20);
-  const byPattern = await describeFunctions(db, 'local', { pattern: 'import_job', schema: 'auspex_test' });
+  const byPattern = await describeFunctions(db, 'local', { pattern: 'import_job%', schema: 'auspex_test' });
   assert.deepEqual(byPattern.functions.map(f => f.name), ['import_job_before_validate', 'import_job_count']);
   assert.equal(byPattern.truncated, false);
 });
 
 ddlTest('search finds functions and triggers by name, and function source only with searchSource', async () => {
-  const r = await search(db, 'local', 'import_job', 'auspex_test');
+  // Text with _ or % is used as an ILIKE pattern as given, so add the %.
+  const r = await search(db, 'local', 'import_job%', 'auspex_test');
   assert.ok(r.relations.some(x => x.relation === 'import_job'));
   assert.deepEqual(r.functions.map(f => [f.function, f.matchedIn]), [['import_job_before_validate', 'name'], ['import_job_count', 'name']]);
   assert.deepEqual(r.triggers, [{ schema: 'auspex_test', relation: 'import_job', trigger: 'import_job_validate', function: 'auspex_test.import_job_before_validate' }]);
-  const plain = await search(db, 'local', 'jsonb_typeof', 'auspex_test');
+  const plain = await search(db, 'local', '%jsonb_typeof%', 'auspex_test');
   assert.deepEqual(plain.functions, []);
-  const source = await search(db, 'local', 'jsonb_typeof', 'auspex_test', true, { searchSource: true });
+  const source = await search(db, 'local', '%jsonb_typeof%', 'auspex_test', true, { searchSource: true });
   assert.deepEqual(source.functions.map(f => [f.function, f.matchedIn]), [['import_job_before_validate', 'source']]);
   assert.ok(!JSON.stringify(source).includes('NEW.status'), 'source text is never returned');
 });
