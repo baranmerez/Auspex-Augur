@@ -12,7 +12,7 @@ import path from 'node:path';
 import { loadConfig } from '../src/config.js';
 import { ReadOnlyDatabase } from '../src/db.js';
 import { classifyError } from '../src/errors.js';
-import { listSchemas, listTables, describeTable, describeTables, describeFunctions, profileTables, relationStats, search } from '../src/catalog.js';
+import { listSchemas, listTables, describeTable, describeTables, describeFunctions, profileTables, relationStats, search, summarizeDescribedTable } from '../src/catalog.js';
 import { ReportService } from '../src/reports/service.js';
 import { SchemaMemory } from '../src/memory/store.js';
 
@@ -410,6 +410,25 @@ test('describe_tables describes region, worker and a view with a constant number
   assert.equal(withView.statements, 7);
   assert.match(withView.tables[1].viewDefinition, /join/i);
 
+  // detail "summary" is built from the same data, without more statements.
+  const sWorker = summarizeDescribedTable(worker);
+  assert.deepEqual(sWorker.columns, [
+    'id integer not null PK', 'region_id integer not null FK -> auspex_test.region(id)', 'full_name text not null',
+    'daily_wage numeric(12,2)', 'started_on date not null', 'note text',
+  ]);
+  assert.deepEqual(sWorker.indexes.sort(), ['worker_pkey unique (id)', 'worker_region_idx (region_id)']);
+  assert.deepEqual(sWorker.constraints, ['worker_pkey PRIMARY KEY (id)']);
+  const sRegion = summarizeDescribedTable(region);
+  assert.deepEqual([sRegion.comment, sRegion.referencedBy.count >= 1, sRegion.referencedBy.tables.includes('auspex_test.worker(region_id)')], ['Test regions', true, true]);
+  assert.ok(sRegion.constraints.includes('region_name_key UNIQUE (name)'));
+  const sView = summarizeDescribedTable(withView.tables[1]);
+  assert.deepEqual([sView.kind, sView.viewDefinitionOmitted, sView.viewDefinition], ['view', true, undefined]);
+  const all = [region, worker, withView.tables[1]];
+  const fullChars = JSON.stringify(all.map(({ profile, oid, columns, ...rest }) => ({ ...rest, columns: columns.map(({ attnum, ...c }) => c) }))).length;
+  const summaryChars = JSON.stringify(all.map(summarizeDescribedTable)).length;
+  console.log(`# describe_tables region, worker, v_worker_region: full ${fullChars} characters, summary ${summaryChars}`);
+  assert.ok(summaryChars < fullChars);
+
   const memory = new SchemaMemory(fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-it-batch-mem-')));
   const recorded = memory.recordDescribeMany('local', r.tables.filter(t => !t.error));
   assert.deepEqual(recorded.map(x => x.recorded), ['first time', 'first time']);
@@ -516,6 +535,15 @@ ddlTest('describe_tables shows triggers, checks, identity/serial/generated colum
   assert.deepEqual(log.partitioning, { key: 'RANGE (logged_on)', partitions: 2 });
   assert.deepEqual(part.partitionOf, { parent: 'auspex_test.import_log', bound: "FOR VALUES FROM ('2026-01-01') TO ('2026-02-01')" });
   assert.deepEqual(secret.rowLevelSecurity, { enabled: true, forced: false });
+
+  const sJob = summarizeDescribedTable(job);
+  assert.deepEqual(sJob.triggers, ['import_job_validate BEFORE INSERT OR UPDATE']);
+  assert.ok(sJob.columns.includes('id bigint not null PK identity'), JSON.stringify(sJob.columns));
+  assert.ok(sJob.columns.some(c => /^payload_b64_length \S+ generated/.test(c)));
+  assert.ok(sJob.constraints.some(c => c.startsWith('import_job_status_check CHECK')));
+  assert.ok(!JSON.stringify(sJob).includes('CREATE TRIGGER'), 'no trigger definitions in the summary');
+  assert.deepEqual(summarizeDescribedTable(secret).rowLevelSecurity, { enabled: true, forced: false });
+  assert.deepEqual(summarizeDescribedTable(log).partitioning, { key: 'RANGE (logged_on)', partitions: 2 });
 });
 
 ddlTest('describe_functions returns signature, properties, calling triggers and the capped definition in 1 statement', async () => {

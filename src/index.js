@@ -9,6 +9,7 @@ import { classifyError, ToolError } from './errors.js';
 import {
   listSchemas, listTables, describeTable, describeTables, describeFunctions, profileTables, relationStats, search,
   maxDescribeTables, maxDescribeFunctions, defaultDefinitionChars, maxDefinitionChars,
+  describeDetails, describeSummaryNote, summarizeDescribedTable, summaryReferencedBy,
   maxProfileTables, maxRelationStatsTables, defaultSampleRows, maxSampleRows,
 } from './catalog.js';
 import { ReportService } from './reports/service.js';
@@ -206,21 +207,27 @@ const tableListArg = max => z.array(z.string().min(1)).min(1).max(max);
 
 tool('describe_tables', {
   title: 'Describe many tables',
-  description: `Like describe_table for up to ${maxDescribeTables} relations at once: columns (with identity, generated and owned sequence when set), types, nullability, defaults, comments, constraints (incl. foreign keys and check definitions), indexes, incoming foreign keys, triggers, row level security flags, partitioning, estimated rows and (for views) the definition. Reads the catalog only, with a constant number of statements however many tables are listed: 6, or 7 when one of them is a view or materialized view (field statements). Unknown or invalid names are reported per table (field error) without failing the call. Each found table is recorded in the schema memory like describe_table (memory per table, incl. changesSinceLast). Prefer this over calling describe_table in a loop.`,
+  description: `Like describe_table for up to ${maxDescribeTables} relations at once. detail "summary" (default) keeps the answer small enough for many tables: per table estRows, comment, one line per column (name, type, not null, PK, FK -> target, short default), one line per constraint, index (name and columns) and trigger (name, timing, events), incoming foreign keys as a count plus the first ${summaryReferencedBy} referencing tables, and viewDefinitionOmitted for views (field note explains the format). detail "full": columns (with identity, generated and owned sequence when set), types, nullability, defaults, comments, constraints (incl. foreign keys and check definitions), indexes, incoming foreign keys, triggers (with definitions), row level security flags, partitioning, estimated rows and (for views) the definition. Reads the catalog only, with a constant number of statements however many tables are listed, in either mode: 6, or 7 when one of them is a view or materialized view (field statements). Unknown or invalid names are reported per table (field error) without failing the call. Each found table is recorded in the schema memory from the full catalog data in either mode, like describe_table (memory per table, incl. changesSinceLast). Prefer this over calling describe_table in a loop; ask for "full" only for the few tables whose definitions you need.`,
   inputSchema: {
     profile: profileArg,
     tables: tableListArg(maxDescribeTables).describe('Relations as schema.table, e.g. ["sales.orders", "sales.customers"].'),
+    detail: z.enum(describeDetails).optional().describe('"summary" (default): compact lines per table; "full": every catalog field and definition.'),
   },
-}, async ({ profile, tables }) => {
+}, async ({ profile, tables, detail }) => {
   const result = await describeTables(db, profile, tables);
   const found = result.tables.filter(t => !t.error);
   const learned = learn(() => ({ list: memory.recordDescribeMany(result.profile, found) }));
+  const full = detail === 'full';
   return {
     ...result,
+    // "full" stays exactly the earlier answer; the summary says what it is.
+    ...(full ? {} : { detail: 'summary', note: describeSummaryNote }),
     tables: result.tables.map(t => {
       if (t.error) return t;
+      const tableMemory = learned.list?.[found.indexOf(t)] ?? learned;
+      if (!full) return { ...summarizeDescribedTable(t), memory: tableMemory };
       const { profile: _profile, oid: _oid, columns, ...rest } = t;
-      return { ...rest, columns: columns.map(({ attnum, ...c }) => c), memory: learned.list?.[found.indexOf(t)] ?? learned };
+      return { ...rest, columns: columns.map(({ attnum, ...c }) => c), memory: tableMemory };
     }),
   };
 });
