@@ -51,6 +51,22 @@ test('describe_functions and the extended search are listed with their input sch
   assert.match(tools.find(t => t.name === 'describe_tables').description, /6, or 7 when/);
 });
 
+test('describe_tables offers detail summary (default) or full; a bad value is refused by the schema', async () => {
+  const { tools } = await client.listTools();
+  const describe = tools.find(t => t.name === 'describe_tables');
+  assert.deepEqual(describe.inputSchema.properties.detail.enum, ['summary', 'full']);
+  assert.deepEqual(describe.inputSchema.required.sort(), ['profile', 'tables']);
+  assert.match(describe.description, /detail "summary" \(default\)/);
+  assert.match(describe.description, /from the full catalog data in either mode/);
+  const before = auditEntries().length;
+  const bad = await call('describe_tables', { profile: 'shop', tables: ['sales.orders'], detail: 'everything' });
+  assert.ok(bad.isError);
+  assert.equal(bad.structuredContent.error.code, 'INVALID_INPUT');
+  assert.equal(auditEntries().length, before, 'schema validation happens before the handler');
+  const res = await call('describe_tables', { profile: 'shop', tables: ['sales.orders'], detail: 'full' });
+  assert.equal(res.structuredContent.error.code, 'CONNECTION_FAILED');
+});
+
 test('describe_functions without functions or pattern is refused before connecting and audited', async () => {
   const res = await call('describe_functions', { profile: 'shop' });
   assert.ok(res.isError);
