@@ -60,13 +60,15 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Create the read-only test role and schema
-        # The setup script is run as written, through the container's Unix
-        # socket (its local-server check passes). Only this CI copy gets a
+        # The setup scripts are run as written, through the container's Unix
+        # socket (their local-server check passes). Only this CI copy gets a
         # random password and COMMIT instead of the final ROLLBACK.
         run: |
           pw="$(openssl rand -hex 16)"
           echo "AUSPEX_TEST_PASSWORD=$pw" >> "$GITHUB_ENV"
           sed -e "s/CHANGE_ME_LOCAL_TEST_PASSWORD/$pw/" -e 's/^ROLLBACK;$/COMMIT;/' scripts/local-test-setup.sql \
+            | docker exec -i "${{ job.services.postgres.id }}" psql -v ON_ERROR_STOP=1 -U postgres -d postgres
+          sed -e 's/^ROLLBACK;$/COMMIT;/' scripts/local-test-ddl.sql \
             | docker exec -i "${{ job.services.postgres.id }}" psql -v ON_ERROR_STOP=1 -U postgres -d postgres
       - name: Write pgpass for the Auspex role
         run: |

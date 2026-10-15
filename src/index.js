@@ -7,8 +7,9 @@ import { loadConfig, describeConnection } from './config.js';
 import { ReadOnlyDatabase } from './db.js';
 import { classifyError, ToolError } from './errors.js';
 import {
-  listSchemas, listTables, describeTable, describeTables, profileTables, relationStats, search,
-  maxDescribeTables, maxProfileTables, maxRelationStatsTables, defaultSampleRows, maxSampleRows,
+  listSchemas, listTables, describeTable, describeTables, describeFunctions, profileTables, relationStats, search,
+  maxDescribeTables, maxDescribeFunctions, defaultDefinitionChars, maxDefinitionChars,
+  maxProfileTables, maxRelationStatsTables, defaultSampleRows, maxSampleRows,
 } from './catalog.js';
 import { ReportService } from './reports/service.js';
 import { sqlHash } from './reports/library.js';
@@ -156,14 +157,17 @@ tool('check_profile', {
 
 tool('search', {
   title: 'Search tables and columns',
-  description: 'Finds tables, views and columns whose name or comment matches the text, across all non-system schemas (or one schema). Case-insensitive; plain text is a contains-match, % and _ work as ILIKE wildcards. Returns estimated rows (null = never analyzed, unknown) and SELECT privilege.',
+  description: 'Finds tables, views, materialized views, columns, functions (incl. procedures) and triggers whose name or comment matches the text, across all non-system schemas (or one schema), in one statement. Case-insensitive; plain text is a contains-match, % and _ work as ILIKE wildcards. Returns estimated rows (null = never analyzed, unknown), SELECT privilege for relations and columns, EXECUTE privilege for functions and the trigger function for triggers. With searchSource, functions whose source text contains the text are found too (matchedIn "source"; the source is not returned, use describe_functions). At most 500 matches (truncated).',
   inputSchema: {
     profile: profileArg,
     text: z.string().min(1).describe('Text to find, e.g. invoice or customer.'),
     schema: z.string().optional().describe('Limit to one schema.'),
     includeColumns: z.boolean().optional().describe('Also match column names and comments. Default true.'),
+    includeRoutines: z.boolean().optional().describe('Also match function and trigger names (and function comments). Default true.'),
+    searchSource: z.boolean().optional().describe('Also match the source text of functions. Default false; slower on databases with many functions.'),
   },
-}, async ({ profile, text, schema, includeColumns }) => search(db, profile, text, schema, includeColumns !== false));
+}, async ({ profile, text, schema, includeColumns, includeRoutines, searchSource }) =>
+  search(db, profile, text, schema, includeColumns !== false, { includeRoutines: includeRoutines !== false, searchSource: searchSource === true }));
 
 tool('list_schemas', {
   title: 'List schemas',
@@ -183,7 +187,7 @@ tool('list_tables', {
 
 tool('describe_table', {
   title: 'Describe table',
-  description: 'Shows columns, types, nullability, defaults, comments, constraints, indexes, incoming foreign keys and (for views) the definition. Reads the catalog only. Also records the table in the schema memory; the memory field reports changes since the last time and notes on the table.',
+  description: 'Shows columns (with identity, generated and owned sequence when set), types, nullability, defaults, comments, constraints (incl. check definitions), indexes, incoming foreign keys, triggers (timing, events, level, enabled, function, WHEN condition, definition), row level security flags, partitioning and (for views) the definition. Reads the catalog only. Also records the table in the schema memory; the memory field reports changes since the last time and notes on the table.',
   inputSchema: {
     profile: profileArg,
     schema: z.string(),
@@ -202,7 +206,7 @@ const tableListArg = max => z.array(z.string().min(1)).min(1).max(max);
 
 tool('describe_tables', {
   title: 'Describe many tables',
-  description: `Like describe_table for up to ${maxDescribeTables} relations at once: columns, types, nullability, defaults, comments, constraints (incl. foreign keys), indexes, incoming foreign keys, estimated rows and (for views) the definition. Reads the catalog only, with a constant number of statements however many tables are listed: 5, or 6 when one of them is a view or materialized view (field statements). Unknown or invalid names are reported per table (field error) without failing the call. Each found table is recorded in the schema memory like describe_table (memory per table, incl. changesSinceLast). Prefer this over calling describe_table in a loop.`,
+  description: `Like describe_table for up to ${maxDescribeTables} relations at once: columns (with identity, generated and owned sequence when set), types, nullability, defaults, comments, constraints (incl. foreign keys and check definitions), indexes, incoming foreign keys, triggers, row level security flags, partitioning, estimated rows and (for views) the definition. Reads the catalog only, with a constant number of statements however many tables are listed: 6, or 7 when one of them is a view or materialized view (field statements). Unknown or invalid names are reported per table (field error) without failing the call. Each found table is recorded in the schema memory like describe_table (memory per table, incl. changesSinceLast). Prefer this over calling describe_table in a loop.`,
   inputSchema: {
     profile: profileArg,
     tables: tableListArg(maxDescribeTables).describe('Relations as schema.table, e.g. ["sales.orders", "sales.customers"].'),
@@ -220,6 +224,18 @@ tool('describe_tables', {
     }),
   };
 });
+
+tool('describe_functions', {
+  title: 'Describe functions',
+  description: `Reads up to ${maxDescribeFunctions} functions, procedures or aggregates from the catalog, by schema.name (every overload) or by a name pattern: signature, return type, kind, language, volatility, SECURITY DEFINER, strict, parallel safety, SET options, owner, EXECUTE privilege, comment, the triggers that call it and the full definition (pg_get_functiondef, capped at maxChars characters with truncated=true and definitionLength when longer; null for aggregates). One statement. Use it to read trigger functions found by describe_tables or search.`,
+  inputSchema: {
+    profile: profileArg,
+    functions: z.array(z.string().min(1)).min(1).max(maxDescribeFunctions).optional().describe('Functions as schema.name, e.g. ["sales.order_before_insert"].'),
+    pattern: z.string().min(1).optional().describe('Instead of functions: name pattern (plain text = contains, % and _ = ILIKE wildcards); at most 50 matches.'),
+    schema: z.string().min(1).optional().describe('With pattern: only this schema.'),
+    maxChars: z.number().int().min(1).max(maxDefinitionChars).optional().describe(`Characters of each definition to return. Default ${defaultDefinitionChars}.`),
+  },
+}, async ({ profile, ...options }) => describeFunctions(db, profile, options));
 
 tool('profile_tables', {
   title: 'Profile many tables',

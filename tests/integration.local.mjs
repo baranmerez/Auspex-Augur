@@ -12,7 +12,7 @@ import path from 'node:path';
 import { loadConfig } from '../src/config.js';
 import { ReadOnlyDatabase } from '../src/db.js';
 import { classifyError } from '../src/errors.js';
-import { listSchemas, listTables, describeTable, describeTables, profileTables, relationStats, search } from '../src/catalog.js';
+import { listSchemas, listTables, describeTable, describeTables, describeFunctions, profileTables, relationStats, search } from '../src/catalog.js';
 import { ReportService } from '../src/reports/service.js';
 import { SchemaMemory } from '../src/memory/store.js';
 
@@ -391,7 +391,7 @@ test('report library refuses unknown databases and non-SELECT drafts', async () 
 
 test('describe_tables describes region, worker and a view with a constant number of statements and records them', async () => {
   const r = await describeTables(db, 'local', ['auspex_test.region', 'auspex_test.worker', 'auspex_test.nope']);
-  assert.equal(r.statements, 5);
+  assert.equal(r.statements, 6);
   assert.deepEqual([r.found, r.notFound], [2, 1]);
   const [region, worker, missing] = r.tables;
   assert.match(missing.error, /auspex_test\.nope not found/);
@@ -407,7 +407,7 @@ test('describe_tables describes region, worker and a view with a constant number
   assert.deepEqual(worker, single);
 
   const withView = await describeTables(db, 'local', ['auspex_test.worker', 'auspex_test.v_worker_region']);
-  assert.equal(withView.statements, 6);
+  assert.equal(withView.statements, 7);
   assert.match(withView.tables[1].viewDefinition, /join/i);
 
   const memory = new SchemaMemory(fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-it-batch-mem-')));
@@ -483,4 +483,82 @@ test('relation_stats links region and worker from planner statistics in at most 
   memory.recordRelationStats('local', r.tables.filter(t => !t.error));
   const edge = memory.graph('local').edges.find(e => e.from === 'auspex_test.worker' && e.to === 'auspex_test.region');
   assert.deepEqual([edge.linkedRows, edge.estimated], [expected, true]);
+});
+
+// Objects from scripts/local-test-ddl.sql. CI always applies it; on a local
+// database set up before it existed these tests are skipped with a hint.
+const ddlApplied = (await raw("select to_regclass('auspex_test.import_job') is not null as ok")).rows[0].ok;
+const ddlTest = (name, fn) => test(name, { skip: !ddlApplied && !process.env.CI ? 'run scripts/local-test-ddl.sql once to enable' : false }, fn);
+
+ddlTest('describe_tables shows triggers, checks, identity/serial/generated columns, partitioning and RLS in 6 statements', async () => {
+  const r = await describeTables(db, 'local', ['auspex_test.import_job', 'auspex_test.import_log', 'auspex_test.import_log_2026_01', 'auspex_test.import_secret']);
+  assert.equal(r.statements, 6);
+  const [job, log, part, secret] = r.tables;
+  assert.equal(job.comment, 'Test import staging with a before-validate trigger');
+  assert.deepEqual(job.triggers.map(({ definition, ...t }) => t), [{
+    name: 'import_job_validate', timing: 'BEFORE', events: ['INSERT', 'UPDATE'], level: 'ROW', enabled: 'enabled',
+    function: 'auspex_test.import_job_before_validate', whenCondition: '(new.payload IS NOT NULL)',
+  }]);
+  assert.match(job.triggers[0].definition, /UPDATE OF payload ON auspex_test\.import_job FOR EACH ROW/);
+  const cols = Object.fromEntries(job.columns.map(c => [c.column, c]));
+  assert.deepEqual([cols.id.identity, cols.id.sequence, cols.id.generated], ['always', 'auspex_test.import_job_id_seq', undefined]);
+  assert.deepEqual([cols.batch_no.identity, cols.batch_no.sequence], [undefined, 'auspex_test.import_job_batch_no_seq']);
+  assert.equal(cols.payload_b64_length.generated, 'stored');
+  assert.equal(cols.payload.type, 'jsonb');
+  assert.ok(!('sequence' in cols.payload) && !('identity' in cols.payload), 'unset fields are left out');
+  assert.match(job.constraints.find(c => c.name === 'import_job_status_check').definition, /CHECK .*status.*'new'/);
+  assert.deepEqual(job.rowLevelSecurity, { enabled: false, forced: false });
+  assert.equal(job.partitioning, undefined);
+  assert.deepEqual(log.partitioning, { key: 'RANGE (logged_on)', partitions: 2 });
+  assert.deepEqual(part.partitionOf, { parent: 'auspex_test.import_log', bound: "FOR VALUES FROM ('2026-01-01') TO ('2026-02-01')" });
+  assert.deepEqual(secret.rowLevelSecurity, { enabled: true, forced: false });
+});
+
+ddlTest('describe_functions returns signature, properties, calling triggers and the capped definition in 1 statement', async () => {
+  const r = await describeFunctions(db, 'local', { functions: ['auspex_test.import_job_before_validate', 'auspex_test.import_job_count', 'auspex_test.nope'] });
+  assert.equal(r.statements, 1);
+  assert.deepEqual([r.found, r.notFound], [2, 1]);
+  const [validate, count, missing] = r.functions;
+  assert.deepEqual([validate.returns, validate.language, validate.volatility, validate.kind, validate.securityDefiner, validate.truncated],
+    ['trigger', 'plpgsql', 'volatile', 'function', false, false]);
+  assert.deepEqual(validate.usedByTriggers, [{ table: 'auspex_test.import_job', trigger: 'import_job_validate' }]);
+  assert.equal(validate.comment, 'Validates the payload before insert or update');
+  assert.match(validate.definition, /NEW\.status := 'error'/);
+  assert.deepEqual([count.function, count.returns, count.language, count.volatility], ['auspex_test.import_job_count(p_region integer)', 'bigint', 'sql', 'stable']);
+  assert.match(missing.error, /not found/);
+
+  const capped = await describeFunctions(db, 'local', { functions: ['auspex_test.import_job_count'], maxChars: 20 });
+  assert.deepEqual([capped.functions[0].definition.length, capped.functions[0].truncated], [20, true]);
+  assert.ok(capped.functions[0].definitionLength > 20);
+  const byPattern = await describeFunctions(db, 'local', { pattern: 'import_job', schema: 'auspex_test' });
+  assert.deepEqual(byPattern.functions.map(f => f.name), ['import_job_before_validate', 'import_job_count']);
+  assert.equal(byPattern.truncated, false);
+});
+
+ddlTest('search finds functions and triggers by name, and function source only with searchSource', async () => {
+  const r = await search(db, 'local', 'import_job', 'auspex_test');
+  assert.ok(r.relations.some(x => x.relation === 'import_job'));
+  assert.deepEqual(r.functions.map(f => [f.function, f.matchedIn]), [['import_job_before_validate', 'name'], ['import_job_count', 'name']]);
+  assert.deepEqual(r.triggers, [{ schema: 'auspex_test', relation: 'import_job', trigger: 'import_job_validate', function: 'auspex_test.import_job_before_validate' }]);
+  const plain = await search(db, 'local', 'jsonb_typeof', 'auspex_test');
+  assert.deepEqual(plain.functions, []);
+  const source = await search(db, 'local', 'jsonb_typeof', 'auspex_test', true, { searchSource: true });
+  assert.deepEqual(source.functions.map(f => [f.function, f.matchedIn]), [['import_job_before_validate', 'source']]);
+  assert.ok(!JSON.stringify(source).includes('NEW.status'), 'source text is never returned');
+});
+
+ddlTest('relation_stats on import_job: analyzed figures, partitioned dependent, hidden table', async () => {
+  const r = await relationStats(db, 'local', ['auspex_test.import_job']);
+  assert.equal(r.statements, 2);
+  const [job] = r.tables;
+  const stat = async (table, column, inherited) => (await raw(`select c.reltuples, s.null_frac from pg_class c
+    left join pg_stats s on s.schemaname = 'auspex_test' and s.tablename = c.relname and s.attname = '${column}' and s.inherited = ${inherited}
+    where c.oid = 'auspex_test.${table}'::regclass`)).rows[0];
+  const expect = s => (s.reltuples < 0 || s.null_frac === null ? null : Math.round(s.reltuples * (1 - s.null_frac)));
+  const region = job.instance.find(i => i.relation === 'auspex_test.region');
+  assert.equal(region.linkedRows, expect(await stat('import_job', 'region_id', false)));
+  assert.equal(region.linkedRows, 3, 'the script analyzed import_job: 4 rows, one without region');
+  assert.deepEqual(job.dependent.map(d => d.relation), ['auspex_test.import_log'], 'partitions and unreadable tables are not listed');
+  assert.equal(job.dependent[0].linkedRows, expect(await stat('import_log', 'job_id', true)));
+  assert.deepEqual(job.hidden, { instance: 0, dependent: 1 });
 });
