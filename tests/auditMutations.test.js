@@ -14,8 +14,9 @@ const serverPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..',
 let client;
 
 before(async () => {
-  const env = { ...process.env, AUSPEX_HOME: home, AUSPEX_PROFILES_FILE: path.join(home, 'none.json'), AUSPEX_DB_SHOP: 'postgresql://auspex@127.0.0.1:1/shop' };
-  for (const k of Object.keys(env)) if (/^AUSPEX_DB_/i.test(k) && k !== 'AUSPEX_DB_SHOP') delete env[k];
+  const env = { ...process.env, AUSPEX_HOME: home, AUSPEX_PROFILES_FILE: path.join(home, 'none.json'), AUSPEX_DB_SHOP: 'postgresql://auspex@127.0.0.1:1/shop',
+    AUSPEX_DB_TINY: 'postgresql://auspex@127.0.0.1:1/tiny', AUSPEX_MAX_QUERIES_PER_MINUTE_TINY: '1' };
+  for (const k of Object.keys(env)) if (/^AUSPEX_(DB|MAX_QUERIES_PER_MINUTE)_/i.test(k) && !['AUSPEX_DB_SHOP', 'AUSPEX_DB_TINY', 'AUSPEX_MAX_QUERIES_PER_MINUTE_TINY'].includes(k)) delete env[k];
   client = new Client({ name: 'audit-test', version: '1.0.0' });
   await client.connect(new StdioClientTransport({ command: process.execPath, args: [serverPath], env, stderr: 'ignore' }));
 });
@@ -77,4 +78,56 @@ test('local read-only tools add no entries; calls rejected by input validation a
   const invalid = await call('remember', { profile: 'shop', action: 'delete' });
   assert.ok(invalid.isError);
   assert.equal(auditEntries().length, before);
+});
+
+// Error envelope (README: Errors): readable text first, then code, retryable
+// and correlationId in structuredContent and in a JSON text block.
+const envelope = result => {
+  assert.ok(result.isError);
+  assert.match(result.content[0].text, /\S/);
+  const { error } = result.structuredContent;
+  assert.deepEqual(JSON.parse(result.content[1].text), { error });
+  assert.equal(result._meta.correlationId, error.correlationId);
+  assert.match(error.correlationId, /^[0-9a-f-]{36}$/);
+  return error;
+};
+
+test('errors carry a stable code and a correlation ID that matches the audit entry', async () => {
+  // Schema validation in the SDK: INVALID_INPUT, not audited.
+  const schema = envelope(await call('remember', { profile: 'shop', action: 'delete' }));
+  assert.equal(schema.code, 'INVALID_INPUT');
+  assert.equal(schema.retryable, false);
+
+  // Validation in the handler: audited with the same correlation ID and code.
+  const noId = envelope(await call('remember', { profile: 'shop', action: 'archive' }));
+  assert.equal(noId.code, 'INVALID_INPUT');
+  const missing = envelope(await call('approve_report', { ...ref, name: 'nothing-here' }));
+  assert.equal(missing.code, 'NOT_FOUND');
+  const unknown = envelope(await call('list_schemas', { profile: 'nope' }));
+  assert.equal(unknown.code, 'PROFILE_INVALID');
+  const entries = auditEntries();
+  for (const e of [noId, missing, unknown]) {
+    const logged = entries.filter(x => x.correlationId === e.correlationId);
+    assert.equal(logged.length, 1, 'one audit entry per call');
+    assert.equal(logged[0].errorCode, e.code);
+  }
+
+  // A success returns its correlation ID in _meta, and the audit entry has it.
+  const ok = await call('save_report', { ...ref, name: 'corr', sql: 'select 1' });
+  assert.ok(!ok.isError);
+  assert.equal(auditEntries().filter(x => x.correlationId === ok._meta.correlationId && x.tool === 'save_report').length, 1);
+});
+
+test('query budget refusal is QUERY_BUDGET_EXCEEDED with retryAfterSeconds, per process', async () => {
+  // Budget 1 per minute: the first call uses it (and fails to connect), the second is refused before connecting.
+  const first = envelope(await call('list_schemas', { profile: 'tiny' }));
+  assert.equal(first.code, 'CONNECTION_FAILED');
+  const refused = envelope(await call('list_schemas', { profile: 'tiny' }));
+  assert.equal(refused.code, 'QUERY_BUDGET_EXCEEDED');
+  assert.equal(refused.retryable, true);
+  assert.equal(refused.budgetScope, 'process');
+  assert.ok(refused.retryAfterSeconds >= 1 && refused.retryAfterSeconds <= 60);
+  const [logged] = auditEntries().filter(x => x.correlationId === refused.correlationId);
+  assert.equal(logged.errorCode, 'QUERY_BUDGET_EXCEEDED');
+  assert.ok(!JSON.stringify(refused).includes('127.0.0.1'), 'no connection details in the envelope');
 });
