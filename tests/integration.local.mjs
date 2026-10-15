@@ -205,7 +205,6 @@ test('a connection that drops mid-query is CONNECTION_FAILED and retryable', asy
   // query is short, so the orphaned backend ends and frees its connection slot.
   await assert.rejects(
     db.withReadOnly('local', client => {
-      client.once('error', () => {}); // pg also emits the drop as an event on the checked-out client
       const pending = client.query('select pg_sleep(0.3)');
       setTimeout(() => client.connection.stream.destroy(), 50);
       return pending;
