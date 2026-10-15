@@ -401,6 +401,37 @@
   .role-sw.dep { background: linear-gradient(90deg, var(--role-dep-1), var(--role-dep-10)); }
   .icon-btn.sm { padding: 2px 8px; font-size: 12px; }
   .nlist .rk { font: 11px var(--mono); color: var(--text-3); min-width: 24px; flex: none; }
+  /* Flow view: Reference -> Center -> Dependent swimlanes */
+  .sch-canvas.flow { height: auto; overflow-x: auto; overflow-y: hidden; display: flex; flex-direction: column; }
+  .flow-trail { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 10px 12px 0; font-size: 12px; color: var(--text-3); }
+  .flow-trail .crumb { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 1px 9px; font-size: 12px; color: var(--text-2); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .flow-trail .crumb:hover { border-color: var(--accent); color: var(--text); }
+  .flow-trail .crumb.cur { font-weight: 650; color: var(--text); border-color: var(--accent); cursor: default; }
+  .flow { position: relative; flex: none; margin: 6px 0 0; }
+  .flow svg.fl-edges { position: absolute; left: 0; top: 0; overflow: visible; }
+  .fl-lane-bg { stroke: color-mix(in srgb, var(--line) 70%, transparent); }
+  .fl-lane-h { position: absolute; }
+  .fl-lane-h .rh { display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; font-size: 12px; color: var(--text-2); }
+  .fl-lane-h .rh b { color: var(--text); font-size: 13px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fl-lane-h .more { color: var(--text-3); }
+  .fl-edge { fill: none; stroke-linecap: round; opacity: .9; transition: opacity .2s; }
+  .fl-node { position: absolute; display: flex; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 9px;
+    box-shadow: var(--shadow); overflow: hidden; transition: opacity .2s, border-color .15s, transform .2s var(--ease); animation: rise .35s var(--ease) both; }
+  .fl-node:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .fl-node.unexplored { border-style: dashed; }
+  .fl-node.center { border: 2px solid var(--accent); background: var(--accent-soft); }
+  .fl-node .bar { width: 5px; flex: none; }
+  .fl-node .main { flex: 1; min-width: 0; text-align: left; border: 0; background: none; padding: 6px 9px; display: grid; gap: 1px; align-content: center; }
+  .fl-node.center .main { cursor: default; }
+  .fl-node .nm { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fl-node .mt { font-size: 11px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+  .fl-node .exp { border: 0; border-left: 1px solid var(--line); background: none; min-width: 34px; flex: none; color: var(--text-2); font-size: 12px; padding: 0 6px; }
+  .fl-node .exp:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
+  .fl-node .exp[aria-expanded="true"] { background: var(--accent-soft); color: var(--accent-ink); font-weight: 650; }
+  .fl-node .exp:disabled { color: var(--text-3); cursor: default; opacity: .6; }
+  .flow.hovering .fl-node:not(.hot), .flow.hovering .fl-edge:not(.hot) { opacity: .28; }
+  .flow-foot { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; font-size: 11px; color: var(--text-2); padding: 6px 12px 10px; }
+  .flow-foot span { display: inline-flex; align-items: center; gap: 5px; }
   .tl { padding: 4px 14px 12px; max-height: 320px; overflow: auto; border-top: 1px solid var(--line); }
   .tl-item { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 10px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 13px; }
   .tl-item:first-child { border-top: 0; }
@@ -625,6 +656,10 @@ const TR = {
   'top {s} of {n}': 'ilk {s} / {n}', 'none known': 'bilinen yok', 'Show top 5': 'İlk 5', 'Show top 10': 'İlk 10', '{n} more in Relations': '{n} tane daha İlişkiler listesinde',
   'rank 1 → 10': 'sıra 1 → 10', 'beyond top 10': 'ilk 10 dışı', 'Hide beyond top 10': 'İlk 10 dışını gizle', 'Show beyond top 10': 'İlk 10 dışını göster',
   'Edges of the selected table ranked beyond 10': 'Seçili tablonun 10. sıradan sonraki ilişkileri',
+  'Flow': 'Akış', 'Center': 'Merkez', 'Dependent of {t}': '{t} tablosunun Beslenenleri', 'Back': 'Geri',
+  'Click to make it the center': 'Merkez yapmak için tıklayın', 'Click a table to make it the center': 'Merkez yapmak için bir tabloya tıklayın',
+  'Show its dependents ({n})': 'Beslenenlerini göster ({n})', 'No known dependents': 'Bilinen Beslenen yok',
+  'Edge width: linked rows, log scale (estimated)': 'Çizgi kalınlığı: bağlı satır, log ölçek (tahmini)',
 };
 let lang = 'en';
 try { lang = localStorage.getItem('auspex.viewer.lang') || ((navigator.language || '').toLowerCase().startsWith('tr') ? 'tr' : 'en'); } catch {}
@@ -1524,10 +1559,10 @@ function inspector(data, id) {
       h('div', {}, h('b', {}, fmt(rels.length)), h('span', {}, t('Relations'))),
       h('div', {}, h('b', {}, fmt(active.length)), h('span', {}, t('Notes')))),
     h('div', { class: 'acts' },
-      state.memMode === 'graph'
-        ? [h('button', { class: 'icon-btn', onclick: () => { state.memMode = 'er'; persist(); renderSchema(); } }, t('ER diagram')),
-          h('button', { class: 'icon-btn', onclick: () => { setMemFocus(id); state.memShowAll = false; state.memAnimateIn = true; renderSchema(); } }, t('Focus here'))]
-        : h('button', { class: 'icon-btn', onclick: () => { setMemFocus(id); state.memMode = 'graph'; persist(); renderSchema(); } }, t('Graph'))),
+      state.memMode !== 'graph' ? h('button', { class: 'icon-btn', onclick: () => { setMemFocus(id); state.memMode = 'graph'; persist(); renderSchema(); } }, t('Graph')) : null,
+      state.memMode !== 'er' ? h('button', { class: 'icon-btn', onclick: () => { state.memMode = 'er'; persist(); renderSchema(); } }, t('ER diagram')) : null,
+      state.memMode !== 'flow' ? h('button', { class: 'icon-btn', onclick: () => { state.memMode = 'flow'; persist(); renderSchema(); } }, t('Flow')) : null,
+      state.memMode === 'graph' ? h('button', { class: 'icon-btn', onclick: () => { setMemFocus(id); state.memShowAll = false; state.memAnimateIn = true; renderSchema(); } }, t('Focus here')) : null),
     h('h4', {}, h('span', {}, t('Notes')), h('span', { class: 'grow' }),
       archived.length ? h('button', { onclick: () => { state.memArchived = !state.memArchived; renderInspector(); } }, state.memArchived ? t('Hide archived') : t('Show archived ({n})', { n: archived.length })) : null),
     active.length || (state.memArchived && archived.length) ? [active.map(noteCard), state.memArchived ? archived.map(noteCard) : null] : h('div', { class: 'muted', style: 'font-size:13px' }, t('No notes yet.')),
@@ -1551,6 +1586,7 @@ function renderInspector() {
   put(state.memInspHost, inspector(state.memView.data, memSel()));
 }
 function focusTable(id) {
+  if (state.memMode === 'flow' && state.tab === 'schema') { flowCenter(id); return; }
   setMemSel(id);
   if (state.memMode === 'graph' && graphSim?.index.has(id)) { graphSim.select(id); return; }
   if (state.memMode === 'graph') { setMemFocus(id); state.memAnimateIn = true; }
@@ -1980,6 +2016,143 @@ function erSvg(data, centerId, recs, roles, width) {
   return root;
 }
 
+// ---------- Flow view ----------
+// Reference -> Center -> Dependent swimlanes; a Dependent can open its own
+// dependents as one more lane (depth 2). Clicking a table makes it the center;
+// the trail above leads back. Pure HTML cards over an SVG edge layer.
+const FL = { head: 66, nodeH: 52, gap: 12, pad: 16, minLane: 230, nodeMaxW: 260, foot: 26 };
+function flowCenter(id) {
+  const cur = memSel();
+  if (!id || id === cur) return;
+  state.memFlowTrail = [...(state.memFlowTrail || []), cur].filter(Boolean).slice(-12);
+  state.memFlowOpen = null;
+  state.memFlowCenter = id;
+  setMemSel(id);
+  renderSchema();
+}
+function flowBack(i) {
+  const trail = state.memFlowTrail || [];
+  const id = trail[i];
+  if (!id) return;
+  state.memFlowTrail = trail.slice(0, i);
+  state.memFlowOpen = null;
+  state.memFlowCenter = id;
+  setMemSel(id);
+  renderSchema();
+}
+function flowLanes(data, centerId) {
+  const roles = roleGroups(data, centerId);
+  const center = data.nodes.find(n => n.id === centerId) || { id: centerId, state: 'unexplored' };
+  const lanes = [
+    { key: 'ref', role: 'ref', bg: 'ref', title: roleName('ref'), all: roles.ref },
+    { key: 'center', bg: 'center', title: t('Center'), all: [{ id: centerId, node: center, center: true }] },
+    { key: 'dep', role: 'dep', bg: 'dep', title: roleName('dep'), all: roles.dep },
+  ];
+  for (const l of lanes) l.items = l.key === 'center' ? l.all : l.all.slice(0, roleLimit(l.key));
+  const open = state.memFlowOpen;
+  if (open && lanes[2].items.some(x => x.id === open)) {
+    const all = roleGroups(data, open).dep.filter(x => x.id !== centerId);
+    const parentNode = data.nodes.find(x => x.id === open);
+    lanes.push({ key: 'dep2', role: 'dep', bg: 'dep', title: `${roleName('dep')} · ${parentNode?.table ?? open}`, tip: t('Dependent of {t}', { t: open }),
+      all, items: all.slice(0, roleLimit('dep2')), parent: open });
+  }
+  return lanes;
+}
+
+function buildFlow(wrap, data, centerId) {
+  if (state.memFlowCenter !== centerId) { state.memFlowTrail = []; state.memFlowOpen = null; state.memFlowCenter = centerId; }
+  const lanes = flowLanes(data, centerId);
+  const n = lanes.length;
+  const W = Math.max((wrap.clientWidth || 1000) - 2, n * FL.minLane);
+  const laneW = W / n, nodeW = Math.min(FL.nodeMaxW, laneW - 36);
+  const rows = Math.max(1, ...lanes.map(l => l.items.length));
+  const contentH = rows * (FL.nodeH + FL.gap) - FL.gap;
+  const top = FL.head + FL.pad;
+  const H = top + contentH + FL.pad + FL.foot;
+  const pos = new Map();
+  const host = h('div', { class: 'flow', style: `width:${W}px;height:${H}px` });
+  const edges = svg('svg', { class: 'fl-edges', width: W, height: H, viewBox: `0 0 ${W} ${H}`, 'aria-hidden': 'true' });
+  host.append(edges);
+  const depCount = id => roleGroups(data, id).dep.filter(x => x.id !== centerId).length;
+
+  lanes.forEach((lane, li) => {
+    const x0 = li * laneW;
+    edges.append(svg('rect', { class: 'fl-lane-bg', x: x0 + 6, y: 6, width: laneW - 12, height: H - 12, rx: 12, style: `fill:var(--lane-${lane.bg})` }));
+    const head = lane.key === 'center'
+      ? h('div', { class: 'rh' }, h('b', {}, lane.title), h('span', {}, rowEstimate(lane.items[0].node) !== null ? `~${compact(rowEstimate(lane.items[0].node))} ${t('rows')}` : t('no estimate')))
+      : roleHeader(lane.key, lane.all, lane.title, lane.bg);
+    host.append(h('div', { class: 'fl-lane-h', title: lane.tip || null, style: `left:${x0 + 18}px;top:16px;width:${laneW - 36}px` }, head));
+    const bh = lane.items.length * (FL.nodeH + FL.gap) - FL.gap;
+    const parentY = lane.parent ? pos.get(lane.parent)?.y : null;
+    const want = parentY !== null && parentY !== undefined ? parentY + FL.nodeH / 2 - bh / 2 : top + (contentH - bh) / 2;
+    const y0 = Math.max(top, Math.min(top + contentH - bh, want));
+    const x = Math.round(x0 + (laneW - nodeW) / 2);
+    lane.items.forEach((it, i) => {
+      const y = Math.round(y0 + i * (FL.nodeH + FL.gap));
+      pos.set(lane.key === 'dep2' ? 'dep2|' + it.id : it.id, { x, y });
+      const st = it.node?.state || 'unexplored';
+      const meta = it.center ? stateLabel(st) : `#${it.rank} · ${roleFigure(it)} · ${stateLabel(st)}`;
+      const kids = lane.key === 'dep' ? depCount(it.id) : null;
+      host.append(h('div', { class: `fl-node ${st}${it.center ? ' center' : ''}`, 'data-id': it.id,
+        style: `left:${x}px;top:${y}px;width:${nodeW}px;height:${FL.nodeH}px;${reduceMotion ? '' : `animation-delay:${Math.min(li * 60 + i * 30, 600)}ms`}` },
+        it.center ? null : h('span', { class: 'bar', style: `background:${roleColor(it.role, it.rank)}` }),
+        h('button', { class: 'main', title: it.center ? it.id : `${it.id}\n${roleName(it.role)} #${it.rank} · ${roleFigure(it)}\n${t('Click to make it the center')}`,
+          onclick: it.center ? null : () => flowCenter(it.id) },
+          h('span', { class: 'nm' }, it.id), h('span', { class: 'mt' }, meta)),
+        kids !== null ? h('button', { class: 'exp', disabled: kids ? null : true, 'aria-expanded': String(state.memFlowOpen === it.id),
+          title: kids ? t('Show its dependents ({n})', { n: fmt(kids) }) : t('No known dependents'), 'aria-label': t('Show its dependents ({n})', { n: fmt(kids) }),
+          onclick: () => { state.memFlowOpen = state.memFlowOpen === it.id ? null : it.id; renderSchema(); } }, kids ? `${fmt(kids)} ›` : '–') : null));
+    });
+  });
+
+  // Edges run left to right: Reference -> Center -> Dependent -> its dependents.
+  const link = (a, b, it, from, to, k, count) => {
+    const spread = count > 1 ? 10 + (k / (count - 1)) * (FL.nodeH - 20) : FL.nodeH / 2;
+    const [x1, y1] = it.role === 'ref' ? [a.x + nodeW, a.y + FL.nodeH / 2] : [a.x + nodeW, a.y + spread];
+    const [x2, y2] = it.role === 'ref' ? [b.x, b.y + spread] : [b.x, b.y + FL.nodeH / 2];
+    const dx = Math.max(30, (x2 - x1) / 2);
+    const p = svg('path', { class: 'fl-edge', 'data-a': from, 'data-b': to, d: `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`,
+      style: `stroke:${roleColor(it.role, it.rank)};stroke-width:${flowWidth(it.weight, it.max).toFixed(2)}` });
+    const tt = svg('title');
+    tt.textContent = `${from} → ${to} · ${roleName(it.role)} #${it.rank} · ${roleFigure(it)}`;
+    p.append(tt);
+    edges.append(p);
+  };
+  const c = pos.get(centerId);
+  for (const lane of lanes) {
+    if (lane.key === 'center') continue;
+    const max = Math.max(0, ...lane.items.map(x => x.weight ?? 0));
+    lane.items.forEach((it, k) => {
+      const me = pos.get(lane.key === 'dep2' ? 'dep2|' + it.id : it.id);
+      const it2 = { ...it, max };
+      if (lane.key === 'ref') link(me, c, it2, it.id, centerId, k, lane.items.length);
+      else if (lane.key === 'dep') link(c, me, it2, centerId, it.id, k, lane.items.length);
+      else link(pos.get(lane.parent), me, it2, lane.parent, it.id, k, lane.items.length);
+    });
+  }
+  host.addEventListener('mouseover', ev => {
+    const id = ev.target.closest('.fl-node')?.dataset.id || null;
+    host.classList.toggle('hovering', !!id);
+    const near = new Set(id ? [id] : []);
+    host.querySelectorAll('.fl-edge').forEach(el => {
+      const on = !!id && (el.dataset.a === id || el.dataset.b === id);
+      el.classList.toggle('hot', on);
+      if (on) { near.add(el.dataset.a); near.add(el.dataset.b); }
+    });
+    host.querySelectorAll('.fl-node').forEach(el => el.classList.toggle('hot', near.has(el.dataset.id)));
+  });
+  host.addEventListener('mouseleave', () => host.classList.remove('hovering'));
+
+  const trail = state.memFlowTrail || [];
+  wrap.replaceChildren(
+    h('div', { class: 'flow-trail' },
+      h('button', { class: 'icon-btn sm', disabled: trail.length ? null : true, onclick: () => flowBack(trail.length - 1) }, '‹ ', t('Back')),
+      trail.map((id, i) => [h('button', { class: 'crumb', title: id, onclick: () => flowBack(i) }, id), '›']),
+      h('span', { class: 'crumb cur', title: centerId }, centerId)),
+    host,
+    h('div', { class: 'flow-foot' }, roleLegend(false), h('span', {}, t('Edge width: linked rows, log scale (estimated)')), h('span', {}, t('Click a table to make it the center'))));
+}
+
 // ---------- schema tab ----------
 function memChooser(profiles) {
   if (!profiles.length) {
@@ -2033,8 +2206,12 @@ function renderSchema() {
   if (!sel || !data.nodes.some(n => n.id === sel)) sel = defaultRoot(g);
   let focus = memFocus();
   if (!focus || !g.byId.has(focus)) focus = sel && g.byId.has(sel) ? sel : defaultRoot(g);
+  if (!['graph', 'er', 'flow'].includes(state.memMode)) state.memMode = 'graph';
+  const expandKey = JSON.stringify(state.memExpand || {});
   const key = [state.db, data.generatedAt, state.memMode, g.schema, lang, !!state.memTimeline,
-    state.memMode === 'er' ? `${sel}|${!!state.memErAll}|${JSON.stringify(state.memExpand || {})}` : `${focus}|${!!state.memShowAll}`].join('|');
+    state.memMode === 'er' ? `${sel}|${!!state.memErAll}|${expandKey}`
+      : state.memMode === 'flow' ? `${sel}|${expandKey}|${state.memFlowOpen}|${(state.memFlowTrail || []).join(',')}`
+      : `${focus}|${!!state.memShowAll}`].join('|');
   if (state.schemaKey === key && view.firstChild) { applyMemSearch(); return; }
   state.schemaKey = key;
   stopGraph();
@@ -2050,7 +2227,7 @@ function renderSchema() {
   const nNew = newChanges(sum);
   const bar = h('div', { class: 'panel' },
     h('div', { class: 'sch-bar' },
-      h('div', { class: 'seg', role: 'group', 'aria-label': t('View') }, [['graph', t('Graph')], ['er', t('ER diagram')]].map(([k, label]) =>
+      h('div', { class: 'seg', role: 'group', 'aria-label': t('View') }, [['graph', t('Graph')], ['er', t('ER diagram')], ['flow', t('Flow')]].map(([k, label]) =>
         h('button', { class: state.memMode === k ? 'on' : '', onclick: () => { state.memMode = k; if (k === 'graph' && sel) setMemFocus(sel); persist(); renderSchema(); } }, label))),
       schemaSel,
       state.memMode === 'graph' ? h('button', { class: 'icon-btn', onclick: () => { state.memShowAll = !state.memShowAll; state.memAnimateIn = true; renderSchema(); } }, state.memShowAll ? t('Focus view') : t('Show all')) : null,
@@ -2074,6 +2251,8 @@ function renderSchema() {
   let canvas;
   if (state.memMode === 'er' && sel) {
     canvas = h('div', { class: 'panel sch-canvas er' }, h('div', { class: 'rep-empty' }, t('Loading…')));
+  } else if (state.memMode === 'flow' && sel) {
+    canvas = h('div', { class: 'panel sch-canvas flow' });
   } else {
     let visible, depth;
     if (state.memShowAll) {
@@ -2086,8 +2265,9 @@ function renderSchema() {
     canvas = visible.length ? graphCanvas(g, visible, depth, data) : h('div', { class: 'panel sch-canvas' }, emptyState(t('No tables match.')));
   }
   put(view, bar, h('div', { class: 'sch' }, canvas, state.memInspHost));
-  if (graphSim && state.memMode !== 'er') graphSim.start();
+  if (graphSim && state.memMode === 'graph') graphSim.start();
   if (state.memMode === 'er' && sel) buildEr(canvas, data, sel, key);
+  if (state.memMode === 'flow' && sel) buildFlow(canvas, data, sel);
   applyMemSearch();
 }
 
