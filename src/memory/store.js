@@ -264,6 +264,8 @@ export class SchemaMemory {
       describedAt: at,
       usedColumns: prev?.usedColumns ?? {},
       history: [...(prev?.history ?? []), ...(changes.length ? [{ at, changes }] : [])].slice(-historyLimit),
+      ...(prev && 'estRows' in prev ? { estRows: prev.estRows, estRowsAt: prev.estRowsAt } : {}), // relation_stats
+      ...(prev?.relationStats ? { relationStats: prev.relationStats } : {}),
     };
     this.writeTable(profile, record);
     if (firstTime) this.appendChangelog(profile, { at, schema: next.schema, table: next.table, event: 'explored' });
@@ -284,6 +286,18 @@ export class SchemaMemory {
   }
 
   recordSeenUnlocked(profile, relations) {
+    this.touchSeenUnlocked(profile, relations);
+    if (relations.length) this.rebuildView(profile);
+    return {
+      ...this.notesSection(profile, relations),
+      ...this.neighborsSection(profile, relations),
+    };
+  }
+
+  // Writes each relation's record (a "seen" stub when it is new) with
+  // lastSeen and used columns; update(record, rel, at) may add more before
+  // the write. Does not rebuild the view.
+  touchSeenUnlocked(profile, relations, update = null) {
     const at = this.now();
     for (const rel of relations) {
       const prev = this.readTable(profile, rel.schema, rel.table);
@@ -297,13 +311,40 @@ export class SchemaMemory {
         const used = record.usedColumns[col] ?? { count: 0 };
         record.usedColumns[col] = { count: used.count + 1, lastUsed: at };
       }
+      update?.(record, rel, at);
       this.writeTable(profile, record);
     }
-    if (relations.length) this.rebuildView(profile);
-    return {
-      ...this.notesSection(profile, relations),
-      ...this.neighborsSection(profile, relations),
-    };
+    return at;
+  }
+
+  // relation_stats: the centers and their visible neighbours are recorded as
+  // seen (never as explored), each with its row estimate (estRows), and each
+  // center with its ranked foreign keys and linked-row estimates
+  // (relationStats), which graph() turns into edge figures. One view rebuild.
+  // Returns the keys (schema.table) of the relations explored so far.
+  recordRelationStats(profile, centers) {
+    return this.locked(profile, () => {
+      const rels = new Map();
+      const put = (schema, table, estRows) => {
+        const key = tableKey(schema, table);
+        if (!rels.has(key)) rels.set(key, { schema, table, estRows });
+        return rels.get(key);
+      };
+      for (const c of centers) {
+        for (const item of [...c.instance, ...c.dependent]) put(item.schema, item.table, item.tableEstRows);
+      }
+      for (const c of centers) {
+        const keep = ({ schema, table, constraint, columns, refColumns, linkedRows }) => ({ schema, table, constraint, columns, refColumns, linkedRows });
+        Object.assign(put(c.schema, c.table, c.estRows), { estRows: c.estRows, relationStats: { instance: c.instance.map(keep), dependent: c.dependent.map(keep) } });
+      }
+      this.touchSeenUnlocked(profile, [...rels.values()], (record, rel, at) => {
+        record.estRows = rel.estRows ?? null;
+        record.estRowsAt = at;
+        if (rel.relationStats) record.relationStats = { at, ...rel.relationStats };
+      });
+      this.rebuildViewUnlocked(profile);
+      return { explored: new Set([...rels.keys()].filter(key => this.readTable(profile, rels.get(key).schema, rels.get(key).table)?.describedAt)) };
+    });
   }
 
   // ---------- notes ----------
@@ -447,6 +488,19 @@ export class SchemaMemory {
       for (const c of t.constraints.filter(c => c.references)) add('fk', t, c.references, c.columns, c.references.columns);
       for (const r of t.referencedBy || []) add('fk', r, t, r.columns, r.refColumns);
     }
+    // relation_stats: foreign keys with linked-row estimates; the latest
+    // measurement of an edge wins.
+    const measured = (s, from, to, e) => {
+      add('fk', from, to, e.columns, e.refColumns);
+      const edge = edges.get(`fk|${tableKey(from.schema, from.table)}|${tableKey(to.schema, to.table)}|${e.columns.join(',')}`);
+      if (!edge.statsAt || edge.statsAt < s.at) Object.assign(edge, { linkedRows: e.linkedRows ?? null, estimated: true, statsAt: s.at });
+    };
+    for (const t of tables) {
+      const s = t.relationStats;
+      if (!s) continue;
+      for (const e of s.instance || []) measured(s, t, e, e);
+      for (const e of s.dependent || []) measured(s, e, t, e);
+    }
     const fkPairs = new Set([...edges.values()].map(e => `${e.from}|${e.to}`));
     for (const pair of this.approvedJoins(profile) || []) {
       const [l, r] = [splitColumnRef(pair.left), splitColumnRef(pair.right)];
@@ -536,6 +590,7 @@ export class SchemaMemory {
       state: t.describedAt ? 'explored' : 'seen', kind: t.kind, estimatedRows: t.estimatedRows,
       columnCount: t.columns.length, changes: (t.history || []).length,
       notes: notes.filter(n => n.schema === t.schema && n.table === t.table).length,
+      ...(t.estRows !== undefined ? { estRows: t.estRows } : {}),
     }]));
     for (const e of edges) {
       for (const id of [e.from, e.to]) {
