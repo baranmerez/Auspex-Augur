@@ -170,6 +170,7 @@ flowchart LR
 | 🧬 `describe_table` | Columns, types, defaults, comments, constraints, indexes, incoming FKs, view definition; records the table in the schema memory and reports changes since the last time |
 | 🧬 `describe_tables` | The same structure for up to 50 tables in one call, with 5 catalog statements (6 with a view) however many tables; unknown names are reported per table; each table is recorded in the schema memory |
 | 📏 `profile_tables` | Up to 30 tables in one call: estimated rows, per-column fill rate and distinct count on a sample, and fan-out over a parent table (optionally in a window); at most 3 statements; counts and ratios only, never row values |
+| 🕸️ `relation_stats` | Up to 50 center tables in one call: their instance tables (referenced by foreign key) and dependent tables (referencing them), ranked by estimated linked rows from planner statistics; at most 2 statements; no table data is read |
 | ▶️ `query` | One read-only statement, max `AUSPEX_MAX_ROWS` rows, `$1..$n` params, optional `timeoutSeconds` |
 | 🧠 `explain` | Estimated plan by default; `analyze: true` runs `EXPLAIN (ANALYZE, BUFFERS)` read-only, under the timeout, rolled back |
 | 📤 `export_csv` | Streams the result to a new UTF-8 CSV file (`<time>_<random>_<name>.csv`, never overwrites) within a row, size and total-time budget; returns only path, columns, row count, size and `stopReason` when a limit cut it short |
@@ -245,6 +246,43 @@ plain `LIMIT` scan. Fan-out uses the child's single-column foreign key to
 names are checked against the catalog, quoted, and the generated SQL passes the
 same guard as user queries; there is no free SQL. The server instructions tell
 the model to prefer these two tools over per-table loops.
+
+### Ranking related tables
+
+`relation_stats` answers "which neighbours of this table matter most" without
+reading any table. For each center table it lists:
+
+- **instance** tables: tables the center references by foreign key (for
+  example `sales.orders -> sales.order_status`);
+- **dependent** tables: tables that reference the center (for example
+  `sales.order_lines -> sales.orders`).
+
+Each list is sorted by `linkedRows`, then by the table's estimated rows
+(`tableEstRows`), then by name; equal figures share a `rank`. An item is
+`{ relation, constraint, columns, refColumns, linkedRows, stats, tableEstRows,
+rank, explored }`; `columns` are the referencing side's key columns.
+
+`linkedRows` estimates the rows that link through the key, from statistics
+only: the referencing table's `reltuples` (the dependent table, or the center
+for an instance table) times `1 - null_frac` of its key column in `pg_stats`.
+For a multi-column key the largest `null_frac` is used, so it is an upper
+bound. When the referencing table was never analyzed (`reltuples < 0`) or
+`pg_stats` has no row for a key column, `linkedRows` is `null` and `stats` is
+`"missing"`; it is never reported as 0. `pg_stats` only shows columns the role
+may read and hides tables whose row security applies to the role, so missing
+statistics can also mean missing privileges. A partitioned table has
+statistics only after `ANALYZE` on the parent (autovacuum does not analyze
+partitioned parents). Relations without SELECT privilege are not listed, only
+counted in `hidden` (`{ instance, dependent }`); a center without SELECT
+privilege is reported with an error. Foreign keys cloned onto partitions are
+left out (the parent's key stands for them). `schema` limits the neighbours to
+one schema.
+
+All centers take at most 2 statements in one READ ONLY transaction (the
+relations with their foreign keys, then `pg_stats`), with one audit entry
+(field `statements`). The result is recorded in the schema memory: centers and
+neighbours are recorded as seen (never as explored), with their row estimates,
+and the edges in `graph.json` carry the linked-row figures (see below).
 
 ### Large tables and long queries
 
@@ -407,6 +445,25 @@ memory/<profile>/
 ├── changelog.jsonl                explored tables, notes and schema changes
 └── graph.json                     derived view for the viewer (rebuilt on every change)
 ```
+
+`graph.json` is `{ profile, generatedAt, summary, nodes, edges, notes,
+changelog }`. Nodes and edges, with the optional fields `relation_stats` adds
+(absent until it has measured them, so older readers are unaffected):
+
+```
+node: { id: "schema.table", schema, table, file?, state: "explored" | "seen" | "unexplored",
+        kind, estimatedRows, columnCount, changes, notes,
+        estRows?: number | null }       // relation_stats row estimate; null = never analyzed
+edge: { level: "fk" | "used" | "suggested", from: "schema.table", to: "schema.table",
+        columns: [...], refColumns: [...], // from(columns) references to(refColumns)
+        linkedRows?: number | null,      // rows of `from` with the key set; null = stats missing
+        estimated?: true,                // linkedRows comes from planner statistics
+        statsAt?: "ISO time" }           // when relation_stats measured it (latest wins)
+```
+
+`file` is only set for tables with a record (`explored` or `seen`). The table
+records keep the measurement (`estRows`, `estRowsAt`, and for centers
+`relationStats`), so describing a table again does not drop it.
 
 ## 🔌 Register with an MCP client
 

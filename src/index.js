@@ -7,8 +7,8 @@ import { loadConfig, describeConnection } from './config.js';
 import { ReadOnlyDatabase } from './db.js';
 import { classifyError, ToolError } from './errors.js';
 import {
-  listSchemas, listTables, describeTable, describeTables, profileTables, search,
-  maxDescribeTables, maxProfileTables, defaultSampleRows, maxSampleRows,
+  listSchemas, listTables, describeTable, describeTables, profileTables, relationStats, search,
+  maxDescribeTables, maxProfileTables, maxRelationStatsTables, defaultSampleRows, maxSampleRows,
 } from './catalog.js';
 import { ReportService } from './reports/service.js';
 import { sqlHash } from './reports/library.js';
@@ -56,7 +56,7 @@ const instructions = [
   'run_report with analyze="auto" skips EXPLAIN ANALYZE when the previous run took longer than 30 s; ask the user before forcing analyze="always" on such reports.',
   'Schema memory: Auspex keeps local notes per profile about the tables you worked with. describe_table and describe_tables record a table and report changesSinceLast (tell the user about them); run_report and explain record the tables and columns their plans used. It never crawls the catalog on its own.',
   'Before describing a table again, call table_knowledge: it answers from memory without touching the database.',
-  `When you need several tables, do not loop over describe_table or send one measuring query per table: use describe_tables for the structure of up to ${maxDescribeTables} tables and profile_tables for row estimates, fill rates, distinct counts and parent-child fan-out of up to ${maxProfileTables} tables. Each takes a constant number of statements however many tables are listed.`,
+  `When you need several tables, do not loop over describe_table or send one measuring query per table: use describe_tables for the structure of up to ${maxDescribeTables} tables and profile_tables for row estimates, fill rates, distinct counts and parent-child fan-out of up to ${maxProfileTables} tables. Each takes a constant number of statements however many tables are listed. To see which neighbours of a table matter most, relation_stats ranks its referenced (instance) and referencing (dependent) tables by estimated linked rows from planner statistics, without reading data.`,
   'When the user states a business rule, save it with remember kind=rule. Save a finding from data as kind=observation with evidence (the SQL and aggregate figures only, never row values or personal data). Your own interpretations are kind=inference; never present them as fact, and confirm one only after the user agreed.',
   'Results may carry notes for the tables they touched; take them into account.',
   'When a report or analysis is finished and results listed unexploredNeighbors, name them and ask the user whether to explore them. Only after a yes, call describe_tables on them (structure only); do not query their data unless asked.',
@@ -240,6 +240,29 @@ tool('profile_tables', {
     timeoutSeconds: timeoutArg,
   },
 }, async ({ profile, ...options }) => profileTables(db, profile, options));
+
+tool('relation_stats', {
+  title: 'Rank related tables',
+  description: `For up to ${maxRelationStatsTables} center relations: the instance tables (the center references them by foreign key) and the dependent tables (they reference the center), each list ranked by linkedRows (estimated rows that link through the key) and then by the table's estimated rows. Figures come from planner statistics only (reltuples and pg_stats null_frac), no table is read: linkedRows is null with stats "missing" when the table was never analyzed or the key column has no statistics the role may see; never treat that as 0. Tables without SELECT privilege are only counted (hidden). Each item says whether the table is explored in the schema memory; neighbours are recorded as seen, not explored. At most 2 statements however many tables (field statements). Use it to pick which neighbours to explore next with describe_tables.`,
+  inputSchema: {
+    profile: profileArg,
+    tables: tableListArg(maxRelationStatsTables).describe('Center relations as schema.table, e.g. ["sales.orders"].'),
+    schema: z.string().min(1).optional().describe('Only list neighbours in this schema.'),
+  },
+}, async ({ profile, tables, schema }) => {
+  const result = await relationStats(db, profile, tables, schema);
+  const found = result.tables.filter(t => !t.error);
+  const learned = learn(() => memory.recordRelationStats(result.profile, found));
+  const explored = (schemaName, table) => (learned.explored ? learned.explored.has(`${schemaName}.${table}`) : null);
+  const item = ({ schema: s, table, ...rest }) => ({ ...rest, explored: explored(s, table) });
+  return {
+    ...result,
+    tables: result.tables.map(t => (t.error ? t : {
+      ...t, explored: explored(t.schema, t.table), instance: t.instance.map(item), dependent: t.dependent.map(item),
+    })),
+    ...(learned.memoryError ? { memoryError: learned.memoryError } : {}),
+  };
+});
 
 tool('query', {
   title: 'Run read-only query',
