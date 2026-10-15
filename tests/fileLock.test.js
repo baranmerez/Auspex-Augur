@@ -64,13 +64,45 @@ test('a lock left by a crashed process is taken over', { timeout: 30000 }, async
   assert.equal(fs.existsSync(lockPath), false);
 });
 
-test('an old lock whose pid is alive on this host is not taken over', () => {
+test('a lock past staleMs but below maxHoldMs whose pid is alive on this host is not taken over', () => {
   const lockPath = path.join(tempDir('auspex-lock-old-'), '.lock');
   fs.writeFileSync(lockPath, JSON.stringify({ pid: process.ppid, host: os.hostname(), token: '5555555555555555' }));
   const old = new Date(Date.now() - 60000);
   fs.utimesSync(lockPath, old, old);
-  assert.throws(() => withFileLock(lockPath, () => 'never', { waitMs: 150, staleMs: 100 }), LockBusyError);
+  assert.throws(() => withFileLock(lockPath, () => 'never', { waitMs: 150, staleMs: 100 }), LockBusyError, 'default ceiling (10 min)');
+  assert.throws(() => withFileLock(lockPath, () => 'never', { waitMs: 150, staleMs: 100, maxHoldMs: 120000 }), LockBusyError);
   assert.equal(JSON.parse(fs.readFileSync(lockPath, 'utf8')).token, '5555555555555555', 'the live owner keeps its lock');
+});
+
+test('a lock older than maxHoldMs is taken over even though its pid belongs to a live, unrelated process (pid reuse)', () => {
+  const dir = tempDir('auspex-lock-ceiling-');
+  const lockPath = path.join(dir, '.lock');
+  // process.ppid is alive but never held this lock: what a reused pid looks like.
+  fs.writeFileSync(lockPath, JSON.stringify({ pid: process.ppid, host: os.hostname(), token: '7777777777777777' }));
+  const old = new Date(Date.now() - 11 * 60000);
+  fs.utimesSync(lockPath, old, old);
+  assert.equal(withFileLock(lockPath, () => 'ran', { waitMs: 500 }), 'ran', 'default ceiling of 10 minutes');
+  assert.deepEqual(fs.readdirSync(dir), [], 'lock and aside files are gone');
+
+  fs.writeFileSync(lockPath, JSON.stringify({ pid: process.ppid, host: os.hostname(), token: '8888888888888888' }));
+  const minuteOld = new Date(Date.now() - 60000);
+  fs.utimesSync(lockPath, minuteOld, minuteOld);
+  assert.equal(withFileLock(lockPath, () => 'ran', { waitMs: 500, maxHoldMs: 30000 }), 'ran', 'maxHoldMs is an option');
+});
+
+test('a takeover marker past maxHoldMs is removed even though its pid is alive', () => {
+  const dir = tempDir('auspex-lock-old-marker-');
+  const lockPath = path.join(dir, '.lock');
+  const marker = `${lockPath}.takeover.9999999999999999`;
+  fs.writeFileSync(lockPath, JSON.stringify({ pid: 2 ** 30, host: os.hostname(), token: '9999999999999999' }));
+  fs.writeFileSync(marker, JSON.stringify({ pid: process.ppid, host: os.hostname() }));
+  // Below the ceiling, a marker of a live taker blocks the takeover.
+  assert.throws(() => withFileLock(lockPath, () => 'never', { waitMs: 150 }), LockBusyError);
+  assert.ok(fs.existsSync(marker), 'a live taker keeps its marker');
+  const old = new Date(Date.now() - 11 * 60000);
+  fs.utimesSync(marker, old, old);
+  assert.equal(withFileLock(lockPath, () => 'ran', { waitMs: 500 }), 'ran');
+  assert.deepEqual(fs.readdirSync(dir), [], 'lock, marker and aside files are gone');
 });
 
 test('an old lock from another host (liveness unknown) is taken over by age; a fresh one is not', () => {

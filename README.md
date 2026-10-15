@@ -416,10 +416,14 @@ library/
   (`<library>/.lock`, `<memory>/<profile>/.lock`), so concurrent writers do
   not lose each other's updates and SQL, metadata and HTML stay in step. A
   second writer waits up to 5 s, then gets a "try again" error. A lock whose
-  owner process is still alive on this machine is never taken over, however
-  long it is held (debugger, sleep); a lock left by a crashed process is taken
-  over automatically. Only when the owner cannot be checked (unreadable lock
-  file, another host) does a lock older than 30 s expire. Locks are same-host
+  owner process is still alive on this machine is not taken over while it is
+  younger than 10 minutes (debugger, sleep); a lock left by a crashed process
+  is taken over automatically. Only when the owner cannot be checked
+  (unreadable lock file, another host) does a lock older than 30 s expire.
+  Past 10 minutes (`maxHoldMs` of `withFileLock`) any lock or leftover
+  takeover marker is reclaimed even when its pid looks alive, because the OS
+  may have reused the pid of an owner that died holding it; every guarded
+  section is short file work, far below that ceiling. Locks are same-host
   only: sharing one library or memory folder between machines over a network
   filesystem is not supported. A crash in the middle of an approval can leave
   it half done.
