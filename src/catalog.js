@@ -415,6 +415,68 @@ export async function describeTables(db, profile, tables) {
   }, r => ({ statements: r.statements, found: r.found, notFound: r.notFound }));
 }
 
+// ---------- describe_tables detail "summary" ----------
+
+export const describeDetails = ['summary', 'full'];
+export const summaryReferencedBy = 10;
+const shortDefaultChars = 30;
+const summaryLineChars = 120;
+
+export const describeSummaryNote = 'detail "summary": each column as "name type [not null] [PK] [FK -> schema.table(column)] [identity] [generated] '
+  + '[default <value> | has default] [no SELECT]" (a default longer than 30 characters is only flagged); constraints other than single-column '
+  + 'foreign keys as "name definition"; indexes as "name [unique] [method] (columns)"; triggers as "name TIMING EVENTS"; each line cut at '
+  + `${summaryLineChars} characters; referencedBy as the count of incoming foreign keys and the first ${summaryReferencedBy} by table name `
+  + '(relation_stats ranks them). Column comments, full definitions and view definitions (viewDefinitionOmitted) are left out: '
+  + 'use detail "full" for them. The schema memory is recorded from the full catalog data either way.';
+
+const clip = text => (text.length > summaryLineChars ? `${text.slice(0, summaryLineChars - 3)}...` : text);
+
+function indexLine({ name, definition }) {
+  const m = /^CREATE (UNIQUE )?INDEX .*? USING (\S+) (.*)$/s.exec(definition ?? '');
+  if (!m) return clip(`${name} ${definition ?? ''}`.trim());
+  return clip(`${name}${m[1] ? ' unique' : ''}${m[2] === 'btree' ? '' : ` ${m[2]}`} ${m[3]}`);
+}
+
+// A compact view of one describeRelations entry for describe_tables: one line
+// per column, constraint, index and trigger, and incoming foreign keys as a
+// count and the first few referencing tables. The input is not changed.
+export function summarizeDescribedTable(t) {
+  const primaryKey = new Set(t.constraints.filter(c => c.type === 'primary key').flatMap(c => c.columns ?? []));
+  const singleFks = t.constraints.filter(c => c.type === 'foreign key' && c.columns?.length === 1);
+  const columns = t.columns.map(c => {
+    const parts = [c.column, c.type];
+    if (c.not_null) parts.push('not null');
+    if (primaryKey.has(c.column)) parts.push('PK');
+    for (const fk of singleFks.filter(f => f.columns[0] === c.column)) parts.push(`FK -> ${fk.ref_schema}.${fk.ref_table}(${(fk.ref_columns ?? []).join(', ')})`);
+    if (c.identity) parts.push('identity');
+    if (c.generated) parts.push('generated');
+    if (c.default !== null && c.default !== undefined && !c.generated) parts.push(c.default.length <= shortDefaultChars ? `default ${c.default}` : 'has default');
+    if (c.can_select === false) parts.push('no SELECT');
+    return parts.join(' ');
+  });
+  const out = {
+    relation: t.relation,
+    kind: t.kind,
+    estRows: t.estimated_rows,
+    comment: t.comment ?? null,
+    columns,
+    // Single-column foreign keys are on their column line; NOT NULL
+    // constraints (contype n, PostgreSQL 18) are in the column's nullability.
+    constraints: t.constraints.filter(c => !singleFks.includes(c) && c.type !== 'n').map(c => clip(`${c.name} ${c.definition}`)),
+    indexes: t.indexes.map(indexLine),
+    triggers: t.triggers.map(tr => `${tr.name} ${tr.timing} ${tr.events.join(' OR ')}`),
+    referencedBy: {
+      count: t.referencedBy.length,
+      tables: t.referencedBy.slice(0, summaryReferencedBy).map(r => `${r.from_table}(${(r.columns ?? []).join(', ')})`),
+    },
+  };
+  if (t.rowLevelSecurity?.enabled || t.rowLevelSecurity?.forced) out.rowLevelSecurity = t.rowLevelSecurity;
+  if (t.partitioning) out.partitioning = t.partitioning;
+  if (t.partitionOf) out.partitionOf = t.partitionOf;
+  if (t.viewDefinition !== undefined) out.viewDefinitionOmitted = true;
+  return out;
+}
+
 // ---------- describe_functions ----------
 
 export const maxDescribeFunctions = 50;

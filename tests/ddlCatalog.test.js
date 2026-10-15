@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ReadOnlyDatabase } from '../src/db.js';
-import { describeTables, describeFunctions, search, triggerFromRow } from '../src/catalog.js';
+import { describeTables, describeFunctions, search, triggerFromRow, summarizeDescribedTable } from '../src/catalog.js';
 
 const fn = (schema, name, extra = {}) => ({
   schema, name, arguments: '', returns: 'trigger', kind: 'function', language: 'plpgsql', volatility: 'volatile',
@@ -18,7 +18,9 @@ const functions = {
 // A fake pg client: the describe statements for app.import_job (one trigger,
 // an identity column, row level security), functions by name or pattern, and
 // search rows of every kind.
-function fakeDb({ searchRows = [] } = {}) {
+// With summaryFixture, import_job also has more columns, constraints, indexes
+// and 12 incoming foreign keys.
+function fakeDb({ searchRows = [], summaryFixture = false } = {}) {
   const sent = [];
   const audit = [];
   const client = {
@@ -38,13 +40,47 @@ function fakeDb({ searchRows = [] } = {}) {
           ? { ord: i + 1, oid: '500', relkind: 'r', estimated_rows: null, comment: 'staging', rls_enabled: true, rls_forced: false, partition_key: null, partition_of: null }
           : `${schema}.${params[1][i]}` === 'app.log'
             ? { ord: i + 1, oid: '501', relkind: 'p', estimated_rows: null, comment: null, rls_enabled: false, rls_forced: false, partition_key: 'RANGE (logged_on)', partitions: '2', partition_of: null }
-            : { ord: i + 1, oid: null })) };
+            : `${schema}.${params[1][i]}` === 'app.v_job'
+              ? { ord: i + 1, oid: '502', relkind: 'v', estimated_rows: null, comment: null, rls_enabled: false, rls_forced: false, partition_key: null, partition_of: null }
+              : { ord: i + 1, oid: null })) };
       }
       if (text.includes('pg_attrdef')) {
+        const plain = { can_select: true, comment: null, identity: null, generated: null, sequence: null };
         return { rows: [
           { relid: '500', column: 'id', attnum: 1, type: 'bigint', not_null: true, default: null, can_select: true, comment: null, identity: 'always', generated: null, sequence: 'app.import_job_id_seq' },
           { relid: '500', column: 'payload', attnum: 2, type: 'jsonb', not_null: true, default: null, can_select: true, comment: null, identity: null, generated: null, sequence: null },
+          ...(params[0].includes('500') && summaryFixture ? [
+            { relid: '500', column: 'region_id', attnum: 3, type: 'integer', not_null: false, default: null, ...plain, comment: 'Region of the import, see app.region' },
+            { relid: '500', column: 'status', attnum: 4, type: 'text', not_null: true, default: "'new'::text", ...plain },
+            { relid: '500', column: 'batch_no', attnum: 5, type: 'integer', not_null: true, default: "nextval('app.import_job_batch_no_seq'::regclass)", ...plain, sequence: 'app.import_job_batch_no_seq' },
+            { relid: '500', column: 'payload_length', attnum: 6, type: 'integer', not_null: false, default: 'length((payload)::text)', ...plain, generated: 'stored' },
+            { relid: '500', column: 'secret', attnum: 7, type: 'text', not_null: false, default: null, ...plain, can_select: false },
+          ] : []),
+          ...(params[0].includes('502') ? [{ relid: '502', column: 'id', attnum: 1, type: 'bigint', not_null: false, default: null, ...plain }] : []),
         ] };
+      }
+      if (summaryFixture && text.includes('con.contype when')) {
+        return { rows: [
+          { relid: '500', name: 'import_job_pkey', type: 'primary key', definition: 'PRIMARY KEY (id)', columns: ['id'], ref_schema: null, ref_table: null, ref_columns: null },
+          { relid: '500', name: 'import_job_region_fk', type: 'foreign key', definition: 'FOREIGN KEY (region_id) REFERENCES app.region(id)', columns: ['region_id'], ref_schema: 'app', ref_table: 'region', ref_columns: ['id'] },
+          { relid: '500', name: 'import_job_status_check', type: 'check', definition: `CHECK ((status = ANY (ARRAY[${['new', 'validated', 'error', 'loaded', 'archived', 'cancelled', 'retry'].map(s => `'${s}'::text`).join(', ')}])))`, columns: ['status'], ref_schema: null, ref_table: null, ref_columns: null },
+          { relid: '500', name: 'import_job_payload_not_null', type: 'n', definition: 'NOT NULL payload', columns: ['payload'], ref_schema: null, ref_table: null, ref_columns: null },
+        ] };
+      }
+      if (summaryFixture && text.includes('pg_get_indexdef')) {
+        return { rows: [
+          { relid: '500', name: 'import_job_pkey', definition: 'CREATE UNIQUE INDEX import_job_pkey ON app.import_job USING btree (id)' },
+          { relid: '500', name: 'import_job_payload_gin', definition: 'CREATE INDEX import_job_payload_gin ON app.import_job USING gin (payload) WHERE (status <> \'archived\'::text)' },
+        ] };
+      }
+      if (summaryFixture && text.includes('as from_table')) {
+        return { rows: Array.from({ length: 12 }, (_, i) => {
+          const name = `import_detail_${String(i + 1).padStart(2, '0')}`;
+          return { relid: '500', from_table: `app.${name}`, from_schema: 'app', from_name: name, name: `${name}_job_fk`, definition: 'FOREIGN KEY (job_id) REFERENCES app.import_job(id)', columns: ['job_id'], ref_columns: ['id'] };
+        }) };
+      }
+      if (text.includes('pg_get_viewdef')) {
+        return { rows: [{ relid: '502', definition: ` SELECT import_job.id\n   FROM app.import_job\n  WHERE import_job.status = 'loaded'::text${' AND true'.repeat(40)};` }] };
       }
       if (text.includes('from pg_trigger t\njoin pg_proc')) {
         return { rows: [{ relid: '500', name: 'import_job_validate', tgtype: 1 | 2 | 4 | 16, enabled: 'O', function: 'app.validate', constraint_trigger: false,
@@ -80,6 +116,49 @@ test('describe_tables adds triggers, identity/sequence columns, RLS and partitio
   assert.deepEqual(log.partitioning, { key: 'RANGE (logged_on)', partitions: 2 });
   assert.deepEqual(log.triggers, []);
   assert.ok(sent.filter(s => s.text.includes('pg_trigger')).length === 1, 'one trigger statement for all tables');
+});
+
+// What describe_tables answers per table with detail "full" (see index.js).
+const fullShape = ({ profile, oid, columns, ...rest }) => ({ ...rest, columns: columns.map(({ attnum, ...c }) => c) });
+
+test('describe_tables summary: one line per column, constraint, index and trigger, same statements, input unchanged', async (t) => {
+  const { db, sent } = fakeDb({ summaryFixture: true });
+  const r = await describeTables(db, 'app', ['app.import_job', 'app.v_job']);
+  assert.equal(r.statements, 7, 'the summary is built from the same statements');
+  const [job, view] = r.tables;
+  const before = structuredClone(job);
+  const s = summarizeDescribedTable(job);
+  assert.deepEqual(job, before, 'the full data (recorded in the schema memory) is not changed');
+  assert.deepEqual(s.columns, [
+    'id bigint not null PK identity',
+    'payload jsonb not null',
+    'region_id integer FK -> app.region(id)',
+    "status text not null default 'new'::text",
+    'batch_no integer not null has default',
+    'payload_length integer generated',
+    'secret text no SELECT',
+  ]);
+  assert.equal(s.constraints.length, 2, 'single-column foreign keys and NOT NULL constraints are on the column lines');
+  assert.equal(s.constraints[0], 'import_job_pkey PRIMARY KEY (id)');
+  assert.ok(s.constraints[1].startsWith('import_job_status_check CHECK ((status = ANY') && s.constraints[1].endsWith('...') && s.constraints[1].length === 120);
+  assert.deepEqual(s.indexes, ['import_job_pkey unique (id)', "import_job_payload_gin gin (payload) WHERE (status <> 'archived'::text)"]);
+  assert.deepEqual(s.triggers, ['import_job_validate BEFORE INSERT OR UPDATE']);
+  assert.equal(s.referencedBy.count, 12);
+  assert.equal(s.referencedBy.tables.length, 10);
+  assert.equal(s.referencedBy.tables[0], 'app.import_detail_01(job_id)');
+  assert.deepEqual([s.relation, s.kind, s.estRows, s.comment, s.rowLevelSecurity], ['app.import_job', 'table', null, 'staging', { enabled: true, forced: false }]);
+  assert.ok(!JSON.stringify(s).includes('CREATE TRIGGER') && !JSON.stringify(s).includes('Region of the import'), 'definitions and column comments are left out');
+
+  const v = summarizeDescribedTable(view);
+  assert.equal(v.viewDefinitionOmitted, true);
+  assert.equal(v.viewDefinition, undefined);
+  assert.equal(v.rowLevelSecurity, undefined, 'only shown when enabled or forced');
+
+  const full = JSON.stringify(r.tables.map(fullShape)).length;
+  const summary = JSON.stringify(r.tables.map(summarizeDescribedTable)).length;
+  t.diagnostic(`fixture app.import_job + app.v_job: full ${full} characters, summary ${summary} (${Math.round((1 - summary / full) * 100)}% smaller)`);
+  assert.ok(summary < full / 2, `summary ${summary} vs full ${full}`);
+  assert.equal(sent.filter(s => s.text.includes('pg_get_viewdef')).length, 1);
 });
 
 test('trigger rows: timing, events, level, enabled state, WHEN condition', () => {

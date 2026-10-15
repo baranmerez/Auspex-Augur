@@ -168,7 +168,7 @@ flowchart LR
 | 📁 `list_schemas` | Non-system schemas with owner, relation count, usage privilege, comment |
 | 📋 `list_tables` | Tables/views in a schema with estimated rows, size, SELECT privilege, comment; optional ILIKE filter |
 | 🧬 `describe_table` | Columns (with identity, generated and owned sequence), types, defaults, comments, constraints incl. checks, indexes, incoming FKs, triggers, row level security, partitioning, view definition; records the table in the schema memory and reports changes since the last time |
-| 🧬 `describe_tables` | The same structure for up to 50 tables in one call, with 6 catalog statements (7 with a view) however many tables; unknown names are reported per table; each table is recorded in the schema memory |
+| 🧬 `describe_tables` | The same structure for up to 50 tables in one call, with 6 catalog statements (7 with a view) however many tables; compact one-line-per-item summary by default, `detail: "full"` for every definition; unknown names are reported per table; each table is recorded in the schema memory |
 | 🧩 `describe_functions` | Up to 50 functions by `schema.name` (every overload) or by name pattern: signature, language, volatility, SECURITY DEFINER, owner, calling triggers and the `pg_get_functiondef` text (capped, `truncated` flag); 1 statement |
 | 📏 `profile_tables` | Up to 30 tables in one call: estimated rows, per-column fill rate and distinct count on a sample, and fan-out over a parent table (optionally in a window); at most 3 statements; counts and ratios only, never row values |
 | 🕸️ `relation_stats` | Up to 50 center tables in one call: their instance tables (referenced by foreign key) and dependent tables (referencing them), ranked by estimated linked rows from planner statistics; at most 2 statements; no table data is read |
@@ -248,6 +248,24 @@ names are checked against the catalog, quoted, and the generated SQL passes the
 same guard as user queries; there is no free SQL. The server instructions tell
 the model to prefer these two tools over per-table loops.
 
+`describe_tables` answers with `detail: "summary"` by default, because the
+full structure of a dozen real tables can run to well over 100k characters.
+Per table the summary has `estRows`, `comment`, one line per column
+(`name type [not null] [PK] [FK -> schema.table(column)] [identity]
+[generated] [default <value> | has default] [no SELECT]`; defaults longer
+than 30 characters are only flagged), one line per constraint other than
+single-column foreign keys (`name definition`), per index (`name [unique]
+[method] (columns)`) and per trigger (`name TIMING EVENTS`), each line cut at
+120 characters, `referencedBy: { count, tables }` with the first 10 incoming
+foreign keys by table name, and `viewDefinitionOmitted` instead of a view's
+definition; `rowLevelSecurity`, `partitioning` and `partitionOf` only when
+set. The field `note` repeats this format. `detail: "full"` returns exactly
+the earlier answer (column comments, check, index and trigger definitions,
+view definitions). Both modes send the same statements and record the schema
+memory from the full catalog data. On the test fixtures the summary is 59 %
+(10 plain tables) to 79 % (a table with checks, indexes, a trigger and 12
+incoming foreign keys, plus a view) smaller than the full answer.
+
 ### Reading table DDL, triggers and functions
 
 For integration work (for example "show the import table for one firm and
@@ -265,6 +283,8 @@ the catalog tools return the structure needed to rebuild it:
   partitioned table has `partitioning: { key, partitions }`, a partition
   `partitionOf: { parent, bound }`. The table comment is `comment`. All of it
   comes from the same 6 statements (7 with a view), one of them for triggers.
+  `describe_tables` returns these fields with `detail: "full"`; its default
+  summary keeps only trigger names, timing and events.
 - `describe_functions` reads functions, procedures and aggregates by
   `schema.name` (all overloads) or by a name pattern (at most 50, `truncated`):
   `arguments`, `returns`, `kind`, `language`, `volatility`, `securityDefiner`,

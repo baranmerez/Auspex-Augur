@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { ReadOnlyDatabase } from '../src/db.js';
-import { describeTable, describeTables, profileTables, parseTableRef, quoteIdent } from '../src/catalog.js';
+import { describeTable, describeTables, profileTables, parseTableRef, quoteIdent, summarizeDescribedTable } from '../src/catalog.js';
 import { assertReadOnlyQuery } from '../src/sqlGuard.js';
 import { SchemaMemory } from '../src/memory/store.js';
 
@@ -95,6 +95,18 @@ test('describe_tables sends the same number of statements for 1 and 10 tables', 
   assert.equal(r10.found, 10);
   assert.deepEqual(r10.tables[9].columns.map(c => c.column), ['id', 'customer_id', 'note']);
   assert.deepEqual(ten.audit.filter(e => e.tool === 'describe_tables').length, 1, 'one audit entry for the whole call');
+});
+
+test('describe_tables summary of 10 tables is smaller than the full answer and keeps every column', async (t) => {
+  const { db } = fakeDb();
+  const r = await describeTables(db, 'shop', orders(10));
+  const summaries = r.tables.map(summarizeDescribedTable);
+  assert.deepEqual(summaries[0].columns, ['id integer not null', 'customer_id integer', 'note text']);
+  assert.deepEqual(summaries[0].referencedBy, { count: 0, tables: [] });
+  const full = JSON.stringify(r.tables.map(({ profile, oid, columns, ...rest }) => ({ ...rest, columns: columns.map(({ attnum, ...c }) => c) }))).length;
+  const summary = JSON.stringify(summaries).length;
+  t.diagnostic(`fixture shop.order_1..10: full ${full} characters, summary ${summary} (${Math.round((1 - summary / full) * 100)}% smaller)`);
+  assert.ok(summary < full);
 });
 
 test('describe_tables reports unknown and invalid names per table', async () => {
