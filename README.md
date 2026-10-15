@@ -255,6 +255,46 @@ server instructions tell the model to prefer estimated row counts over
 `count(*)`, check plans with `explain` first, and tell the user before running
 anything longer than the default.
 
+### Errors
+
+A failed tool call returns `isError: true` with the readable message as the
+first text block (unchanged), followed by a machine-readable envelope, both as
+`structuredContent` and as a second text block with the same JSON:
+
+```json
+{ "error": { "code": "QUERY_BUDGET_EXCEEDED", "retryable": true, "retryAfterSeconds": 42,
+             "budgetScope": "process", "correlationId": "5f0c…" } }
+```
+
+Decide from `code` and `retryable`, never from the English text. The envelope
+holds no message text, SQL, parameters, row values or connection details;
+`sqlState` is the PostgreSQL SQLSTATE when the database raised the error.
+
+| Code | Meaning | Retryable |
+|---|---|---|
+| `QUERY_BUDGET_EXCEEDED` | Query budget of the profile used up; `retryAfterSeconds` says when the next slot frees. The budget is per profile and per Auspex process (`budgetScope: "process"`), not a database-wide limit | yes, once, after the wait; better batch the work |
+| `LOCK_BUSY` | Another Auspex process is writing the report library or schema memory | yes, after a moment |
+| `ROLE_REJECTED` | The profile's database role is not read-only | no |
+| `SQL_REJECTED` | The SQL guard, or the READ ONLY transaction (SQLSTATE 25006), refused the statement | no |
+| `TIMEOUT` | Statement timeout (57014), idle-in-transaction timeout (25P03) or export time limit; lock timeout (55P03) is retryable | lock timeout only |
+| `INVALID_INPUT` | Invalid arguments, names or option values, including MCP schema validation | no |
+| `PROFILE_INVALID` | Missing or unknown profile | no |
+| `NOT_FOUND` | Report, note, relation or column not found | no |
+| `PRECONDITION_FAILED` | An earlier step is missing (for example run the current SQL version before approving or sharing) | no |
+| `PERMISSION_DENIED` | No privilege on the object (42501) | no |
+| `CONNECTION_FAILED` | Could not connect or authenticate (08xxx, 28xxx, 57P01-57P03, 53300, network errors); authentication failures are not retryable | network/server only |
+| `DISK_ERROR` | A local file could not be written or read (ENOSPC, EEXIST, EACCES, ...) | no |
+| `DATABASE_ERROR` | Any other PostgreSQL error; see `sqlState` (serialization failure and deadlock are retryable) | 40001/40P01 only |
+| `INTERNAL` | Anything else | no |
+
+Auspex itself never retries. Every tool call gets a `correlationId` (a random
+UUID), returned in `_meta.correlationId` of both successful and failed results
+and in the error envelope. The audit log entries written by that call carry the
+same `correlationId` (including the first-use `role_check`), and failed entries
+also `errorCode` and `sqlState`, so a result can be matched to its audit entry
+without double counting. Calls rejected by the MCP SDK's schema validation get
+the envelope too but are not audited (the handler never ran).
+
 ## 📚 Report library
 
 When an analysis query is worth keeping, the agent saves it as a report.
@@ -455,11 +495,11 @@ npm run viewer
 Opens a local page at http://127.0.0.1:4719 (port: `AUSPEX_VIEWER_PORT`):
 
 - **Overview** — stat tiles, activity over time, usage by profile, tool and table, slowest operations, recent errors
-- **Operations** — sortable, paged log with full SQL, parameters and errors; copy and CSV/JSON download
+- **Operations** — sortable, paged log with full SQL, parameters and errors (the status shows the error code, the detail the correlation ID); copy and CSV/JSON download
 - **Tables** — which tables were accessed, how often and by which profile
 - **Reports** — the report library by database, schema and category, with each report's HTML
 - **Schema** — the schema memory of a database as a force-directed graph (focus on a table or *Show all*) or an ER diagram centered on one table; an inspector with notes, relations and history; a timeline of schema changes. A badge in the header counts schema changes you have not seen yet.
-- **Profiles** — configured databases with connection details (never passwords)
+- **Profiles** — configured databases with connection details (never passwords) and the latest role check; a `check_profile` that failed shows "unable to assess" with its code, never as a passed check
 
 It binds to 127.0.0.1 only, accepts only GET, rejects other Host headers,
 never connects to a database and never shows passwords.
