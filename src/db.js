@@ -14,6 +14,9 @@ for (const oid of [1082, 1083, 1114, 1184, 1266]) pg.types.setTypeParser(oid, va
 
 const cursorName = 'auspex_cursor';
 const exportBatchSize = 1000;
+// How long past exportMaxMs an export waits for a cancelled FETCH to come back
+// and, separately, for the file to close (README: CSV export budget).
+const exportGraceMs = 2000;
 const connectTimeoutMs = 10000;
 const budgetWindowMs = 60000;
 export const defaultMaxQueriesPerMinute = 60;
@@ -48,6 +51,7 @@ export class ReadOnlyDatabase {
     this.now = now;
     this.budgetUse = new Map(); // profile -> start times (ms) of operations in the window
     this.operation = new AsyncLocalStorage(); // profiles already charged by the current audited operation
+    this.exportGraceMs = exportGraceMs; // tests shorten it
   }
 
   // Effective query budget of a profile: per-profile setting, else the global one.
@@ -311,6 +315,16 @@ export class ReadOnlyDatabase {
     const query = assertReadOnlyQuery(sql);
     const target = this.exportPath(fileName);
     return this.withReadOnly(profile, async (client, name) => {
+      // Budget for the whole export, on top of the per-statement timeout: a
+      // row cap, a size cap and a total time cap. Hitting one ends the file
+      // cleanly at a row boundary; stopReason says which. The time budget
+      // starts here, once the read-only transaction is open, and covers every
+      // FETCH, every write (including waits for a slow disk) and closing the
+      // file. See fetchBatch and finishing below for the cancellation grace.
+      const maxBytes = this.config.exportMaxBytes ?? Infinity;
+      const maxMs = this.config.exportMaxMs ?? Infinity;
+      const deadline = Date.now() + maxMs;
+      const statementMs = this.timeoutMs(name, timeoutSeconds);
       await this.declareCursor(client, query, params);
       fs.mkdirSync(path.dirname(target), { recursive: true });
       // 'wx' never touches an existing file; only a file this call created is
@@ -323,46 +337,90 @@ export class ReadOnlyDatabase {
       const failed = new Promise((_, reject) => out.once('error', reject));
       failed.catch(() => {});
       let bytes = 0;
+      // Resolves with timeUp when the budget ends while waiting for the disk.
       const write = chunk => {
         bytes += Buffer.byteLength(chunk);
-        return out.write(chunk) ? null : Promise.race([once(out, 'drain'), failed]);
+        return out.write(chunk) ? null : Promise.race([once(out, 'drain'), failed, expiry.promise]);
       };
-      // Budget for the whole export, on top of the per-statement timeout: a
-      // row cap, a size cap and a total time cap. Hitting one ends the file
-      // cleanly at a row boundary; stopReason says which.
-      const maxBytes = this.config.exportMaxBytes ?? Infinity;
-      const deadline = Date.now() + (this.config.exportMaxMs ?? Infinity);
+      // One FETCH within the budget. The server cancels it at the deadline:
+      // its statement_timeout is lowered to the remaining time (never raised
+      // above the call's own timeout), so the connection stays clean. If the
+      // server does not answer within the grace after the deadline either,
+      // the connection is dropped so it is never returned to the pool busy.
+      const fetchBatch = async () => {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) return timeUp;
+        const capped = remaining < statementMs;
+        const backstop = timer(remaining + this.exportGraceMs);
+        const run = async () => {
+          if (capped) await client.query(`SET LOCAL statement_timeout = ${Math.max(1, Math.ceil(remaining))}`);
+          return client.query({ text: `FETCH ${exportBatchSize} FROM ${cursorName}`, rowMode: 'array' });
+        };
+        try {
+          const res = await Promise.race([run(), failed, backstop.promise]);
+          if (res === timeUp) dropConnection(client);
+          return res;
+        } catch (err) {
+          if (capped && err.code === '57014') return timeUp; // cancelled by the budget
+          throw err;
+        } finally {
+          backstop.clear();
+        }
+      };
       let rowCount = 0;
       let columns = [];
       let textColumn = [];
+      let started = false;
       let stopReason = null;
+      const expiry = timer(deadline - Date.now());
       try {
-        await write('﻿'); // BOM so Excel opens UTF-8 (Turkish characters) correctly
         for (;;) {
-          const res = await Promise.race([client.query({ text: `FETCH ${exportBatchSize} FROM ${cursorName}`, rowMode: 'array' }), failed]);
-          if (rowCount === 0) {
+          const res = await fetchBatch();
+          if (res === timeUp) {
+            if (!started) throw new Error(`Export stopped by the time limit (exportMaxMs ${maxMs} ms) before the first rows arrived; no file was kept.`);
+            stopReason = 'time';
+            break;
+          }
+          if (!started) {
+            started = true;
             columns = res.fields.map(f => f.name);
             textColumn = res.fields.map(f => mode === 'spreadsheet' && !nonTextTypes.has(f.dataTypeID));
-            // Column names are text too: spreadsheet mode neutralizes them like text cells.
-            await write(columns.map(c => csvCell(mode === 'spreadsheet' ? spreadsheetSafe(c) : c, delimiter)).join(delimiter) + '\r\n');
+            // BOM so Excel opens UTF-8 (Turkish characters) correctly. Column
+            // names are text too: spreadsheet mode neutralizes them like text cells.
+            const head = '﻿' + columns.map(c => csvCell(mode === 'spreadsheet' ? spreadsheetSafe(c) : c, delimiter)).join(delimiter) + '\r\n';
+            const headBytes = Buffer.byteLength(head);
+            if (headBytes > maxBytes) throw new Error(`The CSV header alone is ${headBytes} bytes (with the byte order mark), more than exportMaxBytes ${maxBytes}; no file was kept. Select fewer or shorter column names.`);
+            if (await write(head) === timeUp) { stopReason = 'time'; break; }
           }
           for (const row of res.rows) {
             if (rowCount >= this.config.exportMaxRows) { stopReason = 'rows'; break; }
+            if (Date.now() >= deadline) { stopReason = 'time'; break; }
             const line = row.map((v, i) => csvCell(textColumn[i] ? spreadsheetSafe(rawCell(v)) : rawCell(v), delimiter)).join(delimiter) + '\r\n';
             if (bytes + Buffer.byteLength(line) > maxBytes) { stopReason = 'bytes'; break; }
-            await write(line);
-            rowCount++;
+            const drained = write(line);
+            rowCount++; // the whole line is in the stream, so the file still ends at a row
+            if (drained && await drained === timeUp) { stopReason = 'time'; break; }
           }
           if (stopReason || res.rows.length < exportBatchSize) break;
-          if (Date.now() >= deadline) { stopReason = 'time'; break; }
         }
+        // Closing the file may take until the deadline plus the grace; after
+        // that the export fails and the partial file is removed.
         out.end();
-        await Promise.race([once(out, 'finish'), failed]);
+        const finishing = timer(Math.max(0, deadline - Date.now()) + this.exportGraceMs);
+        try {
+          if (await Promise.race([once(out, 'finish'), failed, finishing.promise]) === timeUp) {
+            throw new Error(`Export could not finish writing the file within the time limit (exportMaxMs ${maxMs} ms plus ${this.exportGraceMs} ms); no file was kept.`);
+          }
+        } finally {
+          finishing.clear();
+        }
       } catch (err) {
         out.destroy();
         await closed;
         if (owned) fs.rmSync(target, { force: true });
         throw err;
+      } finally {
+        expiry.clear();
       }
       return { profile: name, file: target, columns, rowCount, bytes, truncated: stopReason !== null, stopReason };
     }, timeoutSeconds);
@@ -393,6 +451,24 @@ export class ReadOnlyDatabase {
     await Promise.all([...this.pools.values()].map(p => p.end()));
     this.pools.clear();
   }
+}
+
+const timeUp = Symbol('timeUp');
+
+// Resolves with timeUp after ms (never when ms is not finite); clear() stops it.
+function timer(ms) {
+  let id;
+  const promise = new Promise(resolve => { if (Number.isFinite(ms)) id = setTimeout(resolve, Math.max(0, ms), timeUp); });
+  return { promise, clear: () => clearTimeout(id) };
+}
+
+// Drops the connection of a FETCH that did not come back in time: its pending
+// query fails at once and withReadOnly then releases the client as broken, so
+// the pool never hands out a busy connection. The server ends the backend
+// when it notices, at the latest at its statement_timeout.
+function dropConnection(client) {
+  client.on?.('error', () => {}); // the expected "connection terminated" error must not crash the process
+  client.connection?.stream?.destroy();
 }
 
 function rawCell(value) {

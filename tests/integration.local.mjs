@@ -228,6 +228,31 @@ test('export stops at the size budget with a complete last row', async () => {
   }
 });
 
+test('the export time budget cancels a slow FETCH on the server and leaves the connection clean', async () => {
+  // Rows 1-1000 come at once; from row 1001 every row runs a multi-second
+  // subquery, so the second FETCH is still running at the deadline.
+  const quick = new ReadOnlyDatabase({ ...config, exportMaxMs: 1500 });
+  const slowTail = 'select g, case when g > 1000 then (select count(*) from generate_series(1, 50000001 + g * 0)) end as slow from generate_series(1, 1005) g';
+  try {
+    const started = Date.now();
+    const r = await quick.exportCsv('local', slowTail, [], 'slow_tail', ',');
+    const elapsed = Date.now() - started;
+    assert.deepEqual([r.rowCount, r.truncated, r.stopReason], [1000, true, 'time']);
+    assert.ok(elapsed < 1500 + 2000, `returned after ${elapsed} ms`);
+    assert.equal(fs.readFileSync(r.file, 'utf8').trim().split('\r\n').length, 1001);
+    await assert.rejects(quick.exportCsv('local', 'select count(*) from generate_series(1, 100000003)', [], 'slow_first', ','),
+      /time limit .* before the first rows arrived/);
+    assert.deepEqual(fs.readdirSync(config.exportDir).filter(f => f.includes('slow_first')), []);
+    // The cancelled FETCHes do not run on and the pooled connections are reusable.
+    const active = await quick.query('local', "select count(*)::int as n from pg_stat_activity where state = 'active' and pid <> pg_backend_pid() and (position('5000000' || '1 + g' in query) > 0 or position('10000000' || '3)' in query) > 0)");
+    assert.equal(active.rows[0][0], 0);
+    const pool = quick.pools.get('local');
+    assert.equal(pool.totalCount - pool.idleCount, 0, 'no client is still checked out');
+  } finally {
+    await quick.close();
+  }
+});
+
 test('explain returns a plan with params and does not execute', async () => {
   const res = await db.explain('local', 'select * from auspex_test.worker where id = $1', [1]);
   assert.match(res.plan, /Scan/);
