@@ -197,3 +197,38 @@ test('an export within every limit is complete and not truncated', async () => {
   const r = await db._exportCsv('local', 'select 1', [], 'x', ',');
   assert.deepEqual([r.rowCount, r.truncated, r.stopReason], [10, false, null]);
 });
+
+// Formula-like column names and values, written to a real file on disk.
+const headerFields = [
+  { name: '=1+1', dataTypeID: 25 }, { name: '+a', dataTypeID: 25 }, { name: '-b', dataTypeID: 23 },
+  { name: '@c', dataTypeID: 25 }, { name: '\td', dataTypeID: 25 }, { name: 'Şükrü, "ad"\nx', dataTypeID: 25 },
+];
+const headerRows = [['=1+1', '+x', -5, '@y', '\rz', null]];
+
+async function exportFile(mode, delimiter = ',') {
+  const db = fakeDb({ batches: [headerRows], fields: headerFields });
+  const r = await db._exportCsv('local', 'select 1', [], `headers-${mode}`, delimiter, undefined, mode);
+  const text = fs.readFileSync(r.file, 'utf8');
+  assert.equal(Buffer.byteLength(text), r.bytes, 'reported size matches the file');
+  return text;
+}
+
+test('spreadsheet mode neutralizes formula-like column names in the written file', async () => {
+  const text = await exportFile('spreadsheet');
+  assert.ok(text.startsWith('﻿'));
+  const lines = text.slice(1).split('\r\n');
+  assert.equal(lines[0], `'=1+1,'+a,'-b,'@c,'\td,"Şükrü, ""ad""\nx"`);
+  assert.equal(lines[1], `'=1+1,'+x,-5,'@y,"'\rz",`);
+});
+
+test('spreadsheet mode headers work with the semicolon delimiter', async () => {
+  const text = await exportFile('spreadsheet', ';');
+  assert.equal(text.slice(1).split('\r\n')[0], `'=1+1;'+a;'-b;'@c;'\td;"Şükrü, ""ad""\nx"`);
+});
+
+test('raw mode keeps column names exactly in the written file', async () => {
+  const text = await exportFile('raw');
+  const lines = text.slice(1).split('\r\n');
+  assert.equal(lines[0], `=1+1,+a,-b,@c,\td,"Şükrü, ""ad""\nx"`);
+  assert.equal(lines[1], `=1+1,+x,-5,@y,"\rz",`);
+});
