@@ -6,7 +6,8 @@
     "start": "node src/index.js",
     "test": "node --test tests/*.test.js",
     "test:local": "node --test tests/integration.local.mjs",
-    "viewer": "node src/viewer.js"
+    "viewer": "node src/viewer.js",
+    "skills:install": "node scripts/installSkills.mjs"
   },
   "license": "MIT",
   "description": "Read-only PostgreSQL MCP server: browse schemas, run guarded SELECT queries, export CSV.",
