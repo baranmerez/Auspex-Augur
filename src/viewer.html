@@ -1063,13 +1063,23 @@ function sortRows(rows) {
     return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), locale)) * k;
   });
 }
+// csv-export:start (tests/csvSafety.test.js runs this block in isolation)
+// Same rule as spreadsheetSafe in src/db.js (this page is standalone): text
+// starting with = + - @ or a tab/carriage return gets a leading apostrophe so a
+// spreadsheet shows it as text. Logged SQL and errors are untrusted text.
+function spreadsheetSafe(value) {
+  return typeof value === 'string' && /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+}
+// Numbers (ms, rowCount) stay numbers; every text cell is neutralized. JSON
+// export stays exact.
 function exportRows(rows, kind) {
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
   if (kind === 'json') return download(`auspex-log-${stamp}.json`, JSON.stringify(rows.map(({ _id, ...e }) => e), null, 2), 'application/json');
   const cols = ['ts', 'source', 'tool', 'profile', 'ms', 'rowCount', 'error', 'sql', 'params'];
-  const cell = v => { if (v === null || v === undefined) return ''; const s = typeof v === 'object' ? JSON.stringify(v) : String(v); return /[";\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const cell = v => { if (v === null || v === undefined) return ''; const s = typeof v === 'number' ? String(v) : spreadsheetSafe(typeof v === 'object' ? JSON.stringify(v) : String(v)); return /[";\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
   download(`auspex-log-${stamp}.csv`, '﻿' + [cols.join(';'), ...rows.map(e => cols.map(c => cell(c === 'source' ? sourceOf(e) : e[c])).join(';'))].join('\r\n'), 'text/csv');
 }
+// csv-export:end
 function renderOps(rows) {
   const sorted = sortRows(rows);
   const pages = Math.max(1, Math.ceil(sorted.length / state.pageSize));
