@@ -35,7 +35,14 @@ limit 1000`;
 const relationsByNameSql = `
 select r.ord::int as ord, c.oid::bigint as oid, c.relkind,
        case when c.reltuples < 0 then null else c.reltuples::bigint end as estimated_rows, -- -1 = never analyzed
-       obj_description(c.oid, 'pg_class') as comment
+       obj_description(c.oid, 'pg_class') as comment,
+       c.relrowsecurity as rls_enabled, c.relforcerowsecurity as rls_forced,
+       case when c.relkind = 'p' then pg_get_partkeydef(c.oid) end as partition_key,
+       case when c.relkind = 'p' then (select count(*) from pg_inherits i where i.inhparent = c.oid) end as partitions,
+       (select pn.nspname || '.' || pc.relname from pg_inherits i
+          join pg_class pc on pc.oid = i.inhparent join pg_namespace pn on pn.oid = pc.relnamespace
+        where c.relispartition and i.inhrelid = c.oid) as partition_of,
+       case when c.relispartition then pg_get_expr(c.relpartbound, c.oid) end as partition_bound
 from unnest($1::text[], $2::text[]) with ordinality as r(schema, name, ord)
 left join pg_namespace n on n.nspname = r.schema
 left join pg_class c on c.relnamespace = n.oid and c.relname = r.name
@@ -53,11 +60,53 @@ select a.attrelid::bigint as relid,
        a.attnotnull as not_null,
        pg_get_expr(d.adbin, d.adrelid) as default,
        has_column_privilege(a.attrelid, a.attnum, 'SELECT') as can_select,
-       col_description(a.attrelid, a.attnum) as comment
+       col_description(a.attrelid, a.attnum) as comment,
+       case a.attidentity when 'a' then 'always' when 'd' then 'by default' end as identity,
+       case a.attgenerated when 's' then 'stored' when 'v' then 'virtual' end as generated,
+       (select sn.nspname || '.' || s.relname
+        from pg_depend dep
+        join pg_class s on s.oid = dep.objid and s.relkind = 'S'
+        join pg_namespace sn on sn.oid = s.relnamespace
+        where dep.classid = 'pg_class'::regclass and dep.refclassid = 'pg_class'::regclass
+          and dep.refobjid = a.attrelid and dep.refobjsubid = a.attnum and dep.deptype in ('a', 'i')
+        limit 1) as sequence -- owned by the column: serial (a) or identity (i)
 from pg_attribute a
 left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
 where a.attrelid = any($1::oid[]) and a.attnum > 0 and not a.attisdropped
 order by a.attrelid, a.attnum`;
+
+// Triggers defined by users (not the internal ones behind foreign keys).
+// tgtype bits: 1 row, 2 before, 4 insert, 8 delete, 16 update, 32 truncate,
+// 64 instead of.
+const triggersSql = `
+select t.tgrelid::bigint as relid, t.tgname as name, t.tgtype::int as tgtype, t.tgenabled::text as enabled,
+       fn.nspname || '.' || p.proname as function,
+       t.tgconstraint <> 0 as constraint_trigger,
+       pg_get_triggerdef(t.oid) as definition
+from pg_trigger t
+join pg_proc p on p.oid = t.tgfoid
+join pg_namespace fn on fn.oid = p.pronamespace
+where t.tgrelid = any($1::oid[]) and not t.tgisinternal
+order by t.tgrelid, t.tgname`;
+
+const triggerEnabled = { O: 'enabled', D: 'disabled', R: 'replica only', A: 'always' };
+
+export function triggerFromRow(row) {
+  const type = Number(row.tgtype);
+  const events = [[4, 'INSERT'], [16, 'UPDATE'], [8, 'DELETE'], [32, 'TRUNCATE']].filter(([bit]) => type & bit).map(([, e]) => e);
+  const when = /\sWHEN \((.*)\) EXECUTE (?:FUNCTION|PROCEDURE) /s.exec(row.definition ?? '');
+  return {
+    name: row.name,
+    timing: type & 64 ? 'INSTEAD OF' : type & 2 ? 'BEFORE' : 'AFTER',
+    events,
+    level: type & 1 ? 'ROW' : 'STATEMENT',
+    enabled: triggerEnabled[row.enabled] ?? row.enabled,
+    function: row.function,
+    whenCondition: when ? when[1] : null,
+    ...(row.constraint_trigger ? { constraintTrigger: true } : {}),
+    definition: row.definition,
+  };
+}
 
 // Key columns and the referenced table are returned explicitly: the text of
 // pg_get_constraintdef omits the schema when it is on the search_path.
@@ -107,9 +156,12 @@ select c.oid::bigint as relid, pg_get_viewdef(c.oid, true) as definition
 from pg_class c
 where c.oid = any($1::oid[]) and c.relkind in ('v', 'm')`;
 
-// Searches relation names, column names and their comments across all
-// non-system schemas (or one schema). $1 = ILIKE pattern, $2 = schema or null,
-// $3 = include columns.
+// Searches relation names (tables, views, ...), column names, function names
+// and trigger names, and their comments, across all non-system schemas (or
+// one schema). $1 = ILIKE pattern, $2 = schema or null, $3 = include columns,
+// $4 = include functions and triggers, $5 = also match function source text.
+// The source text is only matched, never returned. Relations come first, so
+// the row limit drops columns before anything else.
 const searchSql = `
 with rel as (
   select c.oid, n.nspname, c.relname,
@@ -124,18 +176,43 @@ with rel as (
     and not c.relispartition
     and n.nspname not like 'pg\\_%' and n.nspname <> 'information_schema'
     and ($2::text is null or n.nspname = $2)
+),
+fn as (
+  select p.oid, n.nspname, p.proname, p.prosrc, obj_description(p.oid, 'pg_proc') as comment,
+         case p.prokind when 'f' then 'function' when 'p' then 'procedure' when 'a' then 'aggregate' when 'w' then 'window' end as kind
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where $4 and n.nspname not like 'pg\\_%' and n.nspname <> 'information_schema'
+    and ($2::text is null or n.nspname = $2)
 )
-select 'relation' as match, nspname as schema, relname as relation, null::text as column,
-       kind, estimated_rows, can_select, comment
+select 'relation' as match, 0 as prio, nspname as schema, relname as relation, null::text as column,
+       kind, estimated_rows, can_select, comment, null::text as matched_in
 from rel
 where relname ilike $1 or comment ilike $1
 union all
-select 'column', r.nspname, r.relname, a.attname, format_type(a.atttypid, a.atttypmod),
-       r.estimated_rows, has_column_privilege(r.oid, a.attnum, 'SELECT'), col_description(r.oid, a.attnum)
+select 'function', 1, f.nspname, f.proname, pg_get_function_identity_arguments(f.oid), f.kind,
+       null::bigint, has_function_privilege(f.oid, 'EXECUTE'), f.comment,
+       case when f.proname ilike $1 then 'name' when f.comment ilike $1 then 'comment' else 'source' end
+from fn f
+where f.proname ilike $1 or f.comment ilike $1 or ($5 and f.prosrc ilike $1)
+union all
+select 'trigger', 2, n.nspname, c.relname, t.tgname, null::text,
+       null::bigint, null::boolean, fn.nspname || '.' || p.proname, null::text
+from pg_trigger t
+join pg_class c on c.oid = t.tgrelid
+join pg_namespace n on n.oid = c.relnamespace
+join pg_proc p on p.oid = t.tgfoid
+join pg_namespace fn on fn.oid = p.pronamespace
+where $4 and not t.tgisinternal and t.tgname ilike $1
+  and n.nspname not like 'pg\\_%' and n.nspname <> 'information_schema'
+  and ($2::text is null or n.nspname = $2)
+union all
+select 'column', 3, r.nspname, r.relname, a.attname, format_type(a.atttypid, a.atttypmod),
+       r.estimated_rows, has_column_privilege(r.oid, a.attnum, 'SELECT'), col_description(r.oid, a.attnum), null::text
 from rel r
 join pg_attribute a on a.attrelid = r.oid and a.attnum > 0 and not a.attisdropped
 where $3 and (a.attname ilike $1 or col_description(r.oid, a.attnum) ilike $1)
-order by 1 desc, 2, 3, 4
+order by 2, 3, 4, 5
 limit 501`;
 
 // Plain words become a contains-match; a pattern with % or _ is used as given.
@@ -145,21 +222,30 @@ export function toIlikePattern(text) {
   return /[%_]/.test(value) ? value : `%${value}%`;
 }
 
-export async function search(db, profile, text, schema, includeColumns = true) {
-  return db.audited('search', { profile: profile ?? null, text, schema: schema || null, includeColumns }, () => searchImpl(db, profile, text, schema, includeColumns));
+export async function search(db, profile, text, schema, includeColumns = true, { includeRoutines = true, searchSource = false } = {}) {
+  const details = { profile: profile ?? null, text, schema: schema || null, includeColumns, includeRoutines, searchSource };
+  return db.audited('search', details, () => searchImpl(db, profile, text, schema, includeColumns, includeRoutines, searchSource));
 }
 
-async function searchImpl(db, profile, text, schema, includeColumns) {
+async function searchImpl(db, profile, text, schema, includeColumns, includeRoutines, searchSource) {
   const pattern = toIlikePattern(text);
+  if (searchSource && !includeRoutines) throw new ToolError('INVALID_INPUT', 'searchSource needs includeRoutines.');
   return db.withReadOnly(profile, async (client, name) => {
-    const res = await client.query(searchSql, [pattern, schema || null, includeColumns]);
+    const res = await client.query(searchSql, [pattern, schema || null, includeColumns, includeRoutines, searchSource]);
     const truncated = res.rows.length > 500;
     const rows = truncated ? res.rows.slice(0, 500) : res.rows;
+    const of = match => rows.filter(r => r.match === match);
     return {
       profile: name,
       pattern,
-      relations: rows.filter(r => r.match === 'relation').map(({ match, column, ...r }) => r),
-      columns: rows.filter(r => r.match === 'column').map(({ match, kind, ...r }) => ({ ...r, type: kind })),
+      relations: of('relation').map(({ match, prio, column, matched_in, ...r }) => r),
+      columns: of('column').map(({ match, prio, kind, matched_in, ...r }) => ({ ...r, type: kind })),
+      ...(includeRoutines ? {
+        functions: of('function').map(r => ({
+          schema: r.schema, function: r.relation, arguments: r.column, kind: r.kind, canExecute: r.can_select, comment: r.comment, matchedIn: r.matched_in,
+        })),
+        triggers: of('trigger').map(r => ({ schema: r.schema, relation: r.relation, trigger: r.column, function: r.comment })),
+      } : {}),
       truncated,
     };
   });
@@ -228,7 +314,14 @@ function groupByRelid(rows) {
   return out;
 }
 
-// Describes refs ([{ schema, table }]) with 5 catalog statements, 6 when one
+// Column fields that are only shown when set.
+function columnFromRow(row) {
+  const out = { ...row };
+  for (const key of ['identity', 'generated', 'sequence']) if (out[key] === null || out[key] === undefined) delete out[key];
+  return out;
+}
+
+// Describes refs ([{ schema, table }]) with 6 catalog statements, 7 when one
 // of them is a view or materialized view, however many refs there are.
 // Returns one entry per ref, in order: the describe_table structure, or
 // { relation, schema, table, error } when the relation does not exist.
@@ -245,12 +338,14 @@ async function describeRelations(client, name, refs) {
   let constraints = new Map();
   let indexes = new Map();
   let referencedBy = new Map();
+  let triggers = new Map();
   let views = new Map();
   if (oids.length) {
     columns = groupByRelid(await run(columnsSql, [oids]));
     constraints = groupByRelid(await run(constraintsSql, [oids]));
     indexes = groupByRelid(await run(indexesSql, [oids]));
     referencedBy = groupByRelid(await run(referencedBySql, [oids]));
+    triggers = groupByRelid(await run(triggersSql, [oids]));
     if (rels.some(r => r.relkind === 'v' || r.relkind === 'm')) {
       views = new Map((await run(viewDefinitionsSql, [oids])).map(r => [String(r.relid), r.definition]));
     }
@@ -270,11 +365,15 @@ async function describeRelations(client, name, refs) {
       oid: Number(rel.oid),
       estimated_rows: toNumber(rel.estimated_rows),
       comment: rel.comment,
-      columns: columns.get(key) ?? [],
+      columns: (columns.get(key) ?? []).map(columnFromRow),
       constraints: constraints.get(key) ?? [],
       indexes: indexes.get(key) ?? [],
       referencedBy: referencedBy.get(key) ?? [],
+      triggers: (triggers.get(key) ?? []).map(triggerFromRow),
+      rowLevelSecurity: { enabled: !!rel.rls_enabled, forced: !!rel.rls_forced },
     };
+    if (rel.partition_key) result.partitioning = { key: rel.partition_key, partitions: toNumber(rel.partitions) ?? 0 };
+    if (rel.partition_of) result.partitionOf = { parent: rel.partition_of, bound: rel.partition_bound ?? null };
     if (views.has(key)) result.viewDefinition = views.get(key);
     return result;
   });
@@ -314,6 +413,127 @@ export async function describeTables(db, profile, tables) {
       return { profile: name, tables: results, found, notFound: results.length - found, statements: described.statements };
     });
   }, r => ({ statements: r.statements, found: r.found, notFound: r.notFound }));
+}
+
+// ---------- describe_functions ----------
+
+export const maxDescribeFunctions = 50;
+export const defaultDefinitionChars = 20000;
+export const maxDefinitionChars = 200000;
+
+// Shared select list over pg_proc p / pg_namespace n. pg_get_functiondef does
+// not accept aggregates; their definition is null. $1 = definition cap.
+const functionColumns = `
+       n.nspname as schema, p.proname as name, pg_get_function_identity_arguments(p.oid) as arguments,
+       pg_get_function_result(p.oid) as returns,
+       case p.prokind when 'f' then 'function' when 'p' then 'procedure' when 'a' then 'aggregate' when 'w' then 'window' end as kind,
+       l.lanname as language,
+       case p.provolatile when 'i' then 'immutable' when 's' then 'stable' when 'v' then 'volatile' end as volatility,
+       p.prosecdef as security_definer, p.proisstrict as strict,
+       case p.proparallel when 's' then 'safe' when 'r' then 'restricted' when 'u' then 'unsafe' end as parallel,
+       p.proconfig as config,
+       pg_get_userbyid(p.proowner) as owner,
+       has_function_privilege(p.oid, 'EXECUTE') as can_execute,
+       obj_description(p.oid, 'pg_proc') as comment,
+       (select coalesce(jsonb_agg(jsonb_build_object('table', tn.nspname || '.' || tc.relname, 'trigger', t.tgname)
+                                  order by tn.nspname, tc.relname, t.tgname), '[]'::jsonb)
+        from pg_trigger t join pg_class tc on tc.oid = t.tgrelid join pg_namespace tn on tn.oid = tc.relnamespace
+        where t.tgfoid = p.oid and not t.tgisinternal) as used_by_triggers,
+       left(d.definition, $1) as definition, length(d.definition) as definition_length`;
+const functionFrom = `
+from pg_proc p
+join pg_namespace n on n.oid = p.pronamespace
+join pg_language l on l.oid = p.prolang
+cross join lateral (select case when p.prokind <> 'a' then pg_get_functiondef(p.oid) end as definition) d`;
+
+// Every overload of each requested schema.name; a name without a match gives
+// one row with schema null. $2 schemas, $3 names.
+const functionsByNameSql = `
+select r.ord::int as ord, f.*
+from unnest($2::text[], $3::text[]) with ordinality as r(schema, name, ord)
+left join lateral (select ${functionColumns} ${functionFrom}
+                   where n.nspname = r.schema and p.proname = r.name) f on true
+order by r.ord, f.arguments`;
+
+// Functions whose name matches an ILIKE pattern ($2), in one schema ($3) or
+// all non-system schemas; $4 = row limit.
+const functionsByPatternSql = `
+select ${functionColumns} ${functionFrom}
+where p.proname ilike $2 and ($3::text is null or n.nspname = $3)
+  and n.nspname not like 'pg\\_%' and n.nspname <> 'information_schema'
+order by n.nspname, p.proname, 3
+limit $4`;
+
+function functionFromRow(row, cap) {
+  const length = toNumber(row.definition_length);
+  return {
+    function: `${row.schema}.${row.name}(${row.arguments ?? ''})`,
+    schema: row.schema,
+    name: row.name,
+    arguments: row.arguments,
+    returns: row.returns,
+    kind: row.kind,
+    language: row.language,
+    volatility: row.volatility,
+    securityDefiner: !!row.security_definer,
+    strict: !!row.strict,
+    parallel: row.parallel,
+    config: row.config ?? [],
+    owner: row.owner,
+    canExecute: !!row.can_execute,
+    comment: row.comment ?? null,
+    usedByTriggers: row.used_by_triggers ?? [],
+    definition: row.definition ?? null,
+    definitionLength: length,
+    truncated: length !== null && length > cap,
+  };
+}
+
+// describe_functions: functions, procedures and aggregates by schema.name
+// (every overload) or by a name pattern, with signature, properties and the
+// pg_get_functiondef text capped at maxChars. 1 catalog statement.
+export async function describeFunctions(db, profile, { functions, pattern, schema, maxChars } = {}) {
+  const list = Array.isArray(functions) ? uniqueTrimmed(functions) : [];
+  const details = { profile: profile ?? null, functions: list.length ? list : undefined, pattern: pattern || undefined, schema: schema || undefined };
+  return db.audited('describe_functions', details, () => {
+    if (!list.length === !pattern) throw new ToolError('INVALID_INPUT', 'Give either functions (schema.name) or pattern.');
+    if (list.length > maxDescribeFunctions) throw new ToolError('INVALID_INPUT', `functions must list 1 to ${maxDescribeFunctions} names as schema.name.`);
+    const cap = maxChars ?? defaultDefinitionChars;
+    if (!Number.isInteger(cap) || cap < 1 || cap > maxDefinitionChars) throw new ToolError('INVALID_INPUT', `maxChars must be an integer from 1 to ${maxDefinitionChars}.`);
+    const parsed = list.map(text => {
+      try {
+        const { schema: s, table: name } = parseTableRef(text);
+        return { schema: s, name };
+      } catch {
+        return { input: text, error: `Invalid function "${text}": use schema.name; ${nameRule}.` };
+      }
+    });
+    return db.withReadOnly(profile, async (client, name) => {
+      if (pattern) {
+        const res = await client.query(functionsByPatternSql, [cap, toIlikePattern(pattern), schema || null, maxDescribeFunctions + 1]);
+        const truncated = res.rows.length > maxDescribeFunctions;
+        const rows = truncated ? res.rows.slice(0, maxDescribeFunctions) : res.rows;
+        return { profile: name, pattern: toIlikePattern(pattern), statements: 1, functions: rows.map(r => functionFromRow(r, cap)), found: rows.length, truncated };
+      }
+      const valid = parsed.filter(p => !p.error);
+      let rows = [];
+      if (valid.length) rows = (await client.query(functionsByNameSql, [cap, valid.map(v => v.schema), valid.map(v => v.name)])).rows;
+      const byOrd = new Map();
+      for (const r of rows) {
+        const ord = Number(r.ord);
+        if (!byOrd.has(ord)) byOrd.set(ord, []);
+        if (r.name !== null && r.name !== undefined) byOrd.get(ord).push(functionFromRow(r, cap));
+      }
+      let next = 0;
+      const out = parsed.flatMap(p => {
+        if (p.error) return [{ function: p.input, error: p.error }];
+        const found = byOrd.get(++next) ?? [];
+        return found.length ? found : [{ function: `${p.schema}.${p.name}`, error: `Function ${p.schema}.${p.name} not found.` }];
+      });
+      const found = out.filter(f => !f.error).length;
+      return { profile: name, statements: valid.length ? 1 : 0, functions: out, found, notFound: out.length - found };
+    });
+  }, r => ({ statements: r.statements, found: r.found }));
 }
 
 // Catalog facts profile_tables needs for every requested relation (and the
