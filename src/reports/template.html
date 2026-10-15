@@ -51,10 +51,14 @@
   .head { flex: 1; min-width: 260px; }
   .crumbs { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--text-3); }
   .crumb { background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px; color: var(--text-2); }
-  h1 { margin: 6px 0 2px; font-size: 24px; letter-spacing: -.2px; }
-  .desc { color: var(--text-2); margin: 0; max-width: 900px; }
-  .meta { color: var(--text-3); font-size: 12px; margin-top: 6px; }
-  .private { margin-top: 8px; font-size: 12px; color: var(--text-3); }
+  h1 { margin: 4px 0 2px; font-size: 21px; letter-spacing: -.2px; }
+  .desc { color: var(--text); margin: 0; max-width: 900px; font-size: 15px; }
+  .meta { color: var(--text-3); font-size: 12px; margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+  .private { font-size: 12px; color: var(--text-3); }
+  .private summary { cursor: pointer; list-style: none; display: inline-flex; gap: 4px; align-items: center; border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; background: var(--surface); }
+  .private summary::-webkit-details-marker { display: none; }
+  .private[open] summary { border-color: var(--accent); color: var(--accent-ink); }
+  .private p { margin: 6px 0 0; max-width: 760px; }
   .stale { margin-top: 8px; padding: 8px 10px; border-radius: 8px; font-size: 12.5px; border: 1px solid var(--warn); background: var(--warn-soft); color: var(--warn-ink); }
   .badge { display: inline-flex; align-items: center; gap: 5px; padding: 1px 9px; border-radius: 999px; font-size: 11px; font-weight: 650; white-space: nowrap; }
   .b-draft { background: var(--warn-soft); color: var(--warn-ink); }
@@ -74,19 +78,31 @@
   .help p { margin: 0; color: var(--text-2); font-size: 13px; }
   .help code { font: 12px var(--mono); background: var(--surface-2); padding: 0 4px; border-radius: 4px; }
 
-  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 18px 0 14px; }
-  .tile { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; box-shadow: var(--shadow); animation: rise .4s var(--ease) both; }
-  .tile .k { font-size: 12px; color: var(--text-2); }
-  .tile .v { font-size: 24px; font-weight: 600; letter-spacing: -.3px; margin-top: 2px; }
-  .tile .d { font-size: 12px; color: var(--text-3); }
-  .tile.hero .v { font-size: 32px; }
+  /* Metrics: one compact strip; the warnings badge at its end opens the list. */
+  .strip { display: flex; flex-wrap: wrap; align-items: stretch; margin: 12px 0 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); animation: rise .4s var(--ease) both; }
+  .tile { padding: 7px 14px; border-right: 1px solid var(--line); min-width: 0; flex: 1 1 auto; }
+  .tile .k { font-size: 11px; color: var(--text-2); white-space: nowrap; }
+  .tile .v { font-size: 16px; font-weight: 650; letter-spacing: -.2px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .tile .d { font-size: 11px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+  .tile.hero .v { color: var(--accent-ink); }
+  .strip:empty { display: none; }
+  .strip .wbox { display: flex; align-items: center; padding: 6px 12px; margin-left: auto; }
+  .wbadge { display: inline-flex; align-items: center; gap: 6px; border: 1px solid transparent; border-radius: 999px; padding: 3px 11px; font-size: 12px; font-weight: 650; white-space: nowrap; }
+  .wbadge.warn { background: var(--warn-soft); color: var(--warn-ink); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+  .wbadge.ok { background: var(--good-soft); color: var(--good-ink); }
+  .wbadge.plan { background: var(--surface-2); color: var(--text-2); border-color: var(--line); }
+  .wbadge[aria-expanded="true"] { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
+  .wbadge .car { transition: transform .2s var(--ease); font-size: 10px; }
+  .wbadge[aria-expanded="true"] .car { transform: rotate(180deg); }
 
-  .warns { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 6px; }
+  .warns { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 6px; animation: fade .2s var(--ease); }
   .warns li { display: flex; gap: 10px; align-items: flex-start; background: var(--warn-soft); color: var(--text); border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); border-radius: 8px; padding: 8px 12px; font-size: 13px; cursor: pointer; }
   .warns li .ico { color: var(--warn-ink); font-weight: 700; }
   .ok-note { background: var(--good-soft); color: var(--good-ink); border-radius: 8px; padding: 8px 12px; font-size: 13px; margin-bottom: 14px; }
 
-  nav.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: 14px; flex-wrap: wrap; }
+  /* Tabs stay in view while the content scrolls. */
+  nav.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: 14px; flex-wrap: wrap; position: sticky; top: 0; z-index: 10;
+    background: var(--bg); }
   nav.tabs button { border: 0; background: none; padding: 9px 14px; color: var(--text-2); font-weight: 500; border-bottom: 2px solid transparent; margin-bottom: -1px; }
   nav.tabs button.on { color: var(--text); border-bottom-color: var(--accent); }
   nav.tabs .n { font-size: 11px; color: var(--text-3); margin-left: 4px; }
@@ -161,6 +177,8 @@
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
   @media (max-width: 760px) {
     .wrap { padding: 14px 16px 40px; }
+    .tile { flex-basis: 45%; border-bottom: 1px solid var(--line); }
+    .strip .wbox { margin-left: 0; }
     .node, .tree-head { grid-template-columns: 1fr 70px 70px; }
     .node .bar, .tree-head .c-bar, .node .est-col, .tree-head .c-est { display: none; }
     .detail dl { grid-template-columns: 1fr; }
@@ -183,7 +201,7 @@
     </div>
   </header>
   <section id="help"></section>
-  <section class="tiles" id="tiles"></section>
+  <section class="strip" id="tiles"></section>
   <section id="warns"></section>
   <nav class="tabs" id="tabs"></nav>
   <main id="view"></main>
@@ -204,6 +222,7 @@ const I18N = {
     auto: 'Auto', light: 'Light', dark: 'Dark', help: 'How to read this report',
     approved: 'approved v{v}', draft: 'draft', lastRun: 'Last run {at} · profile {p} · PostgreSQL {pg}', notRun: 'Not run yet', runs: '{n} runs', lastRunVersion: 'results of SQL v{v}', staleResult: 'The results below come from SQL v{v}; the current SQL is v{c} and has not been run yet.',
     privateNote: 'Private copy: contains the raw SQL, parameters, query plan and run history. To send it to someone, create a shared copy with share_report.',
+    privateShort: 'Private copy', warnOne: '1 plan warning', warnMany: '{n} plan warnings', warnNone: 'No plan warnings', warnPlan: 'Estimated plan', warnToggle: 'Show or hide the details',
     sharedBadge: 'shared copy', sharedMeta: 'Results of SQL v{v}, run {at}', sharedNote: 'Shared copy: SQL, query plan, parameters, run history and database names were left out. The preview rows are as shown in the report; columns are masked by name only, so check them before sending.',
     runFirst: 'Run the report to see its plan, joins, timings and preview.',
     execTime: 'Execution time', planning: 'planning {v}', planOnly: 'Estimated plan', firstRows: 'preview fetch: the query ran once (no ANALYZE)', noExec: 'nothing executed (preview of 0 rows)',
@@ -240,6 +259,7 @@ const I18N = {
     auto: 'Oto', light: 'Açık', dark: 'Koyu', help: 'Bu rapor nasıl okunur',
     approved: 'onaylı v{v}', draft: 'taslak', lastRun: 'Son çalıştırma {at} · profil {p} · PostgreSQL {pg}', notRun: 'Henüz çalıştırılmadı', runs: '{n} çalıştırma', lastRunVersion: 'SQL v{v} sonuçları', staleResult: 'Aşağıdaki sonuçlar SQL v{v} ile üretildi; güncel SQL v{c} henüz çalıştırılmadı.',
     privateNote: 'Özel kopya: ham SQL, parametreler, sorgu planı ve çalıştırma geçmişi içerir. Birine göndermek için share_report ile paylaşılabilir kopya oluşturun.',
+    privateShort: 'Özel kopya', warnOne: '1 plan uyarısı', warnMany: '{n} plan uyarısı', warnNone: 'Plan uyarısı yok', warnPlan: 'Tahmini plan', warnToggle: 'Ayrıntıları göster ya da gizle',
     sharedBadge: 'paylaşılan kopya', sharedMeta: 'SQL v{v} sonuçları, çalıştırma {at}', sharedNote: 'Paylaşılan kopya: SQL, sorgu planı, parametreler, çalıştırma geçmişi ve veritabanı adları çıkarıldı. Önizleme satırları rapordaki gibidir; sütunlar yalnızca ada göre maskelenir, göndermeden önce kontrol edin.',
     runFirst: 'Plan, join, süre ve önizleme için raporu çalıştırın.',
     execTime: 'Çalışma süresi', planning: 'planlama {v}', planOnly: 'Tahmini plan', firstRows: 'önizleme: sorgu bir kez çalıştı (ANALYZE yok)', noExec: 'hiçbir şey çalıştırılmadı (0 satır önizleme)',
@@ -380,7 +400,8 @@ function diffLines(a, b) {
   return out;
 }
 
-const state = { tab: 'plan', sel: null, diffA: null, diffB: null, help: false };
+// Preview first: the answer the report gives; plan and history are one tab away.
+const state = { tab: 'preview', sel: null, diffA: null, diffB: null, help: false, warnOpen: false };
 const TABS = ['plan', 'joins', 'tables', 'preview', 'history', 'sql'];
 
 function renderHelp() {
@@ -421,9 +442,10 @@ function render() {
       current ? h('span', { class: 'badge b-plan' }, `SQL v${current.version}`) : null),
     h('h1', {}, R.title || R.name),
     R.description ? h('p', { class: 'desc' }, R.description) : null,
-    h('div', { class: 'meta' }, last ? t('lastRun', { at: fmtWhen(last.at), p: last.profile, pg: last.serverVersion }) : t('notRun'), ' · ', t('runs', { n: R.runs?.length || 0 }), last ? ' · ' + t('lastRunVersion', { v: last.version ?? '?' }) : null),
-    stale ? h('div', { class: 'stale' }, '⚠ ', t('staleResult', { v: last.version ?? '?', c: current.version })) : null,
-    h('div', { class: 'private' }, '🔒 ', t('privateNote')));
+    h('div', { class: 'meta' },
+      h('span', {}, last ? t('lastRun', { at: fmtWhen(last.at), p: last.profile, pg: last.serverVersion }) : t('notRun'), ' · ', t('runs', { n: R.runs?.length || 0 }), last ? ' · ' + t('lastRunVersion', { v: last.version ?? '?' }) : null),
+      h('details', { class: 'private' }, h('summary', { title: t('privateNote') }, '🔒 ', t('privateShort')), h('p', {}, t('privateNote')))),
+    stale ? h('div', { class: 'stale' }, '⚠ ', t('staleResult', { v: last.version ?? '?', c: current.version })) : null);
 
   if (!last) {
     put($('tiles')); put($('warns')); put($('tabs'));
@@ -440,16 +462,29 @@ function render() {
     tile(t('totalCost'), fmt(S.totalCost), t('plannerUnits')),
     tile(t('buffers'), S.analyzed ? blocks(hit + read) : '–', ratio !== null ? t('fromCache', { p: ratio.toLocaleString(locale()) }) : null),
     tile(t('tempWritten'), S.analyzed ? blocks(S.buffers?.tempWritten ?? 0) : '–', (S.buffers?.tempWritten ?? 0) > 0 ? t('spilled') : t('none')),
-    shared ? null : tile(t('joinsTables'), `${S.joins.length} / ${S.relations.length}`, S.joins.map(j => j.method.replace(' Join', '')).join(', ') || t('noJoins')));
-
-  put($('warns'), shared ? null : S.warnings.length
-    ? h('ul', { class: 'warns' }, S.warnings.map(w => h('li', { onclick: () => { state.tab = 'plan'; state.sel = w.nodeId; renderTab(); } }, h('span', { class: 'ico' }, '⚠'), h('span', {}, warnText(w)))))
-    : h('div', { class: 'ok-note' }, S.analyzed ? t('noWarnings') : t('planOnlyNote')));
+    shared ? null : tile(t('joinsTables'), `${S.joins.length} / ${S.relations.length}`, S.joins.map(j => j.method.replace(' Join', '')).join(', ') || t('noJoins')),
+    shared ? null : warnBadge(S));
+  renderWarns(S, shared);
 
   const counts = { plan: S.nodes.length, joins: S.joins.length, tables: S.relations.length, preview: last.preview.length, history: R.runs.length, sql: R.sqlVersions.length };
   const labels = { plan: 'tabPlan', joins: 'tabJoins', tables: 'tabTables', preview: 'tabPreview', history: 'tabHistory', sql: 'tabSql' };
   put($('tabs'), (shared ? ['preview'] : TABS).map(k => h('button', { 'data-k': k, class: state.tab === k ? 'on' : '', onclick: () => { state.tab = k; renderTab(); } }, t(labels[k]), h('span', { class: 'n' }, counts[k]))));
   renderTab();
+}
+
+// Plan warnings live behind a badge in the metrics strip; the list opens on click.
+function warnBadge(S) {
+  const n = S.warnings.length;
+  const cls = n ? 'warn' : S.analyzed ? 'ok' : 'plan';
+  const label = n ? (n === 1 ? t('warnOne') : t('warnMany', { n })) : S.analyzed ? t('warnNone') : t('warnPlan');
+  return h('div', { class: 'wbox' }, h('button', { class: 'wbadge ' + cls, id: 'warnBtn', 'aria-expanded': String(state.warnOpen), 'aria-controls': 'warns', title: t('warnToggle'),
+    onclick: () => { state.warnOpen = !state.warnOpen; $('warnBtn').setAttribute('aria-expanded', String(state.warnOpen)); renderWarns(S, false); } },
+    h('span', {}, n ? '⚠' : S.analyzed ? '✓' : 'ⓘ'), label, h('span', { class: 'car' }, '▾')));
+}
+function renderWarns(S, shared) {
+  put($('warns'), shared || !state.warnOpen ? null : S.warnings.length
+    ? h('ul', { class: 'warns' }, S.warnings.map(w => h('li', { onclick: () => { state.tab = 'plan'; state.sel = w.nodeId; renderTab(); } }, h('span', { class: 'ico' }, '⚠'), h('span', {}, warnText(w)))))
+    : h('div', { class: 'ok-note' }, S.analyzed ? t('noWarnings') : t('planOnlyNote')));
 }
 
 // The SQL revision the report stands for: activeHash (set on save and
