@@ -164,11 +164,12 @@ flowchart LR
 |---|---|
 | 🗂️ `list_profiles` | Configured profiles (description, host, database, user, timeout limit, role check; never passwords) |
 | 🔐 `check_profile` | Checks that a profile's database role is read-only; a role that can write blocks the profile |
-| 🔎 `search` | Tables, views and columns whose name or comment matches a text, across all schemas; with estimated rows and SELECT privilege |
+| 🔎 `search` | Tables, views, columns, functions and triggers whose name or comment matches a text, across all schemas, in one statement; with estimated rows and privileges; optionally function source text too (`searchSource`) |
 | 📁 `list_schemas` | Non-system schemas with owner, relation count, usage privilege, comment |
 | 📋 `list_tables` | Tables/views in a schema with estimated rows, size, SELECT privilege, comment; optional ILIKE filter |
-| 🧬 `describe_table` | Columns, types, defaults, comments, constraints, indexes, incoming FKs, view definition; records the table in the schema memory and reports changes since the last time |
-| 🧬 `describe_tables` | The same structure for up to 50 tables in one call, with 5 catalog statements (6 with a view) however many tables; unknown names are reported per table; each table is recorded in the schema memory |
+| 🧬 `describe_table` | Columns (with identity, generated and owned sequence), types, defaults, comments, constraints incl. checks, indexes, incoming FKs, triggers, row level security, partitioning, view definition; records the table in the schema memory and reports changes since the last time |
+| 🧬 `describe_tables` | The same structure for up to 50 tables in one call, with 6 catalog statements (7 with a view) however many tables; unknown names are reported per table; each table is recorded in the schema memory |
+| 🧩 `describe_functions` | Up to 50 functions by `schema.name` (every overload) or by name pattern: signature, language, volatility, SECURITY DEFINER, owner, calling triggers and the `pg_get_functiondef` text (capped, `truncated` flag); 1 statement |
 | 📏 `profile_tables` | Up to 30 tables in one call: estimated rows, per-column fill rate and distinct count on a sample, and fan-out over a parent table (optionally in a window); at most 3 statements; counts and ratios only, never row values |
 | 🕸️ `relation_stats` | Up to 50 center tables in one call: their instance tables (referenced by foreign key) and dependent tables (referencing them), ranked by estimated linked rows from planner statistics; at most 2 statements; no table data is read |
 | ▶️ `query` | One read-only statement, max `AUSPEX_MAX_ROWS` rows, `$1..$n` params, optional `timeoutSeconds` |
@@ -235,7 +236,7 @@ Exploring N tables one by one costs N round trips (a `describe_table` and a
 measuring query per table), all of them in the audit log. `describe_tables`
 and `profile_tables` take a list instead and use a constant number of
 statements in one READ ONLY transaction with one audit entry, whether the list
-has 1 table or 30: `describe_tables` sends 5 catalog statements (6 when a view
+has 1 table or 30: `describe_tables` sends 6 catalog statements (7 when a view
 or materialized view is listed); `profile_tables` sends 1 catalog lookup, 1
 column-statistics statement for all tables (`UNION ALL`) and, with `parent`,
 1 fan-out statement, so at most 3 (field `statements`). Column statistics are
@@ -246,6 +247,37 @@ plain `LIMIT` scan. Fan-out uses the child's single-column foreign key to
 names are checked against the catalog, quoted, and the generated SQL passes the
 same guard as user queries; there is no free SQL. The server instructions tell
 the model to prefer these two tools over per-table loops.
+
+### Reading table DDL, triggers and functions
+
+For integration work (for example "show the import table for one firm and
+every function and trigger around it, then design the same for another firm")
+the catalog tools return the structure needed to rebuild it:
+
+- `describe_table` / `describe_tables` per table: columns with `identity`
+  (`always` / `by default`), `generated` (`stored`) and the owned `sequence`
+  (serial or identity) when set; for a generated column `default` holds its
+  expression. Constraints include check definitions. `triggers` lists user
+  triggers (internal foreign key triggers are left out) with `timing`,
+  `events`, `level`, `enabled` (`enabled`, `disabled`, `replica only`,
+  `always`), `function`, `whenCondition` and the full `definition`
+  (`pg_get_triggerdef`). `rowLevelSecurity` is `{ enabled, forced }`; a
+  partitioned table has `partitioning: { key, partitions }`, a partition
+  `partitionOf: { parent, bound }`. The table comment is `comment`. All of it
+  comes from the same 6 statements (7 with a view), one of them for triggers.
+- `describe_functions` reads functions, procedures and aggregates by
+  `schema.name` (all overloads) or by a name pattern (at most 50, `truncated`):
+  `arguments`, `returns`, `kind`, `language`, `volatility`, `securityDefiner`,
+  `strict`, `parallel`, `config` (`SET` options such as `search_path`),
+  `owner`, `canExecute`, `comment`, `usedByTriggers` and `definition`
+  (`pg_get_functiondef`, cut at `maxChars`, default 20000, with
+  `definitionLength` and `truncated`; null for aggregates). One statement.
+- `search` also matches function names and comments and trigger names
+  (`includeRoutines`, default true), and with `searchSource: true` the source
+  text of functions (`matchedIn: "source"`; the text itself is not returned).
+  Still one statement and at most 500 matches, relations first.
+
+Only the system catalog is read (no table data, no server files).
 
 ### Ranking related tables
 
@@ -720,6 +752,11 @@ The integration tests need a one-time setup with
 [`scripts/local-test-setup.sql`](scripts/local-test-setup.sql) (role `"Auspex"`,
 schema `auspex_test`) plus a `local` profile and a pgpass line. They prove that
 writes are refused by the database itself, even with the SQL guard bypassed.
+[`scripts/local-test-ddl.sql`](scripts/local-test-ddl.sql), run once after it,
+adds the trigger, functions, check, identity/serial/generated columns,
+partitioned and row-level-security tables the catalog tests describe and
+analyzes the new tables; without it those tests are skipped locally (never in
+CI, which runs both scripts).
 
 GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs
 both on every pull request and every push to `main`: the unit tests on Ubuntu
