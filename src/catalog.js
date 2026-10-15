@@ -636,7 +636,46 @@ export const samplingNote = 'Column statistics are computed on a sample of at mo
   + '(sample.method "limit": the first rows the scan returns, not random). fillRate = non-null share of the sample; '
   + 'distinctInSample = count(distinct value::text) within the sample, a lower bound for the whole table.';
 
-function validateProfileArgs({ tables, parent, window, sampleRows }) {
+export const maxParentFilters = 5;
+export const maxParentFilterValues = 100;
+export const parentFilterOps = ['=', '<>', '>', '>=', '<', '<=', 'in', 'not in', 'is null', 'is not null'];
+const isFilterValue = v => typeof v === 'string' || typeof v === 'boolean' || (typeof v === 'number' && Number.isFinite(v));
+
+// One parentFilter item: the column is checked like every name (and later
+// against the parent's catalog columns), op against a fixed list, and the
+// value count against op. Values are only ever bound as parameters.
+function parentFilterFrom(f, i) {
+  const at = `parentFilter[${i}]`;
+  if (!f || typeof f !== 'object' || Array.isArray(f)) throw new ToolError('INVALID_INPUT', `${at} must be an object with column and op.`);
+  const column = checkName(f.column, `${at} column`);
+  const op = typeof f.op === 'string' ? f.op.trim().toLowerCase().replace(/\s+/g, ' ') : f.op;
+  if (!parentFilterOps.includes(op)) throw new ToolError('INVALID_INPUT', `${at} op "${f.op}" is not one of ${parentFilterOps.join(', ')}.`);
+  const hasValue = f.value !== undefined;
+  const hasValues = f.values !== undefined;
+  if (op === 'is null' || op === 'is not null') {
+    if (hasValue || hasValues) throw new ToolError('INVALID_INPUT', `${at} op ${op} takes no value or values.`);
+    return { column, op };
+  }
+  if (op === 'in' || op === 'not in') {
+    if (hasValue || !Array.isArray(f.values) || f.values.length < 1 || f.values.length > maxParentFilterValues || !f.values.every(isFilterValue)) {
+      throw new ToolError('INVALID_INPUT', `${at} op ${op} needs values: 1 to ${maxParentFilterValues} strings, numbers or booleans (and no value).`);
+    }
+    return { column, op, values: f.values };
+  }
+  if (hasValues || !isFilterValue(f.value)) throw new ToolError('INVALID_INPUT', `${at} op ${op} needs one value: a string, number or boolean (and no values).`);
+  return { column, op, value: f.value };
+}
+
+// SQL for one validated filter on a quoted catalog column; bind() adds a
+// parameter and returns its placeholder. No input text reaches the SQL.
+function parentFilterSql(f, column, bind) {
+  if (f.op === 'is null' || f.op === 'is not null') return `${column} ${f.op}`;
+  if (f.op === 'in') return `${column} = any(${bind(f.values)})`;
+  if (f.op === 'not in') return `${column} <> all(${bind(f.values)})`;
+  return `${column} ${f.op} ${bind(f.value)}`;
+}
+
+function validateProfileArgs({ tables, parent, window, parentFilter, sampleRows }) {
   const list = Array.isArray(tables) ? uniqueTrimmed(tables) : [];
   if (list.length < 1 || list.length > maxProfileTables) throw new ToolError('INVALID_INPUT', `tables must list 1 to ${maxProfileTables} relations as schema.table.`);
   const refs = list.map(text => ({ input: text, ...parseTableRef(text, { allowColumn: true }) }));
@@ -652,9 +691,17 @@ function validateProfileArgs({ tables, parent, window, sampleRows }) {
     if (typeof window.from !== 'string' || typeof window.to !== 'string' || !window.from || !window.to) throw new ToolError('INVALID_INPUT', 'window needs from and to.');
     win = { column: checkName(window.column, 'window column'), from: window.from, to: window.to };
   }
+  let filters = [];
+  if (parentFilter !== undefined && parentFilter !== null) {
+    if (!parentRef) throw new ToolError('INVALID_INPUT', 'parentFilter filters the parent table; give parent as well.');
+    if (!Array.isArray(parentFilter) || parentFilter.length < 1 || parentFilter.length > maxParentFilters) {
+      throw new ToolError('INVALID_INPUT', `parentFilter must list 1 to ${maxParentFilters} conditions.`);
+    }
+    filters = parentFilter.map(parentFilterFrom);
+  }
   const rows = sampleRows ?? defaultSampleRows;
   if (!Number.isInteger(rows) || rows < 1 || rows > maxSampleRows) throw new ToolError('INVALID_INPUT', `sampleRows must be an integer from 1 to ${maxSampleRows}.`);
-  return { refs, parentRef, win, rows };
+  return { refs, parentRef, win, filters, rows };
 }
 
 function sampleSource(rel, readable, sampleRows) {
@@ -690,17 +737,18 @@ function fanOutColumn(rel, ref, parentRel, parentKey) {
 const ratio = (a, b) => (b ? Number((a / b).toFixed(4)) : null);
 
 // profile_tables: estimated rows, per-column fill rate and distinct count on a
-// sample and, with a parent, fan-out over the parent rows in the window. All
+// sample and, with a parent, fan-out over the parent rows in the window and
+// matching parentFilter (all conditions ANDed, values bound as parameters). All
 // tables together take at most 3 statements in one READ ONLY transaction:
 // 1 catalog lookup, 1 column-statistics statement (UNION ALL over the
 // tables), and 1 fan-out statement (UNION ALL) when parent is given. Only
 // counts and ratios are returned, never row values.
-export async function profileTables(db, profile, { tables, parent, window, sampleRows, timeoutSeconds } = {}) {
+export async function profileTables(db, profile, { tables, parent, window, parentFilter, sampleRows, timeoutSeconds } = {}) {
   const details = {
-    profile: profile ?? null, tables, parent: parent ?? undefined, window: window ?? undefined, sampleRows, timeoutSeconds,
+    profile: profile ?? null, tables, parent: parent ?? undefined, window: window ?? undefined, parentFilter: parentFilter ?? undefined, sampleRows, timeoutSeconds,
   };
   return db.audited('profile_tables', details, () => {
-    const { refs, parentRef, win, rows } = validateProfileArgs({ tables, parent, window, sampleRows });
+    const { refs, parentRef, win, filters, rows } = validateProfileArgs({ tables, parent, window, parentFilter, sampleRows });
     return db.withReadOnly(profile, async (client, name) => {
       let statements = 0;
       const lookups = parentRef ? [...refs, parentRef] : refs;
@@ -715,6 +763,7 @@ export async function profileTables(db, profile, { tables, parent, window, sampl
       let parentRel = null;
       let parentKey = null;
       let windowColumn = null;
+      let filterColumns = [];
       if (parentRef) {
         parentRel = found(refs.length);
         if (!parentRel) throw new ToolError('NOT_FOUND', `Parent ${relationName(parentRef)} not found (or not a table, view, materialized view or foreign table).`);
@@ -727,6 +776,12 @@ export async function profileTables(db, profile, { tables, parent, window, sampl
           if (!windowColumn) throw new ToolError('NOT_FOUND', `Window column ${win.column} not found in ${relationName(parentRef)}.`);
           if (!windowColumn.canSelect) throw new ToolError('PERMISSION_DENIED', `No SELECT privilege on ${relationName(parentRef)}.${win.column}.`);
         }
+        filterColumns = filters.map((f, i) => {
+          const col = cols.get(f.column);
+          if (!col) throw new ToolError('INVALID_INPUT', `parentFilter[${i}] column ${f.column} not found in ${relationName(parentRef)}.`);
+          if (!col.canSelect) throw new ToolError('PERMISSION_DENIED', `No SELECT privilege on ${relationName(parentRef)}.${f.column}.`);
+          return col;
+        });
       }
 
       const entries = refs.map((ref, i) => {
@@ -762,7 +817,16 @@ from (${e.source.sql}) auspex_sample`;
       if (parentRel && linked.length) {
         const key = quoteIdent(parentKey.name);
         const parentFrom = `${quoteIdent(parentRel.schema_name)}.${quoteIdent(parentRel.rel_name)}`;
-        const filter = windowColumn ? ` and ${quoteIdent(windowColumn.name)} >= $2 and ${quoteIdent(windowColumn.name)} < $3` : '';
+        // Window and parentFilter conditions, ANDed; every value is a parameter.
+        const params = [rows];
+        const bind = value => { params.push(value); return `$${params.length}`; };
+        const conditions = [];
+        if (windowColumn) {
+          const column = quoteIdent(windowColumn.name);
+          conditions.push(`${column} >= ${bind(win.from)}`, `${column} < ${bind(win.to)}`);
+        }
+        filters.forEach((f, i) => conditions.push(parentFilterSql(f, quoteIdent(filterColumns[i].name), bind)));
+        const filter = conditions.map(c => ` and ${c}`).join('');
         const branches = linked.map((e, i) => {
           const fk = quoteIdent(e.fanOut.column);
           const childFrom = `${quoteIdent(e.rel.schema_name)}.${quoteIdent(e.rel.rel_name)}`;
@@ -775,7 +839,7 @@ from (select ${fk} as k, count(*) as n from ${childFrom} where ${fk} in (select 
 )
 ${branches.join('\nunion all\n')}`;
         statements++;
-        const res = await db.guardedQuery(client, sql, win ? [rows, win.from, win.to] : [rows]);
+        const res = await db.guardedQuery(client, sql, params);
         for (const r of res.rows) fanOuts.set(linked[Number(r.i)], r);
       }
 
@@ -830,6 +894,7 @@ ${branches.join('\nunion all\n')}`;
             relation: relationName(parentRef),
             key: parentRef.key,
             ...(win ? { window: { ...win, rule: `${win.from} <= ${win.column} < ${win.to}` } } : {}),
+            ...(filters.length ? { parentFilter: filters } : {}),
             note: `Fan-out covers at most ${rows} distinct parent keys (parentRowsCapped tells when the cap was hit).`,
           },
         } : {}),

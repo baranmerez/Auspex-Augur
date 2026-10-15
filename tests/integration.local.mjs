@@ -478,6 +478,25 @@ test('profile_tables applies the parent window and the timeout', async () => {
   await assert.rejects(profileTables(db, 'local', { tables: ['auspex_test.worker";select 1'] }), /Invalid table/);
 });
 
+test('profile_tables parentFilter narrows the parent rows with bound values, ANDed with the window, in 3 statements', async () => {
+  const fanOut = async (parentFilter, window) => {
+    const r = await profileTables(db, 'local', { tables: ['auspex_test.worker'], parent: { table: 'auspex_test.region', key: 'id' }, window, parentFilter });
+    assert.equal(r.statements, 3);
+    const { parentRows, childRows, maxPerParent } = r.tables[0].fanOut;
+    return [parentRows, childRows, maxPerParent];
+  };
+  // Regions: 1 Ege (2 workers), 2 Akdeniz (1), 3 İç Anadolu (2).
+  assert.deepEqual(await fanOut([{ column: 'name', op: 'in', values: ['Ege', 'Akdeniz'] }]), [2, 3, 2]);
+  assert.deepEqual(await fanOut([{ column: 'id', op: '>', value: 1 }]), [2, 3, 2]);
+  assert.deepEqual(await fanOut([{ column: 'id', op: 'not in', values: [1, 2] }]), [1, 2, 2]);
+  assert.deepEqual(await fanOut([{ column: 'name', op: '=', value: 'İç Anadolu' }, { column: 'id', op: 'is not null' }]), [1, 2, 2]);
+  assert.deepEqual(await fanOut([{ column: 'name', op: '<>', value: 'Akdeniz' }], { column: 'id', from: '2', to: '4' }), [1, 2, 2]);
+  assert.deepEqual(await fanOut([{ column: 'name', op: 'is null' }]), [0, 0, 0]);
+  assert.deepEqual(await fanOut([{ column: 'name', op: '=', value: "Ege' or '1'='1" }]), [0, 0, 0], 'a quote in a value is data, not SQL');
+  await assert.rejects(fanOut([{ column: 'nope', op: 'is null' }]), err => err.errorCode === 'INVALID_INPUT' && /column nope not found/.test(err.message));
+  await assert.rejects(fanOut([{ column: 'id', op: 'in', value: 1 }]), err => err.errorCode === 'INVALID_INPUT');
+});
+
 test('relation_stats links region and worker from planner statistics in at most 2 statements and records them', async () => {
   const r = await relationStats(db, 'local', ['auspex_test.region', 'auspex_test.worker', 'auspex_test.secret_note']);
   assert.ok(r.statements <= 2);
