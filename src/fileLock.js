@@ -5,11 +5,15 @@
 //
 // The lock is a file created with 'wx' (atomic create-if-absent) holding the
 // owner's pid, host and a random token. An owner on this host whose pid is
-// alive keeps the lock however long it holds it; a dead owner's lock is taken
-// over at once. Age (staleMs) decides only when liveness cannot be checked
-// (unreadable body, another host). Locks are same-host only: network
-// filesystems shared between hosts are not supported. Waiting is bounded;
-// after waitMs the caller gets a LockBusyError and may retry.
+// alive keeps the lock until it is maxHoldMs old (default 10 minutes); a dead
+// owner's lock is taken over at once. Past maxHoldMs a lock (or a takeover
+// marker) is reclaimable even when its pid looks alive: the OS may have
+// reused the pid of an owner that died holding it, and no guarded section
+// runs anywhere near that long. Below maxHoldMs, age (staleMs) decides only
+// when liveness cannot be checked (unreadable body, another host). Locks are
+// same-host only: network filesystems shared between hosts are not
+// supported. Waiting is bounded; after waitMs the caller gets a
+// LockBusyError and may retry.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -60,8 +64,9 @@ function snapshot(file) {
   return { owner, key, mtimeMs: Number(stat.mtimeMs) };
 }
 
-function isStale(snap, staleMs) {
+function isStale(snap, staleMs, maxHoldMs) {
   if (!snap) return false;
+  if (Date.now() - snap.mtimeMs > maxHoldMs) return true; // a reused pid must not keep it forever
   const state = ownerState(snap.owner);
   if (state !== 'unknown') return state === 'gone';
   return Date.now() - snap.mtimeMs > staleMs;
@@ -71,19 +76,19 @@ function isStale(snap, staleMs) {
 // generation's takeover marker may move it aside, and it re-checks that the
 // lock is still that generation, so a fresh lock taken meanwhile by someone
 // else is never removed.
-function takeOver(lockPath, seen, staleMs) {
+function takeOver(lockPath, seen, staleMs, maxHoldMs) {
   const marker = `${lockPath}.takeover.${seen.key}`;
   try {
     fs.writeFileSync(marker, JSON.stringify({ pid: process.pid, host: os.hostname() }), { flag: 'wx' });
   } catch (err) {
     if (err.code !== 'EEXIST' && !transient.has(err.code)) throw err;
     // A marker left by a taker that died is itself stale.
-    if (isStale(snapshot(marker), staleMs)) fs.rmSync(marker, { force: true });
+    if (isStale(snapshot(marker), staleMs, maxHoldMs)) fs.rmSync(marker, { force: true });
     return;
   }
   try {
     const now = snapshot(lockPath);
-    if (now?.key !== seen.key || !isStale(now, staleMs)) return;
+    if (now?.key !== seen.key || !isStale(now, staleMs, maxHoldMs)) return;
     const aside = `${lockPath}.stale.${process.pid}.${seen.key}`;
     fs.renameSync(lockPath, aside);
     fs.rmSync(aside, { force: true });
@@ -94,7 +99,7 @@ function takeOver(lockPath, seen, staleMs) {
   }
 }
 
-function acquire(lockPath, { waitMs, staleMs }) {
+function acquire(lockPath, { waitMs, staleMs, maxHoldMs }) {
   fs.mkdirSync(path.dirname(lockPath), { recursive: true });
   const token = crypto.randomBytes(8).toString('hex');
   const body = JSON.stringify({ pid: process.pid, host: os.hostname(), token, at: new Date().toISOString() });
@@ -107,8 +112,8 @@ function acquire(lockPath, { waitMs, staleMs }) {
       if (err.code !== 'EEXIST' && !transient.has(err.code)) throw err;
     }
     const seen = snapshot(lockPath);
-    if (isStale(seen, staleMs)) {
-      takeOver(lockPath, seen, staleMs);
+    if (isStale(seen, staleMs, maxHoldMs)) {
+      takeOver(lockPath, seen, staleMs, maxHoldMs);
       // A takeover that keeps failing (file held open, fresh marker of another
       // taker) must not spin past the deadline.
       if (Date.now() >= deadline) throw new LockBusyError(lockPath);
@@ -150,15 +155,17 @@ export function renameRetrying(from, to, { waitMs = 2000 } = {}) {
 }
 
 // Runs fn while holding the lock at lockPath. Nested calls for the same path
-// in the same process just run fn.
-export function withFileLock(lockPath, fn, { waitMs = 5000, staleMs = 30000 } = {}) {
+// in the same process just run fn. waitMs bounds the wait, staleMs expires a
+// lock whose owner cannot be checked, maxHoldMs is the hard ceiling after
+// which any lock is reclaimable (keep it far above the longest guarded fn).
+export function withFileLock(lockPath, fn, { waitMs = 5000, staleMs = 30000, maxHoldMs = 600000 } = {}) {
   const key = path.resolve(lockPath);
   const mine = held.get(key);
   if (mine) {
     mine.depth++;
     try { return fn(); } finally { mine.depth--; }
   }
-  const token = acquire(lockPath, { waitMs, staleMs });
+  const token = acquire(lockPath, { waitMs, staleMs, maxHoldMs });
   held.set(key, { token, depth: 1 });
   try {
     const result = fn();
