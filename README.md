@@ -208,6 +208,26 @@ Excel, LibreOffice or Google Sheets. It is a mitigation, not a guarantee:
 spreadsheet behavior differs per application and the apostrophe can be lost
 when a file is saved and reopened (see the OWASP CSV Injection page).
 
+### CSV export budget
+
+Each `export_csv` call has a row cap, a size cap and a total time cap
+(`AUSPEX_EXPORT_MAX_ROWS`, `_BYTES`, `_MS`). The size cap counts every byte
+written: byte order mark, header line, quoting and CRLF. If the header alone
+does not fit, the call fails and no file is kept. The time budget starts once
+the read-only transaction is open and ends when the file is closed; it covers
+every FETCH, every write (including waits for a slow disk) and closing the
+file. Near the deadline each FETCH runs with `statement_timeout` lowered to
+the remaining time (never above the call's own timeout), so PostgreSQL cancels
+it at the deadline and the connection goes back to the pool clean. Hitting a
+cap ends the file at the last complete row with `stopReason` `rows`, `bytes`
+or `time`; a time stop before the first batch arrived fails without a file.
+
+Tolerance: a FETCH the server does not cancel is given 2 s past the deadline,
+then its connection is dropped (never reused); closing the file is given up to
+2 s past the deadline, after which the call fails and removes the file it
+created. So a call returns within about `AUSPEX_EXPORT_MAX_MS` + 4 s in the
+worst case, usually within milliseconds of the deadline.
+
 ### Exploring many tables
 
 Exploring N tables one by one costs N round trips (a `describe_table` and a
@@ -496,8 +516,8 @@ naming the problem.
 | `AUSPEX_DB_<NAME>` | none | Extra profile from the environment, e.g. `AUSPEX_DB_LOCAL`; the same name in the file and env is an error |
 | `AUSPEX_MAX_ROWS` | 500 | Row cap for `query` |
 | `AUSPEX_EXPORT_MAX_ROWS` | 100000 | Row cap for `export_csv` |
-| `AUSPEX_EXPORT_MAX_BYTES` | 104857600 | Size cap for one `export_csv` file (100 MB) |
-| `AUSPEX_EXPORT_MAX_MS` | 300000 | Total time cap for one `export_csv` (5 min), on top of the per-statement timeout |
+| `AUSPEX_EXPORT_MAX_BYTES` | 104857600 | Size cap for one `export_csv` file (100 MB), BOM and header included |
+| `AUSPEX_EXPORT_MAX_MS` | 300000 | Total time cap for one `export_csv` (5 min), on top of the per-statement timeout; covers fetching, writing and closing the file (see CSV export budget) |
 | `AUSPEX_STATEMENT_TIMEOUT_MS` | 30000 | Default statement timeout per call |
 | `AUSPEX_MAX_STATEMENT_TIMEOUT_MS` | 300000 | Ceiling for the per-call `timeoutSeconds` |
 | `AUSPEX_MAX_STATEMENT_TIMEOUT_MS_<NAME>` | global ceiling | Ceiling for one profile, e.g. `_SHOP=120000` |
