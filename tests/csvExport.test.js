@@ -18,19 +18,41 @@ after(() => {
 const exportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-csv-test-'));
 
 // Fake pg client: FETCH returns `batches` in order; failFetchAt makes that
-// FETCH reject; fetchDelayMs delays every FETCH.
-function fakeDb({ batches = [[[1, 'a'], [2, 'b']]], failFetchAt = -1, fetchDelayMs = 0, fields = [{ name: 'id', dataTypeID: 23 }, { name: 'ad', dataTypeID: 25 }] } = {}) {
+// FETCH reject; fetchDelayMs delays every FETCH, fetchDelays[i] only FETCH i.
+// Like PostgreSQL it honors SET LOCAL statement_timeout (FETCH fails with
+// 57014) unless hang is set, which models a server that never answers; then
+// only dropping the connection (stream.destroy) ends the pending FETCH.
+function fakeDb({ batches = [[[1, 'a'], [2, 'b']]], failFetchAt = -1, fetchDelayMs = 0, fetchDelays = [], hang = false, fields = [{ name: 'id', dataTypeID: 23 }, { name: 'ad', dataTypeID: 25 }] } = {}) {
   let fetches = 0;
+  let statementTimeout = Infinity;
+  let dropConnection = null;
+  const dropped = new Promise((_, reject) => { dropConnection = () => reject(new Error('Connection terminated')); });
+  dropped.catch(() => {});
   const client = {
+    statements: [],
+    dropped: false,
+    released: null,
     async query(q) {
       const text = typeof q === 'string' ? q : q.text;
+      client.statements.push(text);
+      if (client.dropped) throw new Error('Client has encountered a connection error and is not queryable');
+      const set = text.match(/^SET LOCAL statement_timeout = (\d+)$/);
+      if (set) { statementTimeout = Number(set[1]); return { rows: [] }; }
       if (!text.startsWith('FETCH')) return { rows: [] };
-      if (fetchDelayMs) await new Promise(r => setTimeout(r, fetchDelayMs));
       const i = fetches++;
+      const delay = fetchDelays[i] ?? fetchDelayMs;
+      if (hang) await Promise.race([new Promise(() => {}), dropped]);
+      if (delay > statementTimeout) {
+        await new Promise(r => setTimeout(r, statementTimeout));
+        throw Object.assign(new Error('canceling statement due to statement timeout'), { code: '57014' });
+      }
+      if (delay) await new Promise(r => setTimeout(r, delay));
       if (i === failFetchAt) throw new Error('connection lost during FETCH');
       return { rows: batches[i] ?? [], fields };
     },
-    release() {},
+    on() {},
+    connection: { stream: { destroy() { client.dropped = true; dropConnection(); } } },
+    release(broken) { client.released = broken; },
   };
   const db = new ReadOnlyDatabase({
     profiles: new Map([['local', 'postgresql://u@127.0.0.1:1/a']]),
@@ -39,6 +61,7 @@ function fakeDb({ batches = [[[1, 'a'], [2, 'b']]], failFetchAt = -1, fetchDelay
   db.pool = () => ({ connect: async () => client });
   // The role check is covered in roleCheck.test.js; here the role is known good.
   db.roleChecks.set('local', { status: 'ok', blocking: [], warnings: [] });
+  db.client = client;
   return db;
 }
 
@@ -183,12 +206,118 @@ test('the size cap never writes past the limit and stops at a row boundary', asy
   assert.equal(text().trim().split('\r\n').length, r.rowCount + 1);
 });
 
-test('the total time cap stops between batches', async () => {
-  const db = fakeDb({ batches: [batch(1000), batch(1000), batch(1000)], fetchDelayMs: 20 });
-  db.config.exportMaxMs = 10;
-  capture(db);
+test('the total time cap cancels a slow later batch and keeps the rows so far', async () => {
+  const db = fakeDb({ batches: [batch(1000), batch(1000), batch(1000)], fetchDelays: [0, 500, 500] });
+  db.config.exportMaxMs = 60;
+  const text = capture(db);
+  const started = Date.now();
   const r = await db._exportCsv('local', 'select 1', [], 'x', ',');
   assert.deepEqual([r.rowCount, r.truncated, r.stopReason], [1000, true, 'time']);
+  assert.ok(Date.now() - started < 400, 'the slow FETCH was cancelled at the deadline');
+  assert.equal(text().trim().split('\r\n').length, 1001, 'header + the rows of the first batch');
+  assert.ok(db.client.statements.some(s => /^SET LOCAL statement_timeout = \d+$/.test(s)), 'FETCH ran under the remaining budget');
+  assert.equal(db.client.released, false, 'the connection went back to the pool clean');
+});
+
+test('a delayed first batch fails clearly and leaves no file', async () => {
+  const db = fakeDb({ fetchDelays: [500] });
+  db.config.exportMaxMs = 50;
+  const target = path.join(exportDir, 'slow-first.csv');
+  db.exportPath = () => target;
+  const started = Date.now();
+  await assert.rejects(db._exportCsv('local', 'select 1', [], 'x', ','), /time limit .* before the first rows arrived/);
+  assert.ok(Date.now() - started < 400);
+  assert.equal(fs.existsSync(target), false);
+});
+
+test('a delayed short final batch after the deadline is not reported as complete', async () => {
+  // Nothing caps this FETCH on the server (the budget looks far away when it
+  // starts); a jump of the clock makes the final 5 rows arrive after the deadline.
+  const db = fakeDb({ batches: [batch(1000), batch(5)], fetchDelays: [0, 80] });
+  db.config.exportMaxMs = 1000000;
+  db.timeoutMs = () => 30000; // no server-side cap: the batch really arrives late
+  capture(db);
+  const realNow = Date.now;
+  let shift = 0;
+  Date.now = () => realNow() + shift;
+  try {
+    const exporting = db._exportCsv('local', 'select 1', [], 'x', ',');
+    setTimeout(() => { shift = 2000000; }, 40); // the clock passes the deadline during the second FETCH
+    const r = await exporting;
+    assert.deepEqual([r.rowCount, r.truncated, r.stopReason], [1000, true, 'time']);
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test('a server that never answers is cut off after the grace and the connection is dropped', async () => {
+  const db = fakeDb({ hang: true });
+  db.config.exportMaxMs = 30;
+  db.exportGraceMs = 30;
+  const target = path.join(exportDir, 'hang.csv');
+  db.exportPath = () => target;
+  const started = Date.now();
+  await assert.rejects(db._exportCsv('local', 'select 1', [], 'x', ','), /time limit/);
+  assert.ok(Date.now() - started < 400);
+  assert.equal(db.client.dropped, true, 'connection dropped');
+  assert.equal(db.client.released, true, 'released as broken, never reused');
+  assert.equal(fs.existsSync(target), false);
+});
+
+test('a slow writer is bounded by the deadline and the file still ends at a row', async () => {
+  const db = fakeDb({ batches: [batch(1000)] });
+  db.config.exportMaxMs = 50;
+  db.exportGraceMs = 2000;
+  const chunks = [];
+  db.exportPath = () => path.join(exportDir, 'slow-writer.csv');
+  db.openExportStream = () => new Writable({
+    highWaterMark: 64,
+    write(chunk, enc, cb) { chunks.push(chunk.toString()); setTimeout(cb, 5); },
+  });
+  const started = Date.now();
+  const r = await db._exportCsv('local', 'select 1', [], 'x', ',');
+  assert.equal(r.stopReason, 'time');
+  assert.ok(r.rowCount > 0 && r.rowCount < 1000, `${r.rowCount} rows`);
+  assert.ok(Date.now() - started < 1000);
+  const text = chunks.join('');
+  assert.ok(text.endsWith('\r\n'));
+  assert.equal(text.trim().split('\r\n').length, r.rowCount + 1);
+});
+
+test('a file that cannot be closed in time fails and the owned file is removed', async () => {
+  const db = fakeDb({ batches: [batch(3)] });
+  db.config.exportMaxMs = 30;
+  db.exportGraceMs = 30;
+  const target = path.join(exportDir, 'stalled.csv');
+  db.exportPath = () => target;
+  const open = db.openExportStream.bind(db);
+  db.openExportStream = t => {
+    const out = open(t); // a real file this export owns, whose disk then stalls
+    out._write = () => {};
+    out._writev = null;
+    return out;
+  };
+  await assert.rejects(db._exportCsv('local', 'select 1', [], 'x', ','), /could not finish writing the file/);
+  assert.equal(fs.existsSync(target), false);
+});
+
+test('BOM and header count toward the size cap', async () => {
+  const db = fakeDb({ batches: [batch(3)] });
+  db.config.exportMaxBytes = 3 + Buffer.byteLength('id,ad\r\n') + Buffer.byteLength('0,satır 0\r\n');
+  const text = capture(db);
+  const r = await db._exportCsv('local', 'select 1', [], 'x', ',');
+  assert.deepEqual([r.rowCount, r.stopReason, r.bytes], [1, 'bytes', db.config.exportMaxBytes]);
+  assert.equal(Buffer.byteLength(text()), r.bytes);
+});
+
+test('a header larger than the size cap fails clearly and leaves no file', async () => {
+  const fields = Array.from({ length: 20 }, (_, i) => ({ name: `column_${i}_${'x'.repeat(50)}`, dataTypeID: 25 }));
+  const db = fakeDb({ batches: [[]], fields });
+  db.config.exportMaxBytes = 1024;
+  const target = path.join(exportDir, 'big-header.csv');
+  db.exportPath = () => target;
+  await assert.rejects(db._exportCsv('local', 'select 1', [], 'x', ','), /header alone is \d+ bytes .* more than exportMaxBytes 1024/);
+  assert.equal(fs.existsSync(target), false);
 });
 
 test('an export within every limit is complete and not truncated', async () => {
