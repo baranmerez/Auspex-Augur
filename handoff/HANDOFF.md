@@ -227,6 +227,12 @@ outside the repository. The current setup is described in
   CSV error paths are tested with in-process fakes rather than child
   processes; database-wide notes come back only from `table_knowledge`, not
   with `query` / `run_report` responses.
+- **File locks are same-host only:** a lock whose owner pid is alive on this
+  host is never taken over by age (#26); age expiry (`staleMs`) applies only
+  when the owner cannot be checked. Library or memory folders on a network
+  filesystem shared between hosts are not supported. If the OS reuses a dead
+  owner's pid, its lock stays busy until that process exits or the lock file
+  is removed by hand.
 - **Personal data:** SELECT was granted per schema. Personal-data columns are
   to be inventoried during the first exploration, then revoked or moved
   behind masked views. Reports never contain personal values.
