@@ -14,12 +14,23 @@ import { ReportService } from './reports/service.js';
 import { sqlHash } from './reports/library.js';
 import { SchemaMemory, noteKinds } from './memory/store.js';
 import { relationsFromTextPlan } from './memory/planUsage.js';
+import { loadPromptSkills, promptText } from './skills.js';
 
 let config;
 try {
   config = loadConfig();
 } catch (err) {
   process.stderr.write(`auspex: configuration error: ${err.message}\n`);
+  process.exit(1);
+}
+// Workflow prompts come from the skill files; a broken checkout fails here,
+// not on the first prompt request.
+let promptSkills;
+try {
+  promptSkills = loadPromptSkills();
+} catch (err) {
+  process.stderr.write(`auspex: skills error: ${err.message}
+`);
   process.exit(1);
 }
 const db = new ReadOnlyDatabase(config, { source: 'mcp' });
@@ -397,6 +408,21 @@ tool('remember', {
     if (action === 'confirm') return { note: memory.confirmNote(name, id, kind) };
     return { note: memory.archiveNote(name, id, reason) };
   }, r => ({ noteId: r.note.id, noteKind: r.note.kind, noteStatus: r.note.status })));
+
+// ---------- workflow prompts (text from skills/<name>/SKILL.md) ----------
+for (const skill of promptSkills) {
+  server.registerPrompt(skill.prompt, {
+    title: `Auspex workflow: ${skill.prompt}`,
+    description: skill.description,
+    argsSchema: {
+      profile: z.string().optional().describe('Profile the user chose for this conversation. Leave empty to be asked.'),
+      goal: z.string().optional().describe('What the user wants, in their words.'),
+    },
+  }, ({ profile, goal }) => ({
+    description: skill.description,
+    messages: [{ role: 'user', content: { type: 'text', text: promptText(skill, { profile: profile?.trim(), goal: goal?.trim() }) } }],
+  }));
+}
 
 async function shutdown() {
   await db.close().catch(() => {});
