@@ -36,9 +36,11 @@ creates anything.
    tables and columns. Functions and triggers: `describe_functions` when the
    server offers it; otherwise one catalog query each, see
    [catalog-queries.md](references/catalog-queries.md).
-2. **Read the structure in one batch.** `describe_tables` on every table of
-   the family (columns, constraints, indexes, incoming keys; triggers, check
-   constraints, sequences and partitions where the server returns them).
+2. **Read the structure in one batch.** `describe_tables` with
+   `detail: "full"` on every table of the family (columns, constraints,
+   indexes, incoming keys; triggers, check constraints, sequences and
+   partitions where the server returns them); the default summary leaves out
+   the definitions a DDL needs.
    Function definitions in one call or query.
 3. **Summarize the pattern** (analysis note, part 1):
    - naming (prefix, suffix, singular/plural, Turkish/English);
