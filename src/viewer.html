@@ -317,6 +317,10 @@
   .g-edge.suggested { stroke: var(--warn-ink); stroke-dasharray: 2 4; }
   .g-edge.hot { stroke: var(--accent); stroke-width: 2; }
   .g-edge.pending, .g-node.pending { opacity: 0; }
+  .g-edge.role { stroke-width: 2.2; }
+  .g-edge.role.hot { stroke-width: 3.2; }
+  .g-edge.faint { stroke: var(--role-other); stroke-dasharray: 4 4; opacity: .6; }
+  svg.graph.hide-faint .g-edge.faint { display: none; }
   .g-node { cursor: pointer; transition: opacity .4s var(--ease); }
   .g-node circle.body { stroke-width: 1.5; }
   .g-node.explored circle.body { fill: var(--accent); stroke: var(--surface); }
@@ -619,6 +623,8 @@ const TR = {
   'PK, FK: keys · U: used in a plan · N: has a note · ←: referenced': 'PK, FK: anahtar · U: planda kullanıldı · N: notu var · ←: referans alınıyor',
   'Reference': 'Instance', 'Dependent': 'Beslenen', 'no estimate': 'tahmin yok', '~{n} linked (est.)': '~{n} bağlı (tahmini)', '~{n} rows (est.)': '~{n} satır (tahmini)',
   'top {s} of {n}': 'ilk {s} / {n}', 'none known': 'bilinen yok', 'Show top 5': 'İlk 5', 'Show top 10': 'İlk 10', '{n} more in Relations': '{n} tane daha İlişkiler listesinde',
+  'rank 1 → 10': 'sıra 1 → 10', 'beyond top 10': 'ilk 10 dışı', 'Hide beyond top 10': 'İlk 10 dışını gizle', 'Show beyond top 10': 'İlk 10 dışını göster',
+  'Edges of the selected table ranked beyond 10': 'Seçili tablonun 10. sıradan sonraki ilişkileri',
 };
 let lang = 'en';
 try { lang = localStorage.getItem('auspex.viewer.lang') || ((navigator.language || '').toLowerCase().startsWith('tr') ? 'tr' : 'en'); } catch {}
@@ -765,7 +771,7 @@ const state = {
   memSchema: '', memErAll: false, memPos: new Map(), schemaKey: null,
 };
 try { Object.assign(state, JSON.parse(localStorage.getItem('auspex.viewer') || '{}'), { all: [], seen: new Set(), firstLoad: true, open: null, reports: null, reportDoc: null, memory: null, memView: null, memPos: new Map() }); } catch {}
-const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy })); } catch {} };
+const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy, memHideFaint: state.memHideFaint, memExpand: state.memExpand })); } catch {} };
 
 // In the Tauri desktop app the same routes are served by the Rust `api` command.
 const tauriCore = window.__TAURI__?.core;
@@ -1556,7 +1562,15 @@ function legend() {
   const line = cls => { const s = svg('svg', { width: 24, height: 8, viewBox: '0 0 24 8' }); s.append(svg('line', { class: 'g-edge ' + cls, x1: 0, y1: 4, x2: 24, y2: 4 })); return s; };
   return h('div', { class: 'sch-legend' },
     h('span', {}, dot('explored'), t('explored')), h('span', {}, dot('seen'), t('seen')), h('span', {}, dot('unexplored'), t('not explored')),
-    h('span', {}, line('fk'), 'FK'), h('span', {}, line('used'), t('used')), h('span', {}, line('suggested'), t('suggested')));
+    h('span', {}, line('fk'), 'FK'), h('span', {}, line('used'), t('used')), h('span', {}, line('suggested'), t('suggested')),
+    roleLegend(true));
+}
+// Role colors of the selected table's FK edges: rank 1 (strong) to rank 10 (faint).
+function roleLegend(withFaint) {
+  const faint = () => { const s = svg('svg', { width: 24, height: 8, viewBox: '0 0 24 8' }); s.append(svg('line', { class: 'g-edge faint', x1: 0, y1: 4, x2: 24, y2: 4 })); return s; };
+  return [h('span', { title: t('rank 1 → 10') }, h('i', { class: 'role-sw ref' }), roleName('ref')),
+    h('span', { title: t('rank 1 → 10') }, h('i', { class: 'role-sw dep' }), roleName('dep')),
+    withFaint ? h('span', {}, faint(), t('beyond top 10')) : null];
 }
 
 // ---------- force-directed graph (no library) ----------
@@ -1572,7 +1586,7 @@ const hashAngle = id => { let x = 2166136261; for (const ch of id) x = Math.imul
 function graphCanvas(g, visible, depth, data) {
   const db = state.db;
   const wrap = h('div', { class: 'panel sch-canvas' });
-  const root = svg('svg', { class: 'graph' + (visible.length > 120 ? ' crowded' : ''), role: 'img', 'aria-label': t('Relation graph') });
+  const root = svg('svg', { class: 'graph' + (visible.length > 120 ? ' crowded' : '') + (state.memHideFaint ? ' hide-faint' : ''), role: 'img', 'aria-label': t('Relation graph') });
   const scene = svg('g'), edgeLayer = svg('g'), nodeLayer = svg('g');
   scene.append(edgeLayer, nodeLayer);
   root.append(scene);
@@ -1680,9 +1694,23 @@ function graphCanvas(g, visible, depth, data) {
   const schedule = () => { sim.running = true; if (document.hidden) setTimeout(frame, 40); else requestAnimationFrame(frame); };
   const reheat = (to = 0.3) => { sim.alpha = Math.max(sim.alpha, to); if (!sim.running) schedule(); };
 
+  // FK edges of the selected table take its role colors by rank; its edges
+  // beyond the top 10 turn faint (hidden with the toggle). Other edges keep
+  // their relation-level style.
+  const paintRoles = id => {
+    const roles = id ? roleGroups(data, id) : { ref: [], dep: [] };
+    const rankOf = new Map([...roles.ref.map(x => ['ref|' + x.id, x]), ...roles.dep.map(x => ['dep|' + x.id, x])]);
+    for (const l of links) {
+      const r = !id || l.e.level !== 'fk' ? null : l.e.from === id ? rankOf.get('ref|' + l.e.to) : l.e.to === id ? rankOf.get('dep|' + l.e.from) : null;
+      l.el.classList.toggle('role', !!r && r.rank <= roleTop);
+      l.el.classList.toggle('faint', !!r && r.rank > roleTop);
+      l.el.style.stroke = r && r.rank <= roleTop ? roleColor(r.role, r.rank) : '';
+    }
+  };
   sim.select = id => {
     setMemSel(id);
     for (const nd of nodes) nd.el.classList.toggle('sel', nd.id === id);
+    paintRoles(id);
     renderInspector();
   };
   const setHot = id => {
@@ -1782,6 +1810,7 @@ function graphCanvas(g, visible, depth, data) {
     const r = root.getBoundingClientRect();
     sim.W = r.width || 800; sim.H = r.height || 560;
     for (const nd of nodes) nd.el.classList.toggle('sel', nd.id === memSel());
+    paintRoles(memSel());
     if (reduceMotion) {
       while (sim.alpha > 0.02) tick();
       draw(); follow(1); sim.save();
@@ -2025,6 +2054,12 @@ function renderSchema() {
         h('button', { class: state.memMode === k ? 'on' : '', onclick: () => { state.memMode = k; if (k === 'graph' && sel) setMemFocus(sel); persist(); renderSchema(); } }, label))),
       schemaSel,
       state.memMode === 'graph' ? h('button', { class: 'icon-btn', onclick: () => { state.memShowAll = !state.memShowAll; state.memAnimateIn = true; renderSchema(); } }, state.memShowAll ? t('Focus view') : t('Show all')) : null,
+      state.memMode === 'graph' ? h('button', { class: 'icon-btn', 'aria-pressed': String(!!state.memHideFaint), title: t('Edges of the selected table ranked beyond 10'), onclick: ev => {
+        state.memHideFaint = !state.memHideFaint; persist();
+        document.querySelector('#v-schema svg.graph')?.classList.toggle('hide-faint', state.memHideFaint);
+        ev.currentTarget.setAttribute('aria-pressed', String(state.memHideFaint));
+        ev.currentTarget.textContent = state.memHideFaint ? t('Show beyond top 10') : t('Hide beyond top 10');
+      } }, state.memHideFaint ? t('Show beyond top 10') : t('Hide beyond top 10')) : null,
       h('div', { class: 'sch-stats' },
         h('span', {}, h('b', {}, fmt(S.explored)), t('explored')), h('span', {}, h('b', {}, fmt(S.seen)), t('seen')),
         h('span', {}, h('b', {}, fmt(S.unexplored)), t('not explored')), h('span', {}, h('b', {}, fmt(S.edges)), t('relations')),
