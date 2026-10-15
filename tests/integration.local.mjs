@@ -199,6 +199,22 @@ test('statement timeout cancels long queries', async () => {
   }
 });
 
+test('a connection that drops mid-query is CONNECTION_FAILED and retryable', async () => {
+  // Test-only: destroy the client socket while the server is still working,
+  // as a network drop would. The pool discards the broken client. The server
+  // query is short, so the orphaned backend ends and frees its connection slot.
+  await assert.rejects(
+    db.withReadOnly('local', client => {
+      client.once('error', () => {}); // pg also emits the drop as an event on the checked-out client
+      const pending = client.query('select pg_sleep(0.3)');
+      setTimeout(() => client.connection.stream.destroy(), 50);
+      return pending;
+    }),
+    err => /Connection terminated/.test(err.message) && classifyError(err).code === 'CONNECTION_FAILED' && classifyError(err).retryable === true);
+  await new Promise(resolve => setTimeout(resolve, 500));
+  assert.equal((await raw('select 1 as ok')).rows[0].ok, 1); // the next call gets a working connection
+});
+
 test('run report with previewRows 0 and no ANALYZE does not execute the query', async () => {
   // Executing this would hit the 1 s timeout; with previewRows 0 only the plan
   // and the LIMIT 0 column probe run, so it returns at once with the columns.

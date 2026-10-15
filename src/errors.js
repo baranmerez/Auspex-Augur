@@ -36,7 +36,14 @@ export class ToolError extends Error {
 }
 
 const diskCodes = new Set(['ENOSPC', 'EDQUOT', 'EROFS', 'EIO', 'EEXIST', 'EACCES', 'EPERM', 'EBUSY', 'EMFILE', 'ENFILE', 'EISDIR', 'ENOTDIR']);
-const networkCodes = new Set(['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'EHOSTUNREACH', 'ENETUNREACH', 'EPIPE']);
+const networkCodes = new Set(['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'EHOSTUNREACH', 'ENETUNREACH', 'EPIPE', 'EAI_AGAIN']);
+// node-postgres raises these fixed messages without a code when the socket
+// drops mid-query (pg/lib/client.js). Matched exactly and only for errors that
+// carry no code, so a disk or PostgreSQL error is never reclassified.
+const droppedConnectionMessages = new Set([
+  'Connection terminated unexpectedly', 'Connection terminated',
+  'Client has encountered a connection error and is not queryable',
+]);
 const isSqlState = code => typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code);
 
 // PostgreSQL SQLSTATE -> code and retryability.
@@ -69,6 +76,8 @@ export function classifyError(err) {
     out.code = 'NOT_FOUND';
   } else if (diskCodes.has(err?.code)) {
     out.code = 'DISK_ERROR';
+  } else if (err instanceof Error && err.code === undefined && droppedConnectionMessages.has(err.message)) {
+    Object.assign(out, { code: 'CONNECTION_FAILED', retryable: true });
   }
   if (Number.isFinite(err?.retryAfterSeconds)) out.retryAfterSeconds = err.retryAfterSeconds;
   if (err?.budgetScope) out.budgetScope = err.budgetScope;
