@@ -7,6 +7,7 @@ import pg from 'pg';
 import { assertReadOnlyQuery, SqlGuardError } from './sqlGuard.js';
 import { createAuditLog } from './auditLog.js';
 import { runRoleCheck, RoleCheckError } from './roleCheck.js';
+import { ToolError, classifyError } from './errors.js';
 
 // Keep date/time values exactly as PostgreSQL prints them; converting a
 // timestamp without time zone to a JS Date would shift it to local time.
@@ -34,6 +35,10 @@ export class QueryBudgetError extends Error {
     this.count = count;
     this.limit = limit;
     this.retryAfterMs = waitMs;
+    this.errorCode = 'QUERY_BUDGET_EXCEEDED';
+    this.retryable = true;
+    this.retryAfterSeconds = seconds;
+    this.budgetScope = 'process'; // per profile and Auspex process, not a database-wide limit
   }
 }
 
@@ -51,6 +56,7 @@ export class ReadOnlyDatabase {
     this.now = now;
     this.budgetUse = new Map(); // profile -> start times (ms) of operations in the window
     this.operation = new AsyncLocalStorage(); // profiles already charged by the current audited operation
+    this.correlation = new AsyncLocalStorage(); // correlation ID of the current tool call
     this.exportGraceMs = exportGraceMs; // tests shorten it
   }
 
@@ -73,6 +79,18 @@ export class ReadOnlyDatabase {
     if (used.length >= limit) throw new QueryBudgetError(name, used.length, limit, used[used.length - limit] + budgetWindowMs - now);
     used.push(now);
     charged?.add(name);
+  }
+
+  // Runs fn as one tool call: every audit entry it writes carries this
+  // correlation ID, so the call, its audit entries and its result are linked.
+  withCorrelation(correlationId, fn) {
+    return this.correlation.run(correlationId, fn);
+  }
+
+  // Audit field of the current tool call; none outside one (scripts).
+  correlationField() {
+    const correlationId = this.correlation.getStore();
+    return correlationId ? { correlationId } : {};
   }
 
   // Result of the role check for a profile in this process, or null when the
@@ -103,7 +121,7 @@ export class ReadOnlyDatabase {
       result = { ...(await runRoleCheck(client)), checkedAt: new Date().toISOString() };
       this.roleChecks.set(name, result);
       this.auditFn({
-        source: this.source, tool: 'role_check', profile: name, roleStatus: result.status,
+        source: this.source, tool: 'role_check', ...this.correlationField(), profile: name, roleStatus: result.status,
         blocking: result.blocking.map(f => f.code), warnings: result.warnings.map(f => f.code),
       });
     }
@@ -116,14 +134,15 @@ export class ReadOnlyDatabase {
   // A nested call shares the outer operation, so it is charged once.
   async audited(tool, details, fn, summarize = null) {
     const started = Date.now();
-    const entry = { source: this.source, tool, ...details };
+    const entry = { source: this.source, tool, ...this.correlationField(), ...details };
     try {
       const store = this.operation.getStore() ?? new Set();
       const result = await this.operation.run(store, fn);
       this.auditFn({ ...entry, ms: Date.now() - started, rowCount: result?.rowCount, file: result?.file, ...(summarize ? summarize(result) : {}) });
       return result;
     } catch (err) {
-      this.auditFn({ ...entry, ms: Date.now() - started, error: err.message });
+      const { code: errorCode, sqlState } = classifyError(err);
+      this.auditFn({ ...entry, ms: Date.now() - started, error: err.message, errorCode, ...(sqlState ? { sqlState } : {}) });
       throw err;
     }
   }
@@ -133,8 +152,8 @@ export class ReadOnlyDatabase {
   resolveProfile(profile) {
     const known = [...this.config.profiles.keys()].join(', ') || '(none)';
     const name = (profile || '').trim().toLowerCase();
-    if (!name) throw new Error(`A profile is required. Ask the user which database to use. Known profiles: ${known}.`);
-    if (!this.config.profiles.has(name)) throw new Error(`Unknown profile "${name}". Known profiles: ${known}.`);
+    if (!name) throw new ToolError('PROFILE_INVALID', `A profile is required. Ask the user which database to use. Known profiles: ${known}.`);
+    if (!this.config.profiles.has(name)) throw new ToolError('PROFILE_INVALID', `Unknown profile "${name}". Known profiles: ${known}.`);
     return name;
   }
 
@@ -161,8 +180,8 @@ export class ReadOnlyDatabase {
     const ceiling = this.config.maxTimeoutByProfile?.get(name) ?? this.config.maxStatementTimeoutMs ?? this.config.statementTimeoutMs;
     if (timeoutSeconds === undefined || timeoutSeconds === null) return Math.min(this.config.statementTimeoutMs, ceiling);
     const ms = Math.round(Number(timeoutSeconds) * 1000);
-    if (!Number.isFinite(ms) || ms < 1000) throw new Error('timeoutSeconds must be at least 1.');
-    if (ms > ceiling) throw new Error(`timeoutSeconds ${timeoutSeconds} exceeds the ${ceiling / 1000} s limit for profile "${name}".`);
+    if (!Number.isFinite(ms) || ms < 1000) throw new ToolError('INVALID_INPUT', 'timeoutSeconds must be at least 1.');
+    if (ms > ceiling) throw new ToolError('INVALID_INPUT',`timeoutSeconds ${timeoutSeconds} exceeds the ${ceiling / 1000} s limit for profile "${name}".`);
     return ms;
   }
 
@@ -311,7 +330,7 @@ export class ReadOnlyDatabase {
   }
 
   async _exportCsv(profile, sql, params, fileName, delimiter, timeoutSeconds, mode = 'raw') {
-    if (mode !== 'raw' && mode !== 'spreadsheet') throw new Error('mode must be "raw" or "spreadsheet".');
+    if (mode !== 'raw' && mode !== 'spreadsheet') throw new ToolError('INVALID_INPUT', 'mode must be "raw" or "spreadsheet".');
     const query = assertReadOnlyQuery(sql);
     const target = this.exportPath(fileName);
     return this.withReadOnly(profile, async (client, name) => {
@@ -377,7 +396,7 @@ export class ReadOnlyDatabase {
         for (;;) {
           const res = await fetchBatch();
           if (res === timeUp) {
-            if (!started) throw new Error(`Export stopped by the time limit (exportMaxMs ${maxMs} ms) before the first rows arrived; no file was kept.`);
+            if (!started) throw new ToolError('TIMEOUT', `Export stopped by the time limit (exportMaxMs ${maxMs} ms) before the first rows arrived; no file was kept.`);
             stopReason = 'time';
             break;
           }
@@ -389,7 +408,7 @@ export class ReadOnlyDatabase {
             // names are text too: spreadsheet mode neutralizes them like text cells.
             const head = '﻿' + columns.map(c => csvCell(mode === 'spreadsheet' ? spreadsheetSafe(c) : c, delimiter)).join(delimiter) + '\r\n';
             const headBytes = Buffer.byteLength(head);
-            if (headBytes > maxBytes) throw new Error(`The CSV header alone is ${headBytes} bytes (with the byte order mark), more than exportMaxBytes ${maxBytes}; no file was kept. Select fewer or shorter column names.`);
+            if (headBytes > maxBytes) throw new ToolError('INVALID_INPUT', `The CSV header alone is ${headBytes} bytes (with the byte order mark), more than exportMaxBytes ${maxBytes}; no file was kept. Select fewer or shorter column names.`);
             if (await write(head) === timeUp) { stopReason = 'time'; break; }
           }
           for (const row of res.rows) {
@@ -409,7 +428,7 @@ export class ReadOnlyDatabase {
         const finishing = timer(Math.max(0, deadline - Date.now()) + this.exportGraceMs);
         try {
           if (await Promise.race([once(out, 'finish'), failed, finishing.promise]) === timeUp) {
-            throw new Error(`Export could not finish writing the file within the time limit (exportMaxMs ${maxMs} ms plus ${this.exportGraceMs} ms); no file was kept.`);
+            throw new ToolError('TIMEOUT', `Export could not finish writing the file within the time limit (exportMaxMs ${maxMs} ms plus ${this.exportGraceMs} ms); no file was kept.`);
           }
         } finally {
           finishing.clear();
@@ -503,5 +522,11 @@ function connectionError(err, profile) {
   const network = ['ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND', 'EHOSTUNREACH', 'ENETUNREACH'].includes(err.code)
     || /timeout/i.test(err.message);
   const hint = network ? ' The server is unreachable; if it is behind a VPN, check that the VPN is connected.' : '';
-  return new Error(`Could not connect with profile "${profile}": ${err.message}.${hint}`);
+  // An authentication failure (SQLSTATE 28xxx) is not retryable; a network
+  // failure or a server that is starting up or full is.
+  const cause = classifyError(err);
+  const wrapped = new ToolError('CONNECTION_FAILED', `Could not connect with profile "${profile}": ${err.message}.${hint}`,
+    { retryable: network || (cause.code === 'CONNECTION_FAILED' && cause.retryable) });
+  if (cause.sqlState) wrapped.sqlState = cause.sqlState;
+  return wrapped;
 }

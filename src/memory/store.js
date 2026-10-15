@@ -22,7 +22,13 @@ const databaseNoteLimit = 10;
 const profilePattern = /^[a-z][a-z0-9_-]{0,39}$/;
 const reservedFileName = /^(con|prn|aux|nul|com\d|lpt\d)$/;
 
-export class MemoryError extends Error {}
+// errorCode (src/errors.js): INVALID_INPUT unless the throw site says otherwise.
+export class MemoryError extends Error {
+  constructor(message, errorCode = 'INVALID_INPUT') {
+    super(message);
+    this.errorCode = errorCode;
+  }
+}
 
 // Lower-case letters, digits, _ and - stay; any other character becomes
 // ~<UTF-8 hex>, so names that differ only in case (or reserved device names)
@@ -145,7 +151,7 @@ export class SchemaMemory {
   }
 
   profileDir(profile) {
-    if (!profilePattern.test(String(profile || ''))) throw new MemoryError(`Invalid profile name "${profile}".`);
+    if (!profilePattern.test(String(profile || ''))) throw new MemoryError(`Invalid profile name "${profile}".`, 'PROFILE_INVALID');
     return path.join(this.root, profile);
   }
 
@@ -355,8 +361,8 @@ export class SchemaMemory {
     if (kind !== 'rule' && kind !== 'observation') throw new MemoryError('Confirm as kind rule or observation.');
     const data = this.readNotes(profile);
     const note = data.notes.find(n => n.id === id);
-    if (!note) throw new MemoryError(`Note #${id} not found.`);
-    if (note.status !== 'active') throw new MemoryError(`Note #${id} is archived.`);
+    if (!note) throw new MemoryError(`Note #${id} not found.`, 'NOT_FOUND');
+    if (note.status !== 'active') throw new MemoryError(`Note #${id} is archived.`, 'PRECONDITION_FAILED');
     const at = this.now();
     Object.assign(note, { kind, confirmedAt: at, ...(kind === 'observation' && !note.asOf ? { asOf: at.slice(0, 10) } : {}) });
     this.writeNotes(profile, data);
@@ -374,7 +380,7 @@ export class SchemaMemory {
     if (!why) throw new MemoryError('Archiving needs a reason.');
     const data = this.readNotes(profile);
     const note = data.notes.find(n => n.id === id);
-    if (!note) throw new MemoryError(`Note #${id} not found.`);
+    if (!note) throw new MemoryError(`Note #${id} not found.`, 'NOT_FOUND');
     Object.assign(note, { status: 'archived', archivedAt: this.now(), archivedReason: why });
     this.writeNotes(profile, data);
     this.rebuildView(profile);

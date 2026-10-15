@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { Library, normalizeRef, refLabel, sqlHash } from './library.js';
 import { summarizePlan, planDigest } from './planSummary.js';
 import { maskRows } from './mask.js';
+import { ToolError } from '../errors.js';
 import { relationsFromJsonPlan } from '../memory/planUsage.js';
 
 export const autoAnalyzeLimitMs = 30000;
@@ -114,7 +115,7 @@ export class ReportService {
     const stage = this.library.locate(ref);
     const sql = this.library.readSql(stage, ref);
     const meta = this.library.readMeta(stage, ref);
-    if (!meta) throw new Error(`Report metadata missing for ${refLabel(ref)}; save the report first.`);
+    if (!meta) throw new ToolError('NOT_FOUND', `Report metadata missing for ${refLabel(ref)}; save the report first.`);
 
     let doAnalyze = analyze === true || analyze === 'always';
     let note = null;
@@ -190,12 +191,12 @@ export class ReportService {
     const { stage, snapshot, version } = this.library.locked(() => {
       const stage = this.library.locate(ref);
       const meta = this.library.readMeta(stage, ref);
-      if (!meta) throw new Error(`Report metadata missing for ${refLabel(ref)}; save the report first.`);
-      if (!meta.last) throw new Error(`${refLabel(ref)} has not been run yet; run it before sharing.`);
+      if (!meta) throw new ToolError('NOT_FOUND', `Report metadata missing for ${refLabel(ref)}; save the report first.`);
+      if (!meta.last) throw new ToolError('PRECONDITION_FAILED', `${refLabel(ref)} has not been run yet; run it before sharing.`);
       const active = this.library.activeHash(stage, ref, meta);
       if (meta.last.sqlHash !== active) {
         const current = meta.activeVersion ?? meta.sqlVersions?.find(v => v.hash === active)?.version ?? '?';
-        throw new Error(`The last results of ${refLabel(ref)} come from SQL v${meta.last.version ?? '?'}, not the current v${current}; run the current version with run_report first, then share.`);
+        throw new ToolError('PRECONDITION_FAILED', `The last results of ${refLabel(ref)} come from SQL v${meta.last.version ?? '?'}, not the current v${current}; run the current version with run_report first, then share.`);
       }
       return { stage, snapshot: shareableReport(meta), version: meta.last.version ?? null };
     });
