@@ -11,6 +11,7 @@ import {
   maxDescribeTables, maxDescribeFunctions, defaultDefinitionChars, maxDefinitionChars,
   describeDetails, describeSummaryNote, summarizeDescribedTable, summaryReferencedBy,
   maxProfileTables, maxRelationStatsTables, defaultSampleRows, maxSampleRows,
+  parentFilterOps, maxParentFilters, maxParentFilterValues,
 } from './catalog.js';
 import { ReportService } from './reports/service.js';
 import { sqlHash } from './reports/library.js';
@@ -204,6 +205,7 @@ tool('describe_table', {
 });
 
 const tableListArg = max => z.array(z.string().min(1)).min(1).max(max);
+const parentFilterValueArg = z.union([z.string(), z.number(), z.boolean()]);
 
 tool('describe_tables', {
   title: 'Describe many tables',
@@ -246,7 +248,7 @@ tool('describe_functions', {
 
 tool('profile_tables', {
   title: 'Profile many tables',
-  description: `Measures up to ${maxProfileTables} relations at once without returning any row values: estimated rows and, per column, fillRate (non-null share) and distinctInSample, computed on a sample of sampleRows rows per table (default ${defaultSampleRows}, max ${maxSampleRows}; TABLESAMPLE SYSTEM plus LIMIT when the estimate exceeds sampleRows, otherwise a plain LIMIT scan; the response field sampling explains it). With parent, also the fan-out of each table over the parent rows (optionally only those inside window on a parent column, from <= column < to): parent rows, parents with children, child rows, average and maximum children per parent. The child column is the single-column foreign key to parent.key; without one, list the table as schema.table:column. All tables together take at most 3 statements in one read-only transaction (1 catalog lookup, 1 column-statistics statement, 1 fan-out statement when parent is given; field statements). Names are checked against the catalog before they are used. Prefer this over one measuring query per table.`,
+  description: `Measures up to ${maxProfileTables} relations at once without returning any row values: estimated rows and, per column, fillRate (non-null share) and distinctInSample, computed on a sample of sampleRows rows per table (default ${defaultSampleRows}, max ${maxSampleRows}; TABLESAMPLE SYSTEM plus LIMIT when the estimate exceeds sampleRows, otherwise a plain LIMIT scan; the response field sampling explains it). With parent, also the fan-out of each table over the parent rows (optionally only those inside window on a parent column, from <= column < to, and matching parentFilter: up to ${maxParentFilters} conditions on parent columns with = <> > >= < <= in "not in" "is null" "is not null", values always bound as parameters): parent rows, parents with children, child rows, average and maximum children per parent. The child column is the single-column foreign key to parent.key; without one, list the table as schema.table:column. All tables together take at most 3 statements in one read-only transaction (1 catalog lookup, 1 column-statistics statement, 1 fan-out statement when parent is given; field statements). Names are checked against the catalog before they are used. Prefer this over one measuring query per table.`,
   inputSchema: {
     profile: profileArg,
     tables: tableListArg(maxProfileTables).describe('Relations as schema.table; with parent, schema.table:column names the column that points at parent.key when there is no foreign key.'),
@@ -259,6 +261,12 @@ tool('profile_tables', {
       from: z.string().min(1).describe('Inclusive lower bound, e.g. 2026-01-01.'),
       to: z.string().min(1).describe('Exclusive upper bound, e.g. 2026-02-01.'),
     }).optional().describe('Only parent rows with from <= column < to. Requires parent.'),
+    parentFilter: z.array(z.object({
+      column: z.string().min(1).describe('Column of the parent table, e.g. status_code.'),
+      op: z.enum(parentFilterOps).describe('Comparison; "in" / "not in" take values, "is null" / "is not null" take neither value nor values.'),
+      value: parentFilterValueArg.optional().describe('The value for = <> > >= < <=.'),
+      values: z.array(parentFilterValueArg).min(1).max(maxParentFilterValues).optional().describe('The values for in and not in.'),
+    })).min(1).max(maxParentFilters).optional().describe(`Up to ${maxParentFilters} conditions on parent columns, ANDed with each other and with window, e.g. [{"column": "status_code", "op": ">", "value": 50}]. Requires parent.`),
     sampleRows: z.number().int().min(1).max(maxSampleRows).optional().describe(`Rows sampled per table for column statistics; also caps the distinct parent keys used for fan-out. Default ${defaultSampleRows}.`),
     timeoutSeconds: timeoutArg,
   },

@@ -170,7 +170,7 @@ flowchart LR
 | 🧬 `describe_table` | Columns (with identity, generated and owned sequence), types, defaults, comments, constraints incl. checks, indexes, incoming FKs, triggers, row level security, partitioning, view definition; records the table in the schema memory and reports changes since the last time |
 | 🧬 `describe_tables` | The same structure for up to 50 tables in one call, with 6 catalog statements (7 with a view) however many tables; compact one-line-per-item summary by default, `detail: "full"` for every definition; unknown names are reported per table; each table is recorded in the schema memory |
 | 🧩 `describe_functions` | Up to 50 functions by `schema.name` (every overload) or by name pattern: signature, language, volatility, SECURITY DEFINER, owner, calling triggers and the `pg_get_functiondef` text (capped, `truncated` flag); 1 statement |
-| 📏 `profile_tables` | Up to 30 tables in one call: estimated rows, per-column fill rate and distinct count on a sample, and fan-out over a parent table (optionally in a window); at most 3 statements; counts and ratios only, never row values |
+| 📏 `profile_tables` | Up to 30 tables in one call: estimated rows, per-column fill rate and distinct count on a sample, and fan-out over a parent table (optionally in a window and with `parentFilter` conditions); at most 3 statements; counts and ratios only, never row values |
 | 🕸️ `relation_stats` | Up to 50 center tables in one call: their instance tables (referenced by foreign key) and dependent tables (referencing them), ranked by estimated linked rows from planner statistics; at most 2 statements; no table data is read |
 | ▶️ `query` | One read-only statement, max `AUSPEX_MAX_ROWS` rows, `$1..$n` params, optional `timeoutSeconds` |
 | 🧠 `explain` | Estimated plan by default; `analyze: true` runs `EXPLAIN (ANALYZE, BUFFERS)` read-only, under the timeout, rolled back |
@@ -243,7 +243,15 @@ column-statistics statement for all tables (`UNION ALL`) and, with `parent`,
 taken on a sample of `sampleRows` rows per table (default 20000, max 200000):
 `TABLESAMPLE SYSTEM` plus `LIMIT` when the estimate is larger, otherwise a
 plain `LIMIT` scan. Fan-out uses the child's single-column foreign key to
-`parent.key`, or a column given as `schema.table:column`. Table and column
+`parent.key`, or a column given as `schema.table:column`. The parent rows can
+be narrowed by `window` (`from <= column < to`) and by `parentFilter`, up to 5
+conditions `{ column, op, value | values }` with `op` one of `=`, `<>`, `>`,
+`>=`, `<`, `<=` (one `value`), `in`, `not in` (`values`, 1 to 100) or
+`is null`, `is not null` (neither), e.g.
+`[{ "column": "status_code", "op": ">", "value": 50 }]`. All conditions are
+ANDed; each column must exist in the parent table (otherwise
+`INVALID_INPUT`), and every value is a bound parameter, never SQL text. The
+fan-out stays one statement. Table and column
 names are checked against the catalog, quoted, and the generated SQL passes the
 same guard as user queries; there is no free SQL. The server instructions tell
 the model to prefer these two tools over per-table loops.

@@ -67,6 +67,25 @@ test('describe_tables offers detail summary (default) or full; a bad value is re
   assert.equal(res.structuredContent.error.code, 'CONNECTION_FAILED');
 });
 
+test('profile_tables lists parentFilter; a bad op, too many conditions or a filter without parent are refused', async () => {
+  const { tools } = await client.listTools();
+  const filter = tools.find(t => t.name === 'profile_tables').inputSchema.properties.parentFilter;
+  assert.equal(filter.maxItems, 5);
+  assert.deepEqual(filter.items.properties.op.enum, ['=', '<>', '>', '>=', '<', '<=', 'in', 'not in', 'is null', 'is not null']);
+  assert.deepEqual(filter.items.required.sort(), ['column', 'op']);
+  const parent = { table: 'sales.customer', key: 'id' };
+  const badOp = await call('profile_tables', { profile: 'shop', tables: ['sales.orders'], parent, parentFilter: [{ column: 'id', op: 'like', value: 'x' }] });
+  assert.equal(badOp.structuredContent.error.code, 'INVALID_INPUT');
+  const tooMany = await call('profile_tables', { profile: 'shop', tables: ['sales.orders'], parent, parentFilter: Array.from({ length: 6 }, () => ({ column: 'id', op: 'is null' })) });
+  assert.equal(tooMany.structuredContent.error.code, 'INVALID_INPUT');
+  const noParent = await call('profile_tables', { profile: 'shop', tables: ['sales.orders'], parentFilter: [{ column: 'id', op: 'is null' }] });
+  assert.equal(noParent.structuredContent.error.code, 'INVALID_INPUT');
+  const [logged] = auditEntries().filter(e => e.correlationId === noParent._meta.correlationId);
+  assert.deepEqual([logged.tool, logged.errorCode], ['profile_tables', 'INVALID_INPUT'], 'refused by the handler before connecting, and audited');
+  const arity = await call('profile_tables', { profile: 'shop', tables: ['sales.orders'], parent, parentFilter: [{ column: 'id', op: 'in', value: 1 }] });
+  assert.equal(arity.structuredContent.error.code, 'INVALID_INPUT');
+});
+
 test('describe_functions without functions or pattern is refused before connecting and audited', async () => {
   const res = await call('describe_functions', { profile: 'shop' });
   assert.ok(res.isError);
