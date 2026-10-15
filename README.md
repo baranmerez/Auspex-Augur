@@ -534,9 +534,18 @@ Opens a local page at http://127.0.0.1:4719 (port: `AUSPEX_VIEWER_PORT`):
 - **Overview** — stat tiles, activity over time, usage by profile, tool and table, slowest operations, recent errors
 - **Operations** — sortable, paged log with full SQL, parameters and errors (the status shows the error code, the detail the correlation ID); copy and CSV/JSON download
 - **Tables** — which tables were accessed, how often and by which profile
-- **Reports** — the report library by database, schema and category, with each report's HTML
-- **Schema** — the schema memory of a database as a force-directed graph (focus on a table or *Show all*) or an ER diagram centered on one table; an inspector with notes, relations and history; a timeline of schema changes. A badge in the header counts schema changes you have not seen yet.
+- **Reports** — the report library by database, schema and category (the list collapses to a rail), with each report's HTML: the question it answers at the top, the metrics in one strip with a plan-warnings badge that opens the list, and sticky tabs that open on *Preview*
+- **Schema** — the schema memory of a database in three views, an inspector with notes, relations and history, and a timeline of schema changes. A badge in the header counts schema changes you have not seen yet. Around a selected table, foreign keys give two roles: **Reference** (TR *Instance*: tables it points to, such as status codes) and **Dependent** (TR *Beslenen*: tables that point to it, such as order lines). Each role is ranked by linked rows, then by the table's row estimate; both are planner estimates, and a relation without a linked-row figure falls back to the row estimate.
+  - *Graph* — force-directed (focus on a table or *Show all*); the selected table's FK edges are blue (Reference) or orange (Dependent), darkest at rank 1 and lightest at rank 10; edges beyond the top 10 are grey and dashed and can be hidden
+  - *ER diagram* — Reference tables on the left, Dependent tables on the right, top 5 each (expandable to 10), every card with its rank, linked rows and explored state; the rest stay in the inspector's Relations list
+  - *Flow* — Reference → Center → Dependent swimlanes, edge width by linked rows (log scale); a Dependent opens its own dependents as a further lane (depth 2), clicking a table makes it the center and the trail leads back
 - **Profiles** — configured databases with connection details (never passwords) and the latest role check; a `check_profile` that failed shows "unable to assess" with its code, never as a passed check
+
+The role colors and lane backgrounds are CSS variables at the top of
+`src/viewer.html` (`--role-ref-1`, `--role-ref-10`, `--role-dep-1`,
+`--role-dep-10`, `--role-other`, `--lane-ref`, `--lane-center`, `--lane-dep`),
+each written once as `light-dark(light theme, dark theme)`. Reports rendered
+before template v2 keep their old layout until `render_reports` re-renders them.
 
 It binds to 127.0.0.1 only, accepts only GET, rejects other Host headers,
 never connects to a database and never shows passwords.
