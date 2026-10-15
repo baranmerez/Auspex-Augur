@@ -282,7 +282,7 @@ holds no message text, SQL, parameters, row values or connection details;
 | `NOT_FOUND` | Report, note, relation or column not found | no |
 | `PRECONDITION_FAILED` | An earlier step is missing (for example run the current SQL version before approving or sharing) | no |
 | `PERMISSION_DENIED` | No privilege on the object (42501) | no |
-| `CONNECTION_FAILED` | Could not connect or authenticate (08xxx, 28xxx, 57P01-57P03, 53300, network errors); authentication failures are not retryable | network/server only |
+| `CONNECTION_FAILED` | Could not connect or authenticate (08xxx, 28xxx, 57P01-57P03, 53300, network errors, a connection dropped mid-query); authentication failures are not retryable | network/server only |
 | `DISK_ERROR` | A local file could not be written or read (ENOSPC, EEXIST, EACCES, ...) | no |
 | `DATABASE_ERROR` | Any other PostgreSQL error; see `sqlState` (serialization failure and deadlock are retryable) | 40001/40P01 only |
 | `INTERNAL` | Anything else | no |

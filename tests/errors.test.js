@@ -82,6 +82,26 @@ test('connection failures: authentication is not retryable, an unreachable serve
   assert.deepEqual(refused, { code: 'CONNECTION_FAILED', retryable: true });
 });
 
+test('a connection that drops mid-query is CONNECTION_FAILED and retryable, disk errors stay DISK_ERROR', async () => {
+  // The messages node-postgres raises (without a code) when the socket drops.
+  for (const message of ['Connection terminated unexpectedly', 'Connection terminated',
+    'Client has encountered a connection error and is not queryable']) {
+    const e = await classified(fakeDb({ failWith: new Error(message) }).db.query('shop', 'select 1'));
+    assert.deepEqual(e, { code: 'CONNECTION_FAILED', retryable: true }, message);
+  }
+  for (const code of ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EPIPE', 'EHOSTUNREACH', 'ENETUNREACH', 'ENOTFOUND', 'EAI_AGAIN']) {
+    const e = await classified(fakeDb({ failWith: Object.assign(new Error(`read ${code}`), { code }) }).db.query('shop', 'select 1'));
+    assert.deepEqual(e, { code: 'CONNECTION_FAILED', retryable: true }, code);
+  }
+  // Code wins over message; only the exact pg messages match.
+  for (const code of ['EEXIST', 'ENOSPC']) {
+    assert.deepEqual(classifyError(Object.assign(new Error('Connection terminated unexpectedly'), { code })), { code: 'DISK_ERROR', retryable: false }, code);
+  }
+  assert.equal(classifyError(pgError('57P01', 'Connection terminated unexpectedly')).code, 'CONNECTION_FAILED');
+  assert.equal(classifyError(new Error('Connection terminated unexpectedly while saving')).code, 'INTERNAL');
+  assert.equal(classifyError(new Error('Client was closed and is not queryable')).code, 'INTERNAL');
+});
+
 test('invalid parameters and profiles are INVALID_INPUT / PROFILE_INVALID', async () => {
   const { db } = fakeDb();
   assert.equal((await classified(db.query('shop', 'select 1', [], 1, 0.1))).code, 'INVALID_INPUT');
