@@ -232,7 +232,12 @@ fn describe(url_text: &str) -> Map<String, Value> {
     match url::Url::parse(url_text) {
         Ok(u) => {
             let decode = |s: &str| percent_decode_str(s).decode_utf8_lossy().to_string();
-            m.insert("host".into(), json!(u.host_str().unwrap_or("")));
+            // As node-postgres reads it (describeConnection): IPv6 without brackets, percent-decoded.
+            let host = match u.host() {
+                Some(url::Host::Ipv6(a)) => a.to_string(),
+                _ => decode(u.host_str().unwrap_or("")),
+            };
+            m.insert("host".into(), json!(host));
             m.insert("port".into(), json!(u.port().map(|p| p.to_string()).unwrap_or_else(|| "5432".into())));
             m.insert("database".into(), json!(decode(u.path().trim_start_matches('/'))));
             m.insert("user".into(), json!(decode(u.username())));
@@ -279,9 +284,14 @@ fn profile_problem(name: &str, url_text: &str) -> Option<String> {
     if u.password().is_some() || query_password {
         return Some("Password in the URL; move it to pgpass. The server will not start.".into());
     }
+    // host/port would override the URL authority in node-postgres, so the
+    // endpoint shown could differ from the one used; as in config.js.
+    if let Some((k, _)) = u.query_pairs().find(|(k, _)| matches!(k.to_lowercase().as_str(), "host" | "port")) {
+        return Some(format!("Query option \"{k}\" is not allowed; put the host and port in the URL authority (postgresql://user@host:port/db). The server will not start."));
+    }
     // Same allowlist as allowedQueryOptions in config.js.
-    const ALLOWED: [&str; 14] = [
-        "host", "port", "ssl", "sslmode", "sslcert", "sslkey", "sslrootcert", "sslnegotiation", "uselibpqcompat",
+    const ALLOWED: [&str; 12] = [
+        "ssl", "sslmode", "sslcert", "sslkey", "sslrootcert", "sslnegotiation", "uselibpqcompat",
         "application_name", "fallback_application_name", "connect_timeout", "keepalives", "keepalives_idle",
     ];
     if let Some((k, _)) = u.query_pairs().find(|(k, _)| !ALLOWED.contains(&k.as_ref())) {
@@ -485,6 +495,20 @@ mod tests {
         for bad in ["tables/../x.json", "tables/a/b/c.json", "tables/a/.json", "graph.json", "tables/a/b.JSON", "tables/A/b.json", r"tables\a\b.json"] {
             assert!(!valid_memory_file(bad), "{bad}");
         }
+    }
+
+    #[test]
+    fn host_and_port_query_options_are_rejected() {
+        assert_eq!(profile_problem("shop", "postgresql://u@db.example:5432/x?sslmode=require"), None);
+        for q in ["host=production.invalid", "port=6543", "HOST=production.invalid", "sslmode=require&port=6543"] {
+            let problem = profile_problem("shop", &format!("postgresql://u@staging.invalid:5432/x?{q}")).expect(q);
+            assert!(problem.contains("URL authority"), "{problem}");
+            assert!(!problem.contains("production.invalid") && !problem.contains("6543") && !problem.contains("staging"), "{problem}");
+        }
+        let m = describe("postgresql://u@[::1]:5433/x");
+        assert_eq!(m["host"], json!("::1"));
+        assert_eq!(m["port"], json!("5433"));
+        assert_eq!(describe("postgresql://u@%2Fvar%2Frun%2Fpostgresql/x")["host"], json!("/var/run/postgresql"));
     }
 
     #[test]
