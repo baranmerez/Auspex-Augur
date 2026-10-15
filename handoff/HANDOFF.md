@@ -313,13 +313,9 @@ The same collection contains the delivery logs
 
 ### Proposed next work
 
-1. Check CI for the delivery commit; keep this psql fix separate from subsequent
-   remediation.
-2. Address the two remaining CSV findings in a small, tested change:
-   spreadsheet-mode column headers in `src/db.js` need the existing formula
-   neutralization before CSV quoting; Operations CSV in `src/viewer.html`
-   needs equivalent protection for untrusted text fields. Preserve raw export
-   semantics and test both malicious prefixes and ordinary values.
+1. Done: CI passed for the delivery commit `3adfce9`.
+2. Done in #27 (PR #32): spreadsheet-mode headers and Operations CSV text
+   cells are neutralized; raw export is unchanged.
 3. Prioritize the conditional POSIX artifact-permission finding according to
    supported Linux/macOS deployments and local-user access. The scan did not
    establish a Windows ACL exposure.
