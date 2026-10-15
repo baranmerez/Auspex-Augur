@@ -31,8 +31,8 @@ export function renderReport(meta) {
 }
 
 // Data for a shared copy, built from an allowlist instead of the stored
-// metadata: title, description, category, the masked preview and plain
-// figures. Never SQL, plan or plan expressions, parameters, warnings, history,
+// metadata: title, description, category, the masked preview, plain figures
+// and provenance (the result's SQL version number and run time). Never SQL, plan or plan expressions, parameters, warnings, history,
 // profile, server or database/schema names. Values in preview rows stay as the
 // masking left them; masking is by column name only.
 export function shareableReport(meta) {
@@ -43,6 +43,7 @@ export function shareableReport(meta) {
     category: meta.category, status: meta.status, sqlVersions: [], runs: [],
     last: last ? {
       at: last.at,
+      version: Number.isInteger(last.version) ? last.version : null,
       columns: (last.columns || []).map(c => ({ name: c.name, type: c.type })),
       preview: last.preview || [],
       maskedColumns: last.maskedColumns || [],
@@ -182,17 +183,27 @@ export class ReportService {
 
   // Writes a shared copy of a report (see shareableReport) into dir as a new
   // file; the report itself is not changed. No database access.
+  // Only results of the active SQL revision are shared; the snapshot is read
+  // under the library lock so a concurrent save cannot change it midway.
   share(input, dir) {
     const ref = this.ref(input);
-    const stage = this.library.locate(ref);
-    const meta = this.library.readMeta(stage, ref);
-    if (!meta) throw new Error(`Report metadata missing for ${refLabel(ref)}; save the report first.`);
-    if (!meta.last) throw new Error(`${refLabel(ref)} has not been run yet; run it before sharing.`);
+    const { stage, snapshot, version } = this.library.locked(() => {
+      const stage = this.library.locate(ref);
+      const meta = this.library.readMeta(stage, ref);
+      if (!meta) throw new Error(`Report metadata missing for ${refLabel(ref)}; save the report first.`);
+      if (!meta.last) throw new Error(`${refLabel(ref)} has not been run yet; run it before sharing.`);
+      const active = this.library.activeHash(stage, ref, meta);
+      if (meta.last.sqlHash !== active) {
+        const current = meta.activeVersion ?? meta.sqlVersions?.find(v => v.hash === active)?.version ?? '?';
+        throw new Error(`The last results of ${refLabel(ref)} come from SQL v${meta.last.version ?? '?'}, not the current v${current}; run the current version with run_report first, then share.`);
+      }
+      return { stage, snapshot: shareableReport(meta), version: meta.last.version ?? null };
+    });
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const file = path.join(dir, `${stamp}_${crypto.randomBytes(3).toString('hex')}_${ref.name}.share.html`);
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(file, renderReport(shareableReport(meta)), { encoding: 'utf8', flag: 'wx' });
-    return { report: refLabel(ref), stage, file, version: meta.last.version ?? null };
+    fs.writeFileSync(file, renderReport(snapshot), { encoding: 'utf8', flag: 'wx' });
+    return { report: refLabel(ref), stage, file, version };
   }
 
   // Re-renders every report's HTML from its JSON (after a template update). No database access.
