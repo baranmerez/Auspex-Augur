@@ -13,7 +13,7 @@ import { relationsFromJsonPlan } from '../memory/planUsage.js';
 
 export const autoAnalyzeLimitMs = 30000;
 const templatePath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'template.html');
-export const templateVersion = 1;
+export const templateVersion = 2;
 
 // Embeds the report JSON into the fixed template; the page reads it on load.
 export function renderReport(meta) {
