@@ -20,6 +20,13 @@
     --mono: ui-monospace, "Cascadia Code", "Cascadia Mono", Consolas, monospace;
     --radius: 10px;
     --ease: cubic-bezier(.2, .8, .2, 1);
+    /* Relation roles around a center table (Graph, ER diagram, Flow), each
+       token in one place as light-dark(light theme, dark theme). Rank 1 uses
+       -1 (strongest), rank 10 uses -10 (faintest), ranks between are mixed. */
+    --role-ref-1: light-dark(#0b4a9e, #8fc1ff); --role-ref-10: light-dark(#b4cff2, #2b4669);
+    --role-dep-1: light-dark(#a33a05, #ffac70); --role-dep-10: light-dark(#f6cdb0, #6b3b1d);
+    --role-other: light-dark(#a3a7ae, #5b5d61);
+    --lane-ref: light-dark(#eef4fc, #16202d); --lane-center: light-dark(#f2f3f5, #1f1f1e); --lane-dep: light-dark(#fdf2ea, #261c15);
   }
   @media (prefers-color-scheme: dark) {
     :root:where(:not([data-theme="light"])) {
@@ -377,6 +384,19 @@
   .er-link.suggested { stroke: var(--warn-ink); stroke-dasharray: 2 4; }
   .er-link.hot { stroke: var(--accent); stroke-width: 2.2; }
   svg.er.hovering .er-link:not(.hot), svg.er.hovering .er-box:not(.hot):not(.center) { opacity: .25; }
+  .er-link.role { stroke-width: 1.8; }
+  .er-link.role.hot { stroke-width: 3; }
+  .er-box text.meta { font-size: 11px; fill: var(--text-2); font-variant-numeric: tabular-nums; }
+  .er-box text.meta.off { fill: var(--text-3); font-style: italic; }
+  .role-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 12px 0; }
+  .role-head .rh { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--text-2); }
+  .role-head .rh b { color: var(--text); font-size: 13px; }
+  .role-head .rh .more { color: var(--text-3); }
+  .role-sw { display: inline-block; width: 22px; height: 8px; border-radius: 4px; flex: none; }
+  .role-sw.ref { background: linear-gradient(90deg, var(--role-ref-1), var(--role-ref-10)); }
+  .role-sw.dep { background: linear-gradient(90deg, var(--role-dep-1), var(--role-dep-10)); }
+  .icon-btn.sm { padding: 2px 8px; font-size: 12px; }
+  .nlist .rk { font: 11px var(--mono); color: var(--text-3); min-width: 24px; flex: none; }
   .tl { padding: 4px 14px 12px; max-height: 320px; overflow: auto; border-top: 1px solid var(--line); }
   .tl-item { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 10px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 13px; }
   .tl-item:first-child { border-top: 0; }
@@ -597,6 +617,8 @@ const TR = {
   'Zoom out': 'Uzaklaş', 'Fit to view': 'Sığdır', 'State': 'Durum',
   'Database-wide notes': 'Veritabanı geneli notlar', 'rows': 'satır', 'No tables match.': 'Eşleşen tablo yok.',
   'PK, FK: keys · U: used in a plan · N: has a note · ←: referenced': 'PK, FK: anahtar · U: planda kullanıldı · N: notu var · ←: referans alınıyor',
+  'Reference': 'Instance', 'Dependent': 'Beslenen', 'no estimate': 'tahmin yok', '~{n} linked (est.)': '~{n} bağlı (tahmini)', '~{n} rows (est.)': '~{n} satır (tahmini)',
+  'top {s} of {n}': 'ilk {s} / {n}', 'none known': 'bilinen yok', 'Show top 5': 'İlk 5', 'Show top 10': 'İlk 10', '{n} more in Relations': '{n} tane daha İlişkiler listesinde',
 };
 let lang = 'en';
 try { lang = localStorage.getItem('auspex.viewer.lang') || ((navigator.language || '').toLowerCase().startsWith('tr') ? 'tr' : 'en'); } catch {}
@@ -1375,6 +1397,55 @@ function bfs(g, root, limit, hops) {
   return { order, depth };
 }
 
+// roles:start (tests/viewerRoles.test.js runs this block in isolation)
+// Roles around a center table, from declared foreign keys only:
+//   ref  tables the center references (TR "Instance", EN "Reference")
+//   dep  tables that reference the center (TR "Beslenen", EN "Dependent")
+// Ranked by linked rows, then by the neighbor's own row estimate. Both are
+// planner estimates; edges without linkedRows fall back to the row estimate.
+const roleTop = 10;
+const roleShown = 5;
+const rowEstimate = n => {
+  const v = n?.estRows ?? n?.estimatedRows;
+  return Number.isFinite(v) && v >= 0 ? v : null;
+};
+const byDesc = (a, b) => (b ?? -1) - (a ?? -1);
+function roleGroups(data, centerId) {
+  const byId = new Map(data.nodes.map(n => [n.id, n]));
+  const groups = { ref: new Map(), dep: new Map() };
+  for (const e of data.edges) {
+    if (e.level !== 'fk' || e.from === e.to) continue;
+    const role = e.from === centerId ? 'ref' : e.to === centerId ? 'dep' : null;
+    if (!role) continue;
+    const id = role === 'ref' ? e.to : e.from;
+    const g = groups[role].get(id) || { id, role, node: byId.get(id) || null, linkedRows: null, links: [] };
+    // Several FKs between the same pair: the largest figure, never a sum.
+    if (Number.isFinite(e.linkedRows)) g.linkedRows = Math.max(g.linkedRows ?? 0, e.linkedRows);
+    g.links.push({ centerCols: role === 'ref' ? e.columns : e.refColumns, nbCols: role === 'ref' ? e.refColumns : e.columns });
+    groups[role].set(id, g);
+  }
+  const rank = list => list.map(g => ({ ...g, rows: rowEstimate(g.node), explored: g.node?.state === 'explored' }))
+    .sort((a, b) => byDesc(a.linkedRows, b.linkedRows) || byDesc(a.rows, b.rows) || a.id.localeCompare(b.id))
+    .map((g, i) => ({ ...g, rank: i + 1, weight: g.linkedRows ?? g.rows, fromLinks: g.linkedRows !== null }));
+  return { ref: rank([...groups.ref.values()]), dep: rank([...groups.dep.values()]) };
+}
+// Rank 1 is the -1 token, rank 10 the -10 token; beyond the top 10 is grey.
+function roleColor(role, rank) {
+  if (rank > roleTop) return 'var(--role-other)';
+  const p = Math.round(((rank - 1) / (roleTop - 1)) * 100);
+  return `color-mix(in oklab, var(--role-${role}-1), var(--role-${role}-10) ${p}%)`;
+}
+// Stroke width on a log scale of the weight, relative to the largest one shown.
+function flowWidth(weight, max) {
+  if (!Number.isFinite(weight) || !Number.isFinite(max) || max <= 0) return 1.5;
+  return 1.5 + 7 * (Math.log10(1 + Math.max(0, weight)) / Math.log10(1 + max));
+}
+// roles:end
+
+const roleName = role => t(role === 'ref' ? 'Reference' : 'Dependent');
+// "~1.2M linked" when the edge carries linkedRows, else "~1.2M rows"; both estimated.
+const roleFigure = g => g.weight === null ? t('no estimate') : t(g.fromLinks ? '~{n} linked (est.)' : '~{n} rows (est.)', { n: compact(g.weight) });
+
 function changeLabel(c) {
   switch (c.change) {
     case 'column-added': return t('column {c} added ({t})', { c: c.column, t: c.type });
@@ -1424,12 +1495,20 @@ function inspector(data, id) {
   }
   const notes = data.notes.filter(x => x.schema === n.schema && x.table === n.table);
   const active = notes.filter(x => x.status === 'active'), archived = notes.filter(x => x.status !== 'active');
+  // Foreign keys in role order (Reference, then Dependent, each by rank), then
+  // used and suggested relations; every relation is listed, drawn or not.
+  const roles = roleGroups(data, id);
+  const rankOf = new Map([...roles.ref.map(g => ['ref|' + g.id, g.rank]), ...roles.dep.map(g => ['dep|' + g.id, g.rank])]);
   const order = { fk: 0, used: 1, suggested: 2 };
   const rels = data.edges.filter(e => e.from !== e.to && (e.from === id || e.to === id))
-    .map(e => ({ id: e.from === id ? e.to : e.from, level: e.level, out: e.from === id, cols: `${e.columns.join(', ')} → ${e.refColumns.join(', ')}` }))
-    .sort((a, b) => order[a.level] - order[b.level] || a.id.localeCompare(b.id));
+    .map(e => {
+      const out = e.from === id, nb = out ? e.to : e.from;
+      const role = e.level === 'fk' ? (out ? 'ref' : 'dep') : null;
+      return { id: nb, level: e.level, out, role, rank: role ? rankOf.get(`${role}|${nb}`) : null, cols: `${e.columns.join(', ')} → ${e.refColumns.join(', ')}` };
+    })
+    .sort((a, b) => order[a.level] - order[b.level] || (a.role === b.role ? 0 : a.role === 'ref' ? -1 : 1) || (a.rank ?? 0) - (b.rank ?? 0) || a.id.localeCompare(b.id));
   const events = data.changelog.filter(e => e.schema === n.schema && e.table === n.table).slice().reverse();
-  const relLimit = 40;
+  const relLimit = 200;
   return h('div', { class: 'panel insp' }, h('div', { class: 'panel-b' },
     h('h3', {}, n.id),
     h('div', { class: 'sub' }, h('span', { class: 'badge ' + n.state }, stateLabel(n.state)), n.kind ? h('span', {}, n.kind) : null),
@@ -1447,17 +1526,17 @@ function inspector(data, id) {
       archived.length ? h('button', { onclick: () => { state.memArchived = !state.memArchived; renderInspector(); } }, state.memArchived ? t('Hide archived') : t('Show archived ({n})', { n: archived.length })) : null),
     active.length || (state.memArchived && archived.length) ? [active.map(noteCard), state.memArchived ? archived.map(noteCard) : null] : h('div', { class: 'muted', style: 'font-size:13px' }, t('No notes yet.')),
     h('h4', {}, t('Relations')),
-    rels.length ? h('ul', { class: 'nlist' }, rels.slice(0, relLimit).map(r => h('li', { onclick: () => focusTable(r.id), title: `${levelLabel(r.level)}: ${r.cols}` },
-      relKey(r.level, r.out), h('span', { class: 'nm' }, r.id), h('span', { class: 'cols' }, r.cols))),
+    rels.length ? h('ul', { class: 'nlist' }, rels.slice(0, relLimit).map(r => h('li', { onclick: () => focusTable(r.id), title: `${r.role ? `${roleName(r.role)} #${r.rank} · ` : ''}${levelLabel(r.level)}: ${r.cols}` },
+      relKey(r.level, r.out, r.role ? roleColor(r.role, r.rank) : null), h('span', { class: 'rk' }, r.rank ? '#' + r.rank : ''), h('span', { class: 'nm' }, r.id), h('span', { class: 'cols' }, r.cols))),
       rels.length > relLimit ? h('li', { class: 'muted' }, t('+{n} more', { n: rels.length - relLimit })) : null) : h('div', { class: 'muted', style: 'font-size:13px' }, t('No relations known.')),
     events.length ? [h('h4', {}, t('History')), h('ul', { class: 'nlist' }, events.slice(0, 30).map(e => h('li', { style: 'cursor:default;display:block' },
       h('span', { class: 'muted', style: 'font-size:12px' }, dateTimeOf(e.at)), ' ', eventLabel(e),
       e.changes ? h('ul', { style: 'margin:2px 0 0;padding-left:18px;font-size:12px;color:var(--text-2)' }, e.changes.map(c => h('li', { style: 'border:0;padding:0;cursor:default' }, changeLabel(c)))) : null)))] : null));
 }
 // Small line sample for a relation level; the arrow tells the direction.
-function relKey(level, out) {
+function relKey(level, out, color) {
   const s = svg('svg', { width: 26, height: 10, viewBox: '0 0 26 10', style: 'flex:none' });
-  s.append(svg('line', { class: 'g-edge ' + level, x1: 1, y1: 5, x2: 19, y2: 5 }));
+  s.append(svg('line', { class: 'g-edge ' + level, x1: 1, y1: 5, x2: 19, y2: 5, style: color ? `stroke:${color};stroke-width:2.5` : null }));
   s.append(svg('path', { d: out ? 'M18,1 L25,5 L18,9' : 'M8,1 L1,5 L8,9', fill: 'none', stroke: 'var(--text-3)', 'stroke-width': 1.4 }));
   return s;
 }
@@ -1735,60 +1814,75 @@ function memTable(db, file, gen) {
 const ER = { row: 21, head: 34, pad: 8, nbw: 250, cw: 310, gap: 12, m: 16 };
 const trunc = (s, n) => (s.length > n ? s.slice(0, Math.max(1, n - 1)) + '…' : s);
 
-function erBox({ x, y, w, title, st, rows, more, center, note, delay }) {
-  const hgt = ER.head + Math.max(1, rows.length + (more ? 1 : 0)) * ER.row + ER.pad;
+function erBox({ x, y, w, title, st, rows, more, center, note, delay, meta, metaOff, stripe }) {
+  const top = ER.head + (meta ? ER.row : 0);
+  const hgt = top + Math.max(1, rows.length + (more ? 1 : 0)) * ER.row + ER.pad;
   const g = svg('g', { class: `er-box ${st || 'unexplored'}${center ? ' center' : ''}`, transform: `translate(${x},${y})`, style: delay ? `animation-delay:${delay}ms` : null });
   const tip = svg('title');
   tip.textContent = title;
   g.append(tip, svg('rect', { class: 'frame', width: w, height: hgt, rx: 8 }),
     svg('path', { class: 'head', d: `M1,${ER.head} V9 a8,8 0 0 1 8,-8 H${w - 9} a8,8 0 0 1 8,8 V${ER.head} Z` }));
-  const head = svg('text', { class: 'h', x: 10, y: 21 });
+  if (stripe) g.append(svg('path', { d: `M1,9 a8,8 0 0 1 8,-8 H11 V${hgt - 1} H9 a8,8 0 0 1 -8,-8 Z`, style: `fill:${stripe}` }));
+  const head = svg('text', { class: 'h', x: stripe ? 16 : 10, y: 21 });
   head.textContent = trunc(title, Math.floor((w - (note ? 110 : 20)) / 7));
   g.append(head);
   if (note) { const s = svg('text', { class: 'ty', x: w - 10, y: 21, 'text-anchor': 'end' }); s.textContent = note; g.append(s); }
-  if (!rows.length) { const s = svg('text', { class: 'dim', x: 10, y: ER.head + 15 }); s.textContent = t('no column info'); g.append(s); }
+  const ix = stripe ? 16 : 10;
+  if (meta) { const s = svg('text', { class: 'meta' + (metaOff ? ' off' : ''), x: ix, y: ER.head + 15 }); s.textContent = meta; g.append(s); }
+  if (!rows.length) { const s = svg('text', { class: 'dim', x: ix, y: top + 15 }); s.textContent = t('no column info'); g.append(s); }
   rows.forEach((r, i) => {
-    const y0 = ER.head + i * ER.row + 15;
+    const y0 = top + i * ER.row + 15;
     const tags = (r.tags || []).join(' ');
-    const name = svg('text', { x: 10, y: y0 });
+    const name = svg('text', { x: ix, y: y0 });
     name.textContent = trunc(r.name, Math.floor((w * 0.55) / 7));
     g.append(name);
     if (tags) { const s = svg('text', { class: 'tag', x: w - 10, y: y0, 'text-anchor': 'end' }); s.textContent = tags; g.append(s); }
     if (r.type) { const s = svg('text', { class: 'ty', x: w - 14 - tags.length * 6.5, y: y0, 'text-anchor': 'end' }); s.textContent = trunc(r.type, Math.floor((w * 0.4 - tags.length * 6.5) / 6.6)); g.append(s); }
   });
-  if (more) { const s = svg('text', { class: 'more', x: 10, y: ER.head + rows.length * ER.row + 15, 'data-more': '1' }); s.textContent = more; g.append(s); }
-  return { g, hgt };
+  if (more) { const s = svg('text', { class: 'more', x: 10, y: top + rows.length * ER.row + 15, 'data-more': '1' }); s.textContent = more; g.append(s); }
+  return { g, hgt, top };
+}
+
+// The ER diagram and the Flow view draw the top 5 (or 10) of each role; the
+// rest stays in the inspector's Relations list.
+const roleLimit = key => (state.memExpand?.[key] ? roleTop : roleShown);
+function setRoleLimit(key, open) { state.memExpand = { ...(state.memExpand || {}), [key]: open }; renderSchema(); }
+function roleHeader(key, list, title, sw = key) {
+  const limit = roleLimit(key), shown = Math.min(limit, list.length), hidden = list.length - shown;
+  return h('div', { class: 'rh ' + sw },
+    h('span', { class: 'role-sw ' + sw }), h('b', {}, title),
+    h('span', {}, list.length ? t('top {s} of {n}', { s: fmt(shown), n: fmt(list.length) }) : t('none known')),
+    list.length > roleShown ? h('button', { class: 'icon-btn sm', 'aria-expanded': String(limit === roleTop), onclick: () => setRoleLimit(key, limit !== roleTop) },
+      limit === roleTop ? t('Show top 5') : t('Show top 10')) : null,
+    hidden ? h('span', { class: 'more' }, t('{n} more in Relations', { n: fmt(hidden) })) : null);
 }
 
 async function buildEr(wrap, data, centerId, key) {
-  const center = data.nodes.find(n => n.id === centerId);
-  const edges = data.edges.filter(e => e.from === centerId || e.to === centerId);
-  const want = [center, ...new Set(edges.flatMap(e => [e.from, e.to]))].map(x => (typeof x === 'string' ? data.nodes.find(n => n.id === x) : x))
+  const roles = roleGroups(data, centerId);
+  const drawn = [...roles.ref.slice(0, roleLimit('ref')), ...roles.dep.slice(0, roleLimit('dep'))];
+  const want = [data.nodes.find(n => n.id === centerId), ...drawn.map(g => g.node)]
     .filter((n, i, a) => n?.file && (n.state === 'explored' || n.id === centerId) && a.indexOf(n) === i);
   const recs = new Map();
   await Promise.all(want.map(async n => recs.set(n.id, await memTable(state.db, n.file, data.generatedAt))));
   if (state.schemaKey !== key) return;
-  wrap.replaceChildren(erSvg(data, centerId, recs, wrap.clientWidth || 1000), h('div', { class: 'muted', style: 'font-size:11px;padding:4px 12px 10px' },
-    t('PK, FK: keys · U: used in a plan · N: has a note · ←: referenced')));
+  wrap.replaceChildren(
+    h('div', { class: 'role-head' }, roleHeader('ref', roles.ref, roleName('ref')), roleHeader('dep', roles.dep, roleName('dep'))),
+    erSvg(data, centerId, recs, roles, wrap.clientWidth || 1000),
+    h('div', { class: 'muted', style: 'font-size:11px;padding:4px 12px 10px' }, t('PK, FK: keys · U: used in a plan · N: has a note · ←: referenced')));
 }
 
-function erSvg(data, centerId, recs, width) {
+function erSvg(data, centerId, recs, roles, width) {
   const center = data.nodes.find(n => n.id === centerId);
   const rec = recs.get(centerId);
   const notes = data.notes.filter(n => n.status === 'active' && `${n.schema}.${n.table}` === centerId);
-  const groups = new Map();
-  const selfFk = new Set();
+  // Column tags come from every relation of the center, drawn or not.
+  const selfFk = new Set(), fkOut = new Set(), refIn = new Set();
   for (const e of data.edges) {
     if (e.from !== centerId && e.to !== centerId) continue;
     if (e.from === e.to) { e.columns.forEach(c => selfFk.add(c)); continue; }
-    const out = e.from === centerId, nb = out ? e.to : e.from, gk = (out ? 'R|' : 'L|') + nb;
-    if (!groups.has(gk)) groups.set(gk, { id: nb, side: out ? 'right' : 'left', links: [] });
-    groups.get(gk).links.push({ level: e.level, centerCols: out ? e.columns : e.refColumns, nbCols: out ? e.refColumns : e.columns });
+    if (e.from === centerId) e.columns.forEach(c => fkOut.add(c)); else e.refColumns.forEach(c => refIn.add(c));
   }
-  const all = [...groups.values()];
   const pk = new Set(rec?.constraints?.find(c => c.type === 'primary key')?.columns || []);
-  const fkOut = new Set(all.filter(x => x.side === 'right').flatMap(x => x.links.flatMap(l => l.centerCols)));
-  const refIn = new Set(all.filter(x => x.side === 'left').flatMap(x => x.links.flatMap(l => l.centerCols)));
   const used = rec?.usedColumns || {};
   const noted = new Set(notes.map(n => n.column).filter(Boolean));
   const tagsOf = c => [pk.has(c) && 'PK', (fkOut.has(c) || selfFk.has(c)) && 'FK', refIn.has(c) && !pk.has(c) && '←', used[c] && 'U', noted.has(c) && 'N'].filter(Boolean);
@@ -1801,22 +1895,26 @@ function erSvg(data, centerId, recs, width) {
 
   const W = Math.max(width - 2, 2 * ER.nbw + ER.cw + 160);
   const cx = Math.round((W - ER.cw) / 2), lx = ER.m, rx = W - ER.m - ER.nbw;
-  const rowY = (top, i) => top + ER.head + i * ER.row + ER.row / 2 - 1;
+  const rowY = (y, top, i) => y + top + i * ER.row + ER.row / 2 - 1;
   const boxes = [];
-  let ly = ER.m, ry = ER.m;
-  for (const gr of all.sort((a, b) => a.id.localeCompare(b.id))) {
-    const node = data.nodes.find(n => n.id === gr.id);
-    const nrec = recs.get(gr.id);
-    const bcols = [...new Set(gr.links.flatMap(l => l.nbCols))];
-    const types = new Map((nrec?.columns || []).map(c => [c.name, c.type]));
-    const hgt = ER.head + Math.max(1, bcols.length) * ER.row + ER.pad;
-    const left = gr.side === 'left';
-    boxes.push({ ...gr, node, bcols, types, x: left ? lx : rx, y: left ? ly : ry });
-    if (left) ly += hgt + ER.gap; else ry += hgt + ER.gap;
+  let ly = ER.m, ry = ER.m, i = 0;
+  for (const role of ['ref', 'dep']) {
+    for (const gr of roles[role].slice(0, roleLimit(role))) {
+      const left = role === 'ref';
+      const x = left ? lx : rx, y = left ? ly : ry;
+      const bcols = [...new Set(gr.links.flatMap(l => l.nbCols))];
+      const types = new Map((recs.get(gr.id)?.columns || []).map(c => [c.name, c.type]));
+      const box = erBox({ x, y, w: ER.nbw, title: gr.id, st: gr.node?.state, delay: reduceMotion ? 0 : Math.min(i++ * 25, 900),
+        stripe: roleColor(role, gr.rank), metaOff: !gr.explored,
+        meta: `#${gr.rank} · ${roleFigure(gr)} · ${stateLabel(gr.node?.state || 'unexplored')}`,
+        rows: bcols.map(c => ({ name: c, type: types.get(c) || '' })) });
+      boxes.push({ ...gr, box, bcols, x, y });
+      if (left) ly += box.hgt + ER.gap; else ry += box.hgt + ER.gap;
+    }
   }
   const centerBox = erBox({
     x: cx, y: ER.m, w: ER.cw, title: centerId, st: center?.state, center: true, more,
-    note: center?.estimatedRows !== null && center?.estimatedRows !== undefined ? `~${compact(center.estimatedRows)} ${t('rows')}` : null,
+    note: rowEstimate(center) !== null ? `~${compact(rowEstimate(center))} ${t('rows')}` : null,
     rows: shown.map(c => ({ name: c.name, type: c.type, tags: tagsOf(c.name) })),
   });
   const H = Math.max(ly, ry, ER.m + centerBox.hgt + ER.m) + ER.m;
@@ -1824,22 +1922,20 @@ function erSvg(data, centerId, recs, width) {
   const linkLayer = svg('g'), boxLayer = svg('g');
   root.append(linkLayer, boxLayer);
   const centerRows = shown.map(c => c.name);
-  boxes.forEach((b, i) => {
-    const box = erBox({ x: b.x, y: b.y, w: ER.nbw, title: b.id, st: b.node?.state, delay: reduceMotion ? 0 : Math.min(i * 25, 900),
-      note: b.node?.state === 'explored' ? null : stateLabel(b.node?.state || 'unexplored'),
-      rows: b.bcols.map(c => ({ name: c, type: b.types.get(c) || '' })) });
-    box.g.dataset.id = b.id;
-    boxLayer.append(box.g);
+  for (const b of boxes) {
+    b.box.g.dataset.id = b.id;
+    boxLayer.append(b.box.g);
     for (const l of b.links) {
       for (let k = 0; k < Math.max(l.centerCols.length, l.nbCols.length, 1); k++) {
         const ci = centerRows.indexOf(l.centerCols[k] ?? l.centerCols[0]);
-        const cyA = ci >= 0 ? rowY(ER.m, ci) : ER.m + ER.head / 2;
-        const ny = rowY(b.y, Math.max(0, b.bcols.indexOf(l.nbCols[k] ?? l.nbCols[0])));
-        const [x1, y1, x2, y2] = b.side === 'left' ? [b.x + ER.nbw, ny, cx, cyA] : [cx + ER.cw, cyA, b.x, ny];
-        linkLayer.append(svg('path', { class: 'er-link ' + l.level, 'data-id': b.id, d: `M${x1},${y1} C${x1 + 70},${y1} ${x2 - 70},${y2} ${x2},${y2}` }));
+        const cyA = ci >= 0 ? rowY(ER.m, centerBox.top, ci) : ER.m + ER.head / 2;
+        const ny = rowY(b.y, b.box.top, Math.max(0, b.bcols.indexOf(l.nbCols[k] ?? l.nbCols[0])));
+        const [x1, y1, x2, y2] = b.role === 'ref' ? [b.x + ER.nbw, ny, cx, cyA] : [cx + ER.cw, cyA, b.x, ny];
+        linkLayer.append(svg('path', { class: 'er-link fk role', 'data-id': b.id, style: `stroke:${roleColor(b.role, b.rank)}`,
+          d: `M${x1},${y1} C${x1 + 70},${y1} ${x2 - 70},${y2} ${x2},${y2}` }));
       }
     }
-  });
+  }
   boxLayer.append(centerBox.g);
   root.addEventListener('mouseover', ev => {
     const id = ev.target.closest('.er-box')?.dataset.id || null;
@@ -1909,7 +2005,7 @@ function renderSchema() {
   let focus = memFocus();
   if (!focus || !g.byId.has(focus)) focus = sel && g.byId.has(sel) ? sel : defaultRoot(g);
   const key = [state.db, data.generatedAt, state.memMode, g.schema, lang, !!state.memTimeline,
-    state.memMode === 'er' ? `${sel}|${!!state.memErAll}` : `${focus}|${!!state.memShowAll}`].join('|');
+    state.memMode === 'er' ? `${sel}|${!!state.memErAll}|${JSON.stringify(state.memExpand || {})}` : `${focus}|${!!state.memShowAll}`].join('|');
   if (state.schemaKey === key && view.firstChild) { applyMemSearch(); return; }
   state.schemaKey = key;
   stopGraph();
