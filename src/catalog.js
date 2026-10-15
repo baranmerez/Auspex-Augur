@@ -557,3 +557,174 @@ ${branches.join('\nunion all\n')}`;
     }, timeoutSeconds);
   }, r => ({ statements: r.statements }));
 }
+
+// ---------- relation_stats: neighbours ranked by statistics ----------
+
+export const maxRelationStatsTables = 50;
+
+// For each center relation, its foreign keys in both directions: instance =
+// a table the center references, dependent = a table that references the
+// center. A self-reference is listed in both roles. Constraints cloned onto
+// partitions (conparentid <> 0) are left out; the parent's constraint stands
+// for them. $3 limits the neighbours to one schema.
+const relationStatsCatalogSql = `
+select r.ord::int as ord, c.oid::bigint as oid, c.relkind,
+       case when c.reltuples < 0 then null else c.reltuples::bigint end as est_rows, -- -1 = never analyzed
+       has_table_privilege(c.oid, 'SELECT') as can_select,
+       (select coalesce(jsonb_agg(jsonb_build_object(
+                 'role', k.role,
+                 'constraint', con.conname,
+                 'schema', on_.nspname,
+                 'table', oc.relname,
+                 'relkind', oc.relkind,
+                 'estRows', case when oc.reltuples < 0 then null else oc.reltuples::bigint end,
+                 'canSelect', has_table_privilege(oc.oid, 'SELECT'),
+                 'columns', ${keyColumns('con.conkey', 'con.conrelid')},
+                 'refColumns', ${keyColumns('con.confkey', 'con.confrelid')}) order by k.role, on_.nspname, oc.relname, con.conname), '[]'::jsonb)
+        from pg_constraint con
+        cross join lateral (values ('instance'), ('dependent')) as k(role)
+        join pg_class oc on oc.oid = case k.role when 'instance' then con.confrelid else con.conrelid end
+        join pg_namespace on_ on on_.oid = oc.relnamespace
+        where con.contype = 'f' and con.conparentid = 0
+          and case k.role when 'instance' then con.conrelid else con.confrelid end = c.oid
+          and ($3::text is null or on_.nspname = $3)) as edges
+from unnest($1::text[], $2::text[]) with ordinality as r(schema, name, ord)
+left join pg_namespace n on n.nspname = r.schema
+left join pg_class c on c.relnamespace = n.oid and c.relname = r.name and c.relkind in ('r', 'p', 'v', 'm', 'f')
+order by r.ord`;
+
+// null_frac of the requested columns. pg_stats only shows columns the role
+// may read (and hides tables whose row security applies to the role). A
+// partitioned table only has statistics over its partitions (inherited).
+const relationStatsNullFracSql = `
+select r.ord::int as ord, s.null_frac
+from unnest($1::text[], $2::text[], $3::text[], $4::boolean[]) with ordinality as r(schema, tbl, col, inh, ord)
+left join pg_stats s on s.schemaname = r.schema and s.tablename = r.tbl and s.attname = r.col and s.inherited = r.inh
+order by r.ord`;
+
+export const relationStatsNote = 'Estimates from planner statistics only; no table is read. linkedRows = estimated rows of the referencing table '
+  + '(the dependent table, or the center for an instance table) x (1 - null_frac of its foreign key column; for a multi-column key the '
+  + 'largest null_frac, so an upper bound). linkedRows is null with stats "missing" when the referencing table was never analyzed '
+  + '(reltuples < 0) or pg_stats has no row for a key column: pg_stats only shows columns the role may read, hides tables whose row '
+  + 'security applies to the role, and a partitioned table has statistics only after ANALYZE on the parent (autovacuum does not analyze it). '
+  + 'Relations without SELECT privilege are not listed, only counted in hidden.';
+
+// Rows linking through one foreign key, from the referencing table's row
+// estimate and the null_frac of its key columns; null when any is unknown.
+export function linkedRowsEstimate(estRows, nullFracs) {
+  if (estRows === null || estRows === undefined || !nullFracs.length || nullFracs.some(f => f === null || f === undefined)) {
+    return { linkedRows: null, stats: 'missing' };
+  }
+  const worst = Math.min(1, Math.max(0, ...nullFracs.map(Number)));
+  return { linkedRows: Math.round(Number(estRows) * (1 - worst)), stats: 'ok' };
+}
+
+// linkedRows desc, then the table's estimated rows desc (unknown last), then
+// by name. Equal figures share a rank (1, 2, 2, 4).
+export function rankNeighbours(items) {
+  const desc = (a, b) => (a === b ? 0 : a === null ? 1 : b === null ? -1 : b - a);
+  const sorted = [...items].sort((a, b) => desc(a.linkedRows, b.linkedRows) || desc(a.tableEstRows, b.tableEstRows)
+    || a.relation.localeCompare(b.relation) || a.constraint.localeCompare(b.constraint));
+  let rank = 0;
+  return sorted.map((item, i) => {
+    const prev = sorted[i - 1];
+    if (!prev || prev.linkedRows !== item.linkedRows || prev.tableEstRows !== item.tableEstRows) rank = i + 1;
+    return { ...item, rank };
+  });
+}
+
+// relation_stats: for up to 50 centers, the instance and dependent tables
+// ranked by estimated linked rows. At most 2 catalog statements in one READ
+// ONLY transaction (relations and foreign keys, then pg_stats), however many
+// centers and neighbours; field statements.
+export async function relationStats(db, profile, tables, schema) {
+  const list = Array.isArray(tables) ? uniqueTrimmed(tables) : [];
+  return db.audited('relation_stats', { profile: profile ?? null, tables: list, schema: schema || null }, () => {
+    if (list.length < 1 || list.length > maxRelationStatsTables) throw new ToolError('INVALID_INPUT', `tables must list 1 to ${maxRelationStatsTables} relations as schema.table.`);
+    return db.withReadOnly(profile, async (client, name) => {
+      const parsed = list.map(text => {
+        try {
+          return parseTableRef(text);
+        } catch (err) {
+          return { input: text, error: err.message };
+        }
+      });
+      const valid = parsed.filter(p => !p.error);
+      let statements = 0;
+      let catalog = [];
+      if (valid.length) {
+        statements++;
+        catalog = (await client.query(relationStatsCatalogSql, [valid.map(r => r.schema), valid.map(r => r.table), schema || null])).rows;
+      }
+      const byOrd = new Map(catalog.map(r => [Number(r.ord), r]));
+
+      const centers = valid.map((ref, i) => {
+        const rel = byOrd.get(i + 1);
+        const relation = relationName(ref);
+        if (!rel || rel.oid === null || rel.oid === undefined) return { relation, error: `Relation ${relation} not found (or not a table, view, materialized view or foreign table).` };
+        if (!rel.can_select) return { relation, error: `No SELECT privilege on ${relation}; its relations are not shown.` };
+        const hidden = { instance: 0, dependent: 0 };
+        const edges = [];
+        for (const e of rel.edges ?? []) {
+          if (e.canSelect) edges.push(e);
+          else hidden[e.role]++;
+        }
+        return { ref, rel, relation, hidden, edges };
+      });
+
+      // One null_frac lookup per referencing (table, column), shared by edges.
+      const lookups = new Map();
+      const lookup = (s, t, relkind, column) => {
+        const key = JSON.stringify([s, t, column, relkind === 'p']);
+        if (!lookups.has(key)) lookups.set(key, { schema: s, table: t, column, inherited: relkind === 'p', ord: lookups.size + 1 });
+        return lookups.get(key);
+      };
+      for (const c of centers.filter(c => !c.error)) {
+        for (const e of c.edges) {
+          const [s, t, relkind] = e.role === 'instance' ? [c.ref.schema, c.ref.table, c.rel.relkind] : [e.schema, e.table, e.relkind];
+          e.lookups = (e.columns ?? []).map(column => lookup(s, t, relkind, column));
+        }
+      }
+      const nullFrac = new Map();
+      if (lookups.size) {
+        const req = [...lookups.values()];
+        statements++;
+        const res = await client.query(relationStatsNullFracSql, [req.map(r => r.schema), req.map(r => r.table), req.map(r => r.column), req.map(r => r.inherited)]);
+        for (const r of res.rows) nullFrac.set(Number(r.ord), r.null_frac === null || r.null_frac === undefined ? null : Number(r.null_frac));
+      }
+
+      let next = 0;
+      const results = parsed.map(p => {
+        if (p.error) return { relation: p.input, error: p.error };
+        const c = centers[next++];
+        if (c.error) return c;
+        const centerRows = toNumber(c.rel.est_rows);
+        const items = role => rankNeighbours(c.edges.filter(e => e.role === role).map(e => {
+          const tableEstRows = toNumber(e.estRows);
+          return {
+            relation: `${e.schema}.${e.table}`,
+            schema: e.schema,
+            table: e.table,
+            constraint: e.constraint,
+            columns: e.columns ?? [],
+            refColumns: e.refColumns ?? [],
+            ...linkedRowsEstimate(role === 'instance' ? centerRows : tableEstRows, e.lookups.map(l => nullFrac.get(l.ord) ?? null)),
+            tableEstRows,
+          };
+        }));
+        return {
+          relation: c.relation,
+          schema: c.ref.schema,
+          table: c.ref.table,
+          kind: relationKinds[c.rel.relkind] ?? c.rel.relkind,
+          estRows: centerRows,
+          instance: items('instance'),
+          dependent: items('dependent'),
+          hidden: c.hidden,
+        };
+      });
+      const found = results.filter(r => !r.error).length;
+      return { profile: name, ...(schema ? { schema } : {}), statements, note: relationStatsNote, tables: results, found, notFound: results.length - found };
+    });
+  }, r => ({ statements: r.statements, found: r.found, notFound: r.notFound }));
+}

@@ -12,7 +12,7 @@ import path from 'node:path';
 import { loadConfig } from '../src/config.js';
 import { ReadOnlyDatabase } from '../src/db.js';
 import { classifyError } from '../src/errors.js';
-import { listSchemas, listTables, describeTable, describeTables, profileTables, search } from '../src/catalog.js';
+import { listSchemas, listTables, describeTable, describeTables, profileTables, relationStats, search } from '../src/catalog.js';
 import { ReportService } from '../src/reports/service.js';
 import { SchemaMemory } from '../src/memory/store.js';
 
@@ -457,4 +457,30 @@ test('profile_tables applies the parent window and the timeout', async () => {
   assert.equal(capped.tables[0].fanOut.parentRows, 2);
   assert.equal(capped.tables[0].fanOut.parentRowsCapped, true);
   await assert.rejects(profileTables(db, 'local', { tables: ['auspex_test.worker";select 1'] }), /Invalid table/);
+});
+
+test('relation_stats links region and worker from planner statistics in at most 2 statements and records them', async () => {
+  const r = await relationStats(db, 'local', ['auspex_test.region', 'auspex_test.worker', 'auspex_test.secret_note']);
+  assert.ok(r.statements <= 2);
+  const [region, worker, secret] = r.tables;
+  assert.match(secret.error, /No SELECT privilege/);
+  const dependent = region.dependent.find(d => d.relation === 'auspex_test.worker');
+  const instance = worker.instance.find(d => d.relation === 'auspex_test.region');
+  assert.deepEqual([dependent.constraint, dependent.columns, dependent.refColumns], ['worker_region_id_fkey', ['region_id'], ['id']]);
+  assert.equal(instance.constraint, 'worker_region_id_fkey');
+  // The setup may or may not have analyzed the tables: either way the figure
+  // must match the statistics, and unknown stays null.
+  const stats = (await raw(`select c.reltuples, s.null_frac from pg_class c
+    left join pg_stats s on s.schemaname = 'auspex_test' and s.tablename = 'worker' and s.attname = 'region_id' and not s.inherited
+    where c.oid = 'auspex_test.worker'::regclass`)).rows[0];
+  const expected = stats.reltuples < 0 || stats.null_frac === null ? null : Math.round(stats.reltuples * (1 - stats.null_frac));
+  assert.equal(dependent.linkedRows, expected);
+  assert.equal(instance.linkedRows, expected);
+  assert.equal(dependent.stats, expected === null ? 'missing' : 'ok');
+  assert.equal(dependent.rank, 1);
+
+  const memory = new SchemaMemory(fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-it-relstats-')));
+  memory.recordRelationStats('local', r.tables.filter(t => !t.error));
+  const edge = memory.graph('local').edges.find(e => e.from === 'auspex_test.worker' && e.to === 'auspex_test.region');
+  assert.deepEqual([edge.linkedRows, edge.estimated], [expected, true]);
 });
