@@ -25,14 +25,16 @@ function queryPasswordKeys(url) {
   return [...new Set([...url.searchParams.keys()].filter(k => passwordOptions.has(k.toLowerCase())))];
 }
 
-// The only query options a profile URL may carry: where to connect, TLS and
-// connection housekeeping. Anything else is refused, notably `options`
+// The only query options a profile URL may carry: TLS and connection
+// housekeeping. Anything else is refused, notably `host` and `port` (node-postgres
+// would let them override the URL authority, so the endpoint shown to the
+// user could differ from the one used), `options`
 // (session settings such as -c search_path or -c default_transaction_read_only),
 // `replication`, `client_encoding`, overrides of the user or database, and
 // timeouts (Auspex sets its own). Names must match exactly, as node-postgres
 // reads them.
+const endpointOptions = new Set(['host', 'port']);
 export const allowedQueryOptions = new Set([
-  'host', 'port',
   'ssl', 'sslmode', 'sslcert', 'sslkey', 'sslrootcert', 'sslnegotiation', 'uselibpqcompat',
   'application_name', 'fallback_application_name', 'connect_timeout', 'keepalives', 'keepalives_idle',
 ]);
@@ -51,6 +53,10 @@ function validateProfileUrl(text, where, field) {
   if (url.password) throw new Error(`Invalid ${where}: remove the password from ${field} and put it in pgpass.`);
   const keys = queryPasswordKeys(url);
   if (keys.length) throw new Error(`Invalid ${where}: remove the "${keys.join('", "')}" option from ${field} and put the password in pgpass.`);
+  const endpoint = [...new Set([...url.searchParams.keys()].filter(k => endpointOptions.has(k.toLowerCase())))];
+  if (endpoint.length) {
+    throw new Error(`Invalid ${where}: remove the "${endpoint.join('", "')}" option from ${field} and put the host and port in the URL authority (postgresql://user@host:port/db).`);
+  }
   const other = [...new Set([...url.searchParams.keys()].filter(k => !allowedQueryOptions.has(k)))];
   if (other.length) {
     throw new Error(`Invalid ${where}: option(s) "${other.join('", "')}" are not allowed in ${field}. Allowed: ${[...allowedQueryOptions].join(', ')}.`);
@@ -210,8 +216,10 @@ export function loadConfig(env = process.env) {
 export function describeConnection(connectionString) {
   try {
     const url = new URL(connectionString);
+    // As node-postgres reads it: IPv6 without brackets, percent-decoded
+    // (a Unix socket directory is written %2Fvar%2Frun%2Fpostgresql).
     return {
-      host: url.hostname,
+      host: decodeURIComponent(url.hostname.replace(/^\[(.*)\]$/, '$1')),
       port: url.port || '5432',
       database: decodeURIComponent(url.pathname.replace(/^\//, '')),
       user: decodeURIComponent(url.username),
