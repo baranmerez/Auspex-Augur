@@ -4,9 +4,12 @@
 // guarded section is short file work.
 //
 // The lock is a file created with 'wx' (atomic create-if-absent) holding the
-// owner's pid, host and a random token. It is taken over when the owner
-// process is gone (same host) or the file is older than staleMs. Waiting is
-// bounded; after waitMs the caller gets a LockBusyError and may retry.
+// owner's pid, host and a random token. An owner on this host whose pid is
+// alive keeps the lock however long it holds it; a dead owner's lock is taken
+// over at once. Age (staleMs) decides only when liveness cannot be checked
+// (unreadable body, another host). Locks are same-host only: network
+// filesystems shared between hosts are not supported. Waiting is bounded;
+// after waitMs the caller gets a LockBusyError and may retry.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -35,13 +38,15 @@ function readOwner(file) {
   }
 }
 
-function ownerIsGone(owner) {
-  if (!owner || owner.host !== os.hostname() || !Number.isInteger(owner.pid)) return false;
+// 'alive' or 'gone' for an owner on this host with a pid; 'unknown' otherwise.
+function ownerState(owner) {
+  if (!owner || owner.host !== os.hostname() || !Number.isInteger(owner.pid) || owner.pid <= 0) return 'unknown';
   try {
     process.kill(owner.pid, 0);
-    return false;
+    return 'alive';
   } catch (err) {
-    return err.code === 'ESRCH';
+    if (err.code === 'ESRCH') return 'gone';
+    return err.code === 'EPERM' ? 'alive' : 'unknown'; // EPERM: exists, owned by another user
   }
 }
 
@@ -55,7 +60,12 @@ function snapshot(file) {
   return { owner, key, mtimeMs: Number(stat.mtimeMs) };
 }
 
-const isStale = (snap, staleMs) => !!snap && (ownerIsGone(snap.owner) || Date.now() - snap.mtimeMs > staleMs);
+function isStale(snap, staleMs) {
+  if (!snap) return false;
+  const state = ownerState(snap.owner);
+  if (state !== 'unknown') return state === 'gone';
+  return Date.now() - snap.mtimeMs > staleMs;
+}
 
 // Retires one stale generation of the lock. Only the process that creates the
 // generation's takeover marker may move it aside, and it re-checks that the
@@ -113,7 +123,7 @@ function acquire(lockPath, { waitMs, staleMs }) {
 function release(lockPath, token) {
   // Only remove the lock if it is still ours (it may have been taken over).
   // A failure here never masks the guarded function's result or error; the
-  // pid/age takeover recovers a lock left behind.
+  // dead-owner takeover recovers a lock left behind.
   try {
     if (readOwner(lockPath)?.token === token) fs.rmSync(lockPath, { force: true, maxRetries: 5, retryDelay: 20 });
   } catch { /* see above */ }
