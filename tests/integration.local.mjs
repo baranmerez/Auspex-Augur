@@ -11,6 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { loadConfig } from '../src/config.js';
 import { ReadOnlyDatabase } from '../src/db.js';
+import { classifyError } from '../src/errors.js';
 import { listSchemas, listTables, describeTable, describeTables, profileTables, search } from '../src/catalog.js';
 import { ReportService } from '../src/reports/service.js';
 import { SchemaMemory } from '../src/memory/store.js';
@@ -104,7 +105,7 @@ test('query truncates at maxRows', async () => {
 });
 
 test('query on a table without grant is denied by the database', async () => {
-  await assert.rejects(db.query('local', 'select * from auspex_test.secret_note'), /permission denied/);
+  await assert.rejects(db.query('local', 'select * from auspex_test.secret_note'), err => /permission denied/.test(err.message) && classifyError(err).code === 'PERMISSION_DENIED');
 });
 
 test('direct writes are blocked by the database even without sqlGuard', async () => {
@@ -192,7 +193,7 @@ test('statement timeout cancels long queries', async () => {
   try {
     await assert.rejects(
       fast.query('local', 'select count(*) from generate_series(1, 100000000) a'),
-      /statement timeout|canceling statement/);
+      err => /statement timeout|canceling statement/.test(err.message) && classifyError(err).code === 'TIMEOUT' && classifyError(err).sqlState === '57014');
   } finally {
     await fast.close();
   }

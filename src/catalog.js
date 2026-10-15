@@ -1,3 +1,5 @@
+import { ToolError } from './errors.js';
+
 // Catalog queries used for browsing. They are fixed, parameterized SQL and run
 // inside the same READ ONLY transaction wrapper as user queries.
 
@@ -139,7 +141,7 @@ limit 501`;
 // Plain words become a contains-match; a pattern with % or _ is used as given.
 export function toIlikePattern(text) {
   const value = String(text || '').trim();
-  if (!value) throw new Error('Search text is empty.');
+  if (!value) throw new ToolError('INVALID_INPUT', 'Search text is empty.');
   return /[%_]/.test(value) ? value : `%${value}%`;
 }
 
@@ -197,14 +199,14 @@ const nameRule = 'quotes, semicolons, dots, colons, backslashes and whitespace a
 export function parseTableRef(text, { allowColumn = false } = {}) {
   const m = tableRefPattern.exec(String(text ?? '').trim());
   if (!m || (m[3] !== undefined && !allowColumn)) {
-    throw new Error(`Invalid table "${text}": use schema.table${allowColumn ? ' or schema.table:column' : ''}; ${nameRule}.`);
+    throw new ToolError('INVALID_INPUT', `Invalid table "${text}": use schema.table${allowColumn ? ' or schema.table:column' : ''}; ${nameRule}.`);
   }
   return m[3] === undefined ? { schema: m[1], table: m[2] } : { schema: m[1], table: m[2], column: m[3] };
 }
 
 export function checkName(text, what) {
   const value = String(text ?? '').trim();
-  if (!namePattern.test(value)) throw new Error(`Invalid ${what} "${text}": ${nameRule}.`);
+  if (!namePattern.test(value)) throw new ToolError('INVALID_INPUT', `Invalid ${what} "${text}": ${nameRule}.`);
   return value;
 }
 
@@ -282,7 +284,7 @@ async function describeRelations(client, name, refs) {
 export async function describeTable(db, profile, schema, table) {
   return db.audited('describe_table', { profile: profile ?? null, schema, table }, () => db.withReadOnly(profile, async (client, name) => {
     const [result] = (await describeRelations(client, name, [{ schema, table }])).tables;
-    if (result.error) throw new Error(result.error);
+    if (result.error) throw new ToolError('NOT_FOUND', result.error);
     return result;
   }));
 }
@@ -295,7 +297,7 @@ const uniqueTrimmed = list => [...new Set(list.map(t => String(t ?? '').trim()))
 export async function describeTables(db, profile, tables) {
   const list = Array.isArray(tables) ? uniqueTrimmed(tables) : [];
   return db.audited('describe_tables', { profile: profile ?? null, tables: list }, () => {
-    if (list.length < 1 || list.length > maxDescribeTables) throw new Error(`tables must list 1 to ${maxDescribeTables} relations as schema.table.`);
+    if (list.length < 1 || list.length > maxDescribeTables) throw new ToolError('INVALID_INPUT', `tables must list 1 to ${maxDescribeTables} relations as schema.table.`);
     return db.withReadOnly(profile, async (client, name) => {
       const parsed = list.map(text => {
         try {
@@ -354,22 +356,22 @@ export const samplingNote = 'Column statistics are computed on a sample of at mo
 
 function validateProfileArgs({ tables, parent, window, sampleRows }) {
   const list = Array.isArray(tables) ? uniqueTrimmed(tables) : [];
-  if (list.length < 1 || list.length > maxProfileTables) throw new Error(`tables must list 1 to ${maxProfileTables} relations as schema.table.`);
+  if (list.length < 1 || list.length > maxProfileTables) throw new ToolError('INVALID_INPUT', `tables must list 1 to ${maxProfileTables} relations as schema.table.`);
   const refs = list.map(text => ({ input: text, ...parseTableRef(text, { allowColumn: true }) }));
   let parentRef = null;
   if (parent) {
     parentRef = { ...parseTableRef(parent.table), key: checkName(parent.key, 'parent key column') };
   } else if (refs.some(r => r.column !== undefined)) {
-    throw new Error('schema.table:column names the fan-out column to the parent; give parent as well.');
+    throw new ToolError('INVALID_INPUT', 'schema.table:column names the fan-out column to the parent; give parent as well.');
   }
   let win = null;
   if (window) {
-    if (!parentRef) throw new Error('window filters the parent table; give parent as well.');
-    if (typeof window.from !== 'string' || typeof window.to !== 'string' || !window.from || !window.to) throw new Error('window needs from and to.');
+    if (!parentRef) throw new ToolError('INVALID_INPUT', 'window filters the parent table; give parent as well.');
+    if (typeof window.from !== 'string' || typeof window.to !== 'string' || !window.from || !window.to) throw new ToolError('INVALID_INPUT', 'window needs from and to.');
     win = { column: checkName(window.column, 'window column'), from: window.from, to: window.to };
   }
   const rows = sampleRows ?? defaultSampleRows;
-  if (!Number.isInteger(rows) || rows < 1 || rows > maxSampleRows) throw new Error(`sampleRows must be an integer from 1 to ${maxSampleRows}.`);
+  if (!Number.isInteger(rows) || rows < 1 || rows > maxSampleRows) throw new ToolError('INVALID_INPUT', `sampleRows must be an integer from 1 to ${maxSampleRows}.`);
   return { refs, parentRef, win, rows };
 }
 
@@ -433,15 +435,15 @@ export async function profileTables(db, profile, { tables, parent, window, sampl
       let windowColumn = null;
       if (parentRef) {
         parentRel = found(refs.length);
-        if (!parentRel) throw new Error(`Parent ${relationName(parentRef)} not found (or not a table, view, materialized view or foreign table).`);
+        if (!parentRel) throw new ToolError('NOT_FOUND', `Parent ${relationName(parentRef)} not found (or not a table, view, materialized view or foreign table).`);
         const cols = new Map(parentRel.columns.map(c => [c.name, c]));
         parentKey = cols.get(parentRef.key);
-        if (!parentKey) throw new Error(`Parent key column ${parentRef.key} not found in ${relationName(parentRef)}.`);
-        if (!parentKey.canSelect) throw new Error(`No SELECT privilege on ${relationName(parentRef)}.${parentRef.key}.`);
+        if (!parentKey) throw new ToolError('NOT_FOUND', `Parent key column ${parentRef.key} not found in ${relationName(parentRef)}.`);
+        if (!parentKey.canSelect) throw new ToolError('PERMISSION_DENIED', `No SELECT privilege on ${relationName(parentRef)}.${parentRef.key}.`);
         if (win) {
           windowColumn = cols.get(win.column);
-          if (!windowColumn) throw new Error(`Window column ${win.column} not found in ${relationName(parentRef)}.`);
-          if (!windowColumn.canSelect) throw new Error(`No SELECT privilege on ${relationName(parentRef)}.${win.column}.`);
+          if (!windowColumn) throw new ToolError('NOT_FOUND', `Window column ${win.column} not found in ${relationName(parentRef)}.`);
+          if (!windowColumn.canSelect) throw new ToolError('PERMISSION_DENIED', `No SELECT privilege on ${relationName(parentRef)}.${win.column}.`);
         }
       }
 

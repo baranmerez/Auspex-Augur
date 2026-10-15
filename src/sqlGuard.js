@@ -26,7 +26,9 @@ const forbiddenFunctions = [
   /^query_to_xml/, /^cursor_to_xml/, /^ts_stat$/, /^ts_rewrite$/,
 ];
 
-class SqlGuardError extends Error {}
+class SqlGuardError extends Error {
+  errorCode = 'SQL_REJECTED'; // src/errors.js
+}
 
 // Decodes the body of a U&"..." identifier: \XXXX and \+XXXXXX code points and
 // a doubled escape character, with the escape character from UESCAPE if given.
