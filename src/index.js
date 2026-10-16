@@ -61,7 +61,7 @@ const instructions = [
   'Before describing a table again, call table_knowledge: it answers from memory without touching the database.',
   `When you need several tables, do not loop over describe_table or send one measuring query per table: use describe_tables for the structure of up to ${maxDescribeTables} tables and profile_tables for row estimates, fill rates, distinct counts and parent-child fan-out of up to ${maxProfileTables} tables. Each takes a constant number of statements however many tables are listed. To see which neighbours of a table matter most, relation_stats ranks its referenced (instance) and referencing (dependent) tables by estimated linked rows from planner statistics, without reading data.`,
   'When the user states a business rule, save it with remember kind=rule. Save a finding from data as kind=observation with evidence (the SQL and aggregate figures only, never row values or personal data). Your own interpretations are kind=inference; never present them as fact, and confirm one only after the user agreed.',
-  'Write schema-memory notes in the notesLanguage from list_profiles. If it is null, ask the user once "Which language should notes be saved in?" (in the user language), use the answer for this conversation and suggest adding "notesLanguage": "<code>" to profiles.json. Do not translate existing notes.',
+  'Write every user-facing text you save into Auspex files in the notesLanguage from list_profiles: remember note text, save_report title, description and note, and save_execute_script title and purpose (and comments inside the script). Identifiers, SQL and column aliases are not translated. If notesLanguage is null, ask the user once "Which language should notes and report texts be saved in?" (in the user language), use the answer for this conversation and suggest adding "notesLanguage": "<code>" to profiles.json. Do not translate existing notes.',
   'Results may carry notes for the tables they touched; take them into account.',
   'When a report or analysis is finished and results listed unexploredNeighbors, name them and ask the user whether to explore them. Only after a yes, call describe_tables on them (structure only); do not query their data unless asked.',
 ].join(' ');
@@ -123,7 +123,7 @@ if (typeof server.createToolError === 'function') {
 
 tool('list_profiles', {
   title: 'List connection profiles',
-  description: 'Lists configured database profiles with description, host, database, user, timeout limit and query budget per minute (never passwords), the script roots (named folders save_execute_script can write change scripts into) and notesLanguage (language for schema-memory notes, null when not configured). Call this and ask the user which profile to use when they have not named one in this conversation; show each description so production databases are clearly marked.',
+  description: 'Lists configured database profiles with description, host, database, user, timeout limit and query budget per minute (never passwords), the script roots (named folders save_execute_script can write change scripts into) and notesLanguage (language for schema-memory notes and report texts, null when not configured). Call this and ask the user which profile to use when they have not named one in this conversation; show each description so production databases are clearly marked.',
   inputSchema: {},
 }, async () => ({
   limits: {
@@ -373,9 +373,9 @@ tool('save_report', {
     ...refArgs,
     ...scriptRootArgs,
     sql: z.string().min(1).describe('A single read-only SQL statement.'),
-    title: z.string().optional().describe('Human-readable title shown in the report.'),
-    description: z.string().optional().describe('What the report answers and how to read it.'),
-    note: z.string().optional().describe('What changed in this SQL version.'),
+    title: z.string().optional().describe('Human-readable title shown in the report. Write it in the notesLanguage from list_profiles (ask once if null).'),
+    description: z.string().optional().describe('What the report answers and how to read it. Write it in the notesLanguage from list_profiles (ask once if null).'),
+    note: z.string().optional().describe('What changed in this SQL version. Write it in the notesLanguage from list_profiles (ask once if null).'),
     mask: z.array(z.string()).optional().describe('Extra result columns to mask in previews.'),
     unmask: z.array(z.string()).optional().describe('Columns to exempt from automatic masking (only when the user agreed).'),
   },
@@ -425,12 +425,12 @@ tool('render_reports', {
 
 tool('save_execute_script', {
   title: 'Save change script',
-  description: 'Writes an INSERT/UPDATE/DELETE/DDL script to EXECUTE/<db>/<schema>/<category>/<name>.sql for the user to run with a privileged role. Auspex never executes it. The script must start with BEGIN, end with ROLLBACK, contain no COMMIT and have WHERE on every UPDATE/DELETE. CREATE [OR REPLACE] FUNCTION with LANGUAGE plpgsql or sql and one dollar-quoted body, and CREATE TRIGGER, are allowed; the body is not linted (the file header says so), DO blocks and CALL are rejected. With root, folder and fileName it is also written as a new file to <script root>/<folder>/<fileName> (script roots: see list_profiles); ask the user for that location before saving. An existing file there is never overwritten.',
+  description: 'Writes an INSERT/UPDATE/DELETE/DDL script to EXECUTE/<db>/<schema>/<category>/<name>.sql for the user to run with a privileged role. Auspex never executes it. The script must start with BEGIN, end with ROLLBACK, contain no COMMIT and have WHERE on every UPDATE/DELETE. CREATE [OR REPLACE] FUNCTION with LANGUAGE plpgsql or sql and one dollar-quoted body, and CREATE TRIGGER, are allowed; the body is not linted (the file header says so), DO blocks and CALL are rejected. With root, folder and fileName it is also written as a new file to <script root>/<folder>/<fileName> (script roots: see list_profiles); ask the user for that location before saving. An existing file there is never overwritten. Write title, purpose and comments in the notesLanguage from list_profiles (ask once if null); SQL is not translated.',
   inputSchema: {
     ...refArgs,
     sql: z.string().min(1).describe('The change script (BEGIN ... MATCH checks ... ROLLBACK).'),
-    title: z.string().optional(),
-    purpose: z.string().optional().describe('What the script changes and why.'),
+    title: z.string().optional().describe('Write it in the notesLanguage from list_profiles (ask once if null).'),
+    purpose: z.string().optional().describe('What the script changes and why. Write it in the notesLanguage from list_profiles (ask once if null).'),
     relatedReport: z.string().optional().describe('Report that motivated the change, e.g. db/schema/category/name.'),
     expectedRows: z.union([z.number(), z.string()]).optional().describe('Expected affected rows.'),
     replace: z.boolean().optional().describe('Overwrite an existing library script with the same name (never the file in a script root).'),
@@ -453,7 +453,7 @@ tool('table_knowledge', {
 
 tool('remember', {
   title: 'Remember a fact about the data',
-  description: 'Adds, confirms or archives a note in the local schema memory of a profile (no database access). kind=rule: a business rule the user stated. kind=observation: a finding backed by evidence (SQL plus aggregate figures; dated). kind=inference: your own interpretation, shown as unconfirmed. Notes never contain row values or personal data. Write the note text in the notesLanguage from list_profiles; if it is null, ask the user once which language notes should be saved in, use the answer for this conversation and suggest adding "notesLanguage" to profiles.json (existing notes are not translated). action=confirm turns an inference into a rule or observation, only after the user agreed. Notes are archived with a reason, never deleted.',
+  description: 'Adds, confirms or archives a note in the local schema memory of a profile (no database access). kind=rule: a business rule the user stated. kind=observation: a finding backed by evidence (SQL plus aggregate figures; dated). kind=inference: your own interpretation, shown as unconfirmed. Notes never contain row values or personal data. Write the note text in the notesLanguage from list_profiles; if it is null, ask the user once which language notes and report texts should be saved in, use the answer for this conversation and suggest adding "notesLanguage" to profiles.json (existing notes are not translated). action=confirm turns an inference into a rule or observation, only after the user agreed. Notes are archived with a reason, never deleted.',
   inputSchema: {
     profile: profileArg,
     action: z.enum(['add', 'confirm', 'archive']),
@@ -461,7 +461,7 @@ tool('remember', {
     schema: z.string().optional().describe('With table: the note is about this table. Leave both out for a database-wide note.'),
     table: z.string().optional(),
     column: z.string().optional(),
-    text: z.string().optional().describe('The note, one or two sentences.'),
+    text: z.string().optional().describe('The note, one or two sentences, in the notesLanguage from list_profiles.'),
     evidenceSql: z.string().optional().describe('Observation: the read-only SQL behind the finding.'),
     evidenceFigures: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).optional()
       .describe('Observation: aggregate figures, e.g. {"rows": 223000, "filled": 0}. Never row values.'),
