@@ -168,7 +168,41 @@ const validScripts = [
   ['psql text inside quotes and comments', String.raw`BEGIN; SELECT '\gexec', E'\\gexec', $$\gexec$$, $x$\i file.sql$x$ AS "\gexec"; /* \i file.sql */ -- \gexec
 ROLLBACK;`],
   ['psql text inside a non-ASCII dollar quote', String.raw`BEGIN; SELECT $Türk$\gexec$Türk$; ROLLBACK;`],
+  ['an UPDATE without WHERE inside a function body', 'BEGIN;\nCREATE OR REPLACE FUNCTION s.f() RETURNS void LANGUAGE sql AS $$ UPDATE t SET a = 1; DELETE FROM t; COMMIT; $$;\nROLLBACK;'],
+  ['a plpgsql trigger function with nested dollar tags', `BEGIN;
+CREATE OR REPLACE FUNCTION s.t_log() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = s, pg_temp
+AS $fn$
+BEGIN
+  PERFORM $$ ROLLBACK; $$;
+  EXECUTE $q$UPDATE s.t SET a = 1$q$;
+  UPDATE s.t SET a = 1;
+  RETURN NEW;
+END
+$fn$;
+CREATE TRIGGER t_log_trg BEFORE INSERT OR UPDATE OF a ON s.t FOR EACH ROW EXECUTE FUNCTION s.t_log();
+CREATE OR REPLACE TRIGGER t_upd AFTER UPDATE ON s.t FOR EACH ROW WHEN (OLD.a IS DISTINCT FROM NEW.a) EXECUTE FUNCTION s.t_log();
+CREATE CONSTRAINT TRIGGER t_chk AFTER DELETE OR UPDATE ON s.t DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION s.t_log();
+ROLLBACK;`],
+  ['odd dollar tags', 'BEGIN; CREATE FUNCTION f() RETURNS int LANGUAGE sql AS $_$ SELECT 1 $_$; CREATE FUNCTION g() RETURNS text LANGUAGE sql\nAS -- body\n$Türk_1$ SELECT $x$;$x$ $Türk_1$; ROLLBACK;'],
 ];
+
+test('function bodies are counted and the saved file says they are not linted', () => {
+  const sql = 'BEGIN;\nCREATE FUNCTION s.f() RETURNS void LANGUAGE plpgsql AS $fn$ BEGIN UPDATE t SET a = 1; END $fn$;\nROLLBACK;';
+  const lint = lintExecuteScript(sql);
+  assert.equal(lint.functionBodies, 1);
+  assert.deepEqual(lint.warnings, []);
+  const called = lintExecuteScript(sql.replace('ROLLBACK;', 'SELECT s.F ();\nROLLBACK;'));
+  assert.deepEqual(called.errors, []);
+  assert.match(called.warnings.join(' '), /Statement 3 calls f\(\), created in this script; its body was not linted/);
+  assert.equal(lintExecuteScript(validScripts.at(-2)[1]).functionBodies, 1);
+  assert.match(lintExecuteScript(validScripts.at(-2)[1]).warnings.join(' '), /SECURITY DEFINER/);
+  const lib = tempLibrary();
+  const text = fs.readFileSync(lib.saveExecuteScript({ ref, sql }).file, 'utf8');
+  assert.ok(text.split('\n').includes('-- NOTE: function bodies are not linted by Auspex; review them before COMMIT'));
+  const plain = fs.readFileSync(lib.saveExecuteScript({ ref: { ...ref, name: 'plain' }, sql: 'BEGIN; SELECT 1; ROLLBACK;' }).file, 'utf8');
+  assert.ok(!plain.includes('function bodies'));
+});
 
 for (const [name, sql] of validScripts) {
   test(`EXECUTE lint accepts ${name}`, () => {
@@ -188,7 +222,19 @@ const invalidScripts = [
   ['ROLLBACK TO as the last statement', 'BEGIN; SAVEPOINT a; ROLLBACK TO a;', /last statement must be ROLLBACK/],
   ['DO block', 'BEGIN; DO $$ BEGIN DELETE FROM t; END $$; ROLLBACK;', /DO block/],
   ['CALL', 'BEGIN; CALL purge(); ROLLBACK;', /CALL/],
-  ['CREATE FUNCTION', 'BEGIN; CREATE OR REPLACE FUNCTION f() RETURNS void AS $$ DELETE FROM t $$ LANGUAGE sql; ROLLBACK;', /function or procedure/],
+  ['CREATE PROCEDURE', 'BEGIN; CREATE OR REPLACE PROCEDURE p() LANGUAGE sql AS $$ DELETE FROM t $$; ROLLBACK;', /creates a procedure/],
+  ['a function in another language', 'BEGIN; CREATE FUNCTION f() RETURNS void LANGUAGE plpython3u AS $$ pass $$; ROLLBACK;', /LANGUAGE plpgsql or LANGUAGE sql/],
+  ['a function in C', "BEGIN; CREATE FUNCTION f() RETURNS void AS 'lib', 'f' LANGUAGE c; ROLLBACK;", /LANGUAGE plpgsql or LANGUAGE sql/],
+  ['a function with a quoted language', "BEGIN; CREATE FUNCTION f() RETURNS void LANGUAGE 'plpgsql' AS $$ BEGIN END $$; ROLLBACK;", /LANGUAGE plpgsql or LANGUAGE sql/],
+  ['a function without a language', 'BEGIN; CREATE FUNCTION f() RETURNS void AS $$ SELECT 1 $$; ROLLBACK;', /LANGUAGE plpgsql or LANGUAGE sql/],
+  ['a function with a single-quoted body', "BEGIN; CREATE FUNCTION f() RETURNS void LANGUAGE sql AS 'DELETE FROM t'; ROLLBACK;", /dollar-quoted body/],
+  ['a function with a SQL-standard RETURN body', 'BEGIN; CREATE FUNCTION f(a int) RETURNS int LANGUAGE sql RETURN a + 1; ROLLBACK;', /dollar-quoted body/],
+  ['a write after a function body in the same script', 'BEGIN; CREATE FUNCTION f() RETURNS void LANGUAGE sql AS $a$ SELECT 1 $a$; UPDATE t SET a = 1; ROLLBACK;', /Statement 3 has an UPDATE without WHERE/],
+  ['the same UPDATE outside a function body', 'BEGIN;\nUPDATE t SET a = 1;\nROLLBACK;', /an UPDATE without WHERE/],
+  ['DO block with a dollar tag', 'BEGIN; DO $body$ BEGIN UPDATE t SET a = 1 WHERE id = 1; END $body$; ROLLBACK;', /DO block/],
+  ['COMMIT after a function', 'BEGIN; CREATE FUNCTION f() RETURNS void LANGUAGE sql AS $$ SELECT 1 $$; COMMIT;', /COMMIT is never written/],
+  ['an unterminated function body', 'BEGIN; CREATE FUNCTION f() RETURNS void LANGUAGE sql AS $fn$ SELECT 1 $f$; ROLLBACK;', /Unterminated dollar-quoted string/],
+  ['psql after a function body', 'BEGIN; CREATE FUNCTION f() RETURNS void LANGUAGE sql AS $$ SELECT 1 $$ \\gexec\nROLLBACK;', /backslash command/],
   ['psql meta command', 'BEGIN;\nUPDATE t SET a = 1 WHERE id = 1;\n\\commit\nROLLBACK;', /backslash command/],
   ['inline psql gexec with LF', "BEGIN;\nSELECT 'COMMIT' \\gexec\nUPDATE t SET a = 1 WHERE id = 1;\nROLLBACK;", /backslash command/],
   ['adjacent psql gexec with CRLF', "BEGIN;\r\nSELECT 'COMMIT'\\gexec\r\nUPDATE t SET a = 1 WHERE id = 1;\r\nROLLBACK;", /backslash command/],
