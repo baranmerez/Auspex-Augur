@@ -1,0 +1,77 @@
+#!/usr/bin/env node
+// Approves a draft report or revokes an approval in the local report library,
+// for the desktop app (Tauri), which runs it as a child process:
+//   node src/stageCli.js approve|revoke --db <db> --schema <s> --category <c> --name <n>
+// Same checks, lock, stage history, HTML and schema-memory view rebuild as the
+// viewer routes (src/reports/stageChange.js), audited with source and actor
+// "desktop". Files only: no database, no network. Prints one JSON line,
+// { ok: true, report, stage, version } or { ok: false, code, message }, and
+// exits with 1 on any error.
+import crypto from 'node:crypto';
+import path from 'node:path';
+import { loadConfig, auspexHome } from './config.js';
+import { Library, refLabel } from './reports/library.js';
+import { approvedJoinPairs } from './reports/service.js';
+import { SchemaMemory } from './memory/store.js';
+import { createAuditLog } from './auditLog.js';
+import { classifyError } from './errors.js';
+import { StageError, stageActions, validateRefInput, applyStageChange, refKeys } from './reports/stageChange.js';
+
+// The folders as the server and viewer see them; a broken profiles file does
+// not hide the library (the viewer falls back the same way).
+function folders(env = process.env) {
+  try {
+    const c = loadConfig(env);
+    return { libraryDir: c.libraryDir, memoryDir: c.memoryDir, logDir: c.logDir };
+  } catch {
+    const home = auspexHome(env);
+    return {
+      libraryDir: env.AUSPEX_LIBRARY_DIR || path.join(home, 'library'),
+      memoryDir: env.AUSPEX_MEMORY_DIR || path.join(home, 'memory'),
+      logDir: env.AUSPEX_LOG_DIR || path.join(env.AUSPEX_DATA_DIR || home, 'logs'),
+    };
+  }
+}
+
+// --key value or --key=value, each of db, schema, category and name exactly once.
+function parseRefArgs(args) {
+  const body = {};
+  for (let i = 0; i < args.length; i++) {
+    const m = /^--([a-z]+)(?:=([\s\S]*))?$/.exec(args[i]);
+    if (!m || !refKeys.includes(m[1])) throw new StageError(400, `Unknown argument "${String(args[i]).slice(0, 40)}"; use ${refKeys.map(k => `--${k}`).join(' ')}`);
+    if (Object.hasOwn(body, m[1])) throw new StageError(400, `--${m[1]} given twice`);
+    let value = m[2];
+    if (value === undefined) {
+      if (i + 1 >= args.length) throw new StageError(400, `--${m[1]} needs a value`);
+      value = args[++i];
+    }
+    body[m[1]] = value;
+  }
+  return validateRefInput(body);
+}
+
+function main(argv, env) {
+  const action = Object.hasOwn(stageActions, argv[0] ?? '') ? stageActions[argv[0]] : null;
+  if (!action) return { status: 1, out: { ok: false, code: 'INVALID_INPUT', message: 'Usage: stageCli.js approve|revoke --db <db> --schema <schema> --category <category> --name <name>' } };
+  const dirs = folders(env);
+  const started = Date.now();
+  const entry = { source: 'desktop', tool: action.tool, actor: 'desktop', correlationId: crypto.randomUUID(), fromStage: action.from, toStage: action.to };
+  const audit = createAuditLog(dirs.logDir);
+  try {
+    const ref = parseRefArgs(argv.slice(1));
+    Object.assign(entry, { profile: ref.db, report: refLabel(ref) });
+    const lib = new Library(dirs.libraryDir);
+    const memory = new SchemaMemory(dirs.memoryDir, { approvedJoins: profile => approvedJoinPairs(lib, profile) });
+    const { report, stage, version } = applyStageChange(lib, action, ref, { by: 'desktop', memory });
+    audit({ ...entry, ms: Date.now() - started, version });
+    return { status: 0, out: { ok: true, report, stage, version, correlationId: entry.correlationId } };
+  } catch (err) {
+    const { code } = classifyError(err);
+    audit({ ...entry, ms: Date.now() - started, error: err.message, errorCode: code });
+    return { status: 1, out: { ok: false, code, message: err.message, correlationId: entry.correlationId } };
+  }
+}
+
+const { status, out } = main(process.argv.slice(2), process.env);
+process.stdout.write(`${JSON.stringify(out)}\n`);
+process.exitCode = status;

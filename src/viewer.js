@@ -10,8 +10,9 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { loadConfig, describeConnection, auspexHome } from './config.js';
-import { Library, LibraryError, normalizeRef, refLabel } from './reports/library.js';
-import { approveInLibrary, revokeInLibrary, approvedJoinPairs } from './reports/service.js';
+import { Library, LibraryError, refLabel } from './reports/library.js';
+import { approvedJoinPairs } from './reports/service.js';
+import { StageError as HttpError, stageActions as actions, validateRefInput, applyStageChange, statusOf } from './reports/stageChange.js';
 import { SchemaMemory } from './memory/store.js';
 import { createAuditLog } from './auditLog.js';
 import { classifyError } from './errors.js';
@@ -31,14 +32,8 @@ const memoryFilePattern = /^tables\/[a-z0-9_~-]+\/[a-z0-9_~-]+\.json$/;
 const csrfToken = crypto.randomBytes(32).toString('hex');
 const tokenPlaceholder = '__AUSPEX_VIEWER_TOKEN__';
 const maxBodyBytes = 4096;
-const refKeys = ['db', 'schema', 'category', 'name'];
-// Stage changes the page may request: the report must be in `from`.
-const stageActions = new Map([
-  ['/api/reports/approve', { tool: 'approve_report', from: 'draft', to: 'approved',
-    run: (lib, ref) => approveInLibrary(lib, ref, { by: 'viewer', memory: schemaMemory(lib) }), version: r => r.meta.approvedVersion }],
-  ['/api/reports/revoke', { tool: 'revoke_report', from: 'approved', to: 'draft',
-    run: (lib, ref) => revokeInLibrary(lib, ref, { by: 'viewer', memory: schemaMemory(lib) }), version: r => r.version }],
-]);
+// Stage changes the page may request (src/reports/stageChange.js).
+const stageActions = new Map([['/api/reports/approve', actions.approve], ['/api/reports/revoke', actions.revoke]]);
 
 // Re-read on every request so edits to profiles.json show up without restart.
 function readConfig() {
@@ -174,14 +169,6 @@ function sendPage(res) {
   send(res, 200, page, 'text/html; charset=utf-8', { 'X-Frame-Options': 'DENY', 'Content-Security-Policy': "frame-ancestors 'none'" });
 }
 
-class HttpError extends Error {
-  constructor(status, message, errorCode = 'INVALID_INPUT') {
-    super(message);
-    this.status = status;
-    this.errorCode = errorCode;
-  }
-}
-
 // Same-origin page with the token: the Origin header must be exactly this
 // viewer (the Host was already allowlisted) and the token must match.
 function checkWriteRequest(req) {
@@ -206,23 +193,12 @@ function readBody(req) {
   });
 }
 
-// { db, schema, category, name } exactly as the library lists it: any other
-// field, a non-string, or a value that normalizes differently is refused, so
-// a request can only name a library location.
+// The body: { db, schema, category, name } exactly as the library lists it.
 function parseRef(text) {
   let body;
   try { body = JSON.parse(text); } catch { throw new HttpError(400, 'Body must be JSON'); }
-  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new HttpError(400, 'Body must be a JSON object');
-  if (Object.keys(body).some(k => !refKeys.includes(k))) throw new HttpError(400, `Only ${refKeys.join(', ')} are allowed`);
-  if (refKeys.some(k => typeof body[k] !== 'string' || !body[k] || body[k].length > 200)) throw new HttpError(400, `${refKeys.join(', ')} must be non-empty strings`);
-  let ref;
-  try { ref = normalizeRef(body); } catch (err) { throw new HttpError(400, err.message); }
-  if (refKeys.some(k => ref[k] !== body[k])) throw new HttpError(400, 'Report reference is not a library location');
-  return ref;
+  return validateRefInput(body);
 }
-
-const statusOf = err => err instanceof HttpError ? err.status
-  : ({ NOT_FOUND: 404, PRECONDITION_FAILED: 409, INVALID_INPUT: 400, LOCK_BUSY: 503 })[classifyError(err).code] ?? 500;
 
 // Approve or revoke one report. Every request that passed the origin and
 // token checks is audited (actor, report, from/to stage, version or error).
@@ -234,21 +210,11 @@ async function changeStage(req, res, action) {
   try {
     if (!/^application\/json\s*(;|$)/i.test(req.headers['content-type'] || '')) throw new HttpError(415, 'Content-Type must be application/json');
     const ref = parseRef(await readBody(req));
-    const label = refLabel(ref);
-    Object.assign(entry, { profile: ref.db, report: label });
+    Object.assign(entry, { profile: ref.db, report: refLabel(ref) });
     const lib = library();
-    // Checked before the lock so a missing library folder is not created.
-    if (!fs.existsSync(lib.root)) throw new HttpError(404, `Report "${label}" not found.`, 'NOT_FOUND');
-    const result = lib.locked(() => {
-      if (!lib.exists(action.from, ref)) {
-        if (lib.exists(action.to, ref)) throw new HttpError(409, `Report "${label}" is ${action.to}, not ${action.from}.`, 'PRECONDITION_FAILED');
-        throw new HttpError(404, `Report "${label}" not found.`, 'NOT_FOUND');
-      }
-      return action.run(lib, ref);
-    });
-    const version = action.version(result) ?? null;
+    const { report, stage, version } = applyStageChange(lib, action, ref, { by: 'viewer', memory: schemaMemory(lib) });
     audit({ ...entry, ms: Date.now() - started, version });
-    return send(res, 200, { report: label, stage: action.to, version, correlationId: entry.correlationId });
+    return send(res, 200, { report, stage, version, correlationId: entry.correlationId });
   } catch (err) {
     const { code } = classifyError(err);
     audit({ ...entry, ms: Date.now() - started, error: err.message, errorCode: code });
