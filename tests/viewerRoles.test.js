@@ -136,6 +136,14 @@ test('join labels name the referencing column, then the referenced table and col
   assert.equal(joinLabel('dep', { centerCols: [], nbCols: [] }, 'app.c', 'app.n'), '? → c.?');
 });
 
+test('two FKs between the same pair of tables give two join labels, in edge order', () => {
+  const { roleGroups, joinLabels } = loadRoles();
+  const data = roleGraph();
+  data.edges.push({ level: 'fk', from: 'app.orders', to: 'app.customers', columns: ['delivery_customer_id'], refColumns: ['id'], linkedRows: 90_000 });
+  const cari = roleGroups(data, 'app.orders').ref.find(x => x.id === 'app.customers');
+  assert.deepEqual(Array.from(joinLabels(cari, 'app.orders')), ['customer_id → customers.id', 'delivery_customer_id → customers.id']);
+});
+
 test('depth 2: join labels point at the opened dependent, not the center', () => {
   const { roleGroups, joinLabels } = loadRoles();
   const g = roleGroups(roleGraph(), 'app.order_items');
