@@ -62,11 +62,12 @@ export function shareableReport(meta) {
 
 export class ReportService {
   // memory (optional): a SchemaMemory that learns relations and used columns
-  // from each run's plan.
-  constructor(db, libraryDir, memory = null) {
+  // from each run's plan. scriptRoots: name -> { dir } from the configuration.
+  constructor(db, libraryDir, memory = null, { scriptRoots = new Map() } = {}) {
     this.db = db;
     this.library = new Library(libraryDir);
     this.memory = memory;
+    this.scriptRoots = scriptRoots;
   }
 
   // Join column pairs of approved reports on one database: the "used" level
@@ -225,8 +226,22 @@ export class ReportService {
     return this.library.list().filter(i => (!filter.db || i.db === filter.db.toLowerCase()) && (!filter.stage || i.stage === filter.stage));
   }
 
+  // With root, folder and fileName the script is also written into that
+  // configured script root (see Library.saveExecuteScriptUnlocked).
   saveExecute(input) {
     const ref = this.ref(input);
-    return this.library.saveExecuteScript({ ...input, ref });
+    const { root, folder, fileName, ...rest } = input;
+    let target = null;
+    if (root !== undefined || folder !== undefined || fileName !== undefined) {
+      if (!root || !folder || !fileName) throw new ToolError('INVALID_INPUT', 'root, folder and fileName go together: pass all three to write into a script root, or none for the library only.');
+      const name = String(root).toLowerCase();
+      const configured = this.scriptRoots.get(name);
+      if (!configured) {
+        const names = [...this.scriptRoots.keys()].join(', ') || 'none (add "scriptRoots" to profiles.json)';
+        throw new ToolError('INVALID_INPUT', `Unknown script root "${root}". Configured: ${names}.`);
+      }
+      target = { root: name, dir: configured.dir, folder, fileName };
+    }
+    return this.library.saveExecuteScript({ ...rest, ref, target });
   }
 }
