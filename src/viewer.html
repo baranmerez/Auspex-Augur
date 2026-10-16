@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="auspex-token" content="__AUSPEX_VIEWER_TOKEN__">
 <title>Auspex Augur</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%232a78d6'/%3E%3Ccircle cx='16' cy='16' r='6' fill='white'/%3E%3C/svg%3E">
 <style>
@@ -331,6 +332,17 @@
   .badge.draft { background: var(--warn-soft); color: var(--warn-ink); }
   .badge.approved { background: var(--good-soft); color: var(--good-ink); }
   .badge.execute { background: var(--critical-soft); color: var(--critical); }
+  .badge.viewer { background: var(--good-soft); color: var(--good-ink); }
+  .icon-btn:disabled { opacity: .55; cursor: default; pointer-events: none; }
+  .dlg { border: 1px solid var(--line-strong); border-radius: 12px; background: var(--surface); color: var(--text); box-shadow: var(--shadow-lg);
+    padding: 18px 20px; width: min(440px, calc(100vw - 32px)); }
+  .dlg::backdrop { background: rgba(0, 0, 0, .35); }
+  .dlg h3 { margin: 0 0 6px; font-size: 15px; }
+  .dlg p { margin: 0 0 12px; font-size: 13px; color: var(--text-2); }
+  .dlg dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0 0 16px; font-size: 13px; }
+  .dlg dt { color: var(--text-3); }
+  .dlg dd { margin: 0; overflow-wrap: anywhere; }
+  .dlg-actions { display: flex; justify-content: flex-end; gap: 8px; }
   .rep-view { min-height: 420px; display: flex; flex-direction: column; overflow: hidden; }
   /* The HTML report posts its own height (see themedReport), so the frame grows
      with it and never scrolls on its own; until then it fills the window. */
@@ -666,7 +678,7 @@
       <div class="field"><label for="to" data-i18n="To">To</label><input type="date" id="to"></div>
     </div>
     <div class="row">
-      <div class="field opsonly"><label for="fSource" data-i18n="Source">Source</label><select id="fSource"><option value="" data-i18n="All">All</option><option value="mcp">mcp</option><option value="script">script</option><option value="old" data-i18n="legacy entry">legacy entry</option></select></div>
+      <div class="field opsonly"><label for="fSource" data-i18n="Source">Source</label><select id="fSource"><option value="" data-i18n="All">All</option><option value="mcp">mcp</option><option value="script">script</option><option value="viewer">viewer</option><option value="old" data-i18n="legacy entry">legacy entry</option></select></div>
       <div class="field opsonly"><label for="fTool" data-i18n="Tool">Tool</label><select id="fTool"><option value="">All</option></select></div>
       <div class="field opsonly"><label for="fStatus" data-i18n="Status">Status</label><select id="fStatus"><option value="" data-i18n="All">All</option><option value="ok" data-i18n="Succeeded">Succeeded</option><option value="err" data-i18n="Error / rejected">Error / rejected</option></select></div>
       <div class="field search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--text-3)"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" id="fText" placeholder="Search SQL, tables, errors, reports" data-i18n-ph="Search SQL, tables, errors, reports" aria-label="Search"><kbd>/</kbd></div>
@@ -684,6 +696,7 @@
 
 <div class="tip" id="tip" role="status" aria-live="polite"></div>
 <div class="toast" id="toast"></div>
+<dialog class="dlg" id="stageDlg" aria-labelledby="stageDlgTitle"></dialog>
 
 <script>
 'use strict';
@@ -809,6 +822,12 @@ const TR = {
   '{n} colors adjusted for contrast': 'Kontrast için {n} renk ayarlandı', '{n} adjusted': '{n} ayarlandı',
 'Non-FK relations': 'FK dışı ilişkiler', 'Used and suggested relations (not foreign keys)': 'Kullanılan ve önerilen ilişkiler (yabancı anahtar olmayan)',
   'Show one more layer on both sides': 'İki yana birer katman daha ekle', '{role}: tables per layer': '{role}: katman başına tablo',
+  'Approve': 'Onayla', 'Revoke approval': 'Onayı geri al', 'Report approved': 'Onaylandı', 'Approval revoked': 'Onay geri alındı', 'Cancel': 'Vazgeç', 'Working…': 'İşleniyor…',
+  'Approve this report?': 'Bu rapor onaylansın mı?', 'Revoke the approval of this report?': 'Bu raporun onayı geri alınsın mı?',
+  'It moves to Approved (SELECT). Only files in the local report library change.': 'Rapor Onaylı (SELECT) aşamasına geçer. Yalnızca yerel rapor kütüphanesindeki dosyalar değişir.',
+  'It moves back to Drafts; its SQL versions and runs stay. Only files in the local report library change.': 'Rapor Taslaklar aşamasına döner; SQL sürümleri ve çalıştırmaları kalır. Yalnızca yerel rapor kütüphanesindeki dosyalar değişir.',
+  'Report': 'Rapor', 'Location': 'Konum', 'Version': 'Sürüm', 'Last run': 'Son çalıştırma', 'Warnings': 'Uyarılar',
+  'Approve from the browser viewer or via Claude': 'Tarayıcıdaki görüntüleyiciden ya da Claude ile onaylayın', 'Revoke report approval': 'Rapor onayını geri al',
 };
 let lang = 'en';
 try { lang = localStorage.getItem('auspex.viewer.lang') || ((navigator.language || '').toLowerCase().startsWith('tr') ? 'tr' : 'en'); } catch {}
@@ -851,7 +870,7 @@ const timeOf = ts => ts ? new Date(ts).toLocaleTimeString(locale, { hour12: fals
 const dateTimeOf = ts => ts ? new Date(ts).toLocaleString(locale, { hour12: false }) : '?';
 const toolNames = { query: 'Query', explain: 'Plan', export_csv: 'CSV export', search: 'Search',
   list_schemas: 'Schemas', list_tables: 'Tables', describe_table: 'Table structure', list_profiles: 'Profiles', run_report: 'Run report',
-  save_report: 'Save report', approve_report: 'Approve report', save_execute_script: 'Save change script', render_reports: 'Re-render reports', share_report: 'Share report', remember: 'Memory note',
+  save_report: 'Save report', approve_report: 'Approve report', revoke_report: 'Revoke report approval', save_execute_script: 'Save change script', render_reports: 'Re-render reports', share_report: 'Share report', remember: 'Memory note',
   check_profile: 'Check profile', role_check: 'Role check (first use)' };
 const toolName = k => t(toolNames[k] || k || '?');
 const sourceOf = e => e.source || 'old';
@@ -1121,13 +1140,13 @@ function timeBuckets(rows) {
   const single = from === to;
   const buckets = [];
   if (single) {
-    for (let i = 0; i < 24; i++) buckets.push({ key: i, label: pad(i), title: `${from} ${pad(i)}:00–${pad(i)}:59`, mcp: 0, script: 0, old: 0, err: 0 });
+    for (let i = 0; i < 24; i++) buckets.push({ key: i, label: pad(i), title: `${from} ${pad(i)}:00–${pad(i)}:59`, mcp: 0, script: 0, viewer: 0, old: 0, err: 0 });
   } else {
     const days = Math.round((new Date(to) - new Date(from)) / 864e5) + 1;
     const step = days > 62 ? 7 : 1;
     for (let d = from; d <= to; d = addDays(d, step)) {
       const end = step === 1 ? d : (addDays(d, step - 1) > to ? to : addDays(d, step - 1));
-      buckets.push({ key: d, end, label: d.slice(8, 10) + '.' + d.slice(5, 7), title: step === 1 ? d : `${d} – ${end}`, mcp: 0, script: 0, old: 0, err: 0 });
+      buckets.push({ key: d, end, label: d.slice(8, 10) + '.' + d.slice(5, 7), title: step === 1 ? d : `${d} – ${end}`, mcp: 0, script: 0, viewer: 0, old: 0, err: 0 });
     }
   }
   for (const e of rows) {
@@ -1135,7 +1154,7 @@ function timeBuckets(rows) {
     const dt = new Date(e.ts);
     const b = single ? buckets[dt.getHours()] : buckets.find(x => { const d = localDay(dt); return d >= x.key && d <= (x.end || x.key); });
     if (!b) continue;
-    b[sourceOf(e)]++; if (e.error) b.err++;
+    if (b[sourceOf(e)] !== undefined) b[sourceOf(e)]++; if (e.error) b.err++;
   }
   return { buckets, single };
 }
@@ -1147,7 +1166,7 @@ function niceMax(v) {
 function activityChart(rows) {
   const { buckets, single } = timeBuckets(rows);
   const W = 760, H = 220, L = 34, R = 8, T = 10, B = 24;
-  const total = b => b.mcp + b.script + b.old;
+  const total = b => b.mcp + b.script + b.viewer + b.old;
   const max = niceMax(Math.max(1, ...buckets.map(total)));
   const pw = (W - L - R) / buckets.length, bw = Math.min(24, Math.max(4, pw * .62));
   const y = v => T + (H - T - B) * (1 - v / max);
@@ -1158,7 +1177,7 @@ function activityChart(rows) {
     const t = svg('text', { class: 'axis-text', x: L - 6, y: yy + 4, 'text-anchor': 'end' }); t.textContent = fmt(v); root.append(t);
   }
   const labelEvery = Math.ceil(buckets.length / (single ? 12 : 10));
-  const series = [['mcp', 'var(--series-1)'], ['script', 'var(--series-2)'], ['old', 'var(--text-3)']];
+  const series = [['mcp', 'var(--series-1)'], ['script', 'var(--series-2)'], ['viewer', 'var(--good)'], ['old', 'var(--text-3)']];
   buckets.forEach((b, i) => {
     const x = L + pw * i + (pw - bw) / 2;
     const g = svg('g', { class: 'col' });
@@ -1177,6 +1196,7 @@ function activityChart(rows) {
     const hit = svg('rect', { class: 'hit', x: L + pw * i, y: T, width: pw, height: H - T - B, tabindex: total(b) ? 0 : -1 });
     const show = ev => showTip(ev, b.title, [
       ['var(--series-1)', 'mcp', fmt(b.mcp)], ['var(--series-2)', 'script', fmt(b.script)],
+      ...(b.viewer ? [['var(--good)', 'viewer', fmt(b.viewer)]] : []),
       ...(b.old ? [['var(--text-3)', t('legacy'), fmt(b.old)]] : []),
       [null, t('Errors'), fmt(b.err)], [null, t('Total'), fmt(total(b))]]);
     hit.addEventListener('pointermove', show); hit.addEventListener('focus', show);
@@ -1251,6 +1271,7 @@ function renderOverview(rows) {
   const legend = h('div', { class: 'legend' },
     h('span', {}, h('i', { style: 'background:var(--series-1)' }), t('mcp (agent)')),
     h('span', {}, h('i', { style: 'background:var(--series-2)' }), 'script'),
+    rows.some(e => e.source === 'viewer') ? h('span', {}, h('i', { style: 'background:var(--good)' }), 'viewer') : null,
     rows.some(e => !e.source) ? h('span', {}, h('i', { style: 'background:var(--text-3)' }), t('legacy entry')) : null);
   const [from, to] = resolveRange();
 
@@ -1721,6 +1742,7 @@ function reportView(r) {
     actions.push(h('button', { class: 'icon-btn', onclick: () => copy(doc.content, 'SQL') }, t('Copy SQL')));
   }
   if (doc && doc.kind === 'html' && !tauriCore) actions.push(h('button', { class: 'icon-btn', onclick: () => window.open(URL.createObjectURL(new Blob([doc.content], { type: 'text/html' })), '_blank') }, t('Open in new tab')));
+  actions.push(stageButton(r));
   // HTML reports carry their own header; the bar only adds actions then.
   const heading = doc && doc.kind === 'html' ? h('span', { class: 'muted', style: 'font-size:12px' }, `${r.db} › ${r.schema} › ${r.category} › ${r.name}`) : h('div', {},
     h('div', { class: 'crumbs' }, h('span', { class: 'crumb' }, r.db), '›', h('span', { class: 'crumb' }, r.schema), '›', h('span', { class: 'crumb' }, r.category)),
@@ -1728,6 +1750,89 @@ function reportView(r) {
   const node = h('div', { class: 'panel rep-view' }, h('div', { class: 'bar' }, heading, h('span', { class: 'grow' }), actions), body);
   if (doc && !doc.loading) { state.reportViewNode = node; state.reportViewKey = repKey(r); state.reportViewTheme = themeKey() + lang; }
   return node;
+}
+// stage-change:start (tests/viewerApprove.test.js runs this block in isolation)
+// The stage change the Reports view offers: the browser viewer approves a
+// draft or revokes an approval; the desktop app only reads files, so it shows
+// a note instead.
+function stageChangeFor(r, desktop) {
+  if (!r || (r.stage !== 'draft' && r.stage !== 'approved')) return null;
+  if (desktop) return { kind: 'note' };
+  return r.stage === 'draft'
+    ? { kind: 'approve', path: '/api/reports/approve', to: 'approved', label: 'Approve', question: 'Approve this report?', done: 'Report approved',
+      note: 'It moves to Approved (SELECT). Only files in the local report library change.' }
+    : { kind: 'revoke', path: '/api/reports/revoke', to: 'draft', label: 'Revoke approval', question: 'Revoke the approval of this report?', done: 'Approval revoked',
+      note: 'It moves back to Drafts; its SQL versions and runs stay. Only files in the local report library change.' };
+}
+// Facts for the confirm dialog: [label, value]; a value of null shows as "–".
+function stageChangeFacts(r) {
+  const lr = r.lastRun;
+  const version = r.stage === 'approved' ? r.approvedVersion : r.activeVersion;
+  return [
+    ['Report', r.title || r.name],
+    ['Location', [r.db, r.schema, r.category, r.name].join(' › ')],
+    ['Version', Number.isInteger(version) ? `v${version}` : null],
+    ['Last run', lr ? lr.at : null],
+    ['Rows', lr && Number.isFinite(lr.rows) ? lr.rows : null],
+    ['Warnings', lr ? lr.warnings ?? 0 : null],
+  ];
+}
+// POST with the page's token; the server also checks the Origin header.
+async function postStageChange(fetchFn, token, path, r) {
+  const res = await fetchFn(path, {
+    method: 'POST', cache: 'no-store', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', 'X-Auspex-Token': token },
+    body: JSON.stringify({ db: r.db, schema: r.schema, category: r.category, name: r.name }),
+  });
+  let data = null;
+  try { data = await res.json(); } catch {}
+  if (!res.ok) throw new Error(data?.error || res.statusText || `HTTP ${res.status}`);
+  return data;
+}
+// stage-change:end
+const pageToken = document.querySelector('meta[name="auspex-token"]')?.content || '';
+function stageButton(r) {
+  const sc = stageChangeFor(r, !!tauriCore);
+  if (!sc) return null;
+  if (sc.kind === 'note') return h('span', { class: 'muted', style: 'font-size:12px' }, t('Approve from the browser viewer or via Claude'));
+  const pending = state.stagePending === repKey(r);
+  return h('button', { class: 'icon-btn' + (sc.kind === 'approve' ? ' primary' : ''), disabled: !!state.stagePending, 'aria-busy': pending ? 'true' : null,
+    onclick: () => confirmStageChange(r, sc) }, pending ? t('Working…') : t(sc.label));
+}
+function confirmStageChange(r, sc) {
+  const dlg = $('stageDlg');
+  const value = (label, v) => v === null || v === undefined ? '–' : label === 'Last run' ? `${dateTimeOf(v)} (${ago(v)})` : typeof v === 'number' ? fmt(v) : String(v);
+  const cancel = h('button', { class: 'icon-btn', value: 'cancel' }, t('Cancel'));
+  put(dlg, h('form', { method: 'dialog' },
+    h('h3', { id: 'stageDlgTitle' }, t(sc.question)),
+    h('p', {}, t(sc.note)),
+    h('dl', {}, stageChangeFacts(r).map(([label, v]) => [h('dt', {}, t(label)), h('dd', {}, value(label, v))])),
+    h('div', { class: 'dlg-actions' }, cancel, h('button', { class: 'icon-btn primary', value: 'ok' }, t(sc.label)))));
+  dlg.returnValue = '';
+  dlg.onclose = () => { if (dlg.returnValue === 'ok') runStageChange(r, sc); };
+  dlg.showModal();
+  cancel.focus();
+}
+async function runStageChange(r, sc) {
+  if (state.stagePending) return;
+  state.stagePending = repKey(r);
+  state.reportViewNode = null;
+  renderReports();
+  try {
+    await postStageChange(fetch, pageToken, sc.path, r);
+    state.reportSel = repKey({ ...r, stage: sc.to });
+    state.reportDoc = null;
+    if (state.stageFilter !== 'all') state.stageFilter = sc.to;
+    persist();
+    toast(t(sc.done));
+    try { state.reports = await getJson('/api/reports'); } catch (err) { state.reports = { error: err.message, reports: [] }; }
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    state.stagePending = null;
+    state.reportViewNode = null;
+    renderReports();
+  }
 }
 // report-filter:start (tests/viewerReportFilter.test.js runs this block in isolation)
 // Search text folded for matching: case-insensitive, and the Turkish dotted
