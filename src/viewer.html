@@ -1304,11 +1304,13 @@ async function loadReport(r) {
   state.reportViewNode = null;
   renderReports();
 }
-// Report HTML follows the viewer theme when the viewer forces one.
 // Also inside the viewer only (never in the saved file or "Open in new tab"), the
 // report uses the full width, its tables drop their inner vertical scroll and
-// it posts its height so the frame grows instead of scrolling on its own.
+// it posts its height so the frame grows instead of scrolling on its own. Its
+// toast would sit at the bottom of the tall frame, so it is hidden there and
+// its text is posted to the viewer, which shows it in its own toast.
 // Sticky table headers cannot follow the viewer's page scroll across the frame.
+// embed:start (tests/viewerEmbed.test.js runs this block in isolation)
 const reportEmbedCss = `<style id="auspex-viewer-embed">
   html { overflow-y: hidden; }
   .wrap { max-width: none; }
@@ -1316,8 +1318,9 @@ const reportEmbedCss = `<style id="auspex-viewer-embed">
   .tbl-wrap table { width: max-content; min-width: 100%; }
   .tbl-wrap th, .tbl-wrap td { padding: 8px 14px; white-space: nowrap; }
   .tbl-wrap td.long { white-space: normal; min-width: 32ch; max-width: 70ch; overflow-wrap: anywhere; }
+  #toast { display: none !important; }
 </style>`;
-const reportEmbedJs = `<script>(() => {
+const reportEmbedJs = `<script id="auspex-viewer-embed-js">(() => {
   const mark = () => {
     for (const c of document.querySelectorAll('.tbl-wrap td:not(.num):not([data-len])')) {
       const n = c.textContent.length;
@@ -1335,24 +1338,49 @@ const reportEmbedJs = `<script>(() => {
   new MutationObserver(tick).observe(document.body, { childList: true, subtree: true });
   new ResizeObserver(post).observe(document.body);
   addEventListener('load', tick);
+  const toastEl = document.getElementById('toast');
+  if (toastEl) {
+    let shown = false, text = '';
+    new MutationObserver(() => {
+      const on = toastEl.classList.contains('show'), now = toastEl.textContent;
+      if (on && (!shown || now !== text)) parent.postMessage({ auspexReportToast: now }, '*');
+      shown = on; text = now;
+    }).observe(toastEl, { attributes: true, attributeFilter: ['class'], childList: true, characterData: true, subtree: true });
+  }
   tick();
 })();<\/script>`;
+// Injects the embed CSS before the real </head> and the script before the
+// real (last) </body>; report data escapes "<", so neither occurs in it.
+// HTML without both tags is returned unchanged.
+function embedReport(html) {
+  const head = html.indexOf('</head>'), body = html.lastIndexOf('</body>');
+  if (head < 0 || body < head) return html;
+  return html.slice(0, head) + reportEmbedCss + html.slice(head, body) + reportEmbedJs + html.slice(body);
+}
+// A message from an embedded report: a clamped frame height or a toast text.
+// Anything else is null.
+function reportMessage(data) {
+  if (!data || typeof data !== 'object') return null;
+  const hgt = data.auspexReportHeight;
+  if (typeof hgt === 'number' && Number.isFinite(hgt)) return { height: Math.min(Math.max(Math.round(hgt), 240), 200000) };
+  const msg = data.auspexReportToast;
+  if (typeof msg === 'string' && msg.trim()) return { toast: msg.slice(0, 200) };
+  return null;
+}
+// Only a report frame of this page may talk to the viewer.
+const reportFrameOf = (frames, source) => (source ? [...frames].find(f => f.contentWindow === source) || null : null);
+// embed:end
+// Report HTML follows the viewer theme when the viewer forces one.
 function themedReport(html) {
   const th = state.theme && state.theme !== 'auto' ? state.theme : null;
-  let out = html.replace('<html lang="en">', `<html lang="${lang}" data-lang="${lang}"${th ? ` data-theme="${th}"` : ''}>`);
-  const head = out.indexOf('</head>'), body = out.lastIndexOf('</body>');
-  if (head < 0 || body < head) return out;
-  out = out.slice(0, body) + reportEmbedJs + out.slice(body);
-  return out.slice(0, head) + reportEmbedCss + out.slice(head);
+  return embedReport(html.replace('<html lang="en">', `<html lang="${lang}" data-lang="${lang}"${th ? ` data-theme="${th}"` : ''}>`));
 }
-// The embedded report posts its height; only a report frame of this page may
-// resize itself, and only within sane bounds.
 window.addEventListener('message', ev => {
-  const hgt = ev.data?.auspexReportHeight;
-  if (!Number.isFinite(hgt)) return;
-  for (const f of document.querySelectorAll('.rep-view iframe')) {
-    if (f.contentWindow === ev.source) f.style.height = `${Math.min(Math.max(Math.round(hgt), 240), 200000)}px`;
-  }
+  const frame = reportFrameOf(document.querySelectorAll('.rep-view iframe'), ev.source);
+  const m = frame && reportMessage(ev.data);
+  if (!m) return;
+  if (m.height) frame.style.height = `${m.height}px`;
+  else toast(m.toast);
 });
 function reportView(r) {
   if (!r) return h('div', { class: 'panel rep-view' }, h('div', { class: 'rep-empty' }, h('b', {}, t('Select a report')), h('div', {}, t('Its plan, joins, timings, preview and history open here.'))));

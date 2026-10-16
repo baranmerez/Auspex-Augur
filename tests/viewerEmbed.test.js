@@ -1,0 +1,84 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+
+// Runs the embed block of src/viewer.html (how the viewer embeds an HTML
+// report and which messages it accepts from it) in isolation.
+const page = fs.readFileSync(new URL('../src/viewer.html', import.meta.url), 'utf8');
+const template = fs.readFileSync(new URL('../src/reports/template.html', import.meta.url), 'utf8');
+const block = page.match(/\/\/ embed:start[\s\S]*?\/\/ embed:end/)?.[0];
+
+function loadEmbed() {
+  assert.ok(block, 'embed block found in viewer.html');
+  const context = vm.createContext({});
+  vm.runInContext(`${block}\nthis.embedReport = embedReport; this.reportMessage = reportMessage; this.reportFrameOf = reportFrameOf; this.css = reportEmbedCss; this.js = reportEmbedJs;`, context);
+  return context;
+}
+const count = (s, part) => s.split(part).length - 1;
+
+test('CSS and script are injected once, right before the real </head> and </body>', () => {
+  const { embedReport, css, js } = loadEmbed();
+  // Report data escapes "<" (src/reports/service.js), as in a real report.
+  const data = JSON.stringify({ sql: 'select \'</body></head>\'' }).replace(/</g, '\\u003c');
+  const html = template.replace('"__AUSPEX_DATA__"', () => data);
+  const out = embedReport(html);
+  assert.equal(count(out, css), 1);
+  assert.equal(count(out, js), 1);
+  assert.equal(out.indexOf(css) + css.length, out.indexOf('</head>'));
+  assert.equal(out.indexOf(js) + js.length, out.lastIndexOf('</body>'));
+  assert.equal(count(out, '</body>'), 1);
+  assert.equal(out.replace(css, '').replace(js, ''), html, 'nothing else changes');
+  assert.ok(out.includes('\\u003c/body>'), 'escaped data stays as it was');
+});
+
+test('a literal </body> before the real one does not receive the script', () => {
+  const { embedReport, js } = loadEmbed();
+  const html = '<html><head></head><body><pre>&lt;/body&gt;</pre><!-- </body> --><p>x</p></body></html>';
+  const out = embedReport(html);
+  assert.equal(count(out, js), 1);
+  assert.ok(out.endsWith(`<p>x</p>${js}</body></html>`));
+});
+
+test('HTML without </head> or </body>, or with them out of order, is returned unchanged', () => {
+  const { embedReport } = loadEmbed();
+  for (const html of ['<html><body>x</body></html>', '<html><head></head>x', '<body></body><head></head>', 'plain text']) {
+    assert.equal(embedReport(html), html);
+  }
+});
+
+test('the embed hides the report toast and relays it; the script cannot close early', () => {
+  const { css, js } = loadEmbed();
+  assert.match(css, /#toast \{ display: none !important; \}/);
+  assert.match(js, /auspexReportToast/);
+  assert.equal(count(js, '</script>'), 1, 'one closing tag, at the end');
+  assert.ok(js.endsWith('</script>'));
+});
+
+test('height messages are clamped; anything malformed is ignored', () => {
+  const { reportMessage } = loadEmbed();
+  assert.deepEqual({ ...reportMessage({ auspexReportHeight: 1234.4 }) }, { height: 1234 });
+  assert.deepEqual({ ...reportMessage({ auspexReportHeight: 3 }) }, { height: 240 });
+  assert.deepEqual({ ...reportMessage({ auspexReportHeight: -50 }) }, { height: 240 });
+  assert.deepEqual({ ...reportMessage({ auspexReportHeight: 1e9 }) }, { height: 200000 });
+  for (const bad of [null, undefined, 'x', 42, {}, { auspexReportHeight: '900' }, { auspexReportHeight: NaN },
+    { auspexReportHeight: Infinity }, { auspexReportToast: '' }, { auspexReportToast: '   ' }, { auspexReportToast: 5 }]) {
+    assert.equal(reportMessage(bad), null, JSON.stringify(bad));
+  }
+});
+
+test('toast messages carry text only, capped in length', () => {
+  const { reportMessage } = loadEmbed();
+  assert.deepEqual({ ...reportMessage({ auspexReportToast: 'SQL copied' }) }, { toast: 'SQL copied' });
+  assert.equal(reportMessage({ auspexReportToast: 'x'.repeat(500) }).toast.length, 200);
+});
+
+test('only a report frame of the page is accepted as the message source', () => {
+  const { reportFrameOf } = loadEmbed();
+  const winA = {}, winB = {}, other = {};
+  const frames = [{ contentWindow: winA }, { contentWindow: winB }];
+  assert.equal(reportFrameOf(frames, winB), frames[1]);
+  assert.equal(reportFrameOf(frames, other), null);
+  assert.equal(reportFrameOf(frames, null), null);
+  assert.equal(reportFrameOf([], winA), null);
+});
