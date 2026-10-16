@@ -75,7 +75,7 @@ test('list_profiles shows script roots; a script saved into one is audited with 
   const listed = JSON.parse((await call('list_profiles', {})).content[0].text);
   assert.deepEqual(listed.scriptRoots, [{ name: 'scratch', path: path.resolve(scriptRoot), source: 'env' }]);
 
-  const args = { ...ref, name: 'rooted', root: 'scratch', folder: 'Audit_DB_Scripts_V1', fileName: '00_audit_preflight.sql', sql: 'BEGIN;\nUPDATE sales.t SET a = 4343 WHERE id = 1;\nROLLBACK;' };
+  const args = { ...ref, name: 'rooted', root: 'scratch', folder: 'Audit_DB_Scripts_V1', fileName: '00_audit_preflight.sql', sql: 'BEGIN;\nUPDATE sales.t SET zqscriptmarker = 1 WHERE id = 1;\nROLLBACK;' };
   const saved = await call('save_execute_script', args);
   assert.ok(!saved.isError, saved.content[0].text);
   const file = path.join(fs.realpathSync.native(scriptRoot), 'Audit_DB_Scripts_V1', '00_audit_preflight.sql');
@@ -88,16 +88,17 @@ test('list_profiles shows script roots; a script saved into one is audited with 
   assert.ok(ok.libraryFile.endsWith('rooted.sql'));
   assert.deepEqual([ok.folder, ok.fileName], ['Audit_DB_Scripts_V1', '00_audit_preflight.sql']);
   assert.match(refused.error, /already exists/);
-  assert.ok(!JSON.stringify([ok, refused]).includes('4343'), 'no SQL text in the audit log');
+  // Markers no random part of an entry (UUID, temp folder, timing) can contain.
+  assert.ok(!JSON.stringify([ok, refused]).includes('zqscriptmarker'), 'no SQL text in the audit log');
 
-  const report = await call('save_report', { ...ref, name: 'rooted-report', root: 'scratch', folder: 'Audit_DB_Scripts_V1/raporlar', fileName: '01_audit_report.sql', sql: 'select 4344 as marker' });
+  const report = await call('save_report', { ...ref, name: 'rooted-report', root: 'scratch', folder: 'Audit_DB_Scripts_V1/raporlar', fileName: '01_audit_report.sql', sql: 'select 1 as zqreportmarker' });
   assert.ok(!report.isError, report.content[0].text);
   const reportFile = path.join(fs.realpathSync.native(scriptRoot), 'Audit_DB_Scripts_V1', 'raporlar', '01_audit_report.sql');
   assert.equal(JSON.parse(report.content[0].text).externalFile, reportFile);
   const [logged] = auditEntries().filter(e => e.tool === 'save_report' && e.root === 'scratch');
   assert.equal(logged.file, reportFile);
   assert.equal(logged.folder, 'Audit_DB_Scripts_V1/raporlar');
-  assert.ok(!JSON.stringify(logged).includes('4344'));
+  assert.ok(!JSON.stringify(logged).includes('zqreportmarker'));
 });
 
 test('local read-only tools add no entries; calls rejected by input validation are not logged', async () => {
