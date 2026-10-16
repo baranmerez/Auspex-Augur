@@ -12,7 +12,7 @@ const block = page.match(/\/\/ roles:start[\s\S]*?\/\/ roles:end/)?.[0];
 function loadRoles() {
   assert.ok(block, 'roles block found in viewer.html');
   const context = vm.createContext({});
-  vm.runInContext(`${block}\nthis.roleGroups = roleGroups; this.roleColor = roleColor; this.flowWidth = flowWidth; this.roleTop = roleTop; this.roleShown = roleShown; this.roleLimitIn = roleLimitIn; this.roleToggled = roleToggled; this.tableOf = tableOf; this.joinLabel = joinLabel; this.joinLabels = joinLabels; this.centerColumns = centerColumns;`, context);
+  vm.runInContext(`${block}\nthis.roleGroups = roleGroups; this.roleColor = roleColor; this.flowWidth = flowWidth; this.roleTop = roleTop; this.roleShown = roleShown; this.roleLimitIn = roleLimitIn; this.roleLimitSet = roleLimitSet; this.roleMigrated = roleMigrated; this.roleOptions = roleOptions; this.roleActive = roleActive; this.tableOf = tableOf; this.joinLabel = joinLabel; this.joinLabels = joinLabels; this.centerColumns = centerColumns;`, context);
   return context;
 }
 
@@ -93,31 +93,83 @@ test('flow edge width grows on a log scale and stays in range', () => {
   assert.ok(Math.abs(mid - (1.5 + 7 * Math.log10(1001) / Math.log10(1_000_001))) < 1e-9);
 });
 
-test('top 5 / top 10 toggles are independent per view and side', () => {
-  const { roleLimitIn, roleToggled, roleTop, roleShown } = loadRoles();
+test('top-N limits are independent per view and side', () => {
+  const { roleLimitIn, roleLimitSet, roleShown } = loadRoles();
   const sides = [['er', 'ref'], ['er', 'dep'], ['flow', 'ref'], ['flow', 'dep'], ['flow', 'dep2']];
   for (const [view, side] of sides) {
-    const open = roleToggled(undefined, view, side);
-    for (const [v, s] of sides) {
-      const want = v === view && s === side ? roleTop : roleShown;
-      assert.equal(roleLimitIn(open, v, s), want, `${view}.${side} toggled: ${v}.${s}`);
+    for (const limit of [10, 25, 50, Infinity]) {
+      const s = roleLimitSet(undefined, view, side, limit);
+      for (const [v, k] of sides) {
+        const want = v === view && k === side ? limit : roleShown;
+        assert.equal(roleLimitIn(s, v, k), want, `${view}.${side}=${limit}: ${v}.${k}`);
+      }
     }
-    // Toggling the same side again closes it; every other side stays as it was.
-    assert.equal(roleLimitIn(roleToggled(open, view, side), view, side), roleShown);
   }
-  // Several sides open together keep their own state through further toggles.
-  let s = roleToggled(roleToggled(undefined, 'er', 'ref'), 'er', 'dep');
-  s = roleToggled(s, 'er', 'ref');
-  assert.equal(roleLimitIn(s, 'er', 'ref'), roleShown);
-  assert.equal(roleLimitIn(s, 'er', 'dep'), roleTop);
-  assert.equal(roleLimitIn(s, 'flow', 'dep'), roleShown, 'the ER toggle does not open the Flow lane');
+  // Several sides set together keep their own values through further changes.
+  let s = roleLimitSet(roleLimitSet(undefined, 'er', 'ref', 25), 'er', 'dep', 50);
+  s = roleLimitSet(s, 'er', 'ref', 5);
+  assert.equal(roleLimitIn(s, 'er', 'ref'), 5);
+  assert.equal(roleLimitIn(s, 'er', 'dep'), 50);
+  assert.equal(roleLimitIn(s, 'flow', 'dep'), roleShown, 'the ER picker does not change the Flow lane');
   // The input object is never mutated (state is replaced, not shared).
-  const frozen = Object.freeze({ 'flow.dep': true });
-  assert.equal(roleLimitIn(roleToggled(frozen, 'flow', 'ref'), 'flow', 'dep'), roleTop);
-  // Old persisted shapes ({ ref: true }, true) open nothing.
+  const frozen = Object.freeze({ 'flow.dep': 25 });
+  assert.equal(roleLimitIn(roleLimitSet(frozen, 'flow', 'ref', 50), 'flow', 'dep'), 25);
+  // All is stored as 'all' (JSON keeps it) and read back as Infinity.
+  const all = roleLimitSet(undefined, 'flow', 'dep2', Infinity);
+  assert.equal(all['flow.dep2'], 'all');
+  assert.equal(roleLimitIn(JSON.parse(JSON.stringify(all)), 'flow', 'dep2'), Infinity);
+  // Unknown values fall back to the default.
+  assert.equal(roleLimitIn({ 'er.ref': 7 }, 'er', 'ref'), roleShown);
+  assert.equal(roleLimitIn({ 'er.ref': '25' }, 'er', 'ref'), roleShown);
+  assert.equal(roleLimitSet(undefined, 'er', 'ref', 7)['er.ref'], roleShown);
+});
+
+test('25, 50 and All draw exactly as many cards as the header counts', () => {
+  const { roleGroups, roleLimitIn, roleLimitSet, roleOptions, roleActive } = loadRoles();
+  // A wide fixture: 60 dependents of one center.
+  const nodes = [{ id: 'app.orders', state: 'explored' }];
+  const edges = [];
+  for (let i = 0; i < 60; i++) {
+    nodes.push({ id: `app.order_part_${String(i).padStart(2, '0')}`, state: 'unexplored', estRows: 1000 - i });
+    edges.push({ level: 'fk', from: nodes[i + 1].id, to: 'app.orders', columns: ['order_id'], refColumns: ['id'], linkedRows: 100_000 - i });
+  }
+  const dep = roleGroups({ nodes, edges }, 'app.orders').dep;
+  assert.equal(dep.length, 60);
+  for (const [limit, drawn] of [[5, 5], [10, 10], [25, 25], [50, 50], [Infinity, 60]]) {
+    const s = roleLimitSet(undefined, 'flow', 'dep', limit);
+    const n = roleLimitIn(s, 'flow', 'dep');
+    // The header shows "top {min(limit, count)} of {count}"; the lane draws slice(0, limit).
+    assert.equal(dep.slice(0, n).length, drawn);
+    assert.equal(Math.min(n, dep.length), drawn);
+  }
+  // The picker offers the limits below the count, then All.
+  assert.deepEqual(Array.from(roleOptions(60)), [5, 10, 25, 50, Infinity]);
+  assert.deepEqual(Array.from(roleOptions(30)), [5, 10, 25, Infinity]);
+  assert.deepEqual(Array.from(roleOptions(12)), [5, 10, Infinity]);
+  assert.deepEqual(Array.from(roleOptions(6)), [5, Infinity]);
+  // A limit that covers every table marks All, so the picker names what is drawn.
+  assert.equal(roleActive(50, 30), Infinity);
+  assert.equal(roleActive(25, 30), 25);
+  assert.equal(roleActive(10, 10), Infinity);
+  assert.equal(roleActive(Infinity, 3), Infinity);
+});
+
+test('old top 5 / top 10 state migrates: true becomes 10, everything else the default', () => {
+  const { roleMigrated, roleLimitIn, roleShown, roleTop } = loadRoles();
+  const old = { 'er.ref': true, 'er.dep': false, 'flow.dep': true, 'flow.ref': 25, 'flow.dep2': 'all', junk: 'x' };
+  const m = roleMigrated(old);
+  assert.deepEqual({ ...m }, { 'er.ref': 10, 'flow.dep': 10, 'flow.ref': 25, 'flow.dep2': 'all' });
+  assert.equal(roleLimitIn(m, 'er', 'ref'), roleTop);
+  assert.equal(roleLimitIn(m, 'er', 'dep'), roleShown);
+  assert.equal(roleLimitIn(m, 'flow', 'dep2'), Infinity);
+  // Unmigrated state still reads true as 10.
+  assert.equal(roleLimitIn(old, 'flow', 'dep'), 10);
+  // Old shapes ({ ref: true }, true, null, arrays) open nothing.
   assert.equal(roleLimitIn({ ref: true, dep: true }, 'er', 'ref'), roleShown);
   assert.equal(roleLimitIn(true, 'er', 'ref'), roleShown);
-  assert.equal(roleLimitIn(roleToggled(true, 'er', 'dep'), 'er', 'dep'), roleTop);
+  assert.deepEqual({ ...roleMigrated(true) }, {});
+  assert.deepEqual({ ...roleMigrated(null) }, {});
+  assert.deepEqual({ ...roleMigrated([true]) }, {});
 });
 
 test('join labels name the referencing column, then the referenced table and column', () => {
