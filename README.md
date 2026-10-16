@@ -726,8 +726,8 @@ Approval moves the draft into `SELECT/` exactly like `approve_report` (it still
 needs a successful run of the current SQL); revoking moves it back into
 `_drafts/`, keeps its SQL versions and runs, and is refused while another
 draft of the same report exists. Both regenerate the report HTML and record
-the change in the report's `stageHistory`. Only files in the local report
-library change; no database is involved.
+the change in the report's `stageHistory`. Only local Auspex files change
+(report library and schema memory view); no database is touched.
 
 The two routes (`POST /api/reports/approve`, `POST /api/reports/revoke`) accept
 a request only when all of these hold:

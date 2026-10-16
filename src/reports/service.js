@@ -77,8 +77,10 @@ export function approvedJoinPairs(library, profile) {
 // Stage changes without a database, shared by approve_report and the viewer:
 // the library move and the regenerated HTML happen under one library lock.
 // by: who asked for the change, recorded in meta.stageHistory.
-// memory (optional SchemaMemory): its view is rebuilt afterwards, outside the
-// library lock, because approved reports' joins are its "used" relations.
+// memory (optional SchemaMemory): its view is rebuilt after the move, because
+// approved reports' joins are its "used" relations. This runs after this
+// helper's own library lock; a caller that already holds the lock (the
+// viewer) rebuilds while still holding it.
 function changeStage(library, ref, { by, memory }, move, stage) {
   const r = library.locked(() => {
     const moved = move(ref, { by });

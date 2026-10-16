@@ -824,8 +824,8 @@ const TR = {
   'Show one more layer on both sides': 'İki yana birer katman daha ekle', '{role}: tables per layer': '{role}: katman başına tablo',
   'The viewer was restarted; reload the page': 'Görüntüleyici yeniden başlatıldı; sayfayı yenileyin', 'Approve': 'Onayla', 'Revoke approval': 'Onayı geri al', 'Report approved': 'Onaylandı', 'Approval revoked': 'Onay geri alındı', 'Cancel': 'Vazgeç', 'Working…': 'İşleniyor…',
   'Approve this report?': 'Bu rapor onaylansın mı?', 'Revoke the approval of this report?': 'Bu raporun onayı geri alınsın mı?',
-  'It moves to Approved (SELECT). Only files in the local report library change.': 'Rapor Onaylı (SELECT) aşamasına geçer. Yalnızca yerel rapor kütüphanesindeki dosyalar değişir.',
-  'It moves back to Drafts; its SQL versions and runs stay. Only files in the local report library change.': 'Rapor Taslaklar aşamasına döner; SQL sürümleri ve çalıştırmaları kalır. Yalnızca yerel rapor kütüphanesindeki dosyalar değişir.',
+  'It moves to Approved (SELECT). Only local Auspex files change (report library and schema memory view); no database is touched.': 'Rapor Onaylı (SELECT) aşamasına geçer. Yalnız yerel Auspex dosyaları değişir (rapor kütüphanesi ve şema hafızası görünümü); veritabanına dokunulmaz.',
+  'It moves back to Drafts; its SQL versions and runs stay. Only local Auspex files change (report library and schema memory view); no database is touched.': 'Rapor Taslaklar aşamasına döner; SQL sürümleri ve çalıştırmaları kalır. Yalnız yerel Auspex dosyaları değişir (rapor kütüphanesi ve şema hafızası görünümü); veritabanına dokunulmaz.',
   'Report': 'Rapor', 'Location': 'Konum', 'Version': 'Sürüm', 'Last run': 'Son çalıştırma', 'Warnings': 'Uyarılar',
   'Approve from the browser viewer or via Claude': 'Tarayıcıdaki görüntüleyiciden ya da Claude ile onaylayın', 'Revoke report approval': 'Rapor onayını geri al',
 };
@@ -1760,9 +1760,9 @@ function stageChangeFor(r, desktop) {
   if (desktop) return { kind: 'note' };
   return r.stage === 'draft'
     ? { kind: 'approve', path: '/api/reports/approve', to: 'approved', label: 'Approve', question: 'Approve this report?', done: 'Report approved',
-      note: 'It moves to Approved (SELECT). Only files in the local report library change.' }
+      note: 'It moves to Approved (SELECT). Only local Auspex files change (report library and schema memory view); no database is touched.' }
     : { kind: 'revoke', path: '/api/reports/revoke', to: 'draft', label: 'Revoke approval', question: 'Revoke the approval of this report?', done: 'Approval revoked',
-      note: 'It moves back to Drafts; its SQL versions and runs stay. Only files in the local report library change.' };
+      note: 'It moves back to Drafts; its SQL versions and runs stay. Only local Auspex files change (report library and schema memory view); no database is touched.' };
 }
 // Facts for the confirm dialog: [label, value]; a value of null shows as "–".
 function stageChangeFacts(r) {
