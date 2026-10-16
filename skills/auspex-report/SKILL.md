@@ -100,7 +100,8 @@ It writes a new file each time, never overwriting one.
 
 A report never changes data. When the user asks for a data fix from its
 findings, write it with the postgres-safe-dml flow (BEGIN, DEFINE, PROCESS,
-MATCH, CORRECT or FAIL, ROLLBACK) and save it with `save_execute_script`:
+MATCH, CORRECT or FAIL, ROLLBACK) and save it with `save_execute_script`.
+Write its title, purpose and comments in the `notesLanguage` from `list_profiles` (ask once if null); step markers and SQL stay as written:
 
 - **Ask where first, never invent it.** Propose
   `<root>/<Topic>_DB_Scripts_V1/NN_name[_ONIZLEME].sql` with a root from
