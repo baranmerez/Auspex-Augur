@@ -19,8 +19,14 @@ at runtime. `src/viewer.js` serves them on `/vendor/<file>`;
   `3d-force-graph-1.80.1.LICENSE.txt` (sha256
   `7262e566e874d1ce8cfadace01d4f635f8d704b6bdf7b4345cc028e5faeafded`)
 - Homepage: https://github.com/vasturiano/3d-force-graph
+- Bundled dependencies (three.js, d3 and d3-force-3d modules, ngraph.*,
+  polished and others) lose their license headers in the minified file; their
+  names, versions and license texts are in `3d-force-graph-1.80.1.THIRD-PARTY.txt`
+  (sha256 `aad952744e05c4b770d3155406be57a60ed4ca32f6069313f18523e54a5e57d7`).
 
 To upgrade: download the new tarball from registry.npmjs.org into an empty
 folder, check its integrity against `npm view 3d-force-graph@<v> dist.integrity`,
 copy `dist/3d-force-graph.min.js` and `LICENSE` here under the new version,
+regenerate the THIRD-PARTY file from the license files of the resolved
+dependencies (install the package in an empty scratch folder, never in this repo),
 update this file and `graph3dVendor` in `src/viewer.html`, and run `npm test`.
