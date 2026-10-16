@@ -27,7 +27,10 @@ late one.
    run. A query that needs more than the default timeout, or EXPLAIN ANALYZE
    on a large table: tell the user the table, estimated rows and reason first.
 7. **Approval is the user's.** `approve_report` only after the user
-   explicitly approved this report in this conversation.
+   explicitly approved this report in this conversation. The user can also
+   approve or revoke a report themselves in the viewer (browser or desktop
+   app, *Onayla* / *Onayı geri al*); do not say approval is only possible
+   through chat.
 8. **No personal values** in answers or notes; masked previews only.
 
 ## Workflow

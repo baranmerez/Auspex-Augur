@@ -193,8 +193,16 @@ has a hole in that schema.
   `render_reports` so library HTML uses the current template.
 - The Schema tab reads `graph.json`, which the memory module rebuilds after
   every change, so the viewer and the Rust app contain no relation logic.
-- Binds to 127.0.0.1 only, GET only, foreign Host headers get 403; never
-  connects to a database.
+- Binds to 127.0.0.1 only, GET only except the two approval routes (origin,
+  per-process token, audited), foreign Host headers get 403; never connects
+  to a database.
+- Report approval: Reports tab *Approve* / *Revoke approval* (TR *Onayla* /
+  *Onayı geri al*) with a confirm dialog. The browser viewer POSTs to its
+  routes; the desktop app's `approve_report` / `revoke_report` Tauri commands
+  run `node <auspexRoot>/src/stageCli.js` (no shell, 30 s timeout), audited
+  with actor `desktop`. Shared logic: `src/reports/stageChange.js`. The
+  desktop needs Node (PATH or `AUSPEX_NODE`) and `AUSPEX_ROOT` or
+  `"auspexRoot"` in profiles.json.
 
 Desktop build: Rust (MSVC toolchain), VS 2022 C++ Build Tools, WebView2;
 `cd desktop && npm install && npm run build` (first build ~6 min;
@@ -206,7 +214,7 @@ Desktop build: Rust (MSVC toolchain), VS 2022 C++ Build Tools, WebView2;
 |---|---|---|
 | `npm test` | SQL guard, profiles, config, timeouts, explain, audit and errors (incl. MCP server end to end), reports, change-script lint, CSV export, file lock with child processes, schema memory, catalog batch tools, prompts, skills install, viewer roles (no database) | 338/338 (2026-10-16, Windows, Node 24) |
 | `npm run test:local` | Local PG16 + `auspex_test` schema: writes rejected by the database, unprivileged table, CTE, stacked statements, timeout, connection drop, EXPLAIN ANALYZE, CSV budget cancellation, search, reports, memory, DDL catalog | 39 pass, 4 skipped (DDL fixture not applied locally; CI runs them) |
-| `cargo test` (in `desktop/src-tauri`) | Path validation and profile rules of the desktop API | 3/3 |
+| `cargo test` (in `desktop/src-tauri`) | Path validation and profile rules of the desktop API, report-stage argument validation, CLI result mapping, auspexRoot check | 6/6 |
 
 Local test setup: `scripts/local-test-setup.sql`, then
 `scripts/local-test-ddl.sql` (triggers, functions, checks for the DDL catalog
