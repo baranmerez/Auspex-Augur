@@ -754,7 +754,8 @@ buttons (see below).
 ### 🖥️ Desktop app (Tauri)
 
 `desktop/` wraps the same viewer in a small native app (about 3 MB) that reads
-`~/.auspex` directly through a Rust command, so no Node server is needed.
+`~/.auspex` directly through a Rust command, so no Node server is needed
+(approve/revoke need Node 20+ and the Auspex checkout, see below).
 Closing the window keeps it in the tray; the tray menu has *Open*, *Show log
 folder*, *Start with Windows* (starts hidden in the tray) and *Quit*.
 
@@ -802,7 +803,10 @@ Requirements:
 
 The app starts only this fixed program and script, passes each part of the
 report location as its own argument (never through a shell), checks the parts
-in Rust first, and stops the CLI after 30 seconds. Only `api`,
+in Rust first, and stops the CLI after 30 seconds. When the CLI times out or
+gives no result, the change may or may not have been applied: the app says so,
+reloads the list and writes an audit line (actor `desktop`, error code
+`TIMEOUT` or `CLI_FAILED`) itself. Only `api`,
 `approve_report` and `revoke_report` are allowed in the window's capability;
 there is no shell plugin.
 

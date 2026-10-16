@@ -214,7 +214,7 @@ Desktop build: Rust (MSVC toolchain), VS 2022 C++ Build Tools, WebView2;
 |---|---|---|
 | `npm test` | SQL guard, profiles, config, timeouts, explain, audit and errors (incl. MCP server end to end), reports, change-script lint, CSV export, file lock with child processes, schema memory, catalog batch tools, prompts, skills install, viewer roles (no database) | 338/338 (2026-10-16, Windows, Node 24) |
 | `npm run test:local` | Local PG16 + `auspex_test` schema: writes rejected by the database, unprivileged table, CTE, stacked statements, timeout, connection drop, EXPLAIN ANALYZE, CSV budget cancellation, search, reports, memory, DDL catalog | 39 pass, 4 skipped (DDL fixture not applied locally; CI runs them) |
-| `cargo test` (in `desktop/src-tauri`) | Path validation and profile rules of the desktop API, report-stage argument validation, CLI result mapping, auspexRoot check | 6/6 |
+| `cargo test` (in `desktop/src-tauri`) | Path validation and profile rules of the desktop API, report-stage argument validation, CLI result mapping, auspexRoot check, audit line for unknown outcomes | 7/7 |
 
 Local test setup: `scripts/local-test-setup.sql`, then
 `scripts/local-test-ddl.sql` (triggers, functions, checks for the DDL catalog
@@ -244,7 +244,9 @@ outside the repository. The current setup is described in
 - **CSV/JSON download in the desktop app** may not behave like in the browser
   under WebView2; a Rust "save as" dialog can be added if needed.
 - **Profile validation:** the desktop app (Rust) reads the profiles file for
-  display only; `src/config.js` is the source of truth for validation.
+  display, and reads `auspexRoot` to locate the stage CLI
+  (`src/stageCli.js`) for approve/revoke; `src/config.js` is the source of
+  truth for validation.
 - **Log file day is UTC:** entries between 00:00 and 03:00 Turkey time land in
   the previous day's file; the viewer filters by local day.
 - **Catalog visibility:** PostgreSQL shows table names to everyone; tables in
