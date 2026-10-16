@@ -122,7 +122,7 @@ if (typeof server.createToolError === 'function') {
 
 tool('list_profiles', {
   title: 'List connection profiles',
-  description: 'Lists configured database profiles with description, host, database, user, timeout limit and query budget per minute (never passwords). Call this and ask the user which profile to use when they have not named one in this conversation; show each description so production databases are clearly marked.',
+  description: 'Lists configured database profiles with description, host, database, user, timeout limit and query budget per minute (never passwords), and the script roots (named folders save_execute_script can write change scripts into). Call this and ask the user which profile to use when they have not named one in this conversation; show each description so production databases are clearly marked.',
   inputSchema: {},
 }, async () => ({
   limits: {
@@ -131,6 +131,8 @@ tool('list_profiles', {
   },
   exportDir: config.exportDir,
   profilesFile: config.profilesFile,
+  // Folders save_execute_script can write into (root parameter).
+  scriptRoots: [...config.scriptRoots].map(([name, r]) => ({ name, path: r.dir, source: r.source })),
   profiles: [...config.profiles].map(([name, cs]) => ({
     name,
     description: config.profileInfo.get(name)?.description ?? null,

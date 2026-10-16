@@ -314,6 +314,10 @@ fn profiles() -> Value {
             match parsed {
                 Ok(Value::Object(entries)) => {
                     for (name, p) in entries {
+                        // Named folders for change scripts, not a profile.
+                        if name == "scriptRoots" {
+                            continue;
+                        }
                         let url_text = p.get("url").and_then(Value::as_str).unwrap_or("");
                         let mut item = Map::new();
                         item.insert("name".into(), json!(name.to_lowercase()));
