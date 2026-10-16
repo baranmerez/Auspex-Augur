@@ -423,6 +423,8 @@
   .role-sw.ref { background: linear-gradient(90deg, var(--role-ref-1), var(--role-ref-10)); }
   .role-sw.dep { background: linear-gradient(90deg, var(--role-dep-1), var(--role-dep-10)); }
   .icon-btn.sm { padding: 2px 8px; font-size: 12px; }
+  .seg.sm { padding: 1px; border-radius: 7px; }
+  .seg.sm button { padding: 1px 7px; font-size: 12px; border-radius: 5px; font-variant-numeric: tabular-nums; }
   .nlist .rk { font: 11px var(--mono); color: var(--text-3); min-width: 24px; flex: none; }
   /* Flow view: Reference -> Center -> Dependent swimlanes */
   .sch-canvas.flow { height: auto; overflow-x: auto; overflow-y: hidden; display: flex; flex-direction: column; }
@@ -694,7 +696,7 @@ const TR = {
   'Database-wide notes': 'Veritabanı geneli notlar', 'rows': 'satır', 'No tables match.': 'Eşleşen tablo yok.',
   'PK, FK: keys · U: used in a plan · N: has a note · ←: referenced': 'PK, FK: anahtar · U: planda kullanıldı · N: notu var · ←: referans alınıyor',
   'Reference': 'Instance', 'Dependent': 'Beslenen', 'no estimate': 'tahmin yok', '~{n} linked (est.)': '~{n} bağlı (tahmini)', '~{n} rows (est.)': '~{n} satır (tahmini)',
-  'top {s} of {n}': 'ilk {s} / {n}', 'none known': 'bilinen yok', 'Show top 5': 'İlk 5', 'Show top 10': 'İlk 10', '{role}: show the top {n}': '{role}: ilk {n} tabloyu göster', '{n} more in Relations': '{n} tane daha İlişkiler listesinde',
+  'top {s} of {n}': 'ilk {s} / {n}', 'none known': 'bilinen yok', '{role}: tables shown': '{role}: gösterilen tablolar', '{role}: show all {n} tables': '{role}: {n} tablonun hepsini göster', '{role}: show the top {n}': '{role}: ilk {n} tabloyu göster', '{n} more in Relations': '{n} tane daha İlişkiler listesinde',
   'rank 1 → 10': 'sıra 1 → 10', 'beyond top 10': 'ilk 10 dışı', 'Hide beyond top 10': 'İlk 10 dışını gizle', 'Show beyond top 10': 'İlk 10 dışını göster',
   'Edges of the selected table ranked beyond 10': 'Seçili tablonun 10. sıradan sonraki ilişkileri',
   'Flow': 'Akış', 'Center': 'Merkez', 'Dependents of {t}': '{t} tablosunun Beslenenleri', 'Back': 'Geri',
@@ -1632,17 +1634,39 @@ function flowWidth(weight, max) {
   if (!Number.isFinite(weight) || !Number.isFinite(max) || max <= 0) return 1.5;
   return 1.5 + 7 * (Math.log10(1 + Math.max(0, weight)) / Math.log10(1 + max));
 }
-// Top 5 / top 10 toggle state: one flag per view and side ('er.ref',
-// 'flow.dep2', ...), so one side's button never changes another side or the
-// same side in the other view. Toggling returns a new object.
+// Top-N picker state: one value per view and side ('er.ref', 'flow.dep2',
+// ...), so one side's picker never changes another side or the same side in
+// the other view. A value is 5, 10, 25, 50 or 'all'; anything else means the
+// default 5. The old top 5 / top 10 toggle stored true for top 10.
+const roleLimits = [5, 10, 25, 50];
 const roleExpandKey = (view, side) => `${view}.${side}`;
-const roleLimitIn = (expand, view, side) => (expand && expand[roleExpandKey(view, side)] === true ? roleTop : roleShown);
-function roleToggled(expand, view, side) {
-  const k = roleExpandKey(view, side);
-  const next = expand && typeof expand === 'object' && !Array.isArray(expand) ? { ...expand } : {};
-  next[k] = next[k] !== true;
+const roleState = expand => (expand && typeof expand === 'object' && !Array.isArray(expand) ? expand : {});
+function roleLimitIn(expand, view, side) {
+  const v = roleState(expand)[roleExpandKey(view, side)];
+  if (v === true) return roleTop;
+  if (v === 'all') return Infinity;
+  return roleLimits.includes(v) ? v : roleShown;
+}
+// Returns a new state with one side set; the input is never mutated.
+function roleLimitSet(expand, view, side, limit) {
+  const next = { ...roleState(expand) };
+  next[roleExpandKey(view, side)] = limit === Infinity || limit === 'all' ? 'all' : roleLimits.includes(limit) ? limit : roleShown;
   return next;
 }
+// Persisted state from the old toggle: true becomes 10, false the default.
+function roleMigrated(expand) {
+  const next = {};
+  for (const [k, v] of Object.entries(roleState(expand))) {
+    if (v === true) next[k] = roleTop;
+    else if (v === 'all' || roleLimits.includes(v)) next[k] = v;
+  }
+  return next;
+}
+// Picker choices for a side with `count` tables: the limits below the count,
+// then All. The active choice is All once the limit covers every table, so
+// the picker always names what is drawn.
+const roleOptions = count => [...roleLimits.filter(n => n < count), Infinity];
+const roleActive = (limit, count) => (limit >= count ? Infinity : limit);
 // Table part of a "schema.table" id.
 const tableOf = id => { const s = String(id ?? ''), i = s.indexOf('.'); return i < 0 ? s : s.slice(i + 1); };
 // Join columns of one FK, written from the referencing side:
@@ -2358,19 +2382,24 @@ function erBox({ x, y, w, title, st, rows, more, center, note, delay, meta, meta
   return { g, hgt, top };
 }
 
-// The ER diagram and the Flow view draw the top 5 (or 10) of each role; the
-// rest stays in the inspector's Relations list.
+// The ER diagram and the Flow view draw the top N of each role (5, 10, 25,
+// 50 or all, picked per view and side); the rest stays in the inspector's
+// Relations list. The header count is always the number of cards drawn.
 const roleLimit = (view, side) => roleLimitIn(state.memExpand, view, side);
-function toggleRoleLimit(view, side) { state.memExpand = roleToggled(state.memExpand, view, side); persist(); renderSchema(); }
+function setRoleLimit(view, side, limit) { state.memExpand = roleLimitSet(state.memExpand, view, side, limit); persist(); renderSchema(); }
 function roleHeader(view, key, list, title, sw = key) {
   const limit = roleLimit(view, key), shown = Math.min(limit, list.length), hidden = list.length - shown;
-  const next = limit === roleTop ? roleShown : roleTop;
-  const action = t('{role}: show the top {n}', { role: title, n: next });
+  const active = roleActive(limit, list.length);
+  const picker = list.length > roleShown ? h('div', { class: 'seg sm topn', role: 'group', 'aria-label': t('{role}: tables shown', { role: title }) },
+    roleOptions(list.length).map(n => {
+      const label = n === Infinity ? t('All') : String(n);
+      const tip = n === Infinity ? t('{role}: show all {n} tables', { role: title, n: fmt(list.length) }) : t('{role}: show the top {n}', { role: title, n });
+      return h('button', { class: n === active ? 'on' : '', 'aria-pressed': String(n === active), title: tip, 'aria-label': tip, onclick: () => setRoleLimit(view, key, n) }, label);
+    })) : null;
   return h('div', { class: 'rh ' + sw },
     h('span', { class: 'role-sw ' + sw }), h('b', {}, title),
     h('span', {}, list.length ? t('top {s} of {n}', { s: fmt(shown), n: fmt(list.length) }) : t('none known')),
-    list.length > roleShown ? h('button', { class: 'icon-btn sm', 'aria-expanded': String(limit === roleTop), title: action, 'aria-label': action, onclick: () => toggleRoleLimit(view, key) },
-      next === roleShown ? t('Show top 5') : t('Show top 10')) : null,
+    picker,
     hidden ? h('span', { class: 'more' }, t('{n} more in Relations', { n: fmt(hidden) })) : null);
 }
 
@@ -2461,7 +2490,7 @@ function erSvg(data, centerId, recs, roles, width) {
 // The center card sits in the Merkez lane: name, state, row estimate, column
 // and note counts, PK and the key columns (as in the ER view). Its column rows
 // have fixed heights so edges attach to the joined column.
-const FL = { head: 66, nodeH: 64, gap: 12, pad: 16, minLane: 230, nodeMaxW: 260, foot: 26, cTop: 66, cRow: 19, cBottom: 8, cMax: 10, cMaxW: 300 };
+const FL = { head: 92, nodeH: 64, gap: 12, pad: 16, minLane: 230, nodeMaxW: 260, foot: 26, cTop: 66, cRow: 19, cBottom: 8, cMax: 10, cMaxW: 300 };
 function flowCenter(id) {
   const cur = memSel();
   if (!id || id === cur) return;
@@ -2561,7 +2590,7 @@ async function buildFlow(wrap, data, centerId, key) {
     }
     const bh = lane.items.length * (FL.nodeH + FL.gap) - FL.gap;
     const parentY = lane.parent ? pos.get(lane.parent)?.y : null;
-    // Lanes start at the top so one lane's top 5 / top 10 toggle never moves
+    // Lanes start at the top so one lane's top-N picker never moves
     // the cards of another lane; only the depth-2 lane follows its parent.
     const want = parentY !== null && parentY !== undefined ? parentY + FL.nodeH / 2 - bh / 2 : top;
     const y0 = Math.max(top, Math.min(top + contentH - bh, want));
@@ -2856,6 +2885,7 @@ addEventListener('resize', moveInk);
 addEventListener('scroll', hideTip, { passive: true });
 
 // ---------- start ----------
+state.memExpand = roleMigrated(state.memExpand);
 document.querySelectorAll('#lang button').forEach(b => b.addEventListener('click', () => setLang(b.dataset.v)));
 applyStaticI18n();
 applyTheme();
