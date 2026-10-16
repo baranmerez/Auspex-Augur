@@ -23,7 +23,7 @@ confidence; it stays an inference until the user confirms it.
 |---|---|
 | fillRate 0 | unused column; good note candidate |
 | fillRate 1 and distinctInSample = sampled rows | identifier or unique key candidate |
-| fillRate 1, low distinct (2-20) | status / type / flag; look for its lookup table |
+| fillRate 1, low distinct (2-20) | status / type / flag; find where its codes are defined (lookup table, enum, CHECK or comment) |
 | Low fillRate (< 0.1) | optional or legacy field; check whether recent rows fill it |
 | distinctInSample 1 | constant; ignore in reports |
 | Column in an index or foreign key | used for access or joins |

@@ -1,6 +1,6 @@
 ---
 name: auspex-explore
-description: "Discover and explain a PostgreSQL database through the read-only Auspex MCP server: find tables, read structure and relations, measure fill rates and fan-out, and record findings in the schema memory with few queries. Use when the user wants to explore a database, find where data lives, understand why a table exists or which columns matter. TR: tablo keşfi, veritabanı keşfi, tablo ne işe yarıyor, hangi kolonlar önemli, ilişkiler, Auspex."
+description: "Discover and explain a PostgreSQL database through the read-only Auspex MCP server: find tables, read structure and relations, measure fill rates and fan-out, and record findings in the schema memory with few queries. Use when the user wants to explore a database, find where data lives, understand why a table exists or which columns matter."
 ---
 
 # Auspex explore
@@ -40,7 +40,7 @@ database statements, and leave the answer in the schema memory.
    tables the user named; read `databaseNotes`, table notes and
    `unexploredNeighbors`.
 2. **Candidates.** `search` with the business word and its likely table-name
-   forms (Turkish and English, singular and plural). Filter the list in the
+   forms (in the languages the schema may use, singular and plural). Filter the list in the
    catalog before describing anything; see
    [candidate-filtering.md](references/candidate-filtering.md). Skip
    backup, temp and log copies (`*_upd*`, `*_bak*`, `*_old*`, `tmp_*`,
@@ -51,15 +51,16 @@ database statements, and leave the answer in the schema memory.
    (tables it references, tables that reference it, ranked by estimated
    linked rows). Otherwise read foreign keys and incoming foreign keys from
    `describe_tables` and treat same-named id columns as suggested relations.
-   A code or status column without a foreign key (for example
-   `damageddeliverystatuscode`): split its name into word parts (`damaged`,
-   `delivery`, `status`, `code`) and run ONE `search` with a %-joined pattern of
-   the distinctive parts (`damaged%status%code`), plus variants with the
-   table's family prefix (`acme%status`); confirm by reading the code list
-   with one query. Example: `damageddeliverystatuscode` ->
-   `import_acme_damaged_items_status_codes`. Only if that fails, try
-   `search` with `searchSource` for function bodies that decode the code, and
-   only then ask the user.
+   **Code-column lookup.** A code or status column without a foreign key (for
+   example `status_code` in `example.order_items`): split its name into word
+   parts (`status`, `code`) and run ONE `search` with a %-joined pattern of
+   the distinctive parts (`status%code`), plus variants with the table's
+   family prefix (`example%status`). Example: `status_code` in
+   `example.order_items` -> `example.status_codes`. Read the code list from
+   its source (lookup table, enum type, CHECK constraint or column comment)
+   with at most one query. Only if that fails, try `search` with
+   `searchSource` for function bodies that decode the code, and only then ask
+   the user.
 5. **Measurement.** One `profile_tables` call: fill rate and distinct count
    per column; with `parent`, fan-out of child tables over the center table.
    Narrow with `window` on a date column for large parents.
@@ -87,7 +88,7 @@ Write note text in the `notesLanguage` from `list_profiles` (ask once if null).
 
 | What | kind | Needs |
 |---|---|---|
-| Rule the user stated ("order reports exclude cancelled rows") | `rule` | user's words |
+| Rule the user stated ("reports on example.orders use status_code = 1 only") | `rule` | user's words |
 | Finding from data (fill rate 0 %, fan-out max 12) | `observation` | `evidenceSql` + aggregate `evidenceFigures` |
 | Your interpretation ("looks like an audit copy") | `inference` | confidence in the text |
 

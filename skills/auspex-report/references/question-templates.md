@@ -1,15 +1,17 @@
 # Question templates (one message, max 3)
 
 Ask only for gaps. Every question carries a proposed default so the user can
-answer with one word. Put the rules you will apply anyway above the
-questions, so the user can object without being asked.
+answer with one word, except whether cancelled or deleted rows count: ask
+that neutrally, without a default, and save the answer as a rule. Put the
+rules you will apply anyway above the questions, so the user can object
+without being asked.
 
 ## Shape
 
 ```
 Applying from memory: <rule 1>; <rule 2>.
 1. Period and date column: <proposal, e.g. December 2025 on order date (created_at)>. OK?
-2. Known tables or codes: <proposal, e.g. damaged = codes 7, 8 from barkod_durum>. Correct, or do you know others?
+2. Known tables or codes: <proposal, e.g. failed = status_code 7, 8 from example.status_codes>. Correct, or do you know others?
 3. Output: <columns>, grouped by <x>, sum of <z>. Anything to add or drop?
 ```
 
@@ -20,7 +22,8 @@ the rest):
 
 1. Which date column defines the period (order, invoice, delivery date give
    different totals).
-2. Codes or states whose meaning is not in memory or a lookup table.
+2. Codes or states whose meaning is not in memory or in their source
+   (lookup table, enum type, CHECK constraint or column comment).
 3. Grain and grouping (one row per order, per line, per person).
 4. Output columns and number formats.
 5. Category and report name in the library.
