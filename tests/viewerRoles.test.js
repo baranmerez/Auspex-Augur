@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import { roleGraph } from './fixtures/roleGraph.js';
+import { roleGraph, roleTables } from './fixtures/roleGraph.js';
 
 // Runs the roles block of src/viewer.html (Reference / Dependent ranking used
 // by the Graph, ER diagram and Flow views) in isolation over the fixture graph.
@@ -12,7 +12,7 @@ const block = page.match(/\/\/ roles:start[\s\S]*?\/\/ roles:end/)?.[0];
 function loadRoles() {
   assert.ok(block, 'roles block found in viewer.html');
   const context = vm.createContext({});
-  vm.runInContext(`${block}\nthis.roleGroups = roleGroups; this.roleColor = roleColor; this.flowWidth = flowWidth; this.roleTop = roleTop; this.roleShown = roleShown; this.roleLimitIn = roleLimitIn; this.roleToggled = roleToggled;`, context);
+  vm.runInContext(`${block}\nthis.roleGroups = roleGroups; this.roleColor = roleColor; this.flowWidth = flowWidth; this.roleTop = roleTop; this.roleShown = roleShown; this.roleLimitIn = roleLimitIn; this.roleToggled = roleToggled; this.tableOf = tableOf; this.joinLabel = joinLabel; this.joinLabels = joinLabels; this.centerColumns = centerColumns;`, context);
   return context;
 }
 
@@ -118,4 +118,52 @@ test('top 5 / top 10 toggles are independent per view and side', () => {
   assert.equal(roleLimitIn({ ref: true, dep: true }, 'er', 'ref'), roleShown);
   assert.equal(roleLimitIn(true, 'er', 'ref'), roleShown);
   assert.equal(roleLimitIn(roleToggled(true, 'er', 'dep'), 'er', 'dep'), roleTop);
+});
+
+test('join labels name the referencing column, then the referenced table and column', () => {
+  const { roleGroups, joinLabel, joinLabels, tableOf } = loadRoles();
+  assert.equal(tableOf('app.orders'), 'orders');
+  assert.equal(tableOf('orders'), 'orders');
+  const g = roleGroups(roleGraph(), 'app.orders');
+  const satir = g.dep.find(x => x.id === 'app.order_items');
+  assert.deepEqual(Array.from(joinLabels(satir, 'app.orders')), ['order_id → orders.id']);
+  const cari = g.ref.find(x => x.id === 'app.customers');
+  assert.deepEqual(Array.from(joinLabels(cari, 'app.orders')), ['customer_id → customers.id']);
+  // The brief's examples and a composite key.
+  assert.equal(joinLabel('dep', { centerCols: ['order_id'], nbCols: ['order_id'] }, 'app.orders', 'app.order_details'), 'order_id → orders.order_id');
+  assert.equal(joinLabel('ref', { centerCols: ['customer_code'], nbCols: ['account_code'] }, 'app.orders', 'app.customer_accounts'), 'customer_code → customer_accounts.account_code');
+  assert.equal(joinLabel('ref', { centerCols: ['a', 'b'], nbCols: ['x', 'y'] }, 'app.c', 'app.n'), '(a, b) → n.(x, y)');
+  assert.equal(joinLabel('dep', { centerCols: [], nbCols: [] }, 'app.c', 'app.n'), '? → c.?');
+});
+
+test('depth 2: join labels point at the opened dependent, not the center', () => {
+  const { roleGroups, joinLabels } = loadRoles();
+  const g = roleGroups(roleGraph(), 'app.order_items');
+  const teslim = g.dep.find(x => x.id === 'app.order_item_deliveries');
+  assert.deepEqual(Array.from(joinLabels(teslim, 'app.order_items')), ['order_items_id → order_items.id']);
+});
+
+test('center columns: PK, FK, referenced, used and noted columns are tagged', () => {
+  const { centerColumns } = loadRoles();
+  const data = roleGraph();
+  data.notes.push({ id: 1, kind: 'rule', status: 'active', schema: 'app', table: 'orders', column: 'alan_01', text: 'x' },
+    { id: 2, kind: 'rule', status: 'archived', schema: 'app', table: 'orders', column: 'alan_02', text: 'y' });
+  const rec = roleTables(data).find(x => x.table === 'orders');
+  rec.usedColumns = { alan_03: { count: 2 } };
+  const c = centerColumns(data, 'app.orders', rec);
+  assert.deepEqual(Array.from(c.pk), ['id']);
+  assert.equal(c.cols.length, rec.columns.length);
+  assert.equal(c.notes.length, 1, 'active notes only');
+  assert.deepEqual(Array.from(c.tagsOf('id')), ['PK']);
+  assert.deepEqual(Array.from(c.tagsOf('customer_id')), ['FK']);
+  assert.deepEqual(Array.from(c.tagsOf('parent_order_id')), ['FK'], 'self reference');
+  assert.deepEqual(Array.from(c.tagsOf('alan_03')), ['U']);
+  assert.deepEqual(Array.from(c.tagsOf('alan_01')), ['N']);
+  assert.deepEqual(Array.from(c.tagsOf('alan_02')), []);
+  assert.ok(c.keyCols.every(k => c.tagsOf(k.name).length));
+  // Without a record the columns come from the relations alone, without types.
+  const bare = centerColumns(data, 'app.orders', null);
+  assert.deepEqual(Array.from(bare.pk), []);
+  assert.ok(bare.cols.some(x => x.name === 'customer_id') && bare.cols.every(x => x.type === ''));
+  assert.ok(bare.cols.some(x => x.name === 'id'), 'referenced by its dependents');
 });

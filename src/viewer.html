@@ -439,7 +439,25 @@
   .fl-node.center .main { cursor: default; }
   .fl-node .nm { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .fl-node .mt { font-size: 11px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
-  .fl-node .exp { border: 0; border-left: 1px solid var(--line); background: none; min-width: 34px; flex: none; color: var(--text-2); font-size: 12px; padding: 0 6px; }
+  .fl-node .jn { font: 11px var(--mono); color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fl-node.open { border-color: var(--accent); }
+  .fl-node .exp { border: 0; border-left: 1px solid var(--line); background: none; min-width: 66px; flex: none; color: var(--text-2); font-size: 12px; padding: 0 6px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; }
+  .fl-node .exp .n { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .fl-node .exp .l { font-size: 10px; color: var(--text-3); }
+  .fl-node .exp[aria-expanded="true"] .l { color: inherit; }
+  .fl-center:hover { transform: none; }
+  .fl-c { flex: 1; min-width: 0; padding: 8px 10px; }
+  .fl-c-h { height: 20px; display: flex; align-items: center; gap: 6px; }
+  .fl-c-h .nm { flex: 1; min-width: 0; }
+  .fl-c-h .badge { flex: none; }
+  .fl-c .mt { display: block; height: 16px; line-height: 16px; }
+  .fl-c .mt code { font: 11px var(--mono); color: var(--text-2); }
+  .fl-cols { margin-top: 6px; }
+  .fl-col { height: 19px; line-height: 19px; display: flex; gap: 8px; justify-content: space-between; font: 12px var(--mono); }
+  .fl-col .cn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fl-col .tg { flex: none; font-size: 10.5px; color: var(--accent-ink); }
+  .fl-col.dim { color: var(--text-3); }
   .fl-node .exp:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
   .fl-node .exp[aria-expanded="true"] { background: var(--accent-soft); color: var(--accent-ink); font-weight: 650; }
   .fl-node .exp:disabled { color: var(--text-3); cursor: default; opacity: .6; }
@@ -670,9 +688,11 @@ const TR = {
   'top {s} of {n}': 'ilk {s} / {n}', 'none known': 'bilinen yok', 'Show top 5': 'İlk 5', 'Show top 10': 'İlk 10', '{role}: show the top {n}': '{role}: ilk {n} tabloyu göster', '{n} more in Relations': '{n} tane daha İlişkiler listesinde',
   'rank 1 → 10': 'sıra 1 → 10', 'beyond top 10': 'ilk 10 dışı', 'Hide beyond top 10': 'İlk 10 dışını gizle', 'Show beyond top 10': 'İlk 10 dışını göster',
   'Edges of the selected table ranked beyond 10': 'Seçili tablonun 10. sıradan sonraki ilişkileri',
-  'Flow': 'Akış', 'Center': 'Merkez', 'Dependent of {t}': '{t} tablosunun Beslenenleri', 'Back': 'Geri',
+  'Flow': 'Akış', 'Center': 'Merkez', 'Dependents of {t}': '{t} tablosunun Beslenenleri', 'Back': 'Geri',
   'Click to make it the center': 'Merkez yapmak için tıklayın', 'Click a table to make it the center': 'Merkez yapmak için bir tabloya tıklayın',
-  'Show its dependents ({n})': 'Beslenenlerini göster ({n})', 'No known dependents': 'Bilinen Beslenen yok',
+  'Open the dependents of {t} ({n} tables)': '{t} tablosunun Beslenen tablolarını aç ({n} tablo)', 'Hide the dependents of {t}': '{t} tablosunun Beslenenlerini gizle',
+  'No further dependents of {t} are known': '{t} tablosunun bilinen başka Beslenen tablosu yok', 'dependents': 'Beslenen', 'none further': 'başka yok',
+  'selected table': 'seçili tablo', '{n} columns': '{n} kolon', '{n} notes': '{n} not',
   'Edge width: linked rows, log scale (estimated)': 'Çizgi kalınlığı: bağlı satır, log ölçek (tahmini)',
   'Show the report list': 'Rapor listesini göster', 'Hide the report list': 'Rapor listesini gizle',
 };
@@ -1605,6 +1625,38 @@ function roleToggled(expand, view, side) {
   next[k] = next[k] !== true;
   return next;
 }
+// Table part of a "schema.table" id.
+const tableOf = id => { const s = String(id ?? ''), i = s.indexOf('.'); return i < 0 ? s : s.slice(i + 1); };
+// Join columns of one FK, written from the referencing side:
+//   dep  "order_id → orders.order_id"     (neighbor column → center.column)
+//   ref  "customer_code → customer_accounts.account_code" (center column → neighbor.column)
+// Composite keys are parenthesized: "(a, b) → t.(x, y)".
+function joinLabel(role, link, centerId, nbId) {
+  const cols = list => (list.length > 1 ? `(${list.join(', ')})` : list[0] ?? '?');
+  const [from, to, target] = role === 'ref' ? [link.centerCols, link.nbCols, nbId] : [link.nbCols, link.centerCols, centerId];
+  return `${cols(from || [])} → ${tableOf(target)}.${cols(to || [])}`;
+}
+const joinLabels = (g, centerId) => g.links.map(l => joinLabel(g.role, l, centerId, g.id));
+// Columns of a center table and their tags (PK, FK, ← referenced, U used in a
+// plan, N noted), from its memory record and every relation it has.
+function centerColumns(data, centerId, rec) {
+  const notes = data.notes.filter(n => n.status === 'active' && `${n.schema}.${n.table}` === centerId);
+  const selfFk = new Set(), fkOut = new Set(), refIn = new Set();
+  for (const e of data.edges) {
+    if (e.from !== centerId && e.to !== centerId) continue;
+    if (e.from === e.to) { e.columns.forEach(c => selfFk.add(c)); continue; }
+    if (e.from === centerId) e.columns.forEach(c => fkOut.add(c)); else e.refColumns.forEach(c => refIn.add(c));
+  }
+  const pkList = rec?.constraints?.find(c => c.type === 'primary key')?.columns || [];
+  const pk = new Set(pkList);
+  const used = rec?.usedColumns || {};
+  const noted = new Set(notes.map(n => n.column).filter(Boolean));
+  const tagsOf = c => [pk.has(c) && 'PK', (fkOut.has(c) || selfFk.has(c)) && 'FK', refIn.has(c) && !pk.has(c) && '←', used[c] && 'U', noted.has(c) && 'N'].filter(Boolean);
+  const cols = rec?.columns?.length ? rec.columns.map(c => ({ name: c.name, type: c.type }))
+    : [...new Set([...fkOut, ...refIn, ...Object.keys(used)])].map(name => ({ name, type: '' }));
+  const keyCols = cols.filter(c => tagsOf(c.name).length);
+  return { cols, keyCols, tagsOf, pk: pkList, notes };
+}
 // roles:end
 
 const roleName = role => t(role === 'ref' ? 'Reference' : 'Dependent');
@@ -2064,22 +2116,8 @@ async function buildEr(wrap, data, centerId, key) {
 
 function erSvg(data, centerId, recs, roles, width) {
   const center = data.nodes.find(n => n.id === centerId);
-  const rec = recs.get(centerId);
-  const notes = data.notes.filter(n => n.status === 'active' && `${n.schema}.${n.table}` === centerId);
   // Column tags come from every relation of the center, drawn or not.
-  const selfFk = new Set(), fkOut = new Set(), refIn = new Set();
-  for (const e of data.edges) {
-    if (e.from !== centerId && e.to !== centerId) continue;
-    if (e.from === e.to) { e.columns.forEach(c => selfFk.add(c)); continue; }
-    if (e.from === centerId) e.columns.forEach(c => fkOut.add(c)); else e.refColumns.forEach(c => refIn.add(c));
-  }
-  const pk = new Set(rec?.constraints?.find(c => c.type === 'primary key')?.columns || []);
-  const used = rec?.usedColumns || {};
-  const noted = new Set(notes.map(n => n.column).filter(Boolean));
-  const tagsOf = c => [pk.has(c) && 'PK', (fkOut.has(c) || selfFk.has(c)) && 'FK', refIn.has(c) && !pk.has(c) && '←', used[c] && 'U', noted.has(c) && 'N'].filter(Boolean);
-  const cols = rec?.columns?.length ? rec.columns.map(c => ({ name: c.name, type: c.type }))
-    : [...new Set([...fkOut, ...refIn, ...Object.keys(used)])].map(name => ({ name, type: '' }));
-  const keyCols = cols.filter(c => tagsOf(c.name).length);
+  const { cols, keyCols, tagsOf } = centerColumns(data, centerId, recs.get(centerId));
   let shown = state.memErAll ? cols : keyCols.length ? keyCols : cols.slice(0, 12);
   const hidden = cols.length - shown.length;
   const more = hidden > 0 ? t('+{n} more columns', { n: fmt(hidden) }) : state.memErAll && keyCols.length < cols.length ? t('Show key columns only') : null;
@@ -2146,7 +2184,10 @@ function erSvg(data, centerId, recs, roles, width) {
 // Reference -> Center -> Dependent swimlanes; a Dependent can open its own
 // dependents as one more lane (depth 2). Clicking a table makes it the center;
 // the trail above leads back. Pure HTML cards over an SVG edge layer.
-const FL = { head: 66, nodeH: 52, gap: 12, pad: 16, minLane: 230, nodeMaxW: 260, foot: 26 };
+// The center card sits in the Merkez lane: name, state, row estimate, column
+// and note counts, PK and the key columns (as in the ER view). Its column rows
+// have fixed heights so edges attach to the joined column.
+const FL = { head: 66, nodeH: 64, gap: 12, pad: 16, minLane: 230, nodeMaxW: 260, foot: 26, cTop: 66, cRow: 19, cBottom: 8, cMax: 10, cMaxW: 300 };
 function flowCenter(id) {
   const cur = memSel();
   if (!id || id === cur) return;
@@ -2178,21 +2219,49 @@ function flowLanes(data, centerId) {
   const open = state.memFlowOpen;
   if (open && lanes[2].items.some(x => x.id === open)) {
     const all = roleGroups(data, open).dep.filter(x => x.id !== centerId);
-    const parentNode = data.nodes.find(x => x.id === open);
-    lanes.push({ key: 'dep2', role: 'dep', bg: 'dep', title: `${roleName('dep')} · ${parentNode?.table ?? open}`, tip: t('Dependent of {t}', { t: open }),
+    lanes.push({ key: 'dep2', role: 'dep', bg: 'dep', title: t('Dependents of {t}', { t: tableOf(open) }), tip: t('Dependents of {t}', { t: open }),
       all, items: all.slice(0, roleLimit('flow', 'dep2')), parent: open });
   }
   return lanes;
 }
 
-function buildFlow(wrap, data, centerId) {
+function flowCenterCard(data, centerId, rec) {
+  const node = data.nodes.find(n => n.id === centerId) || { id: centerId, state: 'unexplored' };
+  const { cols, keyCols, tagsOf, pk, notes } = centerColumns(data, centerId, rec);
+  const pick = keyCols.length ? keyCols : cols;
+  const shown = pick.slice(0, FL.cMax);
+  const more = cols.length - shown.length;
+  const st = node.state || 'unexplored';
+  const est = rowEstimate(node);
+  const nCols = node.columnCount || rec?.columns?.length || null;
+  const facts = [est !== null ? `~${compact(est)} ${t('rows')}` : t('no estimate'),
+    nCols ? t('{n} columns', { n: fmt(nCols) }) : null, t('{n} notes', { n: fmt(notes.length) })].filter(Boolean).join(' · ');
+  const hgt = FL.cTop + Math.max(1, shown.length + (more > 0 ? 1 : 0)) * FL.cRow + FL.cBottom;
+  const el = h('div', { class: `fl-node center fl-center ${st}`, 'data-id': centerId, title: centerId },
+    h('div', { class: 'fl-c' },
+      h('div', { class: 'fl-c-h' }, h('span', { class: 'nm' }, centerId), h('span', { class: 'badge ' + st }, stateLabel(st))),
+      h('div', { class: 'mt' }, facts),
+      h('div', { class: 'mt' }, 'PK: ', pk.length ? h('code', {}, pk.join(', ')) : '–'),
+      h('div', { class: 'fl-cols' },
+        shown.length ? shown.map(c => h('div', { class: 'fl-col', title: c.type ? `${c.name} · ${c.type}` : c.name },
+          h('span', { class: 'cn' }, c.name), h('span', { class: 'tg' }, tagsOf(c.name).join(' '))))
+          : h('div', { class: 'fl-col dim' }, t('no column info')),
+        more > 0 ? h('div', { class: 'fl-col dim' }, t('+{n} more columns', { n: fmt(more) })) : null)));
+  return { el, hgt, names: shown.map(c => c.name) };
+}
+
+async function buildFlow(wrap, data, centerId, key) {
   if (state.memFlowCenter !== centerId) { state.memFlowTrail = []; state.memFlowOpen = null; state.memFlowCenter = centerId; }
+  const cNode = data.nodes.find(n => n.id === centerId);
+  const rec = cNode?.file ? await memTable(state.db, cNode.file, data.generatedAt) : null;
+  if (state.schemaKey !== key) return;
   const lanes = flowLanes(data, centerId);
   const n = lanes.length;
   const W = Math.max((wrap.clientWidth || 1000) - 2, n * FL.minLane);
-  const laneW = W / n, nodeW = Math.min(FL.nodeMaxW, laneW - 36);
-  const rows = Math.max(1, ...lanes.map(l => l.items.length));
-  const contentH = rows * (FL.nodeH + FL.gap) - FL.gap;
+  const laneW = W / n, nodeW = Math.min(FL.nodeMaxW, laneW - 36), cardW = Math.min(FL.cMaxW, laneW - 24);
+  const card = flowCenterCard(data, centerId, rec);
+  const rows = Math.max(1, ...lanes.filter(l => l.key !== 'center').map(l => l.items.length));
+  const contentH = Math.max(rows * (FL.nodeH + FL.gap) - FL.gap, card.hgt);
   const top = FL.head + FL.pad;
   const H = top + contentH + FL.pad + FL.foot;
   const pos = new Map();
@@ -2200,14 +2269,22 @@ function buildFlow(wrap, data, centerId) {
   const edges = svg('svg', { class: 'fl-edges', width: W, height: H, viewBox: `0 0 ${W} ${H}`, 'aria-hidden': 'true' });
   host.append(edges);
   const depCount = id => roleGroups(data, id).dep.filter(x => x.id !== centerId).length;
+  const parentOf = l => (l.key === 'dep2' ? l.parent : centerId);
 
   lanes.forEach((lane, li) => {
     const x0 = li * laneW;
     edges.append(svg('rect', { class: 'fl-lane-bg', x: x0 + 6, y: 6, width: laneW - 12, height: H - 12, rx: 12, style: `fill:var(--lane-${lane.bg})` }));
     const head = lane.key === 'center'
-      ? h('div', { class: 'rh' }, h('b', {}, lane.title), h('span', {}, rowEstimate(lane.items[0].node) !== null ? `~${compact(rowEstimate(lane.items[0].node))} ${t('rows')}` : t('no estimate')))
+      ? h('div', { class: 'rh' }, h('b', {}, lane.title), h('span', {}, t('selected table')))
       : roleHeader('flow', lane.key, lane.all, lane.title, lane.bg);
     host.append(h('div', { class: 'fl-lane-h', title: lane.tip || null, style: `left:${x0 + 18}px;top:16px;width:${laneW - 36}px` }, head));
+    if (lane.key === 'center') {
+      const x = Math.round(x0 + (laneW - cardW) / 2);
+      pos.set(centerId, { x, y: top, w: cardW, h: card.hgt });
+      card.el.style.cssText = `left:${x}px;top:${top}px;width:${cardW}px;height:${card.hgt}px`;
+      host.append(card.el);
+      return;
+    }
     const bh = lane.items.length * (FL.nodeH + FL.gap) - FL.gap;
     const parentY = lane.parent ? pos.get(lane.parent)?.y : null;
     // Lanes start at the top so one lane's top 5 / top 10 toggle never moves
@@ -2217,45 +2294,57 @@ function buildFlow(wrap, data, centerId) {
     const x = Math.round(x0 + (laneW - nodeW) / 2);
     lane.items.forEach((it, i) => {
       const y = Math.round(y0 + i * (FL.nodeH + FL.gap));
-      pos.set(lane.key === 'dep2' ? 'dep2|' + it.id : it.id, { x, y });
+      pos.set(lane.key === 'dep2' ? 'dep2|' + it.id : it.id, { x, y, w: nodeW, h: FL.nodeH });
       const st = it.node?.state || 'unexplored';
-      const meta = it.center ? stateLabel(st) : `#${it.rank} · ${roleFigure(it)} · ${stateLabel(st)}`;
+      const joins = joinLabels(it, parentOf(lane));
       const kids = lane.key === 'dep' ? depCount(it.id) : null;
-      host.append(h('div', { class: `fl-node ${st}${it.center ? ' center' : ''}`, 'data-id': it.id,
+      const isOpen = state.memFlowOpen === it.id && lane.key === 'dep';
+      const expTip = kids ? t(isOpen ? 'Hide the dependents of {t}' : 'Open the dependents of {t} ({n} tables)', { t: it.id, n: fmt(kids) })
+        : t('No further dependents of {t} are known', { t: it.id });
+      host.append(h('div', { class: `fl-node ${st}${isOpen ? ' open' : ''}`, 'data-id': it.id,
         style: `left:${x}px;top:${y}px;width:${nodeW}px;height:${FL.nodeH}px;${reduceMotion ? '' : `animation-delay:${Math.min(li * 60 + i * 30, 600)}ms`}` },
-        it.center ? null : h('span', { class: 'bar', style: `background:${roleColor(it.role, it.rank)}` }),
-        h('button', { class: 'main', title: it.center ? it.id : `${it.id}\n${roleName(it.role)} #${it.rank} · ${roleFigure(it)}\n${t('Click to make it the center')}`,
-          onclick: it.center ? null : () => flowCenter(it.id) },
-          h('span', { class: 'nm' }, it.id), h('span', { class: 'mt' }, meta)),
-        kids !== null ? h('button', { class: 'exp', disabled: kids ? null : true, 'aria-expanded': String(state.memFlowOpen === it.id),
-          title: kids ? t('Show its dependents ({n})', { n: fmt(kids) }) : t('No known dependents'), 'aria-label': t('Show its dependents ({n})', { n: fmt(kids) }),
-          onclick: () => { state.memFlowOpen = state.memFlowOpen === it.id ? null : it.id; renderSchema(); } }, kids ? `${fmt(kids)} ›` : '–') : null));
+        h('span', { class: 'bar', style: `background:${roleColor(it.role, it.rank)}` }),
+        h('button', { class: 'main', title: `${it.id}\n${roleName(it.role)} #${it.rank} · ${roleFigure(it)}\n${joins.join('\n')}\n${t('Click to make it the center')}`,
+          onclick: () => flowCenter(it.id) },
+          h('span', { class: 'nm' }, it.id), h('span', { class: 'mt' }, `#${it.rank} · ${roleFigure(it)} · ${stateLabel(st)}`),
+          h('span', { class: 'jn' }, joins[0] || '', joins.length > 1 ? ` +${joins.length - 1}` : '')),
+        kids !== null ? h('button', { class: 'exp', disabled: kids ? null : true, 'aria-expanded': kids ? String(isOpen) : null, title: expTip, 'aria-label': expTip,
+          onclick: () => { state.memFlowOpen = isOpen ? null : it.id; renderSchema(); } },
+          h('span', { class: 'n' }, kids ? `${fmt(kids)} ›` : '–'), h('span', { class: 'l' }, kids ? t('dependents') : t('none further'))) : null));
     });
   });
 
   // Edges run left to right: Reference -> Center -> Dependent -> its dependents.
-  const link = (a, b, it, from, to, k, count) => {
-    const spread = count > 1 ? 10 + (k / (count - 1)) * (FL.nodeH - 20) : FL.nodeH / 2;
-    const [x1, y1] = it.role === 'ref' ? [a.x + nodeW, a.y + FL.nodeH / 2] : [a.x + nodeW, a.y + spread];
-    const [x2, y2] = it.role === 'ref' ? [b.x, b.y + spread] : [b.x, b.y + FL.nodeH / 2];
+  // At the center card an edge meets the row of its joined column when that
+  // column is listed, else the card head.
+  const c = pos.get(centerId);
+  const atCenter = (cols, k, count) => {
+    const i = card.names.indexOf(cols?.[0]);
+    if (i >= 0) return c.y + FL.cTop + i * FL.cRow + FL.cRow / 2;
+    return c.y + 14 + (count > 1 ? (k / (count - 1)) * 36 : 18);
+  };
+  const spreadOn = (b, k, count) => b.y + (count > 1 ? 10 + (k / (count - 1)) * (b.h - 20) : b.h / 2);
+  const link = (a, b, y1, y2, it, from, to) => {
+    const x1 = a.x + a.w, x2 = b.x;
     const dx = Math.max(30, (x2 - x1) / 2);
     const p = svg('path', { class: 'fl-edge', 'data-a': from, 'data-b': to, d: `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`,
       style: `stroke:${roleColor(it.role, it.rank)};stroke-width:${flowWidth(it.weight, it.max).toFixed(2)}` });
     const tt = svg('title');
-    tt.textContent = `${from} → ${to} · ${roleName(it.role)} #${it.rank} · ${roleFigure(it)}`;
+    tt.textContent = `${from} → ${to} · ${roleName(it.role)} #${it.rank} · ${roleFigure(it)}\n${it.joins.join('\n')}`;
     p.append(tt);
     edges.append(p);
   };
-  const c = pos.get(centerId);
   for (const lane of lanes) {
     if (lane.key === 'center') continue;
     const max = Math.max(0, ...lane.items.map(x => x.weight ?? 0));
     lane.items.forEach((it, k) => {
       const me = pos.get(lane.key === 'dep2' ? 'dep2|' + it.id : it.id);
-      const it2 = { ...it, max };
-      if (lane.key === 'ref') link(me, c, it2, it.id, centerId, k, lane.items.length);
-      else if (lane.key === 'dep') link(c, me, it2, centerId, it.id, k, lane.items.length);
-      else link(pos.get(lane.parent), me, it2, lane.parent, it.id, k, lane.items.length);
+      const it2 = { ...it, max, joins: joinLabels(it, parentOf(lane)) };
+      const mid = me.y + FL.nodeH / 2;
+      const cy = atCenter(it.links[0]?.centerCols, k, lane.items.length);
+      if (lane.key === 'ref') link(me, c, mid, cy, it2, it.id, centerId);
+      else if (lane.key === 'dep') link(c, me, cy, mid, it2, centerId, it.id);
+      else { const p = pos.get(lane.parent); link(p, me, spreadOn(p, k, lane.items.length), mid, it2, lane.parent, it.id); }
     });
   }
   host.addEventListener('mouseover', ev => {
@@ -2278,7 +2367,8 @@ function buildFlow(wrap, data, centerId) {
       trail.map((id, i) => [h('button', { class: 'crumb', title: id, onclick: () => flowBack(i) }, id), '›']),
       h('span', { class: 'crumb cur', title: centerId }, centerId)),
     host,
-    h('div', { class: 'flow-foot' }, roleLegend(false), h('span', {}, t('Edge width: linked rows, log scale (estimated)')), h('span', {}, t('Click a table to make it the center'))));
+    h('div', { class: 'flow-foot' }, roleLegend(false), h('span', {}, t('Edge width: linked rows, log scale (estimated)')),
+      h('span', {}, t('PK, FK: keys · U: used in a plan · N: has a note · ←: referenced')), h('span', {}, t('Click a table to make it the center'))));
 }
 
 // ---------- schema tab ----------
@@ -2380,7 +2470,7 @@ function renderSchema() {
   if (state.memMode === 'er' && sel) {
     canvas = h('div', { class: 'panel sch-canvas er' }, h('div', { class: 'rep-empty' }, t('Loading…')));
   } else if (state.memMode === 'flow' && sel) {
-    canvas = h('div', { class: 'panel sch-canvas flow' });
+    canvas = h('div', { class: 'panel sch-canvas flow' }, h('div', { class: 'rep-empty' }, t('Loading…')));
   } else {
     let visible, depth;
     if (state.memShowAll) {
@@ -2395,7 +2485,7 @@ function renderSchema() {
   put(view, bar, h('div', { class: 'sch' }, canvas, state.memInspHost));
   if (graphSim && state.memMode === 'graph') graphSim.start();
   if (state.memMode === 'er' && sel) buildEr(canvas, data, sel, key);
-  if (state.memMode === 'flow' && sel) buildFlow(canvas, data, sel);
+  if (state.memMode === 'flow' && sel) buildFlow(canvas, data, sel, key);
   applyMemSearch();
 }
 
