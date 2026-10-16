@@ -49,7 +49,8 @@ late one.
 4. **Resolve codes.** For each ambiguous state (for example "damaged" vs
    "delivery problem"), find the lookup table, read its code list with one
    small query, propose the codes and confirm them with the user. Save the
-   confirmed mapping with `remember kind=rule`. A code or status column without a foreign key (for example
+   confirmed mapping with `remember kind=rule`.
+   A code or status column without a foreign key (for example
    `sorunluteslimdurumkodu`): split its name into word parts (`sorunlu`,
    `teslim`, `durum`, `kod`) and run ONE `search` with a %-joined pattern of
    the distinctive parts (`sorunlu%durum%kod`), plus variants with the
