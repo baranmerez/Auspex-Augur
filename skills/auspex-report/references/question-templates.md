@@ -22,11 +22,14 @@ the rest):
 
 1. Which date column defines the period (order, invoice, delivery date give
    different totals).
-2. Codes or states whose meaning is not in memory or in their source
+2. Whether cancelled or deleted rows count, when a state or soft-delete
+   column exists and no rule is remembered (neutral, no default; it cannot
+   be assumed, so it is never pushed out of the 3).
+3. Codes or states whose meaning is not in memory or in their source
    (lookup table, enum type, CHECK constraint or column comment).
-3. Grain and grouping (one row per order, per line, per person).
-4. Output columns and number formats.
-5. Category and report name in the library.
+4. Grain and grouping (one row per order, per line, per person).
+5. Output columns and number formats.
+6. Category and report name in the library.
 
 ## Do not ask
 

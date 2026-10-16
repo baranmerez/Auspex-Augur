@@ -40,16 +40,18 @@ late one.
    tables. Split the request into: period and date column, filters, grain
    (one row per what), output columns, grouping, sums/counts, joined sources,
    special states to check (for example rows in an error or retry state).
-2. **Questions (one message, max 3).** Only for gaps; use
-   [question-templates.md](references/question-templates.md):
+2. **Questions (one message, max 3).** Only for gaps, in the priority order
+   of [question-templates.md](references/question-templates.md):
    - period, filter and which date column defines it;
+   - whether cancelled or deleted rows count (only when no rule is remembered);
    - tables or codes the user already knows;
    - output columns, grouping and sums.
    List the remembered rules you will apply as defaults, for example
    "reports on example.orders use status_code = 1 only (memory rule)".
    There is no default for cancelled or deleted rows: when a state or
-   soft-delete column exists and no rule is remembered, ask neutrally whether
-   those rows count, and save the answer with `remember kind=rule`.
+   soft-delete column exists and no rule is remembered, this question is
+   asked neutrally within the 3 (second after the date column), and the
+   answer is saved with `remember kind=rule`.
 3. **Locate.** `search` for missing tables; one `describe_tables` for all
    involved tables; `relation_stats` (when available) or foreign keys for
    join paths. Follow the auspex-explore skill for unknown areas.
@@ -106,10 +108,11 @@ DEFINE, PROCESS, MATCH, CORRECT or FAIL, and save it with
 Write its title, purpose and comments in the `notesLanguage` from `list_profiles` (ask once if null); step markers and SQL stay as written:
 
 - **Ask where first, never invent it.** Propose a location from
-  `scriptRoots` in `list_profiles`: `<root>/<folder>/<file>.sql`, following
-  the folder and numbering convention the user already uses (look at the
-  existing files first). If there is none, propose a short descriptive file
-  name. Never invent a convention. List every file name. Save with `root`,
+  `scriptRoots` in `list_profiles`: `<root>/<folder>/<file>.sql`. If you
+  can read the folder (or see earlier files via `externalFile` entries in
+  `list_reports`), follow the folder and numbering convention already used
+  there; otherwise ask the user for the folder and their naming convention.
+  Never invent a convention. List every file name. Save with `root`,
   `folder` and `fileName` only after the user's yes. An existing file is
   never overwritten; on that error propose a new name.
 - **Summary in the answer** (not as a file unless asked): one line per
