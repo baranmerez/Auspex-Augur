@@ -128,11 +128,29 @@ export class Library {
     return this.locked(() => this.saveDraftUnlocked(input));
   }
 
-  saveDraftUnlocked({ ref, title, description, sql, note, mask, unmask }) {
+  // With target ({ root, dir, folder, fileName }) the read-only query is also
+  // written as a new file into that script root (never overwriting one), for
+  // the user to run in their own tool; the draft records the path.
+  saveDraftUnlocked({ ref, title, description, sql, note, mask, unmask, target = null }) {
     assertReadOnlyQuery(sql);
     this.ensure();
     const r = normalizeRef(ref);
     const now = new Date().toISOString();
+    let externalFile = null;
+    if (target) {
+      const t = prepareScriptTarget(target);
+      const header = [
+        '-- =====================================================================',
+        commentLines('', title || ref.name),
+        `-- Report         : ${refLabel(r)}   SQL hash: ${sqlHash(sql)}`,
+        commentLines('Script file    : ', t.file),
+        `-- Written        : ${now} by an AI agent via Auspex`,
+        '-- Read-only report query (checked by the Auspex SQL guard).',
+        '-- =====================================================================',
+        '',
+      ].join('\n');
+      externalFile = writeScriptTarget(t, header + normalizeSql(sql) + '\n');
+    }
     const existing = this.readMeta('draft', r) || this.readMeta('approved', r);
     const meta = existing || {
       schema: 1, kind: 'select', ...r, title: title || ref.name, description: description || '',
@@ -154,10 +172,13 @@ export class Library {
     const version = meta.sqlVersions.find(v => v.hash === hash).version;
     meta.activeHash = hash;
     meta.activeVersion = version;
+    if (externalFile) {
+      meta.externalFiles = [...(meta.externalFiles || []), { file: externalFile, version, hash, savedAt: now }].slice(-maxRuns);
+    }
     const p = this.paths('draft', r);
     writeAtomic(p.sql, text + '\n');
     this.writeMeta('draft', r, meta);
-    return { ref: r, stage: 'draft', version, paths: p };
+    return { ref: r, stage: 'draft', version, paths: p, externalFile };
   }
 
   appendRun(stage, ref, run, last) {
@@ -328,20 +349,52 @@ export function validateScriptName(value, label, { sqlFile = false } = {}) {
   return v;
 }
 
-// Real path of root/<folder> when it exists, null when it does not. Refused
-// when it is not a folder directly inside the real root, for example a link
-// or junction that points elsewhere.
-function realFolderInside(realRoot, folderPath, t) {
+// A folder inside a script root: one or two names joined by "/", for example
+// Orders_DB_Scripts_V1 or Orders_DB_Scripts_V1/reports.
+const maxFolderLevels = 2;
+
+export function validateScriptFolder(value) {
+  const segments = String(value ?? '').normalize('NFC').split('/');
+  if (segments.length > maxFolderLevels) throw new LibraryError(`Invalid folder "${value}": at most ${maxFolderLevels} levels joined by "/".`);
+  return segments.map(s => validateScriptName(s, 'Folder segment'));
+}
+
+// Real path of parent/<name> when it exists, null when it does not. Refused
+// when it is not a folder directly inside the real parent, for example a
+// link or junction that points elsewhere.
+function realChildFolder(realParent, name, t) {
   let real;
   try {
-    real = fs.realpathSync.native(folderPath);
+    real = fs.realpathSync.native(path.join(realParent, name));
   } catch (err) {
     if (err.code === 'ENOENT') return null;
     throw err;
   }
-  if (path.dirname(real) !== realRoot) throw new LibraryError(`Folder "${t.folder}" of script root "${t.root}" resolves outside the root (link or junction); refused.`);
+  if (path.dirname(real) !== realParent) throw new LibraryError(`Folder "${t.folder}" of script root "${t.root}" resolves outside the root (link or junction); refused.`);
   if (!fs.statSync(real).isDirectory()) throw new LibraryError(`"${t.folder}" in script root "${t.root}" is not a folder.`);
   return real;
+}
+
+// Walks the folder levels from the real root: the real path of the deepest
+// existing level and how many levels exist. With create, missing levels are
+// made one by one and each is checked again after it was made.
+function walkScriptFolder(t, create) {
+  let current = t.realRoot;
+  for (let i = 0; i < t.segments.length; i++) {
+    let real = realChildFolder(current, t.segments[i], t);
+    if (!real && create) {
+      try {
+        fs.mkdirSync(path.join(current, t.segments[i]));
+      } catch (err) {
+        if (err.code !== 'EEXIST') throw err;
+      }
+      real = realChildFolder(current, t.segments[i], t);
+      if (!real) throw new LibraryError(`Folder "${t.folder}" could not be created in script root "${t.root}".`);
+    }
+    if (!real) return { path: path.join(current, ...t.segments.slice(i)), complete: false };
+    current = real;
+  }
+  return { path: current, complete: true };
 }
 
 // Next free script number in a folder: one more than the highest NN_ prefix.
@@ -359,7 +412,8 @@ function existsMessage(file, dir) {
 
 // Checks a script-root target without writing anything.
 function prepareScriptTarget({ root, dir, folder, fileName }) {
-  const t = { root, dir, folder: validateScriptName(folder, 'Folder'), fileName: validateScriptName(fileName, 'File name', { sqlFile: true }) };
+  const segments = validateScriptFolder(folder);
+  const t = { root, dir, segments, folder: segments.join('/'), fileName: validateScriptName(fileName, 'File name', { sqlFile: true }) };
   let realRoot;
   try {
     realRoot = fs.realpathSync.native(dir);
@@ -369,27 +423,17 @@ function prepareScriptTarget({ root, dir, folder, fileName }) {
   }
   if (!fs.statSync(realRoot).isDirectory()) throw new LibraryError(`Script root "${root}" (${dir}) is not a folder.`);
   t.realRoot = realRoot;
-  t.folderPath = path.join(realRoot, t.folder);
-  t.realFolder = realFolderInside(realRoot, t.folderPath, t);
-  t.file = path.join(t.realFolder ?? t.folderPath, t.fileName);
+  const folderNow = walkScriptFolder(t, false);
+  t.file = path.join(folderNow.path, t.fileName);
   // lstat also sees a dangling link at the target name.
-  if (t.realFolder && fs.lstatSync(t.file, { throwIfNoEntry: false })) throw new LibraryError(existsMessage(t.file, t.realFolder));
+  if (folderNow.complete && fs.lstatSync(t.file, { throwIfNoEntry: false })) throw new LibraryError(existsMessage(t.file, folderNow.path));
   return t;
 }
 
-// Creates the folder when missing, checks it again, and writes the file
+// Creates missing folder levels, checks them again, and writes the file
 // exclusively (wx): an existing file or link is never replaced.
 function writeScriptTarget(t, text) {
-  let realFolder = t.realFolder;
-  if (!realFolder) {
-    try {
-      fs.mkdirSync(t.folderPath);
-    } catch (err) {
-      if (err.code !== 'EEXIST') throw err;
-    }
-    realFolder = realFolderInside(t.realRoot, t.folderPath, t);
-    if (!realFolder) throw new LibraryError(`Folder "${t.folder}" could not be created in script root "${t.root}".`);
-  }
+  const realFolder = walkScriptFolder(t, true).path;
   const file = path.join(realFolder, t.fileName);
   try {
     fs.writeFileSync(file, text, { encoding: 'utf8', flag: 'wx' });

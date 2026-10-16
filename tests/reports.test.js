@@ -353,9 +353,15 @@ test('script root checks run before anything is written', () => {
 const badScriptNames = [
   ['parent reference', '..', '00_x.sql'],
   ['double dot inside', 'a..b', '00_x.sql'],
-  ['slash', 'a/b', '00_x.sql'],
+  ['three folder levels', 'a/b/c', '00_x.sql'],
+  ['a parent reference between levels', 'a/../b', '00_x.sql'],
+  ['a parent reference as second level', 'a/..', '00_x.sql'],
+  ['an empty level', 'a//b', '00_x.sql'],
+  ['a trailing slash', 'a/', '00_x.sql'],
+  ['an absolute folder', '/a', '00_x.sql'],
   ['backslash', 'a\\b', '00_x.sql'],
   ['drive', 'C:', '00_x.sql'],
+  ['drive path', 'C:/a', '00_x.sql'],
   ['space', 'a b', '00_x.sql'],
   ['leading dot', '.hidden', '00_x.sql'],
   ['trailing dot', 'x.', '00_x.sql'],
@@ -374,6 +380,50 @@ for (const [name, folder, fileName] of badScriptNames) {
     assert.deepEqual(fs.readdirSync(r.dir), []);
   });
 }
+
+test('a folder may have two levels; both are created and checked', () => {
+  const lib = tempLibrary();
+  const r = tempRoot();
+  const res = lib.saveExecuteScript({ ref, sql: fixSql, target: target(r, 'Firma_DB_Scripts_V1/raporlar', '01_x.sql') });
+  assert.equal(res.externalFile, path.join(r.real, 'Firma_DB_Scripts_V1', 'raporlar', '01_x.sql'));
+  assert.equal(lib.executeInfo(ref).folder, 'Firma_DB_Scripts_V1/raporlar');
+  // the first level exists now, the second is new
+  const again = lib.saveExecuteScript({ ref: { ...ref, name: 'second' }, sql: fixSql, target: target(r, 'Firma_DB_Scripts_V1/kontrol', '03_y.sql') });
+  assert.equal(again.externalFile, path.join(r.real, 'Firma_DB_Scripts_V1', 'kontrol', '03_y.sql'));
+  assert.throws(() => lib.saveExecuteScript({ ref: { ...ref, name: 'third' }, sql: fixSql, target: target(r, 'Firma_DB_Scripts_V1/raporlar', '01_x.sql') }), /already exists.*starting with 02_/s);
+});
+
+test('a second folder level that links outside the root is refused', t => {
+  const lib = tempLibrary();
+  const r = tempRoot();
+  fs.mkdirSync(path.join(r.dir, 'Topic'));
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-outside-test-'));
+  try {
+    fs.symlinkSync(outside, path.join(r.dir, 'Topic', 'Escape'), 'junction');
+  } catch (err) {
+    t.skip(`cannot create a link here: ${err.code}`);
+    return;
+  }
+  assert.throws(() => lib.saveExecuteScript({ ref, sql: fixSql, target: target(r, 'Topic/Escape', '00_x.sql') }), /resolves outside the root/);
+  assert.deepEqual(fs.readdirSync(outside), []);
+});
+
+test('a report query can be saved as a new file into a script root; drafts stay read-only', () => {
+  const lib = tempLibrary();
+  const r = tempRoot();
+  const sql = 'select region, count(*) from sales.orders group by region';
+  const res = lib.saveDraft({ ref, title: 'Orders by region', sql, target: target(r, 'Topic_V1/raporlar', '05_orders_by_region.sql') });
+  const file = path.join(r.real, 'Topic_V1', 'raporlar', '05_orders_by_region.sql');
+  assert.equal(res.externalFile, file);
+  const text = fs.readFileSync(file, 'utf8');
+  assert.ok(text.endsWith(`${sql}\n`));
+  assert.ok(text.split('\n').filter(l => l.trim() && !l.startsWith('--')).length === 1, 'header lines are comments');
+  assert.match(text, /-- Report {9}: local\/sales\/Genel Çalışma\/order-totals/);
+  assert.deepEqual(lib.readMeta('draft', ref).externalFiles.map(e => [e.file, e.version]), [[file, 1]]);
+  assert.throws(() => lib.saveDraft({ ref, sql, target: target(r, 'Topic_V1/raporlar', '05_orders_by_region.sql') }), /already exists.*starting with 06_/s);
+  assert.throws(() => lib.saveDraft({ ref, sql: 'delete from t', target: target(r, 'Topic_V1', '06_x.sql') }), SqlGuardError);
+  assert.equal(fs.existsSync(path.join(r.real, 'Topic_V1', '06_x.sql')), false, 'guard runs before any write');
+});
 
 test('script root names allow Turkish letters, digits, _ - and .', () => {
   assert.equal(validateScriptName('ExampleTimesheet_DB_Scripts_V1.2', 'Folder'), 'ExampleTimesheet_DB_Scripts_V1.2');
