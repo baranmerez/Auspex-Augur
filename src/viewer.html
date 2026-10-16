@@ -82,12 +82,14 @@
   .seg button:hover { color: var(--text); }
   .seg button.on { background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
 
-  nav.tabs { display: flex; gap: 2px; margin-top: 10px; position: relative; }
-  nav.tabs button { border: 0; background: none; padding: 10px 14px; color: var(--text-2); font-weight: 500; position: relative; }
+  /* On narrow widths the tab row scrolls inside itself, never the page. */
+  nav.tabs { display: flex; gap: 2px; margin-top: 10px; position: relative; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+  nav.tabs::-webkit-scrollbar { display: none; }
+  nav.tabs button { flex: none; white-space: nowrap; border: 0; background: none; padding: 10px 14px; color: var(--text-2); font-weight: 500; position: relative; }
   nav.tabs button:hover { color: var(--text); }
   nav.tabs button.on { color: var(--text); }
   nav.tabs .count { font-size: 11px; color: var(--text-3); margin-left: 4px; font-variant-numeric: tabular-nums; }
-  .tab-ink { position: absolute; bottom: -1px; height: 2px; background: var(--accent); border-radius: 2px; transition: left .3s var(--ease), width .3s var(--ease); }
+  .tab-ink { position: absolute; bottom: 0; height: 2px; background: var(--accent); border-radius: 2px; transition: left .3s var(--ease), width .3s var(--ease); }
 
   /* Full width; the page is the only vertical scroller. Side panels below the
      sticky header use --sticky-top and keep their own max-height. */
@@ -457,7 +459,7 @@
   .mem-card { padding: 16px; cursor: pointer; text-align: left; border: 1px solid var(--line); transition: transform .2s var(--ease), box-shadow .2s; animation: rise .4s var(--ease) both; }
   .mem-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
   .mem-card h3 { margin: 0 0 10px; font-size: 16px; }
-  @media (max-width: 1000px) { .sch { grid-template-columns: 1fr; } .insp { position: static; max-height: none; } .tl-item { grid-template-columns: 1fr; gap: 2px; } }
+  @media (max-width: 1000px) { .sch { grid-template-columns: minmax(0, 1fr); } .insp { position: static; max-height: none; } .tl-item { grid-template-columns: 1fr; gap: 2px; } }
   .toast { position: fixed; bottom: 24px; left: 50%; transform: translate(-50%, 20px); opacity: 0; z-index: 60;
     background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 13px; box-shadow: var(--shadow-lg);
     transition: opacity .2s, transform .25s var(--ease); pointer-events: none; }
@@ -475,7 +477,7 @@
     *, *::before, *::after { animation: none !important; transition: none !important; }
     .chart .bar.grow-y, .chart .bar.grow-x, .hbars .fill { transform: none !important; }
   }
-  @media (max-width: 1100px) { .g-tiles { grid-template-columns: repeat(3, 1fr); } .g-main, .g-2 { grid-template-columns: 1fr; } }
+  @media (max-width: 1100px) { .g-tiles { grid-template-columns: repeat(3, 1fr); } .g-main, .g-2 { grid-template-columns: minmax(0, 1fr); } }
   @media (max-width: 640px) {
     .top-inner, main { padding-left: 16px; padding-right: 16px; }
     .g-tiles { grid-template-columns: 1fr 1fr; }
@@ -2415,6 +2417,8 @@ function render() {
 function moveInk() {
   const b = document.querySelector(`#tabs button[data-tab="${state.tab}"]`), ink = $('tabInk');
   ink.style.left = b.offsetLeft + 'px'; ink.style.width = b.offsetWidth + 'px';
+  const nav = b.parentElement;
+  if (b.offsetLeft < nav.scrollLeft || b.offsetLeft + b.offsetWidth > nav.scrollLeft + nav.clientWidth) nav.scrollLeft = Math.max(0, b.offsetLeft - 8);
 }
 const tabNames = ['overview', 'ops', 'tables', 'reports', 'schema', 'profiles'];
 const ownToolbarTabs = ['reports', 'profiles', 'schema'];
