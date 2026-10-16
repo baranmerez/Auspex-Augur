@@ -2029,7 +2029,7 @@ function graph3dCanvas(g, data) {
     apply();
     fg.graphData(gd);
     ctl.flyOnStop = true;
-    ctl.io = new IntersectionObserver(([en]) => { ctl.inView = en.isIntersecting; ctl.sync(); });
+    ctl.io = new IntersectionObserver(entries => { ctl.inView = entries.at(-1).isIntersecting; ctl.sync(); });
     ctl.io.observe(wrap);
     ctl.ro = new ResizeObserver(() => { const b = host.getBoundingClientRect(); if (b.width && b.height) fg.width(b.width).height(b.height); });
     ctl.ro.observe(host);
