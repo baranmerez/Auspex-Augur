@@ -79,6 +79,31 @@ late one.
 For deeper review use the postgres-performance-doctor (slow plan),
 sql-data-reconciliation (totals do not match) or sql-query-reviewer skills.
 
+## Report query as a file
+
+When the user wants the report SQL in their scripts folder, ask where (same
+proposal as below, for example `<Topic>_DB_Scripts_V1/raporlar/NN_name.sql`)
+and pass `root`, `folder` and `fileName` to `save_report` after the yes.
+It writes a new file each time, never overwriting one.
+
+## Change scripts (only when the user asks for a fix)
+
+A report never changes data. When the user asks for a data fix from its
+findings, write it with the postgres-safe-dml flow (BEGIN, DEFINE, PROCESS,
+MATCH, CORRECT or FAIL, ROLLBACK) and save it with `save_execute_script`:
+
+- **Ask where first, never invent it.** Propose
+  `<root>/<Topic>_DB_Scripts_V1/NN_name[_ONIZLEME].sql` with a root from
+  `list_profiles` (`scriptRoots`) and the user's numbering: `00` preflight
+  (read-only), `01`, `02` ... preview steps (`_ONIZLEME`), then a
+  `NN_Commit_Sonrasi_Kontrol.sql` step. Save with `root`, `folder` and
+  `fileName` only after the user's yes. An existing file is never
+  overwritten; on that error propose the next number.
+- **README summary in the answer** (not as a file unless asked): one line
+  per file, run order, which result tables to send back.
+- **Judge returned results:** every MATCH item YES or NO with the figures
+  as evidence; missing or unclear output is NO, with what is missing.
+
 ## Answer shape
 
 Result (figures with definitions), Rules and codes applied, Assumptions,

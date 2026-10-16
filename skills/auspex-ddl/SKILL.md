@@ -22,13 +22,21 @@ creates anything.
 4. **Scripts follow the mandatory flow:** `BEGIN;` DEFINE / PROCESS / MATCH /
    CORRECT-or-FAIL, last statement `ROLLBACK;`. Never `COMMIT`. Comment
    header per step. Schema-qualified names, explicit column lists.
-5. **Auspex never executes them.** The table script goes through
+5. **Auspex never executes them.** Every script goes through
    `save_execute_script`; the user runs it with a privileged role.
-6. **Function bodies are not accepted by `save_execute_script`** (CREATE
-   FUNCTION / PROCEDURE and DO blocks are rejected because their bodies
-   cannot be checked). Deliver trigger functions as a separate script in the
-   answer and state the run order (see Delivery).
+6. **Functions and triggers go into the same script.** `save_execute_script`
+   accepts `CREATE [OR REPLACE] FUNCTION ... LANGUAGE plpgsql|sql AS $fn$ ...
+   $fn$` and `CREATE [OR REPLACE] TRIGGER`. Bodies are not linted (the file
+   header says so): review them yourself and tell the user. DO blocks, CALL
+   and procedures stay rejected.
 7. **No row values** from the example tables in notes or answers.
+8. **Ask where to save, never invent it.** Before the first
+   `save_execute_script`, ask once (see Delivery) and wait for a yes or a
+   correction.
+9. **Judge returned results item by item.** When the user runs a script and
+   returns its result tables, answer every MATCH item YES or NO with the
+   figures as evidence. Missing or unclear output is NO, with what is
+   missing; never YES on partial data.
 
 ## Workflow
 
@@ -63,28 +71,44 @@ creates anything.
    SECURITY DEFINER, search_path) skills. For rollout on a large live table
    use postgres-migration-architect; for any data backfill use
    postgres-safe-dml.
-7. **Deliver** (see below), then ask for review; change via
-   `save_execute_script` with `replace: true` only after the user asked.
+7. **Deliver** (see below), then ask for review. A changed script in a
+   script root becomes a new file (a new number or a `_V2` folder, asked
+   first); `replace: true` only renews the library copy and only after the
+   user asked.
 
 ## Delivery
 
 - **Analysis note** (in the answer): existing pattern, design decisions with
   reasons and rejected options, open questions, risks (locks, size, payload
   growth).
-- **Script A, tables** via `save_execute_script` (db = profile, schema,
-  category for example `Integration`, name `<firm>-tables`): CREATE TABLE,
-  constraints, indexes, comments, log table. Skeleton:
-  [script-template.md](references/script-template.md).
-- **Script B, trigger functions and triggers** in the answer as a SQL block
-  with the same flow (Auspex will not store it). It depends on script A.
-- **Run order and dry run:** say that B needs A's tables, and that with
-  ROLLBACK at the end of A, B cannot be dry-run on its own. Offer the
-  options (run both in one session before a single ROLLBACK, or review and
-  commit A first) and let the user choose; never choose for them.
-- `purpose`, `expectedRows` (0 for pure DDL) and `relatedReport` filled in
-  `save_execute_script`. Report its `warnings` to the user.
+- **Location question (one message, before saving).** Script roots come
+  from `list_profiles` (`scriptRoots`). Propose
+  `<root>/<Topic>_DB_Scripts_V1/NN_name[_ONIZLEME].sql`, following the
+  user's numbering: `00_..._preflight.sql` (read-only checks), `01`, `02`
+  ... preview steps (suffix `_ONIZLEME`, each ends in ROLLBACK), then a
+  `NN_Commit_Sonrasi_Kontrol.sql` step (read-only checks after the user
+  committed). List every file name. Use an existing folder or numbering the
+  user named, and a second level (`<Topic>_DB_Scripts_V1/raporlar`) only
+  when the user keeps one; never invent a folder without asking. No script root
+  configured: save to the library only and say so.
+- **Save** each script with `save_execute_script` (db = profile, schema,
+  category for example `Integration`, name like the file, plus `root`,
+  `folder` and `fileName` after the user's yes). Tables, constraints,
+  indexes, comments, log table, trigger functions and triggers go into one
+  preview script, in dependency order. Skeleton:
+  [script-template.md](references/script-template.md). An existing file is
+  never overwritten: on that error propose the next number and ask again.
+- `purpose`, `expectedRows` (0 for pure DDL) and `relatedReport` filled in.
+  Report the `warnings` (for example SECURITY DEFINER, a call to a function
+  created in the script) to the user.
+- **README summary in the answer** (not as a file unless asked), like the
+  user's `README.txt`: folder, one line per file (number, purpose, read-only
+  or changing), run order, what to send back (the MATCH result tables), and
+  that the final ROLLBACK is swapped for COMMIT only after every MATCH is YES.
 
 ## Answer shape
 
 Pattern summary, Design (table by table), Decisions and rejected options,
-Script A path, Script B text, Run order, Open questions, Risks.
+Location question or saved paths, README summary, Open questions, Risks.
+After the user returns results: one YES/NO line per MATCH item with
+evidence, then the next step.
