@@ -1,5 +1,5 @@
 -- Auspex local test setup (LOCAL PostgreSQL 16 only, never production)
--- Run in DBeaver connected as a superuser to the local "postgres" database.
+-- Run in your SQL client connected as a superuser to the local "postgres" database.
 -- Creates schema auspex_test with sample data and a read-only login role "Auspex".
 -- Before running: replace CHANGE_ME_LOCAL_TEST_PASSWORD below.
 -- Last statement is ROLLBACK; swap it to COMMIT after the MATCH results look right.

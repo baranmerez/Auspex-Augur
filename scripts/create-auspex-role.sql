@@ -1,5 +1,5 @@
 -- Create the read-only "Auspex" login role on a real server (test or production)
--- Run in DBeaver as a superuser (or a role with CREATEROLE), connected to the
+-- Run in your SQL client as a superuser (or a role with CREATEROLE), connected to the
 -- database Auspex will read. Then run grant-schemas-readonly.sql in the same database.
 -- Before running: replace CHANGE_ME_STRONG_PASSWORD (also put it in pgpass, never in chat).
 -- Does NOT revoke TEMP from PUBLIC: the application may rely on it; Auspex cannot

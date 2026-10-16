@@ -3,7 +3,8 @@
 // carry personal data, so reports can add columns (`mask`) or, after a
 // conscious decision, exempt them (`unmask`).
 
-// Patterns match whole name parts (split on _ and camelCase), Turkish and English.
+// Patterns match whole name parts (split on _ and camelCase). The built-in name
+// lists cover English and Turkish; add other names through a report's mask list.
 const personalPatterns = [
   /^(ad|adi|adı|soyad|soyadi|soyadı|adsoyad|unvan|unvani|ünvan|isim|name|firstname|lastname|fullname)$/,
   /^(tel|telefon|gsm|cep|phone|mobile|fax|faks)$/,
@@ -34,7 +35,7 @@ export function isPersonalColumn(column) {
   return nameParts(column).some(part => personalPatterns.some(re => re.test(part)) || suffixPattern.test(part));
 }
 
-// Value shape kept recognizable without exposing it: "Ayşe Yılmaz" -> "A*** Y***".
+// Value shape kept recognizable without exposing it: "Jane Doe" -> "J*** D***".
 export function maskValue(value) {
   if (value === null || value === undefined) return value;
   const text = String(value);
