@@ -277,6 +277,8 @@
   /* Reports */
   .rep { display: grid; grid-template-columns: minmax(280px, 340px) minmax(0, 1fr); gap: 14px; align-items: start; }
   .rep-list { max-height: calc(100vh - var(--sticky-top) - 20px); overflow: auto; position: sticky; top: var(--sticky-top); }
+  .rep-filter { flex: 1 1 100%; min-width: 0; height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 13px; outline: none; }
+  .rep-filter:focus { border-color: var(--accent); }
   .rep-list .stagebar { padding: 10px 12px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--surface); z-index: 1; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
   .rep.collapsed { grid-template-columns: auto minmax(0, 1fr); }
   .rep-rail { position: sticky; top: var(--sticky-top); display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 10px 6px; }
@@ -686,7 +688,7 @@ const TR = {
   'Loading…': 'Yükleniyor…', 'approved v{v}': 'onaylı v{v}', 'draft': 'taslak', 'approved': 'onaylı', 'execute': 'execute',
   'Could not read the report library: ': 'Rapor kütüphanesi okunamadı: ', 'No reports for {db} yet': '{db} için henüz rapor yok', 'The report library is empty': 'Rapor kütüphanesi boş',
   'Ask your agent to save an analysis query with ': 'Agent\'tan bir analiz sorgusunu ', ' and run it with ': ' ile kaydetmesini ve ', '.': ' ile çalıştırmasını isteyin.',
-  'Library: ': 'Kütüphane: ', 'Wrap lines': 'Satır kaydır', 'Wrap long lines': 'Uzun satırları kaydır', 'Stage': 'Aşama', 'Drafts': 'Taslaklar', 'Approved': 'Onaylı', 'Execute': 'Execute', 'No reports match.': 'Eşleşen rapor yok.',
+  'Library: ': 'Kütüphane: ', 'Wrap lines': 'Satır kaydır', 'Filter by name, category or stage': 'Ad, kategori ya da aşamaya göre süz', 'Filter reports': 'Raporları süz', 'Wrap long lines': 'Uzun satırları kaydır', 'Stage': 'Aşama', 'Drafts': 'Taslaklar', 'Approved': 'Onaylı', 'Execute': 'Execute', 'No reports match.': 'Eşleşen rapor yok.',
   'estimated plan': 'tahmini plan', '{n} rows': '{n} satır', 'change script': 'değişiklik script\'i', 'not run yet': 'henüz çalıştırılmadı',
   ' · schema {s}': ' · şema {s}', 'Language': 'Dil', 'Run report': 'Rapor çalıştırma',
   'Save report': 'Rapor kaydetme', 'Approve report': 'Rapor onayı', 'Save change script': 'Değişiklik script\'i kaydetme',
@@ -1646,6 +1648,19 @@ function reportView(r) {
   if (doc && !doc.loading) { state.reportViewNode = node; state.reportViewKey = repKey(r); state.reportViewTheme = state.theme + lang; }
   return node;
 }
+// report-filter:start (tests/viewerReportFilter.test.js runs this block in isolation)
+// Search text folded for matching: case-insensitive, and the Turkish dotted
+// and dotless i (İ, I, ı, i) all match each other.
+const foldText = s => String(s ?? '').replace(/[İIı]/g, 'i').toLowerCase().normalize('NFC');
+// Every word of the query must occur in the report's name, title, category
+// or stage (its key or its label, e.g. "execute" or "taslak").
+function reportMatches(r, query, stageLabel = '') {
+  const words = foldText(query).split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const hay = foldText([r.name, r.title, r.category, r.stage, stageLabel].join(' '));
+  return words.every(w => hay.includes(w));
+}
+// report-filter:end
 function renderReports() {
   const data = state.reports;
   const all = (data?.reports || []).filter(r => !state.db || r.db === state.db);
@@ -1660,9 +1675,11 @@ function renderReports() {
     return;
   }
   const q = F.text.value.trim().toLowerCase();
-  const list = all.filter(r => (state.stageFilter === 'all' || r.stage === state.stageFilter)
-    && (!q || [r.title, r.name, r.category, r.schema, r.db, r.description].join(' ').toLowerCase().includes(q)));
-  const count = st => all.filter(r => st === 'all' || r.stage === st).length;
+  const rq = state.repFilter || '';
+  const found = all.filter(r => (!q || [r.title, r.name, r.category, r.schema, r.db, r.description].join(' ').toLowerCase().includes(q))
+    && reportMatches(r, rq, t(r.stage)));
+  const list = found.filter(r => state.stageFilter === 'all' || r.stage === state.stageFilter);
+  const count = st => found.filter(r => st === 'all' || r.stage === st).length;
   const toggleList = () => { state.repListCollapsed = !state.repListCollapsed; state.reportViewNode = null; persist(); renderReports(); };
   if (state.repListCollapsed) {
     const selectedRep = all.find(r => repKey(r) === state.reportSel);
@@ -1676,7 +1693,15 @@ function renderReports() {
   const stagebar = h('div', { class: 'stagebar' }, h('div', { class: 'seg', role: 'group', 'aria-label': t('Stage') },
     [['all', t('All')], ['draft', t('Drafts')], ['approved', t('Approved')], ['execute', t('Execute')]].map(([k, label]) =>
       h('button', { class: state.stageFilter === k ? 'on' : '', onclick: () => { state.stageFilter = k; persist(); renderReports(); } }, `${label} ${count(k)}`))),
-    h('button', { class: 'icon-btn sm', 'aria-expanded': 'true', title: t('Hide the report list'), onclick: toggleList }, '«'));
+    h('button', { class: 'icon-btn sm', 'aria-expanded': 'true', title: t('Hide the report list'), onclick: toggleList }, '«'),
+    h('input', { id: 'repFilter', class: 'rep-filter', type: 'search', value: rq, placeholder: t('Filter by name, category or stage'), 'aria-label': t('Filter reports'),
+      oninput: ev => {
+        const el = ev.target, at = el.selectionStart;
+        state.repFilter = el.value;
+        renderReports();
+        const next = $('repFilter');
+        if (next) { next.focus(); try { next.setSelectionRange(at, at); } catch {} }
+      } }));
   const groups = new Map();
   for (const r of list) {
     const key = (state.db ? '' : r.db + ' › ') + r.schema + ' › ' + r.category;
