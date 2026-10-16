@@ -419,7 +419,9 @@
   .g3d-bar .icon-btn:disabled { opacity: .45; cursor: default; }
   .g3d-tip { font: 12px/1.4 "Segoe UI", system-ui, sans-serif; }
   .g3d-tip b { display: block; }
-  .g3d-labels { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+  /* Own stacking context: the per-label z-index never reaches the header, menus, tooltip or toast. */
+  .g3d-labels { position: absolute; inset: 0; z-index: 0; isolation: isolate; overflow: hidden; pointer-events: none; }
+  .g3d .g3d-bar, .g3d .sch-zoom, .g3d .sch-legend { z-index: 1; }
   .g3d-lbl, .g3d-layer { position: absolute; left: 0; top: 0; white-space: nowrap; max-width: 240px; overflow: hidden; text-overflow: ellipsis;
     font-size: 12px; line-height: 1.3; padding: 1px 6px; border-radius: 5px; color: var(--text); will-change: transform;
     background: color-mix(in srgb, var(--surface) 84%, transparent); }
@@ -2641,6 +2643,9 @@ function graph3dCanvas(g, data) {
       .nodeLabel(n => graph3dTip(n, g))
       .onNodeClick(n => ctl.focusOn(n.id))
       .onNodeHover(n => { host.style.cursor = n ? 'pointer' : ''; })
+      // Labels follow nodes while they are dragged or the free layout runs.
+      .onNodeDrag(() => { ctl.moving = true; })
+      .onEngineTick(() => { ctl.moving = true; })
       .onNodeDragEnd(() => { if (!lay) ctl.save(); })
       .onEngineStop(() => {
         ctl.moving = false;
@@ -3695,7 +3700,7 @@ function renderThemeMenu() {
     h('button', { class: 'th-pick', onclick: () => setTheme(id) }, themeSwatch(spec), h('span', {}, themeName(spec))),
     removable ? h('button', { class: 'th-del', title: t('Delete theme {n}', { n: spec.name }), 'aria-label': t('Delete theme {n}', { n: spec.name }), onclick: () => {
       customThemes = customThemes.filter(x => x.id !== id);
-      saveCustomThemes();
+      if (!saveCustomThemes()) toast(t('Could not save themes in this browser'));
       if (state.theme === id) setTheme('auto'); else renderThemeMenu();
     } }, '×') : null);
   const res = themeTokens(themeDraft);
@@ -3738,19 +3743,27 @@ function renderThemeMenu() {
         h('button', { class: 'icon-btn', onclick: () => {
           const r = themeImport(io.value, customThemes);
           if (r.error) { msg.textContent = t('Import failed: not valid JSON'); return; }
-          customThemes = r.list; saveCustomThemes();
-          msg.textContent = t('{a} imported, {s} skipped', { a: r.added, s: r.skipped });
+          customThemes = r.list;
+          msg.textContent = saveCustomThemes() ? t('{a} imported, {s} skipped', { a: r.added, s: r.skipped }) : t('Could not save themes in this browser');
           renderThemeMenu(); $('themeMenu').querySelector('.th-msg').textContent = msg.textContent;
         } }, t('Import')))));
 }
 function openThemeMenu() { $('thsel').classList.add('open'); $('themeMenuBtn').setAttribute('aria-expanded', 'true'); renderThemeMenu(); }
-function closeThemeMenu() {
-  if (!$('thsel').classList.contains('open')) return;
+// Returns true when the menu was open; focusButton moves focus back to its button.
+function closeThemeMenu(focusButton = false) {
+  if (!$('thsel').classList.contains('open')) return false;
   $('thsel').classList.remove('open'); $('themeMenuBtn').setAttribute('aria-expanded', 'false');
   if (themePreview) { themePreview = false; themeChanged(); }
+  if (focusButton) $('themeMenuBtn').focus();
+  return true;
 }
+// Escape inside the menu (also from a focused native color input) closes only the menu.
+$('themeMenu').addEventListener('keydown', ev => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); closeThemeMenu(true); } });
 $('themeMenuBtn').addEventListener('click', ev => { ev.stopPropagation(); $('thsel').classList.contains('open') ? closeThemeMenu() : openThemeMenu(); });
+document.addEventListener('pointerdown', ev => { if (!$('thsel').contains(ev.target)) closeThemeMenu(); });
 document.addEventListener('click', ev => { if (!$('thsel').contains(ev.target) && ev.target.isConnected) closeThemeMenu(); });
+// Clicks in a report frame never reach this document: focus moving into it closes the menu.
+addEventListener('blur', () => setTimeout(() => { if (document.activeElement?.tagName === 'IFRAME') closeThemeMenu(); }, 0));
 
 let liveTimer = null;
 function applyLive() {
@@ -3765,7 +3778,7 @@ $('refreshBtn').addEventListener('click', () => load());
 document.addEventListener('keydown', ev => {
   const typing = isTypingIn(document.activeElement);
   if (ev.key === '/' && !typing) { ev.preventDefault(); F.text.focus(); }
-  else if (ev.key === 'Escape') { closeDbMenu(); closeThemeMenu(); if (typing) document.activeElement.blur(); else if (state.open) { state.open = null; render(); } else if (state.tab === 'schema' && graph3d) graph3d.showAll(); }
+  else if (ev.key === 'Escape') { if (closeThemeMenu(true)) { ev.preventDefault(); return; } closeDbMenu(); if (typing) document.activeElement.blur(); else if (state.open) { state.open = null; render(); } else if (state.tab === 'schema' && graph3d) graph3d.showAll(); }
   else if (!typing && (ev.key === 'r' || ev.key === 'R') && !ev.ctrlKey && !ev.metaKey) load();
   else if (!typing && (ev.key === 'd' || ev.key === 'D') && !ev.ctrlKey && !ev.metaKey) { $('dbsel').classList.contains('open') ? closeDbMenu() : openDbMenu(); }
   else if (!typing && ['1', '2', '3', '4', '5', '6'].includes(ev.key)) switchTab(tabNames[Number(ev.key) - 1]);
