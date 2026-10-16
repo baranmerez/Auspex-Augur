@@ -744,7 +744,11 @@ a request only when all of these hold:
 There are no CORS headers, and the page cannot be framed by another site
 (`X-Frame-Options: DENY`). Every request that passed the origin and token
 checks is written to the audit log with `source` and `actor` `viewer`, the
-report, the from/to stage and the version, or the error. The desktop app only
+report, the from/to stage and the version, or the error. The Origin and token
+checks stop other web pages, but any local process on this machine could still
+call these routes, so the audit actor `viewer` is not proof of a human click.
+Approve and revoke also rebuild the schema memory view, since approved
+reports' joins are its "used" relations. The desktop app only
 reads files and shows a note instead of the buttons: approve from the browser
 viewer or through `approve_report`.
 
