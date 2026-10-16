@@ -95,7 +95,9 @@ creates anything.
   category for example `Integration`, name like the file, plus `root`,
   `folder` and `fileName` after the user's yes). Tables, constraints,
   indexes, comments, log table, trigger functions and triggers go into one
-  preview script, in dependency order. Skeleton:
+  preview script, in dependency order. Write the title, purpose and script
+  comments in the `notesLanguage` from `list_profiles` (ask once if null).
+  Skeleton:
   [script-template.md](references/script-template.md). An existing file is
   never overwritten: on that error propose the next number and ask again.
 - `purpose`, `expectedRows` (0 for pure DDL) and `relatedReport` filled in.

@@ -72,6 +72,7 @@ late one.
 8. **Save and run.** `save_report` with db = profile, schema = main schema,
    a category (ask once if unclear, default `General`), a kebab-case name,
    title and description stating the definitions. Then `run_report`.
+   Write titles, descriptions and notes in the `notesLanguage` from `list_profiles` (ask once if null); SQL and identifiers stay as they are.
 9. **Hand over.** Summary: row count, totals, timings, warnings, the HTML
    path, rules and codes applied, assumptions. Ask for approval; iterate
    with new SQL versions via `save_report`.

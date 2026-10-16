@@ -83,6 +83,8 @@ Before any join or sum across a parent and a child:
 
 ## Recording (remember)
 
+Write note text in the `notesLanguage` from `list_profiles` (ask once if null).
+
 | What | kind | Needs |
 |---|---|---|
 | Rule the user stated ("order reports exclude cancelled rows") | `rule` | user's words |
