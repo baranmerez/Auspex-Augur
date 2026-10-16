@@ -279,6 +279,8 @@
   .rep-list { max-height: calc(100vh - var(--sticky-top) - 20px); overflow: auto; position: sticky; top: var(--sticky-top); }
   .rep-filter { flex: 1 1 100%; min-width: 0; height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 13px; outline: none; }
   .rep-filter:focus { border-color: var(--accent); }
+  .rep-list .stagebar .seg { flex: 1 1 0; min-width: 0; flex-wrap: wrap; }
+  .rep-list .stagebar > .icon-btn { flex: none; align-self: flex-start; }
   .rep-list .stagebar { padding: 10px 12px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--surface); z-index: 1; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
   .rep.collapsed { grid-template-columns: auto minmax(0, 1fr); }
   .rep-rail { position: sticky; top: var(--sticky-top); display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 10px 6px; }
@@ -432,6 +434,8 @@
   .er-link.suggested { stroke: var(--warn-ink); stroke-dasharray: 2 4; }
   .er-link.hot { stroke: var(--accent); stroke-width: 2.2; }
   svg.er.hovering .er-link:not(.hot), svg.er.hovering .er-box:not(.hot):not(.center) { opacity: .25; }
+  svg.er .er-box.outside:not(.hot), .flow .fl-node.outside:not(.hot) { opacity: .5; }
+  svg.er.hovering .er-box.outside:not(.hot), .flow.hovering .fl-node.outside:not(.hot) { opacity: .2; }
   .er-link.role { stroke-width: 1.8; }
   .er-link.role.hot { stroke-width: 3; }
   .er-box text.meta { font-size: 11px; fill: var(--text-2); font-variant-numeric: tabular-nums; }
@@ -685,10 +689,10 @@ const TR = {
   'No profiles configured': 'Tanımlı profil yok', 'Folder: ': 'Klasör: ', 'Profiles file: ': 'Profil dosyası: ', 'Logs: ': 'Loglar: ', 'Exports: ': 'Dışa aktarımlar: ',
   'just now': 'az önce', '{n} min ago': '{n} dk önce', '{n} h ago': '{n} sa önce', '{n} d ago': '{n} gün önce',
   'Open in new tab': 'Yeni sekmede aç', 'Select a report': 'Bir rapor seçin', 'Its plan, joins, timings, preview and history open here.': 'Planı, joinleri, süreleri, önizlemesi ve geçmişi burada açılır.',
-  'Loading…': 'Yükleniyor…', 'approved v{v}': 'onaylı v{v}', 'draft': 'taslak', 'approved': 'onaylı', 'execute': 'execute',
+  'Loading…': 'Yükleniyor…', 'approved v{v}': 'onaylı v{v}', 'draft': 'taslak', 'approved': 'onaylı', 'execute': 'değişiklik script\'i',
   'Could not read the report library: ': 'Rapor kütüphanesi okunamadı: ', 'No reports for {db} yet': '{db} için henüz rapor yok', 'The report library is empty': 'Rapor kütüphanesi boş',
   'Ask your agent to save an analysis query with ': 'Agent\'tan bir analiz sorgusunu ', ' and run it with ': ' ile kaydetmesini ve ', '.': ' ile çalıştırmasını isteyin.',
-  'Library: ': 'Kütüphane: ', 'Wrap lines': 'Satır kaydır', 'Filter by name, category or stage': 'Ad, kategori ya da aşamaya göre süz', 'Filter reports': 'Raporları süz', 'Wrap long lines': 'Uzun satırları kaydır', 'Stage': 'Aşama', 'Drafts': 'Taslaklar', 'Approved': 'Onaylı', 'Execute': 'Execute', 'No reports match.': 'Eşleşen rapor yok.',
+  'Library: ': 'Kütüphane: ', 'Wrap lines': 'Satır kaydır', 'Filter by name, category or stage': 'Ad, kategori ya da aşamaya göre süz', 'Filter reports': 'Raporları süz', 'Wrap long lines': 'Uzun satırları kaydır', 'Stage': 'Aşama', 'Drafts': 'Taslaklar', 'Approved': 'Onaylı', 'Execute': 'Değişiklik script\'i', 'not run by Auspex': 'Auspex çalıştırmaz', 'No reports match.': 'Eşleşen rapor yok.',
   'estimated plan': 'tahmini plan', '{n} rows': '{n} satır', 'change script': 'değişiklik script\'i', 'not run yet': 'henüz çalıştırılmadı',
   ' · schema {s}': ' · şema {s}', 'Language': 'Dil', 'Run report': 'Rapor çalıştırma',
   'Save report': 'Rapor kaydetme', 'Approve report': 'Rapor onayı', 'Save change script': 'Değişiklik script\'i kaydetme',
@@ -735,7 +739,7 @@ const TR = {
   '{t} · depth {d} · {n} tables': '{t} · derinlik {d} · {n} tablo', 'All tables · {n}': 'Tüm tablolar · {n}',
   'Click a table to focus it': 'Odaklanmak için bir tabloya tıklayın', 'Loading 3D view…': '3B görünüm yükleniyor…',
   '3D view unavailable ({r}); showing the 2D graph.': '3B görünüm kullanılamıyor ({r}); 2B graph gösteriliyor.',
-  'WebGL is not available': 'WebGL kullanılamıyor', 'Pick a table in {s}': '{s} şemasından bir tablo seçin',
+  'WebGL is not available': 'WebGL kullanılamıyor', 'Pick a table in {s}': '{s} şemasından bir tablo seçin', '{s}: {n} · whole database: {all}': '{s}: {n} · tüm veritabanı: {all}', 'Totals of schema {s}': '{s} şemasının toplamları',
   'No table of this schema is explored yet; pick one to make it the center.': 'Bu şemada henüz keşfedilmiş tablo yok; merkez yapmak için birini seçin.', '{n} relations': '{n} ilişki', 'the 3D library could not be loaded': '3B kütüphanesi yüklenemedi',
 };
 let lang = 'en';
@@ -1717,7 +1721,7 @@ function renderReports() {
           h('div', { class: 't' }, r.title, h('span', { class: 'badge ' + r.stage }, t(r.stage))),
           h('div', { class: 's' },
             r.versions ? h('span', {}, `v${r.versions}`) : null,
-            lr ? h('span', {}, `${lr.analyzed === false ? t('estimated plan') : fmtMs(lr.durationMs)} · ${t('{n} rows', { n: fmt(lr.rows) })}`) : (r.stage === 'execute' ? h('span', {}, t('change script')) : h('span', {}, t('not run yet'))),
+            lr ? h('span', {}, `${lr.analyzed === false ? t('estimated plan') : fmtMs(lr.durationMs)} · ${t('{n} rows', { n: fmt(lr.rows) })}`) : (r.stage === 'execute' ? h('span', {}, t('not run by Auspex')) : h('span', {}, t('not run yet'))),
             lr?.warnings ? h('span', { style: 'color:var(--warn-ink)' }, `⚠ ${lr.warnings}`) : null,
             h('span', {}, ago(lr?.at || r.updatedAt))));
       })]) : h('div', { class: 'rep-empty' }, t('No reports match.')));
@@ -1819,6 +1823,20 @@ function schemaTables(g) {
   const rank = { explored: 0, seen: 1 };
   return g.nodes.filter(n => !g.outside.has(n.id))
     .sort((a, b) => (rank[a.state] ?? 2) - (rank[b.state] ?? 2) || g.adj.get(b.id).size - g.adj.get(a.id).size || a.id.localeCompare(b.id));
+}
+// Totals of one schema for the Schema bar: table states of its own tables,
+// relations touching it (self references included, as in the database-wide
+// summary) and its active notes. null for no schema.
+function scopeStats(data, schema) {
+  if (!schema) return null;
+  const nodes = data.nodes.filter(n => n.schema === schema);
+  const ids = new Set(nodes.map(n => n.id));
+  const count = st => nodes.filter(n => (n.state || 'unexplored') === st).length;
+  return {
+    explored: count('explored'), seen: count('seen'), unexplored: count('unexplored'),
+    edges: data.edges.filter(e => ids.has(e.from) || ids.has(e.to)).length,
+    notes: data.notes.filter(n => n.status === 'active' && n.schema === schema).length,
+  };
 }
 // scope:end
 // Picking a schema moves the selection, the graph focus and the ER/Flow
@@ -2631,10 +2649,10 @@ function memTable(db, file, gen) {
 const ER = { row: 21, head: 34, pad: 8, nbw: 250, cw: 310, gap: 12, m: 16 };
 const trunc = (s, n) => (s.length > n ? s.slice(0, Math.max(1, n - 1)) + '…' : s);
 
-function erBox({ x, y, w, title, st, rows, more, center, note, delay, meta, metaOff, stripe }) {
+function erBox({ x, y, w, title, st, rows, more, center, note, delay, meta, metaOff, stripe, outside }) {
   const top = ER.head + (meta ? ER.row : 0);
   const hgt = top + Math.max(1, rows.length + (more ? 1 : 0)) * ER.row + ER.pad;
-  const g = svg('g', { class: `er-box ${st || 'unexplored'}${center ? ' center' : ''}`, transform: `translate(${x},${y})`, style: delay ? `animation-delay:${delay}ms` : null });
+  const g = svg('g', { class: `er-box ${st || 'unexplored'}${center ? ' center' : ''}${outside ? ' outside' : ''}`, transform: `translate(${x},${y})`, style: delay ? `animation-delay:${delay}ms` : null });
   const tip = svg('title');
   tip.textContent = title;
   g.append(tip, svg('rect', { class: 'frame', width: w, height: hgt, rx: 8 }),
@@ -2681,13 +2699,29 @@ function roleHeader(view, key, list, title, sw = key) {
     hidden ? h('span', { class: 'more' }, t('{n} more in Relations', { n: fmt(hidden) })) : null);
 }
 
+// Runs fn over items with at most `limit` calls in flight.
+async function mapPool(items, limit, fn) {
+  let next = 0;
+  const worker = async () => { while (next < items.length) { const item = items[next++]; await fn(item); } };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+}
+// Neighbours outside the picked schema are dimmed in the ER and Flow views.
+const outsideScope = (data, id) => {
+  const sc = state.memSchema;
+  if (!sc || !data.nodes.some(n => n.schema === sc)) return false;
+  const n = data.nodes.find(x => x.id === id);
+  return (n ? n.schema : String(id).split('.')[0]) !== sc;
+};
 async function buildEr(wrap, data, centerId, key) {
   const roles = roleGroups(data, centerId);
   const drawn = [...roles.ref.slice(0, roleLimit('er', 'ref')), ...roles.dep.slice(0, roleLimit('er', 'dep'))];
   const want = [data.nodes.find(n => n.id === centerId), ...drawn.map(g => g.node)]
     .filter((n, i, a) => n?.file && (n.state === 'explored' || n.id === centerId) && a.indexOf(n) === i);
   const recs = new Map();
-  await Promise.all(want.map(async n => recs.set(n.id, await memTable(state.db, n.file, data.generatedAt))));
+  await mapPool(want, 6, async n => {
+    if (state.schemaKey !== key) return;
+    recs.set(n.id, await memTable(state.db, n.file, data.generatedAt));
+  });
   if (state.schemaKey !== key) return;
   wrap.replaceChildren(
     h('div', { class: 'role-head' }, roleHeader('er', 'ref', roles.ref, roleName('ref')), roleHeader('er', 'dep', roles.dep, roleName('dep'))),
@@ -2715,7 +2749,7 @@ function erSvg(data, centerId, recs, roles, width) {
       const bcols = [...new Set(gr.links.flatMap(l => l.nbCols))];
       const types = new Map((recs.get(gr.id)?.columns || []).map(c => [c.name, c.type]));
       const box = erBox({ x, y, w: ER.nbw, title: gr.id, st: gr.node?.state, delay: reduceMotion ? 0 : Math.min(i++ * 25, 900),
-        stripe: roleColor(role, gr.rank), metaOff: !gr.explored,
+        stripe: roleColor(role, gr.rank), metaOff: !gr.explored, outside: outsideScope(data, gr.id),
         meta: `#${gr.rank} · ${roleFigure(gr)} · ${stateLabel(gr.node?.state || 'unexplored')}`,
         rows: bcols.map(c => ({ name: c, type: types.get(c) || '' })) });
       boxes.push({ ...gr, box, bcols, x, y });
@@ -2882,7 +2916,7 @@ async function buildFlow(wrap, data, centerId, key) {
       const isOpen = state.memFlowOpen === it.id && lane.key === 'dep';
       const expTip = kids ? t(isOpen ? 'Hide the dependents of {t}' : 'Open the dependents of {t} ({n} tables)', { t: it.id, n: fmt(kids) })
         : t('No further dependents of {t} are known', { t: it.id });
-      host.append(h('div', { class: `fl-node ${st}${isOpen ? ' open' : ''}`, 'data-id': it.id,
+      host.append(h('div', { class: `fl-node ${st}${isOpen ? ' open' : ''}${outsideScope(data, it.id) ? ' outside' : ''}`, 'data-id': it.id,
         style: `left:${x}px;top:${y}px;width:${nodeW}px;height:${FL.nodeH}px;${reduceMotion ? '' : `animation-delay:${Math.min(li * 60 + i * 30, 600)}ms`}` },
         h('span', { class: 'bar', style: `background:${roleColor(it.role, it.rank)}` }),
         h('button', { class: 'main', title: `${it.id}\n${roleName(it.role)} #${it.rank} · ${roleFigure(it)}\n${joins.join('\n')}\n${t('Click to make it the center')}`,
@@ -3049,10 +3083,14 @@ function renderSchema() {
         ev.currentTarget.textContent = state.memHideFaint ? t('Show beyond top 10') : t('Hide beyond top 10');
       } }, state.memHideFaint ? t('Show beyond top 10') : t('Hide beyond top 10')) : null,
       want3d && graph3dOff ? h('span', { class: 'muted', style: 'font-size:12px' }, t('3D view unavailable ({r}); showing the 2D graph.', { r: t(graph3dOff) })) : null,
-      h('div', { class: 'sch-stats' },
-        h('span', {}, h('b', {}, fmt(S.explored)), t('explored')), h('span', {}, h('b', {}, fmt(S.seen)), t('seen')),
-        h('span', {}, h('b', {}, fmt(S.unexplored)), t('not explored')), h('span', {}, h('b', {}, fmt(S.edges)), t('relations')),
-        h('span', {}, h('b', {}, fmt(S.notes)), t('notes'))),
+      (() => {
+        const Z = scopeStats(data, g.schema) || S;
+        const tip = k => (g.schema ? t('{s}: {n} · whole database: {all}', { s: g.schema, n: fmt(Z[k]), all: fmt(S[k]) }) : null);
+        return h('div', { class: 'sch-stats', title: g.schema ? t('Totals of schema {s}', { s: g.schema }) : null },
+          h('span', { title: tip('explored') }, h('b', {}, fmt(Z.explored)), t('explored')), h('span', { title: tip('seen') }, h('b', {}, fmt(Z.seen)), t('seen')),
+          h('span', { title: tip('unexplored') }, h('b', {}, fmt(Z.unexplored)), t('not explored')), h('span', { title: tip('edges') }, h('b', {}, fmt(Z.edges)), t('relations')),
+          h('span', { title: tip('notes') }, h('b', {}, fmt(Z.notes)), t('notes')));
+      })(),
       h('span', { class: 'grow' }),
       h('button', { class: 'icon-btn', onclick: () => { if (state.memTimeline) state.memTimeline = false; else openTimeline(state.db); renderSchema(); } },
         t('Timeline'), nNew ? h('span', { class: 'badge inference' }, fmt(nNew)) : null)),
