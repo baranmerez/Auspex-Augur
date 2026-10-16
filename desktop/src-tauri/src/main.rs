@@ -726,8 +726,8 @@ mod tests {
 
     #[test]
     fn memory_paths_stay_inside_the_memory_folder() {
-        assert!(valid_profile("shop-test_2"));
-        for bad in ["", "Shop", "1shop", "../x", "a/b", "a.b"] {
+        assert!(valid_profile("example-test_2"));
+        for bad in ["", "Example", "1example", "../x", "a/b", "a.b"] {
             assert!(!valid_profile(bad), "{bad}");
         }
         assert!(valid_memory_file("tables/sales/orders.json"));
@@ -739,9 +739,9 @@ mod tests {
 
     #[test]
     fn host_and_port_query_options_are_rejected() {
-        assert_eq!(profile_problem("shop", "postgresql://u@db.example:5432/x?sslmode=require"), None);
+        assert_eq!(profile_problem("example", "postgresql://u@db.example.test:5432/x?sslmode=require"), None);
         for q in ["host=production.invalid", "port=6543", "HOST=production.invalid", "sslmode=require&port=6543"] {
-            let problem = profile_problem("shop", &format!("postgresql://u@staging.invalid:5432/x?{q}")).expect(q);
+            let problem = profile_problem("example", &format!("postgresql://u@staging.invalid:5432/x?{q}")).expect(q);
             assert!(problem.contains("URL authority"), "{problem}");
             assert!(!problem.contains("production.invalid") && !problem.contains("6543") && !problem.contains("staging"), "{problem}");
         }

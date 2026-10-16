@@ -17,12 +17,12 @@ const baseEnv = { AUSPEX_HOME: dir };
 test('profiles are read from the file with description and timeout ceiling', () => {
   const file = profilesFile({
     local: { url: 'postgresql://Auspex@localhost:5432/postgres', description: 'Local test' },
-    'Shop-Prod': { url: 'postgresql://Auspex@10.0.0.5:5432/shopdb', description: 'Shop prod (VPN)', maxTimeoutSeconds: 180 },
+    'Example-Prod': { url: 'postgresql://Auspex@db.example.test:5432/exampledb', description: 'Example prod', maxTimeoutSeconds: 180 },
   });
   const config = loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: file });
-  assert.deepEqual([...config.profiles.keys()], ['local', 'shop-prod']);
-  assert.deepEqual(config.profileInfo.get('shop-prod'), { source: 'file', description: 'Shop prod (VPN)' });
-  assert.equal(config.maxTimeoutByProfile.get('shop-prod'), 180000);
+  assert.deepEqual([...config.profiles.keys()], ['local', 'example-prod']);
+  assert.deepEqual(config.profileInfo.get('example-prod'), { source: 'file', description: 'Example prod' });
+  assert.equal(config.maxTimeoutByProfile.get('example-prod'), 180000);
   assert.equal(config.maxTimeoutByProfile.has('local'), false);
   assert.equal(config.profilesFile, file);
 });
@@ -39,16 +39,16 @@ test('a missing file means no file profiles; env profiles still load', () => {
 });
 
 test('file and env profiles combine; the same name in both is an error', () => {
-  const file = profilesFile({ shop: { url: 'postgresql://Auspex@10.0.0.5/shopdb' } });
+  const file = profilesFile({ example: { url: 'postgresql://Auspex@db.example.test/exampledb' } });
   const both = loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: file, AUSPEX_DB_LOCAL: 'postgresql://Auspex@localhost/postgres' });
-  assert.deepEqual([...both.profiles.keys()].sort(), ['local', 'shop']);
-  assert.throws(() => loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: file, AUSPEX_DB_SHOP: 'postgresql://x@y/z' }), /defined both/);
+  assert.deepEqual([...both.profiles.keys()].sort(), ['example', 'local']);
+  assert.throws(() => loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: file, AUSPEX_DB_EXAMPLE: 'postgresql://x@y/z' }), /defined both/);
 });
 
 test('env timeout ceiling overrides the file value', () => {
-  const file = profilesFile({ shop: { url: 'postgresql://Auspex@10.0.0.5/shopdb', maxTimeoutSeconds: 180 } });
-  const config = loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: file, AUSPEX_MAX_STATEMENT_TIMEOUT_MS_SHOP: '60000' });
-  assert.equal(config.maxTimeoutByProfile.get('shop'), 60000);
+  const file = profilesFile({ example: { url: 'postgresql://Auspex@db.example.test/exampledb', maxTimeoutSeconds: 180 } });
+  const config = loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: file, AUSPEX_MAX_STATEMENT_TIMEOUT_MS_EXAMPLE: '60000' });
+  assert.equal(config.maxTimeoutByProfile.get('example'), 60000);
 });
 
 const invalid = [
@@ -59,7 +59,7 @@ const invalid = [
   ['non-postgres url', { local: { url: 'mysql://u@h/db' } }, /must start with postgresql/],
   ['unknown field', { local: { url: 'postgresql://u@h/db', password: 'x' } }, /unknown field\(s\) password/],
   ['bad name', { '1st': { url: 'postgresql://u@h/db' } }, /names use a-z/],
-  ['duplicate name by case', { Shop: { url: 'postgresql://u@h/a' }, shop: { url: 'postgresql://u@h/b' } }, /defined twice/],
+  ['duplicate name by case', { Example: { url: 'postgresql://u@h/a' }, example: { url: 'postgresql://u@h/b' } }, /defined twice/],
   ['bad timeout', { local: { url: 'postgresql://u@h/db', maxTimeoutSeconds: 0 } }, /maxTimeoutSeconds/],
   ['non-text description', { local: { url: 'postgresql://u@h/db', description: 5 } }, /description/],
 ];
@@ -107,16 +107,16 @@ for (const [name, vars, message] of invalidEnv) {
 }
 
 test('pgpass-style profiles with harmless query options still load', () => {
-  const file = profilesFile({ shop: { url: 'postgresql://Auspex@10.0.0.5:5432/shopdb?sslmode=require&application_name=auspex' } });
+  const file = profilesFile({ example: { url: 'postgresql://Auspex@db.example.test:5432/exampledb?sslmode=require&application_name=auspex' } });
   const config = loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: file, AUSPEX_DB_LOCAL: 'postgresql://Auspex@localhost/postgres?sslmode=disable' });
-  assert.deepEqual([...config.profiles.keys()].sort(), ['local', 'shop']);
+  assert.deepEqual([...config.profiles.keys()].sort(), ['example', 'local']);
 });
 
 test('every allowlisted query option is accepted', () => {
   const query = 'ssl=true&sslmode=verify-full&sslcert=c.crt&sslkey=c.key&sslrootcert=ca.crt'
     + '&sslnegotiation=direct&uselibpqcompat=true&application_name=auspex&fallback_application_name=x&connect_timeout=5'
     + '&keepalives=1&keepalives_idle=30';
-  const file = profilesFile({ shop: { url: `postgresql://Auspex@h/db?${query}` } });
+  const file = profilesFile({ example: { url: `postgresql://Auspex@h/db?${query}` } });
   assert.equal(readProfilesFile(file).length, 1);
 });
 
@@ -171,7 +171,7 @@ test('the connection summary shows the host and port node-postgres uses (no conn
     'postgres://review@staging.invalid/fixture',
     'postgresql://review@[::1]:5433/fixture',
     'postgresql://review@[2001:db8::1]/fixture',
-    'postgresql://review@10.0.0.5/fixture',
+    'postgresql://review@db.example.test/fixture',
     'postgresql://review@my%2Dhost/fixture',
     'postgresql://review@%2Fvar%2Frun%2Fpostgresql/fixture',
   ];
@@ -207,14 +207,14 @@ test('script roots come from the profiles file and AUSPEX_SCRIPT_ROOT_<NAME>, an
   const rootB = path.join(dir, 'Scripts B');
   const file = profilesFile({
     local: { url: 'postgresql://Auspex@localhost/postgres' },
-    scriptRoots: { DBeaver: rootA },
+    scriptRoots: { Scripts: rootA },
   });
   const config = loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: file, AUSPEX_SCRIPT_ROOT_SPARE: rootB });
   assert.deepEqual([...config.profiles.keys()], ['local']);
   assert.deepEqual(readProfilesFile(file).map(p => p.name), ['local']);
-  assert.deepEqual([...config.scriptRoots], [['dbeaver', { dir: rootA, source: 'file' }], ['spare', { dir: rootB, source: 'env' }]]);
+  assert.deepEqual([...config.scriptRoots], [['scripts', { dir: rootA, source: 'file' }], ['spare', { dir: rootB, source: 'env' }]]);
   assert.equal(loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: path.join(dir, 'none.json') }).scriptRoots.size, 0);
-  assert.throws(() => loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: file, AUSPEX_SCRIPT_ROOT_DBEAVER: rootB }), /defined both/);
+  assert.throws(() => loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: file, AUSPEX_SCRIPT_ROOT_SCRIPTS: rootB }), /defined both/);
 });
 
 const invalidRoots = [

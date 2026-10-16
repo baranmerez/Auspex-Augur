@@ -18,7 +18,7 @@ const col = (column, attnum, type = 'integer', extra = {}) => ({ column, attnum,
 // Shape of a describe_table result (catalog.describeTable).
 function ordersDescribe(overrides = {}) {
   return {
-    profile: 'shop', relation: 'sales.orders', schema: 'sales', table: 'orders', kind: 'table', oid: 1001, estimated_rows: 250000, comment: null,
+    profile: 'example', relation: 'sales.orders', schema: 'sales', table: 'orders', kind: 'table', oid: 1001, estimated_rows: 250000, comment: null,
     columns: [col('id', 1, 'integer', { not_null: true }), col('customer_id', 2), col('status_id', 3), col('note', 4, 'text')],
     constraints: [
       { name: 'orders_pkey', type: 'primary key', definition: 'PRIMARY KEY (id)', columns: ['id'], ref_schema: null, ref_table: null, ref_columns: null },
@@ -62,10 +62,10 @@ test('first describe records the table; the next one reports structural changes 
     'column status_id renamed to state_id',
     'index orders_pkey dropped',
   ]);
-  const rec = mem.readTable('shop', 'sales', 'orders');
+  const rec = mem.readTable('example', 'sales', 'orders');
   assert.equal(rec.history.length, 1);
   assert.equal(rec.estimatedRows, 250000);
-  assert.deepEqual(mem.readChangelog('shop').map(e => e.event), ['explored', 'changed']);
+  assert.deepEqual(mem.readChangelog('example').map(e => e.event), ['explored', 'changed']);
 });
 
 test('a recreated table (new oid) is diffed by name, without rename guesses', () => {
@@ -79,11 +79,11 @@ test('a recreated table (new oid) is diffed by name, without rename guesses', ()
 test('plans record seen tables and used columns; neighbors come from foreign keys', () => {
   const mem = tempMemory();
   mem.recordDescribe(ordersDescribe());
-  const out = mem.recordSeen('shop', [{ schema: 'sales', table: 'orders', columns: ['status_id'] }, { schema: 'sales', table: 'regions', columns: ['name'] }]);
-  const seen = mem.readTable('shop', 'sales', 'regions');
+  const out = mem.recordSeen('example', [{ schema: 'sales', table: 'orders', columns: ['status_id'] }, { schema: 'sales', table: 'regions', columns: ['name'] }]);
+  const seen = mem.readTable('example', 'sales', 'regions');
   assert.equal(seen.describedAt, null);
   assert.equal(seen.usedColumns.name.count, 1);
-  assert.equal(mem.readTable('shop', 'sales', 'orders').usedColumns.status_id.count, 1);
+  assert.equal(mem.readTable('example', 'sales', 'orders').usedColumns.status_id.count, 1);
   assert.deepEqual(out.unexploredNeighbors, { tables: ['sales.customers', 'sales.order_lines'], more: 0 });
 });
 
@@ -91,33 +91,33 @@ test('relations: fk, used from approved reports, suggested by primary key name',
   const mem = tempMemory(() => [{ left: 'sales.orders.status_id', right: 'sales.statuses.id' }, { left: 'sales.orders.customer_id', right: 'sales.customers.id' }]);
   mem.recordDescribe(ordersDescribe({ columns: [...ordersDescribe().columns, col('warehouse_id', 6)] }));
   mem.recordDescribe({
-    profile: 'shop', relation: 'stock.warehouses', schema: 'stock', table: 'warehouses', kind: 'table', oid: 3003, estimated_rows: 12, comment: null,
+    profile: 'example', relation: 'stock.warehouses', schema: 'stock', table: 'warehouses', kind: 'table', oid: 3003, estimated_rows: 12, comment: null,
     columns: [col('warehouse_id', 1)], indexes: [], referencedBy: [],
     constraints: [{ name: 'wh_pkey', type: 'primary key', definition: 'PRIMARY KEY (warehouse_id)', columns: ['warehouse_id'] }],
   });
-  const levels = mem.edges('shop').map(e => `${e.level} ${e.from} -> ${e.to}`).sort();
+  const levels = mem.edges('example').map(e => `${e.level} ${e.from} -> ${e.to}`).sort();
   assert.deepEqual(levels, [
     'fk sales.order_lines -> sales.orders',
     'fk sales.orders -> sales.customers',
     'suggested sales.orders -> stock.warehouses',
     'used sales.orders -> sales.statuses',
   ], 'a join that is already a foreign key is not repeated as used');
-  const k = mem.knowledge('shop', 'sales', 'orders');
+  const k = mem.knowledge('example', 'sales', 'orders');
   assert.equal(k.known, true);
   assert.deepEqual(k.relations.suggested, ['warehouse_id -> stock.warehouses(warehouse_id) (name match, unconfirmed)']);
   assert.ok(k.keyColumns.includes('id integer [pk]'));
   assert.ok(k.keyColumns.includes('customer_id integer [fk]'));
   assert.match(k.otherColumns, /note/);
   assert.deepEqual(k.unexploredNeighbors.tables, ['sales.customers', 'sales.order_lines', 'sales.statuses']);
-  assert.deepEqual(mem.knowledge('shop', 'sales', 'nothing').known, false);
+  assert.deepEqual(mem.knowledge('example', 'sales', 'nothing').known, false);
 });
 
 test('notes: add, show on touched tables, confirm inferences, archive instead of delete', () => {
   const mem = tempMemory();
   mem.recordDescribe(ordersDescribe());
-  const rule = mem.addNote('shop', { kind: 'rule', schema: 'sales', table: 'orders', column: 'status_id', text: 'status_id = 50 means cancelled.' });
-  const obs = mem.addNote('shop', { kind: 'observation', schema: 'sales', table: 'orders', column: 'note', text: 'note is never filled.', evidence: { sql: 'select count(note) from sales.orders', figures: { rows: 250000, filled: 0 } } });
-  const inf = mem.addNote('shop', { kind: 'inference', schema: 'sales', table: 'orders', text: 'is_void may mean an invoice reversal.' });
+  const rule = mem.addNote('example', { kind: 'rule', schema: 'sales', table: 'orders', column: 'status_id', text: 'status_id = 50 means cancelled.' });
+  const obs = mem.addNote('example', { kind: 'observation', schema: 'sales', table: 'orders', column: 'note', text: 'note is never filled.', evidence: { sql: 'select count(note) from sales.orders', figures: { rows: 250000, filled: 0 } } });
+  const inf = mem.addNote('example', { kind: 'inference', schema: 'sales', table: 'orders', text: 'is_void may mean an invoice reversal.' });
   assert.equal(rule.source, 'user');
   assert.equal(obs.asOf, '2026-01-01');
   assert.deepEqual(obs.evidence.figures, { rows: 250000, filled: 0 });
@@ -126,31 +126,31 @@ test('notes: add, show on touched tables, confirm inferences, archive instead of
   assert.equal(desc.notes.length, 3);
   assert.match(desc.notes[0], /^#1 rule status_id: status_id = 50 means cancelled\.$/);
   assert.match(desc.notes[2], /\(unconfirmed\)$/);
-  assert.equal(mem.notesForSql('shop', 'select 1 from SALES.Orders o').notes.length, 3);
-  assert.deepEqual(mem.notesForSql('shop', 'select 1 from sales.customers'), {});
+  assert.equal(mem.notesForSql('example', 'select 1 from SALES.Orders o').notes.length, 3);
+  assert.deepEqual(mem.notesForSql('example', 'select 1 from sales.customers'), {});
 
-  assert.equal(mem.confirmNote('shop', inf.id, 'rule').kind, 'rule');
-  assert.throws(() => mem.archiveNote('shop', obs.id, ''), /reason/);
-  mem.archiveNote('shop', obs.id, 'column is filled since the new release');
-  assert.equal(mem.knowledge('shop', 'sales', 'orders').notes.length, 2);
-  assert.equal(mem.readNotes('shop').notes.filter(n => n.table === 'orders').length, 3, 'archived notes stay');
-  mem.addNote('shop', { kind: 'observation', schema: 'sales', table: 'returns', text: 'returns is not linked to orders.' });
-  assert.deepEqual(mem.knowledge('shop', 'sales', 'returns').notes.map(n => n.text), ['returns is not linked to orders.'], 'notes show before the table is explored');
-  assert.throws(() => mem.addNote('shop', { kind: 'guess', text: 'x' }), MemoryError);
-  assert.throws(() => mem.addNote('shop', { kind: 'rule', schema: 'sales', text: 'x' }), /both schema and table/);
+  assert.equal(mem.confirmNote('example', inf.id, 'rule').kind, 'rule');
+  assert.throws(() => mem.archiveNote('example', obs.id, ''), /reason/);
+  mem.archiveNote('example', obs.id, 'column is filled since the new release');
+  assert.equal(mem.knowledge('example', 'sales', 'orders').notes.length, 2);
+  assert.equal(mem.readNotes('example').notes.filter(n => n.table === 'orders').length, 3, 'archived notes stay');
+  mem.addNote('example', { kind: 'observation', schema: 'sales', table: 'returns', text: 'returns is not linked to orders.' });
+  assert.deepEqual(mem.knowledge('example', 'sales', 'returns').notes.map(n => n.text), ['returns is not linked to orders.'], 'notes show before the table is explored');
+  assert.throws(() => mem.addNote('example', { kind: 'guess', text: 'x' }), MemoryError);
+  assert.throws(() => mem.addNote('example', { kind: 'rule', schema: 'sales', text: 'x' }), /both schema and table/);
 });
 
 test('graph lists explored, seen and unexplored tables', () => {
   const mem = tempMemory();
   mem.recordDescribe(ordersDescribe());
-  mem.recordSeen('shop', [{ schema: 'sales', table: 'regions', columns: [] }]);
-  const g = mem.graph('shop');
+  mem.recordSeen('example', [{ schema: 'sales', table: 'regions', columns: [] }]);
+  const g = mem.graph('example');
   const state = Object.fromEntries(g.nodes.map(n => [n.id, n.state]));
   assert.deepEqual(state, { 'sales.orders': 'explored', 'sales.regions': 'seen', 'sales.customers': 'unexplored', 'sales.order_lines': 'unexplored' });
   assert.equal(g.edges.length, 2);
-  assert.deepEqual(mem.profiles(), ['shop']);
+  assert.deepEqual(mem.profiles(), ['example']);
   assert.equal(g.nodes.find(n => n.id === 'sales.orders').file, 'tables/sales/orders.json');
-  const view = JSON.parse(fs.readFileSync(path.join(mem.root, 'shop', 'graph.json'), 'utf8'));
+  const view = JSON.parse(fs.readFileSync(path.join(mem.root, 'example', 'graph.json'), 'utf8'));
   assert.deepEqual([view.summary.explored, view.summary.seen, view.summary.unexplored, view.summary.edges], [1, 1, 2, 2]);
   assert.deepEqual(view.changelog.map(e => e.event), ['explored']);
   assert.throws(() => mem.readTable('../x', 'a', 'b'), MemoryError);
@@ -183,21 +183,21 @@ test('relations and columns are read from JSON and text plans', () => {
 test('database-wide notes come back from table_knowledge, separate from table notes', () => {
   const mem = tempMemory();
   mem.recordDescribe(ordersDescribe());
-  const rule = mem.addNote('shop', { kind: 'rule', text: 'Reports exclude status_id 50 and below.' });
-  const obs = mem.addNote('shop', { kind: 'observation', text: 'Data ends in May 2023 on this copy.', evidence: { sql: 'select max(created_at) from sales.orders', figures: { lastMonth: '2023-05' } } });
-  const inf = mem.addNote('shop', { kind: 'inference', text: 'The copy may be a partial restore.' });
-  const archived = mem.addNote('shop', { kind: 'rule', text: 'Old rule.' });
-  mem.archiveNote('shop', archived.id, 'replaced');
-  mem.addNote('shop', { kind: 'rule', schema: 'sales', table: 'orders', text: 'Table rule.' });
-  mem.addNote('shop', { kind: 'rule', schema: 'sales', table: 'customers', text: 'Other table rule.' });
+  const rule = mem.addNote('example', { kind: 'rule', text: 'Reports exclude status_id 50 and below.' });
+  const obs = mem.addNote('example', { kind: 'observation', text: 'Data ends in May 2023 on this copy.', evidence: { sql: 'select max(created_at) from sales.orders', figures: { lastMonth: '2023-05' } } });
+  const inf = mem.addNote('example', { kind: 'inference', text: 'The copy may be a partial restore.' });
+  const archived = mem.addNote('example', { kind: 'rule', text: 'Old rule.' });
+  mem.archiveNote('example', archived.id, 'replaced');
+  mem.addNote('example', { kind: 'rule', schema: 'sales', table: 'orders', text: 'Table rule.' });
+  mem.addNote('example', { kind: 'rule', schema: 'sales', table: 'customers', text: 'Other table rule.' });
 
-  const known = mem.knowledge('shop', 'sales', 'orders');
+  const known = mem.knowledge('example', 'sales', 'orders');
   assert.deepEqual(known.notes.map(n => n.text), ['Table rule.'], 'table notes stay scoped');
   assert.deepEqual(known.databaseNotes.map(n => n.id), [rule.id, obs.id, inf.id], 'rules first, archived excluded');
   assert.deepEqual(known.databaseNotes.map(n => [n.scope, n.kind, n.confirmed]),
     [['database', 'rule', true], ['database', 'observation', true], ['database', 'inference', false]]);
 
-  const unknown = mem.knowledge('shop', 'sales', 'never_seen');
+  const unknown = mem.knowledge('example', 'sales', 'never_seen');
   assert.equal(unknown.known, false);
   assert.equal(unknown.notes, undefined);
   assert.equal(unknown.databaseNotes.length, 3, 'unknown tables get the database notes too');
@@ -207,9 +207,9 @@ test('database-wide notes come back from table_knowledge, separate from table no
 
 test('database rules are never cut; other database notes are capped and counted', () => {
   const mem = tempMemory();
-  for (let i = 0; i < 15; i++) mem.addNote('shop', { kind: 'rule', text: `Rule ${i}.` });
-  for (let i = 0; i < 14; i++) mem.addNote('shop', { kind: 'inference', text: `Guess ${i}.` });
-  const k = mem.knowledge('shop', 'sales', 'orders');
+  for (let i = 0; i < 15; i++) mem.addNote('example', { kind: 'rule', text: `Rule ${i}.` });
+  for (let i = 0; i < 14; i++) mem.addNote('example', { kind: 'inference', text: `Guess ${i}.` });
+  const k = mem.knowledge('example', 'sales', 'orders');
   assert.equal(k.databaseNotes.filter(n => n.kind === 'rule').length, 15);
   assert.equal(k.databaseNotes.filter(n => n.kind === 'inference').length, 10);
   assert.equal(k.moreDatabaseNotes, 4);

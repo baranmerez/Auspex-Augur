@@ -21,12 +21,12 @@ function fakeDb({ failWith, budget = 60, connectError } = {}) {
     release() {},
   };
   const config = {
-    profiles: new Map([['shop', 'postgresql://u@127.0.0.1:1/a']]),
+    profiles: new Map([['example', 'postgresql://u@127.0.0.1:1/a']]),
     statementTimeoutMs: 30000, maxStatementTimeoutMs: 60000, maxRows: 10, maxCellChars: 100, maxQueriesPerMinute: budget,
   };
   const db = new ReadOnlyDatabase(config, { audit: e => audit.push(e), source: 'mcp', now: () => 1_000_000 });
   db.pool = () => ({ connect: async () => { if (connectError) throw connectError; return client; } });
-  db.roleChecks.set('shop', { status: 'ok', blocking: [], warnings: [] });
+  db.roleChecks.set('example', { status: 'ok', blocking: [], warnings: [] });
   return { db, audit };
 }
 
@@ -43,8 +43,8 @@ const allowedKeys = new Set(['code', 'retryable', 'retryAfterSeconds', 'budgetSc
 
 test('query budget refusal: code, retryable and retry-after, labeled per process', async () => {
   const { db } = fakeDb({ budget: 1 });
-  await db.query('shop', 'select 1');
-  const e = await classified(db.query('shop', 'select 1'));
+  await db.query('example', 'select 1');
+  const e = await classified(db.query('example', 'select 1'));
   assert.equal(e.code, 'QUERY_BUDGET_EXCEEDED');
   assert.equal(e.retryable, true);
   assert.ok(Number.isInteger(e.retryAfterSeconds) && e.retryAfterSeconds >= 1 && e.retryAfterSeconds <= 60);
@@ -53,7 +53,7 @@ test('query budget refusal: code, retryable and retry-after, labeled per process
 
 test('each failure kind has its own code without parsing the message', async () => {
   assert.deepEqual(classifyError(new LockBusyError('x.lock')), { code: 'LOCK_BUSY', retryable: true });
-  assert.deepEqual(classifyError(new RoleCheckError('shop', { blocking: [{ text: 'superuser' }] })), { code: 'ROLE_REJECTED', retryable: false });
+  assert.deepEqual(classifyError(new RoleCheckError('example', { blocking: [{ text: 'superuser' }] })), { code: 'ROLE_REJECTED', retryable: false });
   assert.throws(() => assertReadOnlyQuery('delete from t'), err => classifyError(err).code === 'SQL_REJECTED');
   assert.deepEqual(classifyError(Object.assign(new Error('no space'), { code: 'ENOSPC' })), { code: 'DISK_ERROR', retryable: false });
   assert.equal(classifyError(Object.assign(new Error('exists'), { code: 'EEXIST' })).code, 'DISK_ERROR');
@@ -65,7 +65,7 @@ test('each failure kind has its own code without parsing the message', async () 
 });
 
 test('PostgreSQL errors map by SQLSTATE: timeout, lock timeout, read-only, connection', async () => {
-  const timeout = await classified(fakeDb({ failWith: pgError('57014', 'canceling statement due to statement timeout') }).db.query('shop', 'select 1'));
+  const timeout = await classified(fakeDb({ failWith: pgError('57014', 'canceling statement due to statement timeout') }).db.query('example', 'select 1'));
   assert.deepEqual(timeout, { code: 'TIMEOUT', retryable: false, sqlState: '57014' });
   assert.deepEqual(classifyError(pgError('55P03', 'lock')), { code: 'TIMEOUT', retryable: true, sqlState: '55P03' });
   assert.equal(classifyError(pgError('25006', 'read only')).code, 'SQL_REJECTED');
@@ -76,9 +76,9 @@ test('PostgreSQL errors map by SQLSTATE: timeout, lock timeout, read-only, conne
 });
 
 test('connection failures: authentication is not retryable, an unreachable server is', async () => {
-  const auth = await classified(fakeDb({ connectError: pgError('28P01', 'password authentication failed for user "u"') }).db.query('shop', 'select 1'));
+  const auth = await classified(fakeDb({ connectError: pgError('28P01', 'password authentication failed for user "u"') }).db.query('example', 'select 1'));
   assert.deepEqual(auth, { code: 'CONNECTION_FAILED', retryable: false, sqlState: '28P01' });
-  const refused = await classified(fakeDb({ connectError: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }) }).db.query('shop', 'select 1'));
+  const refused = await classified(fakeDb({ connectError: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }) }).db.query('example', 'select 1'));
   assert.deepEqual(refused, { code: 'CONNECTION_FAILED', retryable: true });
 });
 
@@ -86,11 +86,11 @@ test('a connection that drops mid-query is CONNECTION_FAILED and retryable, disk
   // The messages node-postgres raises (without a code) when the socket drops.
   for (const message of ['Connection terminated unexpectedly', 'Connection terminated',
     'Client has encountered a connection error and is not queryable']) {
-    const e = await classified(fakeDb({ failWith: new Error(message) }).db.query('shop', 'select 1'));
+    const e = await classified(fakeDb({ failWith: new Error(message) }).db.query('example', 'select 1'));
     assert.deepEqual(e, { code: 'CONNECTION_FAILED', retryable: true }, message);
   }
   for (const code of ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EPIPE', 'EHOSTUNREACH', 'ENETUNREACH', 'ENOTFOUND', 'EAI_AGAIN']) {
-    const e = await classified(fakeDb({ failWith: Object.assign(new Error(`read ${code}`), { code }) }).db.query('shop', 'select 1'));
+    const e = await classified(fakeDb({ failWith: Object.assign(new Error(`read ${code}`), { code }) }).db.query('example', 'select 1'));
     assert.deepEqual(e, { code: 'CONNECTION_FAILED', retryable: true }, code);
   }
   // Code wins over message; only the exact pg messages match.
@@ -104,16 +104,16 @@ test('a connection that drops mid-query is CONNECTION_FAILED and retryable, disk
 
 test('invalid parameters and profiles are INVALID_INPUT / PROFILE_INVALID', async () => {
   const { db } = fakeDb();
-  assert.equal((await classified(db.query('shop', 'select 1', [], 1, 0.1))).code, 'INVALID_INPUT');
-  assert.equal((await classified(db.query('shop', 'select 1', [], 1, 999))).code, 'INVALID_INPUT');
+  assert.equal((await classified(db.query('example', 'select 1', [], 1, 0.1))).code, 'INVALID_INPUT');
+  assert.equal((await classified(db.query('example', 'select 1', [], 1, 999))).code, 'INVALID_INPUT');
   assert.equal((await classified(db.query('nope', 'select 1'))).code, 'PROFILE_INVALID');
   assert.equal((await classified(db.query('', 'select 1'))).code, 'PROFILE_INVALID');
-  assert.equal((await classified(db.query('shop', 'update t set a = 1'))).code, 'SQL_REJECTED');
+  assert.equal((await classified(db.query('example', 'update t set a = 1'))).code, 'SQL_REJECTED');
 });
 
 test('the correlation ID of a call is on every audit entry it writes; errors carry their code', async () => {
   const { db, audit } = fakeDb({ failWith: pgError('57014', 'timeout') });
-  await assert.rejects(db.withCorrelation('cid-1', () => db.query('shop', 'select 1')));
+  await assert.rejects(db.withCorrelation('cid-1', () => db.query('example', 'select 1')));
   await db.withCorrelation('cid-2', () => db.audited('outer', {}, () => db.audited('inner', {}, async () => ({ rowCount: 0 }))));
   assert.deepEqual(audit.map(e => [e.tool, e.correlationId, e.errorCode ?? null, e.sqlState ?? null]),
     [['query', 'cid-1', 'TIMEOUT', '57014'], ['inner', 'cid-2', null, null], ['outer', 'cid-2', null, null]]);
@@ -122,7 +122,7 @@ test('the correlation ID of a call is on every audit entry it writes; errors car
   // catalog has no role, so the check blocks the profile.
   const fresh = fakeDb();
   fresh.db.roleChecks.clear();
-  const e = await classified(fresh.db.withCorrelation('cid-3', () => fresh.db.query('shop', 'select 1')));
+  const e = await classified(fresh.db.withCorrelation('cid-3', () => fresh.db.query('example', 'select 1')));
   assert.equal(e.code, 'ROLE_REJECTED');
   assert.deepEqual(fresh.audit.map(x => [x.tool, x.correlationId, x.errorCode ?? null]),
     [['role_check', 'cid-3', null], ['query', 'cid-3', 'ROLE_REJECTED']]);
@@ -134,9 +134,9 @@ test('the correlation ID of a call is on every audit entry it writes; errors car
 test('the envelope holds no message text, SQL, parameters or connection details', async () => {
   const marker = 'SECRET-MARKER-4242';
   const { db } = fakeDb({ failWith: pgError('22P02', `invalid input syntax for type integer: "${marker}"`) });
-  const e = await classified(db.query('shop', `select '${marker}'::int`, [marker]));
+  const e = await classified(db.query('example', `select '${marker}'::int`, [marker]));
   assert.ok(Object.keys(e).every(k => allowedKeys.has(k)), JSON.stringify(e));
   assert.ok(!JSON.stringify(e).includes(marker));
-  const conn = await classified(fakeDb({ connectError: Object.assign(new Error(`connect to postgresql://u@db.internal:5432/${marker}`), { code: 'ENOTFOUND' }) }).db.query('shop', 'select 1'));
+  const conn = await classified(fakeDb({ connectError: Object.assign(new Error(`connect to postgresql://u@db.internal:5432/${marker}`), { code: 'ENOTFOUND' }) }).db.query('example', 'select 1'));
   assert.ok(!JSON.stringify(conn).includes(marker) && !JSON.stringify(conn).includes('db.internal'));
 });

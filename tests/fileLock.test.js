@@ -45,10 +45,10 @@ test('two processes adding notes get unique ids and lose none', { timeout: 30000
   const writer = tag => `
     import { SchemaMemory } from '${srcUrl('memory/store.js')}';
     const mem = new SchemaMemory(${JSON.stringify(root)});
-    for (let i = 0; i < 30; i++) mem.addNote('shop', { kind: 'rule', text: '${tag} rule ' + i });`;
+    for (let i = 0; i < 30; i++) mem.addNote('example', { kind: 'rule', text: '${tag} rule ' + i });`;
   const results = await Promise.all([child(writer('a')), child(writer('b'))]);
   for (const r of results) assert.equal(r.code, 0, r.err);
-  const notes = new SchemaMemory(root).readNotes('shop').notes;
+  const notes = new SchemaMemory(root).readNotes('example').notes;
   assert.equal(notes.length, 60);
   assert.equal(new Set(notes.map(n => n.id)).size, 60);
 });

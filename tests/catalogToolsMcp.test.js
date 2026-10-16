@@ -14,8 +14,8 @@ const serverPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..',
 let client;
 
 before(async () => {
-  const env = { ...process.env, AUSPEX_HOME: home, AUSPEX_PROFILES_FILE: path.join(home, 'none.json'), AUSPEX_DB_SHOP: 'postgresql://auspex@127.0.0.1:1/shop' };
-  for (const k of Object.keys(env)) if (/^AUSPEX_(DB|MAX_QUERIES_PER_MINUTE)_/i.test(k) && k !== 'AUSPEX_DB_SHOP') delete env[k];
+  const env = { ...process.env, AUSPEX_HOME: home, AUSPEX_PROFILES_FILE: path.join(home, 'none.json'), AUSPEX_DB_EXAMPLE: 'postgresql://auspex@127.0.0.1:1/example' };
+  for (const k of Object.keys(env)) if (/^AUSPEX_(DB|MAX_QUERIES_PER_MINUTE)_/i.test(k) && k !== 'AUSPEX_DB_EXAMPLE') delete env[k];
   client = new Client({ name: 'catalog-mcp-test', version: '1.0.0' });
   await client.connect(new StdioClientTransport({ command: process.execPath, args: [serverPath], env, stderr: 'ignore' }));
 });
@@ -68,11 +68,11 @@ test('describe_tables offers detail summary (default) or full; a bad value is re
   assert.match(describe.description, /detail "summary" \(default\)/);
   assert.match(describe.description, /from the full catalog data in either mode/);
   const before = auditEntries().length;
-  const bad = await call('describe_tables', { profile: 'shop', tables: ['sales.orders'], detail: 'everything' });
+  const bad = await call('describe_tables', { profile: 'example', tables: ['sales.orders'], detail: 'everything' });
   assert.ok(bad.isError);
   assert.equal(bad.structuredContent.error.code, 'INVALID_INPUT');
   assert.equal(auditEntries().length, before, 'schema validation happens before the handler');
-  const res = await call('describe_tables', { profile: 'shop', tables: ['sales.orders'], detail: 'full' });
+  const res = await call('describe_tables', { profile: 'example', tables: ['sales.orders'], detail: 'full' });
   assert.equal(res.structuredContent.error.code, 'CONNECTION_FAILED');
 });
 
@@ -83,36 +83,36 @@ test('profile_tables lists parentFilter; a bad op, too many conditions or a filt
   assert.deepEqual(filter.items.properties.op.enum, ['=', '<>', '>', '>=', '<', '<=', 'in', 'not in', 'is null', 'is not null']);
   assert.deepEqual(filter.items.required.sort(), ['column', 'op']);
   const parent = { table: 'sales.customer', key: 'id' };
-  const badOp = await call('profile_tables', { profile: 'shop', tables: ['sales.orders'], parent, parentFilter: [{ column: 'id', op: 'like', value: 'x' }] });
+  const badOp = await call('profile_tables', { profile: 'example', tables: ['sales.orders'], parent, parentFilter: [{ column: 'id', op: 'like', value: 'x' }] });
   assert.equal(badOp.structuredContent.error.code, 'INVALID_INPUT');
-  const tooMany = await call('profile_tables', { profile: 'shop', tables: ['sales.orders'], parent, parentFilter: Array.from({ length: 6 }, () => ({ column: 'id', op: 'is null' })) });
+  const tooMany = await call('profile_tables', { profile: 'example', tables: ['sales.orders'], parent, parentFilter: Array.from({ length: 6 }, () => ({ column: 'id', op: 'is null' })) });
   assert.equal(tooMany.structuredContent.error.code, 'INVALID_INPUT');
-  const noParent = await call('profile_tables', { profile: 'shop', tables: ['sales.orders'], parentFilter: [{ column: 'id', op: 'is null' }] });
+  const noParent = await call('profile_tables', { profile: 'example', tables: ['sales.orders'], parentFilter: [{ column: 'id', op: 'is null' }] });
   assert.equal(noParent.structuredContent.error.code, 'INVALID_INPUT');
   const [logged] = auditEntries().filter(e => e.correlationId === noParent._meta.correlationId);
   assert.deepEqual([logged.tool, logged.errorCode], ['profile_tables', 'INVALID_INPUT'], 'refused by the handler before connecting, and audited');
-  const arity = await call('profile_tables', { profile: 'shop', tables: ['sales.orders'], parent, parentFilter: [{ column: 'id', op: 'in', value: 1 }] });
+  const arity = await call('profile_tables', { profile: 'example', tables: ['sales.orders'], parent, parentFilter: [{ column: 'id', op: 'in', value: 1 }] });
   assert.equal(arity.structuredContent.error.code, 'INVALID_INPUT');
 });
 
 test('describe_functions without functions or pattern is refused before connecting and audited', async () => {
-  const res = await call('describe_functions', { profile: 'shop' });
+  const res = await call('describe_functions', { profile: 'example' });
   assert.ok(res.isError);
   assert.equal(res.structuredContent.error.code, 'INVALID_INPUT');
   const [logged] = auditEntries().filter(e => e.correlationId === res._meta.correlationId);
   assert.deepEqual([logged.tool, logged.errorCode], ['describe_functions', 'INVALID_INPUT']);
-  const connect = await call('describe_functions', { profile: 'shop', pattern: 'example_co' });
+  const connect = await call('describe_functions', { profile: 'example', pattern: 'example_co' });
   assert.equal(connect.structuredContent.error.code, 'CONNECTION_FAILED');
 });
 
 test('relation_stats: oversized input is refused by the schema, a real call is audited once', async () => {
   const before = auditEntries().length;
-  const tooMany = await call('relation_stats', { profile: 'shop', tables: Array.from({ length: 51 }, (_, i) => `s.t${i}`) });
+  const tooMany = await call('relation_stats', { profile: 'example', tables: Array.from({ length: 51 }, (_, i) => `s.t${i}`) });
   assert.ok(tooMany.isError);
   assert.equal(tooMany.structuredContent.error.code, 'INVALID_INPUT');
   assert.equal(auditEntries().length, before, 'schema validation happens before the handler');
 
-  const res = await call('relation_stats', { profile: 'shop', tables: ['sales.orders'], schema: 'sales' });
+  const res = await call('relation_stats', { profile: 'example', tables: ['sales.orders'], schema: 'sales' });
   assert.ok(res.isError);
   assert.equal(res.structuredContent.error.code, 'CONNECTION_FAILED');
   const logged = auditEntries().filter(e => e.correlationId === res._meta.correlationId);
