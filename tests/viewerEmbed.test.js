@@ -90,7 +90,7 @@ test('copy messages carry the text and a short label; oversized or malformed one
   assert.equal(reportMessage({ auspexReportCopy: 'x', auspexReportCopyWhat: 'w'.repeat(99) }).what.length, 40);
   assert.equal(reportMessage({ auspexReportCopy: 'x', auspexReportCopyWhat: { a: 1 } }).what, '');
   assert.equal(reportMessage({ auspexReportCopy: 'x'.repeat(reportCopyMax) }).copy.length, reportCopyMax);
-  assert.equal(reportMessage({ auspexReportCopy: 'x'.repeat(reportCopyMax + 1) }), null);
+  assert.deepEqual({ ...reportMessage({ auspexReportCopy: 'x'.repeat(reportCopyMax + 1) }) }, { copyTooLarge: true }, 'reported, not ignored');
   assert.equal(reportMessage({ auspexReportCopy: 5 }), null);
   assert.equal(reportMessage({ auspexReportCopy: ['a'] }), null);
 });

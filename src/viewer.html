@@ -1385,8 +1385,8 @@ function embedReport(html) {
   return html.slice(0, head) + reportEmbedCss + html.slice(head, body) + reportEmbedJs + html.slice(body);
 }
 // A message from an embedded report: a clamped frame height, a toast text or
-// a text to copy (at most reportCopyMax characters, else ignored). Anything
-// else is null.
+// a text to copy (longer than reportCopyMax characters: copyTooLarge, so the
+// viewer reports the failure). Anything else is null.
 const reportCopyMax = 1_000_000;
 function reportMessage(data) {
   if (!data || typeof data !== 'object') return null;
@@ -1394,7 +1394,7 @@ function reportMessage(data) {
   if (typeof hgt === 'number' && Number.isFinite(hgt)) return { height: Math.min(Math.max(Math.round(hgt), 240), 200000) };
   const text = data.auspexReportCopy;
   if (typeof text === 'string') {
-    if (text.length > reportCopyMax) return null;
+    if (text.length > reportCopyMax) return { copyTooLarge: true };
     const what = data.auspexReportCopyWhat;
     return { copy: text, what: typeof what === 'string' ? what.slice(0, 40) : '' };
   }
@@ -1415,6 +1415,9 @@ window.addEventListener('message', ev => {
   const m = frame && reportMessage(ev.data);
   if (!m) return;
   if (m.height) frame.style.height = `${m.height}px`;
+  // Copy only right after a click in the report (activation reaches this
+  // frame too); browsers without userActivation keep copying.
+  else if (m.copyTooLarge || (m.copy !== undefined && navigator.userActivation && !navigator.userActivation.isActive)) toast(t('Copy failed'));
   else if (m.copy !== undefined) copy(m.copy, m.what || 'Text');
   else toast(m.toast);
 });
