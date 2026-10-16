@@ -288,19 +288,30 @@ test('a stale lock that cannot be removed ends in LockBusyError instead of spinn
   const dir = tempDir('auspex-lock-stuck-');
   const lockPath = path.join(dir, '.lock');
   fs.writeFileSync(lockPath, JSON.stringify({ pid: 2 ** 30, host: os.hostname(), token: '4444444444444444' }));
-  // Every takeover attempt fails as if the file were held open (EPERM).
+  // Every takeover attempt fails as if the file were held open (EPERM), and
+  // each one moves the clock a quarter of waitMs on, so the deadline passes
+  // after the fourth attempt however slow the runner's file system is.
   const original = fs.renameSync;
+  const realNow = Date.now;
+  const waitMs = 10000;
   let attempts = 0;
+  let offset = 0;
   fs.renameSync = (from, ...rest) => {
-    if (String(from) === lockPath) { attempts++; throw Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' }); }
+    if (String(from) === lockPath) {
+      attempts++;
+      if (attempts > 20) throw Object.assign(new Error('still retrying past the deadline'), { code: 'ESPIN' });
+      offset += waitMs / 4;
+      throw Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' });
+    }
     return original.call(fs, from, ...rest);
   };
-  const started = Date.now();
+  Date.now = () => realNow() + offset;
   try {
-    assert.throws(() => withFileLock(lockPath, () => 'never', { waitMs: 200 }), LockBusyError);
+    assert.throws(() => withFileLock(lockPath, () => 'never', { waitMs }), LockBusyError);
   } finally {
     fs.renameSync = original;
+    Date.now = realNow;
   }
   assert.ok(attempts > 1, 'it retried');
-  assert.ok(Date.now() - started < 2000, 'it gave up close to waitMs');
+  assert.ok(attempts <= 4, 'it gave up once waitMs had passed');
 });
