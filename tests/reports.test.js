@@ -204,6 +204,31 @@ test('function bodies are counted and the saved file says they are not linted', 
   assert.ok(!plain.includes('function bodies'));
 });
 
+test('calls of quoted function names created in the script are warned about', () => {
+  const quoted = lintExecuteScript('BEGIN;\nCREATE FUNCTION "wipe"() RETURNS void LANGUAGE sql AS $$ DELETE FROM t $$;\nSELECT "wipe"();\nSELECT s.wipe ();\nROLLBACK;');
+  assert.deepEqual(quoted.errors, []);
+  assert.match(quoted.warnings.join(' | '), /Statement 3 calls wipe\(\)/);
+  assert.match(quoted.warnings.join(' | '), /Statement 4 calls wipe\(\)/);
+  const mixed = lintExecuteScript('BEGIN;\nCREATE FUNCTION s."Wipe"() RETURNS void LANGUAGE sql AS $$ DELETE FROM t $$;\nSELECT s."Wipe"();\nSELECT wipe();\nROLLBACK;');
+  assert.match(mixed.warnings.join(' | '), /Statement 3 calls Wipe\(\)/);
+  assert.ok(!mixed.warnings.some(x => x.startsWith('Statement 4')), 'wipe() is another function than "Wipe"()');
+});
+
+test('writes after triggers or trigger functions are created warn that trigger bodies run', () => {
+  const fn = 'CREATE FUNCTION s.t_log() RETURNS trigger LANGUAGE plpgsql AS $fn$ BEGIN DELETE FROM s.log; RETURN NEW; END $fn$;';
+  const trg = 'CREATE TRIGGER t_log_trg AFTER INSERT ON s.t FOR EACH ROW EXECUTE FUNCTION s.t_log();';
+  const runs = /trigger bodies were not linted and run during the dry run/;
+  for (const [name, created] of [['trigger', `${fn}\n${trg}`], ['trigger function only', fn]]) {
+    const lint = lintExecuteScript(`BEGIN;\nINSERT INTO s.t (a) VALUES (0);\n${created}\nSELECT * FROM s.t WHERE a = 1 FOR UPDATE;\nINSERT INTO s.t (a) VALUES (1);\nUPDATE s.t SET a = 2 WHERE a = 1;\nWITH d AS (DELETE FROM s.t WHERE a = 2 RETURNING a) SELECT count(*) FROM d;\nROLLBACK;`);
+    assert.deepEqual(lint.errors, [], name);
+    const warned = lint.warnings.filter(x => runs.test(x)).map(x => Number(/^Statement (\d+)/.exec(x)[1]));
+    const first = created.split('\n').length + 3; // BEGIN, INSERT before, created..., SELECT FOR UPDATE
+    assert.deepEqual(warned, [first + 1, first + 2, first + 3], `${name}: only writes after the creation`);
+  }
+  const plainFunction = lintExecuteScript('BEGIN;\nCREATE FUNCTION s.f() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;\nINSERT INTO s.t (a) VALUES (1);\nROLLBACK;');
+  assert.ok(!plainFunction.warnings.some(x => runs.test(x)), 'a function that is not a trigger function does not warn');
+});
+
 for (const [name, sql] of validScripts) {
   test(`EXECUTE lint accepts ${name}`, () => {
     assert.deepEqual(lintExecuteScript(sql).errors, []);
