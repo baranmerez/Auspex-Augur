@@ -111,7 +111,10 @@ test('an old lock from another host (liveness unknown) is taken over by age; a f
   assert.throws(() => withFileLock(lockPath, () => 'never', { waitMs: 150, staleMs: 30000 }), LockBusyError);
   const old = new Date(Date.now() - 60000);
   fs.utimesSync(lockPath, old, old);
-  assert.equal(withFileLock(lockPath, () => 'ran', { waitMs: 200, staleMs: 30000 }), 'ran');
+  // The takeover returns as soon as it succeeds, so a generous waitMs costs nothing; a
+  // short one made a slow takeover (marker write, rename, delete on a loaded Windows
+  // runner) hit the deadline and report busy.
+  assert.equal(withFileLock(lockPath, () => 'ran', { waitMs: 10000, staleMs: 30000 }), 'ran');
 });
 
 test('a second process cannot enter while a live owner is still inside past staleMs (issue #26)', { timeout: 30000 }, () => {
