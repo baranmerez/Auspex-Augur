@@ -347,6 +347,12 @@
   .g-node .nb text { fill: var(--surface); font-size: 9px; font-weight: 700; pointer-events: none; }
   svg.graph.hovering .g-node:not(.hot), svg.graph.hovering .g-edge:not(.hot) { opacity: .16; }
   svg.graph.searching .g-node:not(.match) { opacity: .18; }
+  .g-node.outside { opacity: .45; }
+  .g-edge.outside { opacity: .35; }
+  .sch-pick h4 { margin: 0 0 4px; }
+  .sch-pick p { margin: 0 0 10px; font-size: 13px; }
+  .sch-pick .nlist li { display: flex; gap: 8px; align-items: center; }
+  .sch-pick .nlist .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sch-legend { position: absolute; left: 12px; bottom: 10px; display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--text-2);
     background: color-mix(in srgb, var(--surface) 90%, transparent); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; max-width: calc(100% - 70px); }
   .sch-legend span { display: inline-flex; align-items: center; gap: 5px; }
@@ -711,7 +717,8 @@ const TR = {
   '{t} · depth {d} · {n} tables': '{t} · derinlik {d} · {n} tablo', 'All tables · {n}': 'Tüm tablolar · {n}',
   'Click a table to focus it': 'Odaklanmak için bir tabloya tıklayın', 'Loading 3D view…': '3B görünüm yükleniyor…',
   '3D view unavailable ({r}); showing the 2D graph.': '3B görünüm kullanılamıyor ({r}); 2B graph gösteriliyor.',
-  'WebGL is not available': 'WebGL kullanılamıyor', 'the 3D library could not be loaded': '3B kütüphanesi yüklenemedi',
+  'WebGL is not available': 'WebGL kullanılamıyor', 'Pick a table in {s}': '{s} şemasından bir tablo seçin',
+  'No table of this schema is explored yet; pick one to make it the center.': 'Bu şemada henüz keşfedilmiş tablo yok; merkez yapmak için birini seçin.', '{n} relations': '{n} ilişki', 'the 3D library could not be loaded': '3B kütüphanesi yüklenemedi',
 };
 let lang = 'en';
 try { lang = localStorage.getItem('auspex.viewer.lang') || ((navigator.language || '').toLowerCase().startsWith('tr') ? 'tr' : 'en'); } catch {}
@@ -1564,18 +1571,81 @@ async function ensureMemView(db) {
   renderSchema();
 }
 
-function memGraph(data) {
-  const schema = state.memSchema && data.nodes.some(n => n.schema === state.memSchema) ? state.memSchema : '';
-  const nodes = schema ? data.nodes.filter(n => n.schema === schema) : data.nodes;
+const memGraph = data => scopeGraph(data, state.memSchema);
+// scope:start (tests/viewerScope.test.js runs this block in isolation)
+// The Schema picker scopes the Schema views to one schema: its tables plus
+// their direct neighbours in other schemas (outside, drawn dimmed). Edges
+// between two outside tables are dropped. An unknown schema means all.
+function scopeGraph(data, schema) {
+  const pick = schema && data.nodes.some(n => n.schema === schema) ? schema : '';
+  const known = new Set(data.nodes.map(n => n.id));
+  const inside = new Set(pick ? data.nodes.filter(n => n.schema === pick).map(n => n.id) : known);
+  const outside = new Set();
+  const edges = data.edges.filter(e => {
+    if (e.from === e.to || !known.has(e.from) || !known.has(e.to)) return false;
+    if (!inside.has(e.from) && !inside.has(e.to)) return false;
+    if (!inside.has(e.from)) outside.add(e.from);
+    if (!inside.has(e.to)) outside.add(e.to);
+    return true;
+  });
+  const nodes = data.nodes.filter(n => inside.has(n.id) || outside.has(n.id));
   const byId = new Map(nodes.map(n => [n.id, n]));
-  const edges = data.edges.filter(e => e.from !== e.to && byId.has(e.from) && byId.has(e.to));
   const adj = new Map(nodes.map(n => [n.id, new Set()]));
   for (const e of edges) { adj.get(e.from).add(e.to); adj.get(e.to).add(e.from); }
-  return { nodes, edges, adj, byId, schema };
+  return { nodes, edges, adj, byId, schema: pick, outside, inSchema: id => inside.has(id) };
 }
+// Most connected table of the scope, explored ones first; never an outside one.
 function defaultRoot(g) {
-  const explored = g.nodes.filter(n => n.state === 'explored');
-  return (explored.length ? explored : g.nodes).reduce((best, n) => (!best || g.adj.get(n.id).size > g.adj.get(best.id).size ? n : best), null)?.id || null;
+  const own = g.nodes.filter(n => !g.outside.has(n.id));
+  const explored = own.filter(n => n.state === 'explored');
+  return (explored.length ? explored : own).reduce((best, n) => (!best || g.adj.get(n.id).size > g.adj.get(best.id).size ? n : best), null)?.id || null;
+}
+// Center for the ER and Flow views after a schema pick: the most connected
+// explored table of the schema, or null (the views then list its tables).
+function schemaCenter(g) {
+  const explored = g.nodes.filter(n => !g.outside.has(n.id) && n.state === 'explored');
+  return explored.reduce((best, n) => (!best || g.adj.get(n.id).size > g.adj.get(best.id).size ? n : best), null)?.id || null;
+}
+// Tables of the schema to pick a center from: explored first, then by
+// relation count, then by name.
+function schemaTables(g) {
+  const rank = { explored: 0, seen: 1 };
+  return g.nodes.filter(n => !g.outside.has(n.id))
+    .sort((a, b) => (rank[a.state] ?? 2) - (rank[b.state] ?? 2) || g.adj.get(b.id).size - g.adj.get(a.id).size || a.id.localeCompare(b.id));
+}
+// scope:end
+// Picking a schema moves the selection, the graph focus and the ER/Flow
+// center into it (when they are elsewhere) and shows all of its tables in the
+// Graph; "All" restores the unscoped focus view.
+function pickSchema(data, schema) {
+  state.memSchema = schema;
+  state.memSchemaPick = false;
+  state.memFlowTrail = []; state.memFlowOpen = null;
+  const g = memGraph(data);
+  if (g.schema) {
+    const cur = memSel();
+    if (!cur || !g.inSchema(cur)) {
+      const c = schemaCenter(g);
+      if (c) setMemSel(c); else state.memSchemaPick = true;
+    }
+    const sel = memSel(), f = memFocus();
+    if (!f || !g.inSchema(f)) setMemFocus(sel && g.inSchema(sel) ? sel : defaultRoot(g));
+    state.memShowAll = true;
+  } else {
+    state.memShowAll = false;
+  }
+  state.mem3dDepth = 1;
+  renderSchema();
+}
+function schemaTableList(g) {
+  const list = schemaTables(g), limit = 300;
+  return h('div', { class: 'panel-b sch-pick' },
+    h('h4', {}, t('Pick a table in {s}', { s: g.schema })),
+    h('p', { class: 'muted' }, t('No table of this schema is explored yet; pick one to make it the center.')),
+    list.length ? h('ul', { class: 'nlist' }, list.slice(0, limit).map(n => h('li', { onclick: () => { state.memSchemaPick = false; setMemSel(n.id); renderSchema(); } },
+      h('span', { class: 'nm' }, n.id), h('span', { class: 'badge ' + (n.state || 'unexplored') }, stateLabel(n.state || 'unexplored')),
+      h('span', { class: 'cols' }, t('{n} relations', { n: fmt(g.adj.get(n.id).size) })))),
+      list.length > limit ? h('li', { class: 'muted' }, t('+{n} more', { n: fmt(list.length - limit) })) : null) : h('div', { class: 'muted' }, t('No tables match.')));
 }
 function bfs(g, root, limit, hops) {
   const order = [], depth = new Map();
@@ -1715,7 +1785,7 @@ function graph3dVal(n) {
 // library swaps link.source/target for node objects, so from/to keep the ids.
 function graph3dData(g) {
   return {
-    nodes: g.nodes.map(n => ({ id: n.id, table: n.table, state: n.state || 'unexplored', val: graph3dVal(n) })),
+    nodes: g.nodes.map(n => ({ id: n.id, table: n.table, state: n.state || 'unexplored', val: graph3dVal(n), outside: !!g.outside?.has(n.id) })),
     links: g.edges.map(e => ({ source: e.from, target: e.to, from: e.from, to: e.to, level: e.level })),
   };
 }
@@ -1971,7 +2041,7 @@ function graph3dCanvas(g, data) {
     const r = roleLink(l);
     return !(state.memHideFaint && r && r.rank > roleTop);
   };
-  const nodeColor = n => (ctl.q && !n.id.toLowerCase().includes(ctl.q) ? pal.dim : n.id === centerId() ? pal.center : pal.node[n.state] || pal.node.unexplored);
+  const nodeColor = n => (ctl.q && !n.id.toLowerCase().includes(ctl.q) ? pal.dim : n.id === centerId() ? pal.center : n.outside ? pal.dim : pal.node[n.state] || pal.node.unexplored);
   const linkColor = l => { const r = roleLink(l); return r ? (r.rank > roleTop ? pal.faint : pal.role(r.role, r.rank)) : pal.level[l.level] || pal.level.fk; };
   const linkWidth = l => { const r = roleLink(l); return r && r.rank <= roleTop ? 1.4 : 0; };
   const apply = () => {
@@ -2108,10 +2178,11 @@ function graphCanvas(g, visible, depth, data) {
     return { id, n, r, deg, x: prev?.x ?? Math.cos(a) * d * 110, y: prev?.y ?? Math.sin(a) * d * 110, vx: 0, vy: 0, el: null };
   });
   const index = new Map(nodes.map(nd => [nd.id, nd]));
-  const links = g.edges.filter(e => ids.has(e.from) && ids.has(e.to)).map(e => ({ e, a: index.get(e.from), b: index.get(e.to), el: svg('line', { class: 'g-edge ' + e.level }) }));
+  const links = g.edges.filter(e => ids.has(e.from) && ids.has(e.to)).map(e => ({ e, a: index.get(e.from), b: index.get(e.to),
+    el: svg('line', { class: 'g-edge ' + e.level + (g.outside.has(e.from) || g.outside.has(e.to) ? ' outside' : '') }) }));
   for (const l of links) edgeLayer.append(l.el);
   for (const nd of nodes) {
-    const el = svg('g', { class: `g-node ${nd.n.state}`, 'data-id': nd.id });
+    const el = svg('g', { class: `g-node ${nd.n.state}${g.outside.has(nd.id) ? ' outside' : ''}`, 'data-id': nd.id });
     el.append(svg('circle', { class: 'body', r: nd.r }));
     const lbl = svg('text', { class: 'lbl', y: nd.r + 13, 'text-anchor': 'middle' });
     lbl.textContent = nd.n.table;
@@ -2689,9 +2760,9 @@ function memChooser(profiles) {
       p.lastActivity ? h('div', { class: 'muted', style: 'font-size:12px;margin-top:8px' }, t('last activity {w}', { w: ago(p.lastActivity) })) : null)))];
 }
 
-function timelinePanel(data) {
+function timelinePanel(data, schema) {
   const since = state.memTimelineSince ?? '';
-  const items = data.changelog.slice().reverse().slice(0, 200);
+  const items = data.changelog.filter(e => !schema || e.schema === schema).reverse().slice(0, 200);
   return h('div', { class: 'tl' }, items.length ? items.map(e => h('div', { class: 'tl-item' + (e.event === 'changed' && e.at > since ? ' new' : '') },
     h('div', { class: 'when' }, dateTimeOf(e.at)),
     h('div', {}, h('b', { onclick: () => focusTable(`${e.schema}.${e.table}`) }, `${e.schema}.${e.table}`), ' ', h('span', { class: 'muted' }, eventLabel(e)),
@@ -2733,7 +2804,9 @@ function renderSchema() {
   const use3d = want3d && !graph3dOff;
   if (use3d && focus && focus !== memFocus()) setMemFocus(focus);
   const expandKey = JSON.stringify(state.memExpand || {});
-  const key = [state.db, data.generatedAt, state.memMode, g.schema, lang, !!state.memTimeline,
+  const picking = !!(g.schema && state.memSchemaPick && !(sel && g.inSchema(sel)));
+  if (!picking) state.memSchemaPick = false;
+  const key = [state.db, data.generatedAt, state.memMode, g.schema, picking, lang, !!state.memTimeline,
     state.memMode === 'er' ? `${sel}|${!!state.memErAll}|${expandKey}`
       : state.memMode === 'flow' ? `${sel}|${expandKey}|${state.memFlowOpen}|${(state.memFlowTrail || []).join(',')}`
       : use3d ? '3d' : `${focus}|${!!state.memShowAll}|2d`].join('|');
@@ -2745,7 +2818,7 @@ function renderSchema() {
   const S = data.summary;
   const schemas = [...new Set(data.nodes.map(n => n.schema))].sort();
   const schemaSel = schemas.length > 1 ? h('div', { class: 'field' }, h('label', {}, t('Schema')), (() => {
-    const s = h('select', { onchange: ev => { state.memSchema = ev.target.value; renderSchema(); } }, h('option', { value: '' }, t('All')), schemas.map(x => h('option', { value: x }, x)));
+    const s = h('select', { onchange: ev => pickSchema(data, ev.target.value) }, h('option', { value: '' }, t('All')), schemas.map(x => h('option', { value: x }, x)));
     s.value = g.schema;
     return s;
   })()) : null;
@@ -2776,12 +2849,14 @@ function renderSchema() {
       h('span', { class: 'grow' }),
       h('button', { class: 'icon-btn', onclick: () => { if (state.memTimeline) state.memTimeline = false; else openTimeline(state.db); renderSchema(); } },
         t('Timeline'), nNew ? h('span', { class: 'badge inference' }, fmt(nNew)) : null)),
-    state.memTimeline ? timelinePanel(data) : null);
+    state.memTimeline ? timelinePanel(data, g.schema) : null);
 
   state.memInspHost = h('div');
-  put(state.memInspHost, inspector(data, sel));
+  put(state.memInspHost, inspector(data, picking ? null : sel));
   let canvas;
-  if (state.memMode === 'er' && sel) {
+  if (picking && state.memMode !== 'graph') {
+    canvas = h('div', { class: 'panel sch-canvas er' }, schemaTableList(g));
+  } else if (state.memMode === 'er' && sel) {
     canvas = h('div', { class: 'panel sch-canvas er' }, h('div', { class: 'rep-empty' }, t('Loading…')));
   } else if (state.memMode === 'flow' && sel) {
     canvas = h('div', { class: 'panel sch-canvas flow' }, h('div', { class: 'rep-empty' }, t('Loading…')));
@@ -2801,8 +2876,8 @@ function renderSchema() {
   put(view, bar, h('div', { class: 'sch' }, canvas, state.memInspHost));
   if (graphSim && state.memMode === 'graph') graphSim.start();
   if (graph3d && use3d) graph3d.start();
-  if (state.memMode === 'er' && sel) buildEr(canvas, data, sel, key);
-  if (state.memMode === 'flow' && sel) buildFlow(canvas, data, sel, key);
+  if (!picking && state.memMode === 'er' && sel) buildEr(canvas, data, sel, key);
+  if (!picking && state.memMode === 'flow' && sel) buildFlow(canvas, data, sel, key);
   applyMemSearch();
 }
 
