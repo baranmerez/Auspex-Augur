@@ -761,7 +761,7 @@ function toast(msg) {
 }
 async function copy(text, what) {
   try { await navigator.clipboard.writeText(text); toast(t('{w} copied', { w: what })); }
-  catch { toast('Copy failed'); }
+  catch { toast(t('Copy failed')); }
 }
 function download(name, text, type) {
   const a = h('a', { href: URL.createObjectURL(new Blob([text], { type })), download: name });
@@ -1309,6 +1309,8 @@ async function loadReport(r) {
 // it posts its height so the frame grows instead of scrolling on its own. Its
 // toast would sit at the bottom of the tall frame, so it is hidden there and
 // its text is posted to the viewer, which shows it in its own toast.
+// The sandboxed frame (no allow-same-origin) cannot write the clipboard, so the
+// report's copy() posts the text and the viewer writes it.
 // Sticky table headers cannot follow the viewer's page scroll across the frame.
 // embed:start (tests/viewerEmbed.test.js runs this block in isolation)
 const reportEmbedCss = `<style id="auspex-viewer-embed">
@@ -1347,6 +1349,9 @@ const reportEmbedJs = `<script id="auspex-viewer-embed-js">(() => {
       shown = on; text = now;
     }).observe(toastEl, { attributes: true, attributeFilter: ['class'], childList: true, characterData: true, subtree: true });
   }
+  if (typeof window.copy === 'function') {
+    window.copy = (text, what) => parent.postMessage({ auspexReportCopy: String(text ?? ''), auspexReportCopyWhat: String(what ?? '') }, '*');
+  }
   tick();
 })();<\/script>`;
 // Injects the embed CSS before the real </head> and the script before the
@@ -1357,12 +1362,20 @@ function embedReport(html) {
   if (head < 0 || body < head) return html;
   return html.slice(0, head) + reportEmbedCss + html.slice(head, body) + reportEmbedJs + html.slice(body);
 }
-// A message from an embedded report: a clamped frame height or a toast text.
-// Anything else is null.
+// A message from an embedded report: a clamped frame height, a toast text or
+// a text to copy (at most reportCopyMax characters, else ignored). Anything
+// else is null.
+const reportCopyMax = 1_000_000;
 function reportMessage(data) {
   if (!data || typeof data !== 'object') return null;
   const hgt = data.auspexReportHeight;
   if (typeof hgt === 'number' && Number.isFinite(hgt)) return { height: Math.min(Math.max(Math.round(hgt), 240), 200000) };
+  const text = data.auspexReportCopy;
+  if (typeof text === 'string') {
+    if (text.length > reportCopyMax) return null;
+    const what = data.auspexReportCopyWhat;
+    return { copy: text, what: typeof what === 'string' ? what.slice(0, 40) : '' };
+  }
   const msg = data.auspexReportToast;
   if (typeof msg === 'string' && msg.trim()) return { toast: msg.slice(0, 200) };
   return null;
@@ -1380,6 +1393,7 @@ window.addEventListener('message', ev => {
   const m = frame && reportMessage(ev.data);
   if (!m) return;
   if (m.height) frame.style.height = `${m.height}px`;
+  else if (m.copy !== undefined) copy(m.copy, m.what || 'Text');
   else toast(m.toast);
 });
 function reportView(r) {

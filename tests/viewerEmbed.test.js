@@ -12,7 +12,7 @@ const block = page.match(/\/\/ embed:start[\s\S]*?\/\/ embed:end/)?.[0];
 function loadEmbed() {
   assert.ok(block, 'embed block found in viewer.html');
   const context = vm.createContext({});
-  vm.runInContext(`${block}\nthis.embedReport = embedReport; this.reportMessage = reportMessage; this.reportFrameOf = reportFrameOf; this.css = reportEmbedCss; this.js = reportEmbedJs;`, context);
+  vm.runInContext(`${block}\nthis.embedReport = embedReport; this.reportMessage = reportMessage; this.reportFrameOf = reportFrameOf; this.css = reportEmbedCss; this.js = reportEmbedJs; this.reportCopyMax = reportCopyMax;`, context);
   return context;
 }
 const count = (s, part) => s.split(part).length - 1;
@@ -81,4 +81,34 @@ test('only a report frame of the page is accepted as the message source', () => 
   assert.equal(reportFrameOf(frames, other), null);
   assert.equal(reportFrameOf(frames, null), null);
   assert.equal(reportFrameOf([], winA), null);
+});
+
+test('copy messages carry the text and a short label; oversized or malformed ones are ignored', () => {
+  const { reportMessage, reportCopyMax } = loadEmbed();
+  assert.deepEqual({ ...reportMessage({ auspexReportCopy: 'select 1', auspexReportCopyWhat: 'SQL' }) }, { copy: 'select 1', what: 'SQL' });
+  assert.deepEqual({ ...reportMessage({ auspexReportCopy: '' }) }, { copy: '', what: '' });
+  assert.equal(reportMessage({ auspexReportCopy: 'x', auspexReportCopyWhat: 'w'.repeat(99) }).what.length, 40);
+  assert.equal(reportMessage({ auspexReportCopy: 'x', auspexReportCopyWhat: { a: 1 } }).what, '');
+  assert.equal(reportMessage({ auspexReportCopy: 'x'.repeat(reportCopyMax) }).copy.length, reportCopyMax);
+  assert.equal(reportMessage({ auspexReportCopy: 'x'.repeat(reportCopyMax + 1) }), null);
+  assert.equal(reportMessage({ auspexReportCopy: 5 }), null);
+  assert.equal(reportMessage({ auspexReportCopy: ['a'] }), null);
+});
+
+test('inside the viewer the report copy() posts its text to the parent instead of the clipboard', () => {
+  const { js } = loadEmbed();
+  const code = js.replace(/^<script[^>]*>/, '').replace(/<\/script>$/, '');
+  const posted = [];
+  const win = {
+    copy: async () => { throw new Error('the frame clipboard must not be used'); },
+    parent: { postMessage: (m, o) => posted.push([m, o]) },
+    document: { querySelectorAll: () => [], getElementById: () => null, body: { getBoundingClientRect: () => ({ height: 300 }) } },
+    MutationObserver: class { observe() {} }, ResizeObserver: class { observe() {} }, addEventListener() {},
+  };
+  win.window = win;
+  const context = vm.createContext(win);
+  vm.runInContext(code, context);
+  posted.length = 0;
+  vm.runInContext("copy('select 1', 'SQL')", context);
+  assert.equal(JSON.stringify(posted), JSON.stringify([[{ auspexReportCopy: 'select 1', auspexReportCopyWhat: 'SQL' }, '*']]));
 });
