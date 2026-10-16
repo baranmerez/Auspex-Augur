@@ -774,7 +774,7 @@ AppData, check that saved scripts appear there: MSIX-packaged clients may
 redirect AppData writes (see Configuration).
 
 An optional top-level `notesLanguage` sets the language of schema-memory
-notes and of report titles, descriptions and version notes (a language code such as `tr`, `en`, `de` or `pt-BR`); it is not a
+notes and of report titles, descriptions, version notes and change-script texts (save_execute_script title, purpose and comments; step markers such as BEGIN and MATCH stay as written) (a language code such as `tr`, `en`, `de` or `pt-BR`); it is not a
 profile and an invalid value stops the server at startup:
 
 ```json
@@ -784,7 +784,7 @@ profile and an invalid value stops the server at startup:
 ```
 
 `list_profiles` returns it as `notesLanguage` (`null` when unset). When it is
-unset the model asks the user once which language notes and report texts should be saved in and
+unset the model asks the user once which language notes, report texts and change-script texts should be saved in and
 suggests adding the key. Existing notes are not translated.
 
 Profile names are case-insensitive and use `a-z`, `0-9`, `-`, `_`. Restart
