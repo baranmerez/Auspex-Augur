@@ -24,7 +24,7 @@ database statements, and leave the answer in the schema memory.
    measuring query per table; `relation_stats` for a center table's
    neighbors when the server offers it.
 5. **Announce the cost.** Before each batch tell the user in one line how many
-   statements it takes (the tool descriptions state it: `describe_tables` 5-6,
+   statements it takes (the tool descriptions state it: `describe_tables` 6-7,
    `profile_tables` at most 3). The profile has a per-minute query budget
    (`maxQueriesPerMinute`); a refused call (`QUERY_BUDGET_EXCEEDED`) is not
    retried in a loop: wait `retryAfterSeconds` or tell the user.

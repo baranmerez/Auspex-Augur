@@ -1,6 +1,6 @@
 # Auspex Augur — Handoff
 
-Last updated: 2026-10-16 · Versions: MCP server 0.9.0, desktop app 0.1.0
+Last updated: 2026-10-17 · Versions: MCP server 0.9.0, desktop app 0.1.0
 
 Environment-specific details (servers, databases, schema lists, privilege
 exceptions) are **not** in this file. They live in
@@ -159,8 +159,7 @@ pgpass lines. Profile changes are picked up when the client session restarts.
    SELECT + default privileges for `"Auspex"` only; no other role's
    privileges change. Do not open personal-data or identity schemas (e.g.
    user-account or identity schemas).
-3. Add the pgpass line (PowerShell command in the README; the password never
-   reaches the screen).
+3. Add the pgpass line (line format `host:port:database:user:password`, see the README).
 4. Add a `profiles.json` entry: `url` (no password), `description` (write
    "PRODUCTION" for production), optional `maxTimeoutSeconds`.
 5. Start a new session and check with `list_profiles`.
@@ -366,12 +365,14 @@ Merged work:
   ready themes and a theme generator (PRs #47–#51); report approval revoke
   and stage history, approve/revoke from the browser viewer and from the
   desktop app through the stage CLI and `auspexRoot` (PRs #52, #53).
-- 2026-10-16: documentation, skills and tests made generic for any user:
+- 2026-10-16: documentation, skills and tests made generic for any user (PR #54):
   examples use one alias set, no assumed SQL client, folder layout, naming
   convention or business-data language, no default for cancelled or deleted
   rows (the agent asks and saves the answer as a rule), the step structure
   of change scripts is described as recommended, and the existing-file
   error suggests a number only when the folder already numbers its files.
+- 2026-10-17: the stale-by-age lock takeover test got a longer waitMs so slow
+  Windows runners cannot exhaust it (PR #55).
 
 Working agreements:
 

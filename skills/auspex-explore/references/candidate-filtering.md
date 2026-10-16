@@ -29,7 +29,7 @@ one line so the user can ask for it.
 
 ## Limits per batch
 
-- `describe_tables`: up to 50 names, 5 statements (6 with a view).
+- `describe_tables`: up to 50 names, 6 statements (7 with a view).
 - `profile_tables`: up to 30 names, at most 3 statements.
 - More candidates than that: ask the user to narrow (schema, module, date)
   instead of sending a second batch unprompted.
