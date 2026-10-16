@@ -60,6 +60,25 @@ export function shareableReport(meta) {
   };
 }
 
+// Stage changes without a database, shared by approve_report and the viewer:
+// the library move and the regenerated HTML happen under one library lock.
+// by: who asked for the change, recorded in meta.stageHistory.
+export function approveInLibrary(library, ref, { by = null } = {}) {
+  return library.locked(() => {
+    const r = library.approve(ref, { by });
+    library.writeHtml('approved', ref, renderReport(r.meta));
+    return r;
+  });
+}
+
+export function revokeInLibrary(library, ref, { by = null } = {}) {
+  return library.locked(() => {
+    const r = library.revoke(ref, { by });
+    library.writeHtml('draft', ref, renderReport(r.meta));
+    return r;
+  });
+}
+
 export class ReportService {
   // memory (optional): a SchemaMemory that learns relations and used columns
   // from each run's plan. scriptRoots: name -> { dir } from the configuration.
@@ -179,11 +198,7 @@ export class ReportService {
 
   approve(input) {
     const ref = this.ref(input);
-    const res = this.library.locked(() => {
-      const r = this.library.approve(ref);
-      this.library.writeHtml('approved', ref, renderReport(r.meta));
-      return r;
-    });
+    const res = approveInLibrary(this.library, ref, { by: this.db?.source ?? null });
     // Its joins now count as "used" relations in the schema memory view.
     try { this.memory?.rebuildView(ref.db); } catch { /* the view is rebuilt on the next memory change */ }
     return { report: refLabel(ref), stage: 'approved', version: res.meta.approvedVersion, sqlFile: res.paths.sql, htmlFile: res.paths.html };
