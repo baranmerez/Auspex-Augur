@@ -25,8 +25,8 @@ const edges = [
   edge('example.shipments', 'example.order_items'), edge('example.customers', 'test.invoices'),
   edge('example.orders', 'example.orders'),
 ];
-// 21 distinct ids from the example schemas and tables, for wide layers.
-const pool = ['example', 'test', 'logs'].flatMap(sc => ['orders', 'order_items', 'customers', 'shipments', 'order_events', 'status_codes', 'invoices'].map(tb => `${sc}.${tb}`));
+// 20 numbered example tables around example.orders, for wide layers.
+const kidsOf = () => Array.from({ length: 20 }, (_, i) => `example.orders_${String(i + 1).padStart(2, '0')}`);
 const at = (r, id) => r.nodes.find(n => n.id === id);
 const ids = r => Array.from(r.nodes, n => n.id).sort();
 
@@ -63,7 +63,7 @@ test('ranks follow linked rows, then row estimates, then id; rank 1 on top', () 
 
 test('per-side limits cut each layer; cut tables do not reappear deeper', () => {
   const { layeredLayout } = load();
-  const kids = pool.filter(id => id !== 'example.orders');
+  const kids = kidsOf();
   const many = kids.map((id, i) => edge(id, 'example.orders', 'fk', 100 - i));
   many.push(edge(kids[19], kids[0]));
   const r = layeredLayout(many, 'example.orders', { depth: 2, limits: { ref: 5, dep: 10 } });
@@ -79,7 +79,7 @@ test('per-side limits cut each layer; cut tables do not reappear deeper', () => 
 
 test('no two tables share a position, even in wide layers', () => {
   const { layeredLayout, maxRows } = load();
-  const kids = pool.filter(id => id !== 'example.orders');
+  const kids = kidsOf();
   const many = [...kids.slice(0, 13).map(id => edge(id, 'example.orders')), ...kids.slice(13).map(id => edge('example.orders', id))];
   const r = layeredLayout(many, 'example.orders', { depth: 1, limits: { ref: Infinity, dep: Infinity } });
   assert.equal(r.nodes.length, 21);
