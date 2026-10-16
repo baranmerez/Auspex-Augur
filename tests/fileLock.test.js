@@ -289,10 +289,13 @@ test('a stale lock that cannot be removed ends in LockBusyError instead of spinn
   const lockPath = path.join(dir, '.lock');
   fs.writeFileSync(lockPath, JSON.stringify({ pid: 2 ** 30, host: os.hostname(), token: '4444444444444444' }));
   // Every takeover attempt fails as if the file were held open (EPERM), and
-  // each one moves the clock a quarter of waitMs on, so the deadline passes
-  // after the fourth attempt however slow the runner's file system is.
+  // each one moves a frozen clock a quarter of waitMs on, so the deadline
+  // passes exactly at the fourth attempt. Real time only shows through once a
+  // full waitMs has really passed, so a run whose rename stub is never hit
+  // still ends instead of spinning on a clock that never moves.
   const original = fs.renameSync;
   const realNow = Date.now;
+  const base = realNow();
   const waitMs = 10000;
   let attempts = 0;
   let offset = 0;
@@ -305,13 +308,15 @@ test('a stale lock that cannot be removed ends in LockBusyError instead of spinn
     }
     return original.call(fs, from, ...rest);
   };
-  Date.now = () => realNow() + offset;
+  Date.now = () => {
+    const elapsed = realNow() - base;
+    return base + offset + (elapsed > waitMs ? elapsed : 0);
+  };
   try {
     assert.throws(() => withFileLock(lockPath, () => 'never', { waitMs }), LockBusyError);
   } finally {
     fs.renameSync = original;
     Date.now = realNow;
   }
-  assert.ok(attempts > 1, 'it retried');
-  assert.ok(attempts <= 4, 'it gave up once waitMs had passed');
+  assert.equal(attempts, 4, 'it retried until waitMs had passed, then gave up');
 });
