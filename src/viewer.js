@@ -12,7 +12,11 @@ import { Library, LibraryError } from './reports/library.js';
 
 const port = Number.parseInt(process.env.AUSPEX_VIEWER_PORT || '4719', 10);
 const host = '127.0.0.1';
-const pagePath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'viewer.html');
+const here = path.dirname(fileURLToPath(import.meta.url));
+const pagePath = path.join(here, 'viewer.html');
+// Vendored scripts the page loads (see src/vendor/README.md). Only these exact
+// paths are served; nothing is fetched from the network.
+const vendorFiles = new Map(['3d-force-graph-1.80.1.min.js'].map(f => [`/vendor/${f}`, path.join(here, 'vendor', f)]));
 const dayPattern = /^\d{4}-\d{2}-\d{2}$/;
 const profilePattern = /^[a-z][a-z0-9_-]{0,39}$/;
 const memoryFilePattern = /^tables\/[a-z0-9_~-]+\/[a-z0-9_~-]+\.json$/;
@@ -148,6 +152,7 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   try {
     if (url.pathname === '/') return send(res, 200, fs.readFileSync(pagePath, 'utf8'), 'text/html; charset=utf-8');
+    if (vendorFiles.has(url.pathname)) return send(res, 200, fs.readFileSync(vendorFiles.get(url.pathname), 'utf8'), 'text/javascript; charset=utf-8');
     if (url.pathname === '/api/days') return send(res, 200, listDays());
     if (url.pathname === '/api/profiles') return send(res, 200, profiles());
     if (url.pathname === '/api/logs') {
