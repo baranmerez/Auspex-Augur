@@ -262,6 +262,40 @@
   .dbmenu .c { font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
   .dbmenu .chk { color: var(--accent); font-weight: 700; }
   .dbmenu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 6px; }
+  .thsel { position: relative; }
+  #themeMenuBtn.on { background: var(--accent-soft); color: var(--accent-ink); border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+  .thmenu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 40; width: 340px; max-width: calc(100vw - 24px); max-height: calc(100vh - 80px); overflow: auto;
+    background: var(--surface); border: 1px solid var(--line-strong); border-radius: 12px; box-shadow: var(--shadow-lg); padding: 8px 10px 10px; display: none; animation: pop .18s var(--ease); }
+  .thsel.open .thmenu { display: block; }
+  .th-h { font-size: 11px; font-weight: 650; letter-spacing: .4px; text-transform: uppercase; color: var(--text-3); margin: 8px 2px 4px; }
+  .th-list { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+  .th-item { display: flex; align-items: center; border-radius: 8px; border: 1px solid transparent; }
+  .th-item.on { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+  .th-pick { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; border: 0; background: none; padding: 5px 6px; border-radius: 8px; text-align: left; font-size: 13px; color: var(--text); }
+  .th-pick span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .th-pick:hover { background: var(--surface-2); }
+  .th-del { border: 0; background: none; color: var(--text-3); width: 24px; height: 24px; border-radius: 6px; flex: none; }
+  .th-del:hover { background: var(--critical-soft); color: var(--critical); }
+  .th-sw { width: 26px; height: 18px; border-radius: 5px; border: 1px solid; display: inline-flex; align-items: center; justify-content: center; gap: 3px; flex: none; }
+  .th-sw i { width: 6px; height: 6px; border-radius: 50%; }
+  .th-empty { font-size: 12px; color: var(--text-3); padding: 2px; }
+  .th-gen { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+  .th-gen label { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--text-2); }
+  .th-gen label.wide { grid-column: 1 / -1; }
+  .th-gen label.wide input { flex: 1; }
+  .th-gen label.chk { grid-column: 1 / -1; justify-content: flex-start; }
+  .th-gen input[type=color] { width: 40px; height: 26px; padding: 0 2px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface); }
+  .th-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+  .th-row input[type=text] { flex: 1; min-width: 120px; height: 30px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); padding: 0 8px; }
+  .th-row .badge { white-space: normal; }
+  .th-ok { background: var(--good-soft); color: var(--good-ink); }
+  .th-warn { background: var(--warn-soft); color: var(--warn-ink); }
+  .th-msg { font-size: 12px; color: var(--text-2); min-height: 1em; margin-top: 4px; }
+  .th-io { margin-top: 6px; font-size: 12px; }
+  .th-io summary { cursor: pointer; color: var(--text-2); }
+  .th-io textarea { width: 100%; margin-top: 6px; font: 11px/1.4 var(--mono); border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-2); color: var(--text); padding: 6px; resize: vertical; }
+  .icon-btn.primary { background: var(--accent-ink); border-color: var(--accent-ink); color: var(--surface); }
+  .icon-btn.primary:hover { background: var(--text); border-color: var(--text); color: var(--surface); }
 
   /* Toolbar */
   .toolbar { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
@@ -596,6 +630,13 @@
         <button data-v="light" data-i18n="Light">Light</button>
         <button data-v="dark" data-i18n="Dark">Dark</button>
       </div>
+      <div class="thsel" id="thsel">
+        <button class="icon-btn" id="themeMenuBtn" aria-haspopup="true" aria-expanded="false" data-i18n-title="Ready themes and theme generator">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.6-.8 1.6-1.6 0-.5-.2-.8-.5-1.2-.3-.4-.5-.7-.5-1.2 0-.9.7-1.6 1.6-1.6H16a5 5 0 0 0 5-5C21 6.4 17 3 12 3Z"/><circle cx="7.5" cy="11" r="1.2"/><circle cx="10.5" cy="7" r="1.2"/><circle cx="15.5" cy="7.5" r="1.2"/></svg>
+          <span id="themeMenuName">Theme</span>
+        </button>
+        <div class="thmenu" id="themeMenu"></div>
+      </div>
     </div>
     <nav class="tabs" id="tabs">
       <button data-tab="overview" class="on"><span data-i18n="Overview">Overview</span></button>
@@ -755,7 +796,16 @@ const TR = {
   '3D view unavailable ({r}); showing the 2D graph.': '3B görünüm kullanılamıyor ({r}); 2B graph gösteriliyor.',
   'WebGL is not available': 'WebGL kullanılamıyor', 'Pick a table in {s}': '{s} şemasından bir tablo seçin', '{s}: {n} · whole database: {all}': '{s}: {n} · tüm veritabanı: {all}', 'Totals of schema {s}': '{s} şemasının toplamları',
   'No table of this schema is explored yet; pick one to make it the center.': 'Bu şemada henüz keşfedilmiş tablo yok; merkez yapmak için birini seçin.', '{n} relations': '{n} ilişki', 'the 3D library could not be loaded': '3B kütüphanesi yüklenemedi',
-  'Non-FK relations': 'FK dışı ilişkiler', 'Used and suggested relations (not foreign keys)': 'Kullanılan ve önerilen ilişkiler (yabancı anahtar olmayan)',
+  'Theme': 'Tema', 'Ready themes and theme generator': 'Hazır temalar ve tema oluşturucu', 'Ready themes': 'Hazır temalar', 'My themes': 'Temalarım',
+  'Midnight blue': 'Gece mavisi', 'Sepia paper': 'Sepya kağıt', 'High contrast': 'Yüksek kontrast', 'Forest': 'Orman',
+  'No saved themes yet.': 'Henüz kayıtlı tema yok.', 'Create a theme': 'Tema oluştur', 'Background': 'Arka plan', 'Dark ↔ light': 'Koyu ↔ açık', 'Accent': 'Vurgu rengi',
+  'High contrast (7:1)': 'Yüksek kontrast (7:1)', 'Preview': 'Önizle', 'Stop preview': 'Önizlemeyi bitir', 'Theme name': 'Tema adı', 'Save': 'Kaydet',
+  'Give the theme a name.': 'Temaya bir ad verin.', 'Invalid color': 'Geçersiz renk', 'Could not save themes in this browser': 'Temalar bu tarayıcıda kaydedilemedi',
+  'Export / import': 'Dışa / içe aktar', 'Export': 'Dışa aktar', 'Import': 'İçe aktar', 'Theme JSON': 'Tema JSON', 'Paste theme JSON here to import': 'İçe aktarmak için tema JSON metnini buraya yapıştırın',
+  'Import failed: not valid JSON': 'İçe aktarılamadı: geçerli JSON değil', '{a} imported, {s} skipped': '{a} içe aktarıldı, {s} atlandı',
+  'Delete theme {n}': '{n} temasını sil', 'Contrast below target for {n} colors': '{n} renkte kontrast hedefin altında', 'Text contrast ≥ {r}:1': 'Metin kontrastı ≥ {r}:1',
+  '{n} colors adjusted for contrast': 'Kontrast için {n} renk ayarlandı', '{n} adjusted': '{n} ayarlandı',
+'Non-FK relations': 'FK dışı ilişkiler', 'Used and suggested relations (not foreign keys)': 'Kullanılan ve önerilen ilişkiler (yabancı anahtar olmayan)',
   'Show one more layer on both sides': 'İki yana birer katman daha ekle', '{role}: tables per layer': '{role}: katman başına tablo',
 };
 let lang = 'en';
@@ -780,6 +830,8 @@ function setLang(next) {
   applyStaticI18n();
   syncFilterOptions();
   applyLive();
+  applyTheme();
+  if ($('thsel').classList.contains('open')) renderThemeMenu();
   state.reportViewNode = null;
   render();
   moveInk();
@@ -1469,8 +1521,10 @@ const reportFrameOf = (frames, source) => (source ? [...frames].find(f => f.cont
 // embed:end
 // Report HTML follows the viewer theme when the viewer forces one.
 function themedReport(html) {
-  const th = state.theme && state.theme !== 'auto' ? state.theme : null;
-  return embedReport(html.replace('<html lang="en">', `<html lang="${lang}" data-lang="${lang}"${th ? ` data-theme="${th}"` : ''}>`));
+  const res = themeNow();
+  const th = res ? res.base : state.theme === 'light' || state.theme === 'dark' ? state.theme : null;
+  const style = res ? ` style="${Object.entries(res.tokens).map(([k, v]) => `${k}: ${v}`).join('; ')}"` : '';
+  return embedReport(html.replace('<html lang="en">', `<html lang="${lang}" data-lang="${lang}"${th ? ` data-theme="${th}"` : ''}${style}>`));
 }
 window.addEventListener('message', ev => {
   const frame = reportFrameOf(document.querySelectorAll('.rep-view iframe'), ev.source);
@@ -1651,7 +1705,7 @@ function sqlLineNodes(sql) {
 // sql-highlight:end
 function reportView(r) {
   if (!r) return h('div', { class: 'panel rep-view' }, h('div', { class: 'rep-empty' }, h('b', {}, t('Select a report')), h('div', {}, t('Its plan, joins, timings, preview and history open here.'))));
-  if (state.reportViewNode && state.reportViewKey === repKey(r) && state.reportViewTheme === state.theme + lang) return state.reportViewNode;
+  if (state.reportViewNode && state.reportViewKey === repKey(r) && state.reportViewTheme === themeKey() + lang) return state.reportViewNode;
   const doc = state.reportDoc && state.reportDoc.key === repKey(r) ? state.reportDoc : null;
   const body = !doc || doc.loading ? h('div', { class: 'rep-empty' }, t('Loading…'))
     : doc.error ? h('div', { class: 'error-box', style: 'margin:16px' }, doc.error)
@@ -1670,7 +1724,7 @@ function reportView(r) {
     h('div', { class: 'crumbs' }, h('span', { class: 'crumb' }, r.db), '›', h('span', { class: 'crumb' }, r.schema), '›', h('span', { class: 'crumb' }, r.category)),
     h('div', { style: 'font-weight:650;margin-top:3px' }, r.title, ' ', h('span', { class: 'badge ' + r.stage }, r.stage === 'approved' ? t('approved v{v}', { v: r.approvedVersion ?? '?' }) : t(r.stage))));
   const node = h('div', { class: 'panel rep-view' }, h('div', { class: 'bar' }, heading, h('span', { class: 'grow' }), actions), body);
-  if (doc && !doc.loading) { state.reportViewNode = node; state.reportViewKey = repKey(r); state.reportViewTheme = state.theme + lang; }
+  if (doc && !doc.loading) { state.reportViewNode = node; state.reportViewKey = repKey(r); state.reportViewTheme = themeKey() + lang; }
   return node;
 }
 // report-filter:start (tests/viewerReportFilter.test.js runs this block in isolation)
@@ -3427,12 +3481,276 @@ for (const id of ['from', 'to']) $(id).addEventListener('change', () => {
 });
 for (const k of ['source', 'tool', 'status', 'text']) F[k].addEventListener(F[k].type === 'search' ? 'input' : 'change', () => { state.page = 0; state.open = null; render(); });
 
-function applyTheme() {
-  const t = state.theme || 'auto';
-  if (t === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', t);
-  document.querySelectorAll('#theme button').forEach(b => b.classList.toggle('on', b.dataset.v === t));
+// themes:start (tests/viewerThemes.test.js runs this block in isolation)
+// Theme generator: a base background and an accent color give the full token
+// set of the viewer and of embedded reports (surfaces, lines, text levels,
+// accent, role colors of the Graph, ER and Flow views, and the colors the SQL
+// highlighter uses). Text tokens are moved toward black or white until they
+// reach themeMinText (7:1 for high contrast) against every surface they sit
+// on; the accent reaches 3:1 as a UI color. A check that cannot be reached
+// is returned in warnings. Pure and deterministic: the same input gives the
+// same tokens.
+const themeMinText = 4.5, themeMinHigh = 7, themeMinUi = 3;
+function hexRgb(v) {
+  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(v ?? '').trim());
+  if (!m) return null;
+  const s = m[1].length === 3 ? [...m[1]].map(c => c + c).join('') : m[1];
+  return [0, 2, 4].map(i => parseInt(s.slice(i, i + 2), 16));
 }
-document.querySelectorAll('#theme button').forEach(b => b.addEventListener('click', () => { state.theme = b.dataset.v; persist(); applyTheme(); graph3d?.recolor(); if (state.tab === 'reports') renderReports(); }));
+const rgbHex = c => '#' + c.map(x => Math.round(Math.min(255, Math.max(0, x))).toString(16).padStart(2, '0')).join('');
+const mixRgb = (a, b, w) => a.map((x, i) => Math.round(x + (b[i] - x) * w));
+function luminance(c) {
+  const [r, g, b] = c.map(x => { const v = x / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+function contrastRatio(a, b) {
+  const x = luminance(a), y = luminance(b);
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}
+// fg moved in 5 % steps toward black or white (whichever contrasts more with
+// the backgrounds) until it reaches min against all of them.
+function withContrast(fg, bgs, min) {
+  const worst = c => Math.min(...bgs.map(b => contrastRatio(c, b)));
+  if (worst(fg) >= min) return { color: fg, ratio: worst(fg), adjusted: false, ok: true };
+  const black = [0, 0, 0], white = [255, 255, 255];
+  const target = worst(black) >= worst(white) ? black : white;
+  for (let s = 1; s <= 20; s++) {
+    const c = mixRgb(fg, target, s / 20), r = worst(c);
+    if (r >= min) return { color: c, ratio: r, adjusted: true, ok: true };
+  }
+  return { color: target, ratio: worst(target), adjusted: true, ok: false };
+}
+// spec: { bg, accent, contrast: 'high' | 'normal' } with #rgb or #rrggbb colors.
+// Returns { ok, base: 'light' | 'dark', tokens, checks, warnings } or
+// { ok: false, error } for invalid input.
+function themeTokens(spec) {
+  const bg = hexRgb(spec?.bg), accent = hexRgb(spec?.accent);
+  if (!bg || !accent) return { ok: false, error: 'invalid color' };
+  const high = spec.contrast === 'high';
+  const dark = contrastRatio([255, 255, 255], bg) > contrastRatio([0, 0, 0], bg);
+  const white = [255, 255, 255], black = [0, 0, 0];
+  const ink = dark ? white : [11, 11, 11];
+  const surface = dark ? mixRgb(bg, white, 0.035) : mixRgb(bg, white, 0.6);
+  const surface2 = dark ? mixRgb(bg, white, 0.07) : mixRgb(bg, black, 0.025);
+  const minText = high ? themeMinHigh : themeMinText;
+  const checks = [];
+  const fit = (token, c, against, min) => {
+    const r = withContrast(c, against, min);
+    checks.push({ token, ratio: Math.round(r.ratio * 100) / 100, min, ok: r.ok, adjusted: r.adjusted });
+    return r.color;
+  };
+  const backs = [bg, surface, surface2];
+  const hue = { ref: [42, 120, 214], dep: [217, 96, 31], good: [12, 163, 12], critical: [208, 59, 59], warn: [176, 120, 0], amber: [250, 178, 25], s3: [27, 175, 122] };
+  const text = fit('--text', ink, backs, minText);
+  const text2 = fit('--text-2', high ? ink : mixRgb(ink, surface, 0.3), backs, minText);
+  const text3 = fit('--text-3', mixRgb(ink, surface, high ? 0.2 : 0.45), backs, minText);
+  const acc = fit('--accent', accent, [surface], themeMinUi);
+  const accentSoft = mixRgb(surface, acc, dark ? 0.22 : 0.12);
+  const accentInk = fit('--accent-ink', dark ? mixRgb(acc, white, 0.35) : mixRgb(acc, black, 0.2), [surface, surface2, accentSoft], minText);
+  const strong = (token, c) => fit(token, dark ? mixRgb(c, white, 0.4) : mixRgb(c, black, 0.3), [surface, surface2], minText);
+  const ref1 = strong('--role-ref-1', hue.ref), dep1 = strong('--role-dep-1', hue.dep);
+  const goodInk = strong('--good-ink', hue.good), warnInk = strong('--warn-ink', hue.warn);
+  const critical = fit('--critical', hue.critical, [surface, surface2], minText);
+  const soft = (c, w) => rgbHex(mixRgb(surface, c, dark ? w * 1.6 : w));
+  const tokens = {
+    '--bg': rgbHex(bg), '--surface': rgbHex(surface), '--surface-2': rgbHex(surface2),
+    '--line': rgbHex(mixRgb(surface, ink, high ? 0.45 : dark ? 0.1 : 0.09)), '--line-strong': rgbHex(mixRgb(surface, ink, high ? 0.7 : dark ? 0.17 : 0.15)),
+    '--text': rgbHex(text), '--text-2': rgbHex(text2), '--text-3': rgbHex(text3),
+    '--accent': rgbHex(acc), '--accent-soft': rgbHex(accentSoft), '--accent-ink': rgbHex(accentInk),
+    '--series-1': rgbHex(acc), '--series-2': rgbHex(hue.dep),
+    '--good': rgbHex(hue.good), '--good-ink': rgbHex(goodInk), '--good-soft': soft(hue.good, 0.12),
+    '--critical': rgbHex(critical), '--critical-soft': soft(hue.critical, 0.12),
+    '--warn': rgbHex(hue.amber), '--warn-ink': rgbHex(warnInk), '--warn-soft': soft(hue.amber, 0.16),
+    '--role-ref-1': rgbHex(ref1), '--role-ref-10': soft(hue.ref, 0.25), '--role-dep-1': rgbHex(dep1), '--role-dep-10': soft(hue.dep, 0.25),
+    '--role-other': rgbHex(mixRgb(surface, ink, 0.38)),
+    '--lane-ref': soft(hue.ref, 0.06), '--lane-center': rgbHex(surface2), '--lane-dep': soft(hue.dep, 0.06),
+    '--s1': rgbHex(acc), '--s2': rgbHex(hue.dep), '--s3': rgbHex(hue.s3),
+    '--code': rgbHex(dark ? mixRgb(bg, black, 0.25) : mixRgb(bg, white, 0.4)),
+    '--shadow': dark ? '0 1px 2px rgba(0, 0, 0, .4)' : '0 1px 2px rgba(16, 24, 40, .06), 0 1px 3px rgba(16, 24, 40, .08)',
+    '--shadow-lg': dark ? '0 12px 32px rgba(0, 0, 0, .5)' : '0 12px 32px rgba(16, 24, 40, .16)',
+  };
+  return { ok: true, base: dark ? 'dark' : 'light', tokens, checks, warnings: checks.filter(c => !c.ok) };
+}
+// Background for the light/dark slider (0 black ... 100 white), tinted 6 %
+// toward the accent so the surfaces belong to it.
+const themeBgFrom = (level, accent) => rgbHex(mixRgb(mixRgb([0, 0, 0], [255, 255, 255], Math.min(100, Math.max(0, Number(level) || 0)) / 100), hexRgb(accent) || [128, 128, 128], 0.06));
+// Ready themes: light and dark are the built-in token sets, the others are
+// generated. Names are English keys of the i18n table.
+const themePresets = [
+  { id: 'light', name: 'Light', builtin: true, bg: '#f4f5f7', accent: '#2a78d6' },
+  { id: 'dark', name: 'Dark', builtin: true, bg: '#121211', accent: '#3987e5' },
+  { id: 'midnight', name: 'Midnight blue', bg: '#0e1a2f', accent: '#4c8dff' },
+  { id: 'sepia', name: 'Sepia paper', bg: '#f2e8d5', accent: '#9a5b1e' },
+  { id: 'contrast', name: 'High contrast', bg: '#000000', accent: '#ffd400', contrast: 'high' },
+  { id: 'forest', name: 'Forest', bg: '#0f1d16', accent: '#3fb27f' },
+];
+// Custom themes are { id, name, bg, accent, contrast }; the id derives from
+// the name (case-insensitive), so a name is unique.
+function themeIdOf(name) {
+  let h = 2166136261;
+  for (const ch of String(name).trim().toLowerCase()) { h ^= ch.codePointAt(0); h = Math.imul(h, 16777619) >>> 0; }
+  return 'custom:' + h.toString(36);
+}
+function themeRecord(x) {
+  if (!x || typeof x !== 'object') return null;
+  const name = typeof x.name === 'string' ? x.name.trim().slice(0, 40) : '';
+  const bg = hexRgb(x.bg), accent = hexRgb(x.accent);
+  if (!name || !bg || !accent) return null;
+  return { id: themeIdOf(name), name, bg: rgbHex(bg), accent: rgbHex(accent), contrast: x.contrast === 'high' ? 'high' : 'normal' };
+}
+// Adds or replaces (same name) one theme; returns a new list.
+function themeUpsert(list, theme) {
+  const rec = themeRecord(theme);
+  if (!rec) return list;
+  return [...list.filter(x => x.id !== rec.id), rec];
+}
+const themeExport = list => JSON.stringify({ auspexThemes: 1, themes: list.map(({ name, bg, accent, contrast }) => ({ name, bg, accent, contrast })) }, null, 2);
+// Import text: the export format, an array of themes or one theme. Returns
+// { list, added, skipped } or { error } when the text is not JSON.
+function themeImport(text, list) {
+  let data;
+  try { data = JSON.parse(String(text ?? '')); } catch { return { error: 'not valid JSON' }; }
+  const items = Array.isArray(data) ? data : Array.isArray(data?.themes) ? data.themes : [data];
+  let next = list, added = 0, skipped = 0;
+  for (const it of items) { const rec = themeRecord(it); if (rec) { next = themeUpsert(next, rec); added++; } else skipped++; }
+  return { list: next, added, skipped };
+}
+// Spec of a theme id (preset or custom); null for auto, light, dark and unknown ids.
+function themeSpecOf(id, customs) {
+  const p = themePresets.find(x => x.id === id);
+  if (p) return p.builtin ? null : p;
+  return (customs || []).find(x => x.id === id) || null;
+}
+// themes:end
+// Custom themes live in localStorage (auspex.viewer.themes). A generated
+// theme sets data-theme to its base (light or dark, for color-scheme) and its
+// tokens as inline properties on <html>; reports get the same through
+// themedReport, the 3D graph through recolor().
+let customThemes = [];
+try { customThemes = (JSON.parse(localStorage.getItem('auspex.viewer.themes') || '[]') || []).map(themeRecord).filter(Boolean); } catch { customThemes = []; }
+const saveCustomThemes = () => { try { localStorage.setItem('auspex.viewer.themes', JSON.stringify(customThemes)); return true; } catch { return false; } };
+// Generator draft while the Theme menu is open: { name, bg, accent, contrast, level }.
+let themeDraft = null;
+let themePreview = false;
+let themeAppliedKeys = [];
+const themeSpecNow = () => (themePreview && themeDraft ? themeDraft : themeSpecOf(state.theme, customThemes));
+function themeNow() {
+  const spec = themeSpecNow();
+  const res = spec ? themeTokens(spec) : null;
+  return res?.ok ? res : null;
+}
+const themeKey = () => (state.theme || 'auto') + JSON.stringify(themeSpecNow() || '');
+const themeName = th => (th.builtin || themePresets.includes(th) ? t(th.name) : th.name);
+function applyTheme() {
+  if (!['auto', 'light', 'dark'].includes(state.theme || 'auto') && !themeSpecOf(state.theme, customThemes)) state.theme = 'auto';
+  const th = state.theme || 'auto', root = document.documentElement;
+  for (const k of themeAppliedKeys) root.style.removeProperty(k);
+  themeAppliedKeys = [];
+  const res = themeNow();
+  if (res) {
+    root.setAttribute('data-theme', res.base);
+    for (const [k, v] of Object.entries(res.tokens)) root.style.setProperty(k, v);
+    themeAppliedKeys = Object.keys(res.tokens);
+  } else if (th === 'auto') root.removeAttribute('data-theme');
+  else root.setAttribute('data-theme', th);
+  document.querySelectorAll('#theme button').forEach(b => b.classList.toggle('on', !themePreview && b.dataset.v === th));
+  const custom = !themePreview && !['auto', 'light', 'dark'].includes(th);
+  $('themeMenuBtn').classList.toggle('on', custom);
+  const spec = themeSpecOf(th, customThemes);
+  $('themeMenuName').textContent = custom && spec ? themeName(spec) : t('Theme');
+}
+function themeChanged() {
+  applyTheme();
+  graph3d?.recolor();
+  if (state.tab === 'reports') renderReports();
+}
+function setTheme(id) {
+  state.theme = id; themePreview = false; persist(); themeChanged();
+  if ($('thsel').classList.contains('open')) renderThemeMenu();
+}
+document.querySelectorAll('#theme button').forEach(b => b.addEventListener('click', () => setTheme(b.dataset.v)));
+
+function themeSwatch(spec) {
+  const res = themeTokens(spec);
+  const tk = res.ok ? res.tokens : {};
+  return h('span', { class: 'th-sw', style: `background:${tk['--surface']};border-color:${tk['--line-strong']}` },
+    h('i', { style: `background:${tk['--accent']}` }), h('i', { style: `background:${tk['--text']}` }));
+}
+// Contrast result of the draft: OK, or the checks below their target.
+function themeBadge(res) {
+  if (!res.ok) return h('span', { class: 'badge critical' }, t('Invalid color'));
+  const adjusted = res.checks.filter(c => c.adjusted && c.ok).length;
+  if (res.warnings.length) {
+    return h('span', { class: 'badge th-warn', title: res.warnings.map(c => `${c.token} ${c.ratio}:1 < ${c.min}:1`).join('\n') },
+      '⚠ ', t('Contrast below target for {n} colors', { n: res.warnings.length }));
+  }
+  const min = res.checks.find(c => c.token === '--text')?.min ?? themeMinText;
+  return h('span', { class: 'badge th-ok', title: adjusted ? t('{n} colors adjusted for contrast', { n: adjusted }) : null },
+    '✓ ', t('Text contrast ≥ {r}:1', { r: min }), adjusted ? ` · ${t('{n} adjusted', { n: adjusted })}` : '');
+}
+function renderThemeMenu() {
+  const menu = $('themeMenu');
+  themeDraft ??= { name: '', bg: '#f4f5f7', accent: '#2a78d6', contrast: 'normal', level: 96 };
+  const item = (spec, id, removable) => h('div', { class: 'th-item' + (!themePreview && state.theme === id ? ' on' : ''), role: 'option', 'aria-selected': String(!themePreview && state.theme === id) },
+    h('button', { class: 'th-pick', onclick: () => setTheme(id) }, themeSwatch(spec), h('span', {}, themeName(spec))),
+    removable ? h('button', { class: 'th-del', title: t('Delete theme {n}', { n: spec.name }), 'aria-label': t('Delete theme {n}', { n: spec.name }), onclick: () => {
+      customThemes = customThemes.filter(x => x.id !== id);
+      saveCustomThemes();
+      if (state.theme === id) setTheme('auto'); else renderThemeMenu();
+    } }, '×') : null);
+  const res = themeTokens(themeDraft);
+  const preview = () => { themePreview = true; themeChanged(); renderThemeMenu(); };
+  const bgIn = h('input', { type: 'color', value: hexRgb(themeDraft.bg) ? rgbHex(hexRgb(themeDraft.bg)) : '#ffffff', 'aria-label': t('Background'),
+    onchange: ev => { themeDraft.bg = ev.target.value; preview(); } });
+  const level = h('input', { type: 'range', min: 0, max: 100, value: themeDraft.level ?? 50, 'aria-label': t('Dark ↔ light'),
+    onchange: ev => { themeDraft.level = Number(ev.target.value); themeDraft.bg = themeBgFrom(themeDraft.level, themeDraft.accent); preview(); } });
+  const accIn = h('input', { type: 'color', value: hexRgb(themeDraft.accent) ? rgbHex(hexRgb(themeDraft.accent)) : '#2a78d6', 'aria-label': t('Accent'),
+    onchange: ev => { themeDraft.accent = ev.target.value; preview(); } });
+  const hc = h('input', { type: 'checkbox', onchange: ev => { themeDraft.contrast = ev.target.checked ? 'high' : 'normal'; preview(); } });
+  hc.checked = themeDraft.contrast === 'high';
+  const nameIn = h('input', { type: 'text', maxlength: 40, value: themeDraft.name, placeholder: t('Theme name'), 'aria-label': t('Theme name'), oninput: ev => { themeDraft.name = ev.target.value; } });
+  const msg = h('div', { class: 'th-msg', role: 'status' });
+  const io = h('textarea', { rows: 4, spellcheck: 'false', 'aria-label': t('Theme JSON'), placeholder: t('Paste theme JSON here to import') });
+  put(menu,
+    h('div', { class: 'th-h' }, t('Ready themes')),
+    h('div', { class: 'th-list', role: 'listbox' }, themePresets.map(p => item(p, p.id, false))),
+    h('div', { class: 'th-h' }, t('My themes')),
+    customThemes.length ? h('div', { class: 'th-list', role: 'listbox' }, customThemes.map(c => item(c, c.id, true))) : h('div', { class: 'th-empty' }, t('No saved themes yet.')),
+    h('div', { class: 'th-h' }, t('Create a theme')),
+    h('div', { class: 'th-gen' },
+      h('label', {}, h('span', {}, t('Background')), bgIn),
+      h('label', { class: 'wide' }, h('span', {}, t('Dark ↔ light')), level),
+      h('label', {}, h('span', {}, t('Accent')), accIn),
+      h('label', { class: 'chk' }, hc, h('span', {}, t('High contrast (7:1)')))),
+    h('div', { class: 'th-row' }, themeBadge(res), themePreview ? h('button', { class: 'icon-btn', onclick: () => { themePreview = false; themeChanged(); renderThemeMenu(); } }, t('Stop preview')) : h('button', { class: 'icon-btn', onclick: preview }, t('Preview'))),
+    h('div', { class: 'th-row' }, nameIn, h('button', { class: 'icon-btn primary', onclick: () => {
+      const rec = themeRecord(themeDraft);
+      if (!rec) { msg.textContent = themeDraft.name.trim() ? t('Invalid color') : t('Give the theme a name.'); return; }
+      customThemes = themeUpsert(customThemes, rec);
+      if (!saveCustomThemes()) toast(t('Could not save themes in this browser'));
+      themeDraft.name = '';
+      setTheme(rec.id);
+    } }, t('Save'))),
+    msg,
+    h('details', { class: 'th-io' }, h('summary', {}, t('Export / import')), io,
+      h('div', { class: 'th-row' },
+        h('button', { class: 'icon-btn', onclick: () => { io.value = themeExport(customThemes); io.select(); copy(io.value, 'JSON'); } }, t('Export')),
+        h('button', { class: 'icon-btn', onclick: () => {
+          const r = themeImport(io.value, customThemes);
+          if (r.error) { msg.textContent = t('Import failed: not valid JSON'); return; }
+          customThemes = r.list; saveCustomThemes();
+          msg.textContent = t('{a} imported, {s} skipped', { a: r.added, s: r.skipped });
+          renderThemeMenu(); $('themeMenu').querySelector('.th-msg').textContent = msg.textContent;
+        } }, t('Import')))));
+}
+function openThemeMenu() { $('thsel').classList.add('open'); $('themeMenuBtn').setAttribute('aria-expanded', 'true'); renderThemeMenu(); }
+function closeThemeMenu() {
+  if (!$('thsel').classList.contains('open')) return;
+  $('thsel').classList.remove('open'); $('themeMenuBtn').setAttribute('aria-expanded', 'false');
+  if (themePreview) { themePreview = false; themeChanged(); }
+}
+$('themeMenuBtn').addEventListener('click', ev => { ev.stopPropagation(); $('thsel').classList.contains('open') ? closeThemeMenu() : openThemeMenu(); });
+document.addEventListener('click', ev => { if (!$('thsel').contains(ev.target) && ev.target.isConnected) closeThemeMenu(); });
 
 let liveTimer = null;
 function applyLive() {
@@ -3447,7 +3765,7 @@ $('refreshBtn').addEventListener('click', () => load());
 document.addEventListener('keydown', ev => {
   const typing = isTypingIn(document.activeElement);
   if (ev.key === '/' && !typing) { ev.preventDefault(); F.text.focus(); }
-  else if (ev.key === 'Escape') { closeDbMenu(); if (typing) document.activeElement.blur(); else if (state.open) { state.open = null; render(); } else if (state.tab === 'schema' && graph3d) graph3d.showAll(); }
+  else if (ev.key === 'Escape') { closeDbMenu(); closeThemeMenu(); if (typing) document.activeElement.blur(); else if (state.open) { state.open = null; render(); } else if (state.tab === 'schema' && graph3d) graph3d.showAll(); }
   else if (!typing && (ev.key === 'r' || ev.key === 'R') && !ev.ctrlKey && !ev.metaKey) load();
   else if (!typing && (ev.key === 'd' || ev.key === 'D') && !ev.ctrlKey && !ev.metaKey) { $('dbsel').classList.contains('open') ? closeDbMenu() : openDbMenu(); }
   else if (!typing && ['1', '2', '3', '4', '5', '6'].includes(ev.key)) switchTab(tabNames[Number(ev.key) - 1]);
