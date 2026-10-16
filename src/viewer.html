@@ -396,7 +396,10 @@
   .er-link.role.hot { stroke-width: 3; }
   .er-box text.meta { font-size: 11px; fill: var(--text-2); font-variant-numeric: tabular-nums; }
   .er-box text.meta.off { fill: var(--text-3); font-style: italic; }
-  .role-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 12px 0; }
+  /* One fixed column per side: a label change on one side never moves the other side's button. */
+  .role-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; padding: 10px 12px 0; }
+  .role-head .rh.dep { justify-content: flex-end; text-align: right; }
+  @media (max-width: 640px) { .role-head { grid-template-columns: 1fr; } .role-head .rh.dep { justify-content: flex-start; text-align: left; } }
   .role-head .rh { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--text-2); }
   .role-head .rh b { color: var(--text); font-size: 13px; }
   .role-head .rh .more { color: var(--text-3); }
@@ -657,7 +660,7 @@ const TR = {
   'Database-wide notes': 'Veritabanı geneli notlar', 'rows': 'satır', 'No tables match.': 'Eşleşen tablo yok.',
   'PK, FK: keys · U: used in a plan · N: has a note · ←: referenced': 'PK, FK: anahtar · U: planda kullanıldı · N: notu var · ←: referans alınıyor',
   'Reference': 'Instance', 'Dependent': 'Beslenen', 'no estimate': 'tahmin yok', '~{n} linked (est.)': '~{n} bağlı (tahmini)', '~{n} rows (est.)': '~{n} satır (tahmini)',
-  'top {s} of {n}': 'ilk {s} / {n}', 'none known': 'bilinen yok', 'Show top 5': 'İlk 5', 'Show top 10': 'İlk 10', '{n} more in Relations': '{n} tane daha İlişkiler listesinde',
+  'top {s} of {n}': 'ilk {s} / {n}', 'none known': 'bilinen yok', 'Show top 5': 'İlk 5', 'Show top 10': 'İlk 10', '{role}: show the top {n}': '{role}: ilk {n} tabloyu göster', '{n} more in Relations': '{n} tane daha İlişkiler listesinde',
   'rank 1 → 10': 'sıra 1 → 10', 'beyond top 10': 'ilk 10 dışı', 'Hide beyond top 10': 'İlk 10 dışını gizle', 'Show beyond top 10': 'İlk 10 dışını göster',
   'Edges of the selected table ranked beyond 10': 'Seçili tablonun 10. sıradan sonraki ilişkileri',
   'Flow': 'Akış', 'Center': 'Merkez', 'Dependent of {t}': '{t} tablosunun Beslenenleri', 'Back': 'Geri',
@@ -1497,6 +1500,17 @@ function flowWidth(weight, max) {
   if (!Number.isFinite(weight) || !Number.isFinite(max) || max <= 0) return 1.5;
   return 1.5 + 7 * (Math.log10(1 + Math.max(0, weight)) / Math.log10(1 + max));
 }
+// Top 5 / top 10 toggle state: one flag per view and side ('er.ref',
+// 'flow.dep2', ...), so one side's button never changes another side or the
+// same side in the other view. Toggling returns a new object.
+const roleExpandKey = (view, side) => `${view}.${side}`;
+const roleLimitIn = (expand, view, side) => (expand && expand[roleExpandKey(view, side)] === true ? roleTop : roleShown);
+function roleToggled(expand, view, side) {
+  const k = roleExpandKey(view, side);
+  const next = expand && typeof expand === 'object' && !Array.isArray(expand) ? { ...expand } : {};
+  next[k] = next[k] !== true;
+  return next;
+}
 // roles:end
 
 const roleName = role => t(role === 'ref' ? 'Reference' : 'Dependent');
@@ -1926,28 +1940,30 @@ function erBox({ x, y, w, title, st, rows, more, center, note, delay, meta, meta
 
 // The ER diagram and the Flow view draw the top 5 (or 10) of each role; the
 // rest stays in the inspector's Relations list.
-const roleLimit = key => (state.memExpand?.[key] ? roleTop : roleShown);
-function setRoleLimit(key, open) { state.memExpand = { ...(state.memExpand || {}), [key]: open }; renderSchema(); }
-function roleHeader(key, list, title, sw = key) {
-  const limit = roleLimit(key), shown = Math.min(limit, list.length), hidden = list.length - shown;
+const roleLimit = (view, side) => roleLimitIn(state.memExpand, view, side);
+function toggleRoleLimit(view, side) { state.memExpand = roleToggled(state.memExpand, view, side); persist(); renderSchema(); }
+function roleHeader(view, key, list, title, sw = key) {
+  const limit = roleLimit(view, key), shown = Math.min(limit, list.length), hidden = list.length - shown;
+  const next = limit === roleTop ? roleShown : roleTop;
+  const action = t('{role}: show the top {n}', { role: title, n: next });
   return h('div', { class: 'rh ' + sw },
     h('span', { class: 'role-sw ' + sw }), h('b', {}, title),
     h('span', {}, list.length ? t('top {s} of {n}', { s: fmt(shown), n: fmt(list.length) }) : t('none known')),
-    list.length > roleShown ? h('button', { class: 'icon-btn sm', 'aria-expanded': String(limit === roleTop), onclick: () => setRoleLimit(key, limit !== roleTop) },
-      limit === roleTop ? t('Show top 5') : t('Show top 10')) : null,
+    list.length > roleShown ? h('button', { class: 'icon-btn sm', 'aria-expanded': String(limit === roleTop), title: action, 'aria-label': action, onclick: () => toggleRoleLimit(view, key) },
+      next === roleShown ? t('Show top 5') : t('Show top 10')) : null,
     hidden ? h('span', { class: 'more' }, t('{n} more in Relations', { n: fmt(hidden) })) : null);
 }
 
 async function buildEr(wrap, data, centerId, key) {
   const roles = roleGroups(data, centerId);
-  const drawn = [...roles.ref.slice(0, roleLimit('ref')), ...roles.dep.slice(0, roleLimit('dep'))];
+  const drawn = [...roles.ref.slice(0, roleLimit('er', 'ref')), ...roles.dep.slice(0, roleLimit('er', 'dep'))];
   const want = [data.nodes.find(n => n.id === centerId), ...drawn.map(g => g.node)]
     .filter((n, i, a) => n?.file && (n.state === 'explored' || n.id === centerId) && a.indexOf(n) === i);
   const recs = new Map();
   await Promise.all(want.map(async n => recs.set(n.id, await memTable(state.db, n.file, data.generatedAt))));
   if (state.schemaKey !== key) return;
   wrap.replaceChildren(
-    h('div', { class: 'role-head' }, roleHeader('ref', roles.ref, roleName('ref')), roleHeader('dep', roles.dep, roleName('dep'))),
+    h('div', { class: 'role-head' }, roleHeader('er', 'ref', roles.ref, roleName('ref')), roleHeader('er', 'dep', roles.dep, roleName('dep'))),
     erSvg(data, centerId, recs, roles, wrap.clientWidth || 1000),
     h('div', { class: 'muted', style: 'font-size:11px;padding:4px 12px 10px' }, t('PK, FK: keys · U: used in a plan · N: has a note · ←: referenced')));
 }
@@ -1980,7 +1996,7 @@ function erSvg(data, centerId, recs, roles, width) {
   const boxes = [];
   let ly = ER.m, ry = ER.m, i = 0;
   for (const role of ['ref', 'dep']) {
-    for (const gr of roles[role].slice(0, roleLimit(role))) {
+    for (const gr of roles[role].slice(0, roleLimit('er', role))) {
       const left = role === 'ref';
       const x = left ? lx : rx, y = left ? ly : ry;
       const bcols = [...new Set(gr.links.flatMap(l => l.nbCols))];
@@ -2064,13 +2080,13 @@ function flowLanes(data, centerId) {
     { key: 'center', bg: 'center', title: t('Center'), all: [{ id: centerId, node: center, center: true }] },
     { key: 'dep', role: 'dep', bg: 'dep', title: roleName('dep'), all: roles.dep },
   ];
-  for (const l of lanes) l.items = l.key === 'center' ? l.all : l.all.slice(0, roleLimit(l.key));
+  for (const l of lanes) l.items = l.key === 'center' ? l.all : l.all.slice(0, roleLimit('flow', l.key));
   const open = state.memFlowOpen;
   if (open && lanes[2].items.some(x => x.id === open)) {
     const all = roleGroups(data, open).dep.filter(x => x.id !== centerId);
     const parentNode = data.nodes.find(x => x.id === open);
     lanes.push({ key: 'dep2', role: 'dep', bg: 'dep', title: `${roleName('dep')} · ${parentNode?.table ?? open}`, tip: t('Dependent of {t}', { t: open }),
-      all, items: all.slice(0, roleLimit('dep2')), parent: open });
+      all, items: all.slice(0, roleLimit('flow', 'dep2')), parent: open });
   }
   return lanes;
 }
@@ -2096,11 +2112,13 @@ function buildFlow(wrap, data, centerId) {
     edges.append(svg('rect', { class: 'fl-lane-bg', x: x0 + 6, y: 6, width: laneW - 12, height: H - 12, rx: 12, style: `fill:var(--lane-${lane.bg})` }));
     const head = lane.key === 'center'
       ? h('div', { class: 'rh' }, h('b', {}, lane.title), h('span', {}, rowEstimate(lane.items[0].node) !== null ? `~${compact(rowEstimate(lane.items[0].node))} ${t('rows')}` : t('no estimate')))
-      : roleHeader(lane.key, lane.all, lane.title, lane.bg);
+      : roleHeader('flow', lane.key, lane.all, lane.title, lane.bg);
     host.append(h('div', { class: 'fl-lane-h', title: lane.tip || null, style: `left:${x0 + 18}px;top:16px;width:${laneW - 36}px` }, head));
     const bh = lane.items.length * (FL.nodeH + FL.gap) - FL.gap;
     const parentY = lane.parent ? pos.get(lane.parent)?.y : null;
-    const want = parentY !== null && parentY !== undefined ? parentY + FL.nodeH / 2 - bh / 2 : top + (contentH - bh) / 2;
+    // Lanes start at the top so one lane's top 5 / top 10 toggle never moves
+    // the cards of another lane; only the depth-2 lane follows its parent.
+    const want = parentY !== null && parentY !== undefined ? parentY + FL.nodeH / 2 - bh / 2 : top;
     const y0 = Math.max(top, Math.min(top + contentH - bh, want));
     const x = Math.round(x0 + (laneW - nodeW) / 2);
     lane.items.forEach((it, i) => {
