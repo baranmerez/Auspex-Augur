@@ -84,10 +84,11 @@ creates anything.
   reasons and rejected options, open questions, risks (locks, size, payload
   growth).
 - **Location question (one message, before saving).** Propose a location
-  from `scriptRoots` in `list_profiles`: `<root>/<folder>/<file>.sql`,
-  following the folder and numbering convention the user already uses (look
-  at the existing files first). If there is none, propose a short descriptive
-  file name. Never invent a convention. List every file name. No script root
+  from `scriptRoots` in `list_profiles`: `<root>/<folder>/<file>.sql`. If
+  you can read the folder (or see earlier files via `externalFile` entries
+  in `list_reports`), follow the folder and numbering convention already
+  used there; otherwise ask the user for the folder and their naming
+  convention. Never invent a convention. List every file name. No script root
   configured: save to the library only and say so.
 - **Save** each script with `save_execute_script` (db = profile, schema,
   category for example `Integration`, name like the file, plus `root`,

@@ -668,7 +668,7 @@ server from the same files at startup).
 | Skill | Prompt | Use it for |
 |---|---|---|
 | [`auspex-explore`](skills/auspex-explore/SKILL.md) | `explore` | Finding tables, reading structure and relations, fill rates and fan-out, recording findings in the schema memory with few statements |
-| [`auspex-report`](skills/auspex-report/SKILL.md) | `report` | A combined report: one round of at most 3 questions, remembered rules as defaults, status codes from their source (lookup table, enum, check or comment), fan-out/duplicate/NULL checks and a question about excluded states, then save, run and approve in the report library |
+| [`auspex-report`](skills/auspex-report/SKILL.md) | `report` | A combined report: one round of at most 3 questions, remembered rules as defaults, status codes from their source (lookup table, enum, check or comment), fan-out/duplicate/NULL checks, and whether cancelled or deleted rows count asked within the 3 questions when no rule is remembered, then save, run and approve in the report library |
 | [`auspex-ddl`](skills/auspex-ddl/SKILL.md) | `ddl` | Studying an existing table family (tables, functions, triggers) and designing a similar one: analysis note plus a `BEGIN ... ROLLBACK` script via `save_execute_script`, never executed by Auspex |
 
 Each `SKILL.md` holds the core rules and workflow; longer checklists live in
