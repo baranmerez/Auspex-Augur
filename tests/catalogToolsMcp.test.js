@@ -55,7 +55,9 @@ test('save_report text fields and the server instructions point to notesLanguage
   const { tools } = await client.listTools();
   const props = tools.find(t => t.name === 'save_report').inputSchema.properties;
   for (const field of ['title', 'description', 'note']) assert.match(props[field].description, /notesLanguage/);
+  for (const field of ['title', 'purpose']) assert.match(tools.find(t => t.name === 'save_execute_script').inputSchema.properties[field].description, /notesLanguage/);
   assert.match(client.getInstructions(), /save_report title, description and note/);
+  assert.match(client.getInstructions(), /not translated/);
 });
 
 test('describe_tables offers detail summary (default) or full; a bad value is refused by the schema', async () => {

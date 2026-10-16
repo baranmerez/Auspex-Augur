@@ -96,7 +96,7 @@ creates anything.
   `folder` and `fileName` after the user's yes). Tables, constraints,
   indexes, comments, log table, trigger functions and triggers go into one
   preview script, in dependency order. Write the title, purpose and script
-  comments in the `notesLanguage` from `list_profiles` (ask once if null).
+  comments in the `notesLanguage` from `list_profiles` (ask once if null); the step markers (BEGIN, DEFINE, PROCESS, MATCH, CORRECT/FAIL, ROLLBACK) and SQL stay as written.
   Skeleton:
   [script-template.md](references/script-template.md). An existing file is
   never overwritten: on that error propose the next number and ask again.
