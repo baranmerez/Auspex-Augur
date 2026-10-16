@@ -11,7 +11,8 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { loadConfig, describeConnection, auspexHome } from './config.js';
 import { Library, LibraryError, normalizeRef, refLabel } from './reports/library.js';
-import { approveInLibrary, revokeInLibrary } from './reports/service.js';
+import { approveInLibrary, revokeInLibrary, approvedJoinPairs } from './reports/service.js';
+import { SchemaMemory } from './memory/store.js';
 import { createAuditLog } from './auditLog.js';
 import { classifyError } from './errors.js';
 
@@ -34,9 +35,9 @@ const refKeys = ['db', 'schema', 'category', 'name'];
 // Stage changes the page may request: the report must be in `from`.
 const stageActions = new Map([
   ['/api/reports/approve', { tool: 'approve_report', from: 'draft', to: 'approved',
-    run: (lib, ref) => approveInLibrary(lib, ref, { by: 'viewer' }), version: r => r.meta.approvedVersion }],
+    run: (lib, ref) => approveInLibrary(lib, ref, { by: 'viewer', memory: schemaMemory(lib) }), version: r => r.meta.approvedVersion }],
   ['/api/reports/revoke', { tool: 'revoke_report', from: 'approved', to: 'draft',
-    run: (lib, ref) => revokeInLibrary(lib, ref, { by: 'viewer' }), version: r => r.version }],
+    run: (lib, ref) => revokeInLibrary(lib, ref, { by: 'viewer', memory: schemaMemory(lib) }), version: r => r.version }],
 ]);
 
 // Re-read on every request so edits to profiles.json show up without restart.
@@ -110,6 +111,12 @@ function memoryDir() {
   return config?.memoryDir ?? path.join(auspexHome(), 'memory');
 }
 
+// The schema memory as the MCP server sees it, so a stage change rebuilds its
+// view ("used" relations come from approved reports' joins). Files only.
+function schemaMemory(lib) {
+  return new SchemaMemory(memoryDir(), { approvedJoins: profile => approvedJoinPairs(lib, profile) });
+}
+
 function memoryProfile(params) {
   const name = params.get('profile') || '';
   if (!profilePattern.test(name)) throw new LibraryError('Invalid profile name');
@@ -178,10 +185,10 @@ class HttpError extends Error {
 // Same-origin page with the token: the Origin header must be exactly this
 // viewer (the Host was already allowlisted) and the token must match.
 function checkWriteRequest(req) {
-  if (req.headers.origin !== `http://${req.headers.host}`) throw new HttpError(403, 'Forbidden origin');
+  if (req.headers.origin !== `http://${req.headers.host}`) throw new HttpError(403, 'Forbidden origin', 'ORIGIN_INVALID');
   const given = Buffer.from(String(req.headers['x-auspex-token'] || ''));
   const expected = Buffer.from(csrfToken);
-  if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) throw new HttpError(403, 'Missing or invalid token');
+  if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) throw new HttpError(403, 'Missing or invalid token', 'TOKEN_INVALID');
 }
 
 function readBody(req) {
@@ -259,7 +266,7 @@ const server = http.createServer((req, res) => {
   if (action) {
     if (req.method !== 'POST') return send(res, 405, { error: 'Use POST' }, undefined, { Allow: 'POST' });
     return changeStage(req, res, action).catch(err => {
-      if (!res.headersSent) send(res, statusOf(err), { error: err.message });
+      if (!res.headersSent) send(res, statusOf(err), { error: err.message, ...(err.errorCode ? { code: err.errorCode } : {}) });
     });
   }
   if (req.method !== 'GET') return send(res, 405, { error: 'Read-only route' }, undefined, { Allow: 'GET' });
