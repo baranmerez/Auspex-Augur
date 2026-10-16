@@ -279,6 +279,7 @@ export class Library {
       '-- NOT executed by Auspex. Run it yourself with a role that has the',
       '-- required privileges, review the MATCH results, then replace the final',
       '-- ROLLBACK with COMMIT only if every check is correct.',
+      ...(lint.functionBodies ? [functionBodyNote] : []),
       '-- =====================================================================',
       '',
     ].join('\n');
@@ -413,25 +414,67 @@ function commentLines(label, value) {
 //   plain ROLLBACK last; no other statement may start, end or prepare a
 //   transaction (COMMIT, END, ABORT, a second BEGIN, an early ROLLBACK...).
 //   SAVEPOINT, RELEASE and ROLLBACK TO stay inside it and are allowed.
-// - no code the checks cannot see into: DO blocks, CALL, CREATE FUNCTION /
-//   PROCEDURE, and psql backslash commands are rejected.
+// - no code the checks cannot see into: DO blocks, CALL, CREATE PROCEDURE,
+//   and psql backslash commands are rejected.
+// - CREATE [OR REPLACE] FUNCTION is allowed only with LANGUAGE plpgsql or sql
+//   and one dollar-quoted body (AS $tag$ ... $tag$). The body is masked like
+//   any literal: creating the function does not run it, so it is not linted
+//   (functionBodies counts them; the saved file says so in its header).
+//   CREATE [OR REPLACE] [CONSTRAINT] TRIGGER is allowed; its event list
+//   (BEFORE UPDATE ...) is not a write.
 // - every UPDATE and DELETE, also inside a CTE or subquery, needs its own
 //   WHERE at its own parenthesis level; a WHERE inside a subquery does not count.
 // Comments and string literals are ignored.
 const transactionVerbs = new Set(['begin', 'start', 'commit', 'end', 'abort', 'rollback', 'prepare']);
+const functionLanguages = new Set(['plpgsql', 'sql']);
+export const functionBodyNote = '-- NOTE: function bodies are not linted by Auspex; review them before COMMIT';
+
+// 'function', 'procedure' or 'trigger' when the statement creates one.
+function createdRoutine(w) {
+  if (w[0] !== 'create') return null;
+  const k = w[1] === 'or' && w[2] === 'replace' ? 3 : 1;
+  if (w[k] === 'constraint' && w[k + 1] === 'trigger') return 'trigger';
+  return ['function', 'procedure', 'trigger'].includes(w[k]) ? w[k] : null;
+}
+
+// Why a CREATE FUNCTION statement is refused, or null. statement is masked
+// text starting at offset start of the script; source is the original script,
+// where a masked dollar-quoted body still starts with "$".
+function functionProblem(statement, start, source, w) {
+  const languages = w.flatMap((x, i) => (x === 'language' ? [w[i + 1]] : []));
+  if (!languages.length || !languages.every(l => functionLanguages.has(l))) {
+    return 'creates a function without LANGUAGE plpgsql or LANGUAGE sql (unquoted); other languages cannot be reviewed here.';
+  }
+  const bodies = [...statement.matchAll(/\bas\s+'/gi)].map(m => source[start + m.index + m[0].length - 1]);
+  if (bodies.length !== 1 || bodies[0] !== '$') {
+    return 'creates a function without exactly one dollar-quoted body (AS $tag$ ... $tag$).';
+  }
+  return null;
+}
 
 export function lintExecuteScript(sql) {
   const errors = [];
   const warnings = [];
+  const source = String(sql || '');
   let masked;
   try {
-    masked = stripLiteralsAndComments(String(sql || ''));
+    masked = stripLiteralsAndComments(source);
   } catch (err) {
-    return { errors: [err.message], warnings };
+    return { errors: [err.message], warnings, functionBodies: 0 };
   }
-  const statements = masked.split(';').map(s => s.trim()).filter(Boolean);
-  if (!statements.length) return { errors: ['Script is empty.'], warnings };
+  // Statements with their offset in the script (masking keeps every offset).
+  const parts = [];
+  let offset = 0;
+  for (const part of masked.split(';')) {
+    const text = part.trim();
+    if (text) parts.push({ text, start: offset + part.length - part.trimStart().length });
+    offset += part.length + 1;
+  }
+  const statements = parts.map(p => p.text);
+  if (!statements.length) return { errors: ['Script is empty.'], warnings, functionBodies: 0 };
   const words = s => s.toLowerCase().match(/[a-z_]+/g) || [];
+  let functionBodies = 0;
+  const createdFunctions = new Set();
 
   const first = words(statements[0]);
   if (!(first[0] === 'begin' || (first[0] === 'start' && first[1] === 'transaction'))) {
@@ -455,15 +498,28 @@ export function lintExecuteScript(sql) {
     // MERGE ... THEN DELETE / UPDATE acts on every matched row without a WHERE
     // of its own; write separate UPDATE/DELETE/INSERT statements instead.
     if (w.includes('merge') && w.includes('when')) errors.push(`Statement ${n} is a MERGE; its WHEN branches cannot be checked, write UPDATE/DELETE/INSERT with WHERE instead.`);
-    if (w[0] === 'create' && w.slice(1, 4).some(x => x === 'function' || x === 'procedure')) {
-      errors.push(`Statement ${n} creates a function or procedure; its body cannot be checked.`);
+    const routine = createdRoutine(w);
+    if (routine === 'function') {
+      const problem = functionProblem(s, parts[i].start, source, w);
+      if (problem) errors.push(`Statement ${n} ${problem}`);
+      else functionBodies++;
+      const name = /\bfunction\s+(?:[a-z_][a-z0-9_$]*\s*\.\s*)?([a-z_][a-z0-9_$]*)\s*\(/i.exec(s)?.[1];
+      if (name) createdFunctions.add(name.toLowerCase());
+      if (w.includes('security') && w.includes('definer')) warnings.push(`Statement ${n} creates a SECURITY DEFINER function; check its owner and that it sets search_path.`);
+    } else if (routine === 'procedure' || (w[0] === 'create' && w.slice(1, 4).some(x => x === 'function' || x === 'procedure'))) {
+      errors.push(`Statement ${n} creates a procedure or an unsupported function form; its body cannot be checked.`);
     }
     // psql commands can follow SQL on the same line; quoted/comment text is masked.
     if (s.includes('\\')) errors.push(`Statement ${n} contains a psql backslash command.`);
-    for (const write of writesWithoutWhere(s)) errors.push(`Statement ${n} has ${write} without WHERE.`);
+    if (routine !== 'trigger') for (const write of writesWithoutWhere(s)) errors.push(`Statement ${n} has ${write} without WHERE.`);
+    // A body created above runs when the script calls it (triggers also fire on DML).
+    if (!routine) {
+      const called = [...s.matchAll(/([a-z_][a-z0-9_$]*)\s*\(/gi)].map(m => m[1].toLowerCase()).filter(x => createdFunctions.has(x));
+      for (const fn of new Set(called)) warnings.push(`Statement ${n} calls ${fn}(), created in this script; its body was not linted and runs here.`);
+    }
     if (w[0] === 'truncate' || w[0] === 'drop') warnings.push(`Statement ${n} is ${w[0].toUpperCase()}; double-check it is intended.`);
   });
-  return { errors, warnings };
+  return { errors, warnings, functionBodies };
 }
 
 // UPDATE / DELETE nodes in one masked statement that have no WHERE at their own
