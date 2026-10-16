@@ -38,7 +38,7 @@ try {
 }
 const db = new ReadOnlyDatabase(config, { source: 'mcp' });
 const memory = new SchemaMemory(config.memoryDir, { approvedJoins: profile => reports.approvedJoinPairs(profile) });
-const reports = new ReportService(db, config.libraryDir, memory);
+const reports = new ReportService(db, config.libraryDir, memory, { scriptRoots: config.scriptRoots });
 
 const defaultTimeoutS = config.statementTimeoutMs / 1000;
 const maxTimeoutS = config.maxStatementTimeoutMs / 1000;
@@ -411,7 +411,7 @@ tool('render_reports', {
 
 tool('save_execute_script', {
   title: 'Save change script',
-  description: 'Writes an INSERT/UPDATE/DELETE/DDL script to EXECUTE/<db>/<schema>/<category>/<name>.sql for the user to run with a privileged role. Auspex never executes it. The script must start with BEGIN, end with ROLLBACK, contain no COMMIT and have WHERE on every UPDATE/DELETE.',
+  description: 'Writes an INSERT/UPDATE/DELETE/DDL script to EXECUTE/<db>/<schema>/<category>/<name>.sql for the user to run with a privileged role. Auspex never executes it. The script must start with BEGIN, end with ROLLBACK, contain no COMMIT and have WHERE on every UPDATE/DELETE. With root, folder and fileName it is also written as a new file to <script root>/<folder>/<fileName> (script roots: see list_profiles); ask the user for that location before saving. An existing file there is never overwritten.',
   inputSchema: {
     ...refArgs,
     sql: z.string().min(1).describe('The change script (BEGIN ... MATCH checks ... ROLLBACK).'),
@@ -419,10 +419,15 @@ tool('save_execute_script', {
     purpose: z.string().optional().describe('What the script changes and why.'),
     relatedReport: z.string().optional().describe('Report that motivated the change, e.g. db/schema/category/name.'),
     expectedRows: z.union([z.number(), z.string()]).optional().describe('Expected affected rows.'),
-    replace: z.boolean().optional().describe('Overwrite an existing script with the same name.'),
+    replace: z.boolean().optional().describe('Overwrite an existing library script with the same name (never the file in a script root).'),
+    root: z.string().min(1).optional().describe('Name of a configured script root (list_profiles). Needs folder and fileName.'),
+    folder: z.string().min(1).optional().describe('One folder inside the root, created if missing, e.g. Orders_DB_Scripts_V1. Letters, digits, _ - . only.'),
+    fileName: z.string().min(1).optional().describe('New file name ending in .sql, e.g. 02_orders_fix.sql. Letters, digits, _ - . only.'),
   },
-}, async args => db.audited('save_execute_script', { ...reportDetails(args), sqlHash: sqlHash(args.sql), replace: args.replace === true },
-  () => reports.saveExecute(args), r => ({ warnings: r.warnings?.length ?? 0 })));
+}, async args => db.audited('save_execute_script', {
+  ...reportDetails(args), sqlHash: sqlHash(args.sql), replace: args.replace === true,
+  ...(args.root !== undefined ? { root: args.root, folder: args.folder, fileName: args.fileName } : {}),
+}, () => reports.saveExecute(args), r => ({ warnings: r.warnings?.length ?? 0, ...(r.externalFile ? { libraryFile: r.libraryFile } : {}) })));
 
 // ---------- schema memory ----------
 tool('table_knowledge', {

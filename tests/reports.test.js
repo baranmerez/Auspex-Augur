@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { summarizePlan, planDigest } from '../src/reports/planSummary.js';
 import { isPersonalColumn, maskRows, maskValue } from '../src/reports/mask.js';
-import { Library, LibraryError, slugify, validateSegment, lintExecuteScript, sqlHash } from '../src/reports/library.js';
+import { Library, LibraryError, slugify, validateSegment, validateScriptName, lintExecuteScript, sqlHash } from '../src/reports/library.js';
 import { renderReport, ReportService } from '../src/reports/service.js';
 import { SqlGuardError } from '../src/sqlGuard.js';
 
@@ -250,6 +250,142 @@ test('EXECUTE script metadata stays inside comments for LF, CRLF and lone CR', (
   const firstSql = lines.find(l => l.trim() && !l.startsWith('--'));
   assert.equal(firstSql, 'BEGIN;');
   assert.match(lines.join('\n'), /-- Purpose {8}: one\n-- {18}SELECT 43/);
+});
+
+// ---------- script roots (temporary folders only) ----------
+const fixSql = 'BEGIN;\nUPDATE t SET a = 1 WHERE id = 2;\nROLLBACK;';
+function tempRoot() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-root-test-'));
+  return { root: 'scripts', dir, real: fs.realpathSync.native(dir) };
+}
+const target = (r, folder, fileName) => ({ root: r.root, dir: r.dir, folder, fileName });
+
+test('a script saved into a script root is a new file there and keeps its library record', () => {
+  const lib = tempLibrary();
+  const r = tempRoot();
+  const res = lib.saveExecuteScript({ ref, sql: fixSql, target: target(r, 'Sipariş_DB_Scripts_V1', '00_orders_preflight.sql') });
+  const expected = path.join(r.real, 'Sipariş_DB_Scripts_V1', '00_orders_preflight.sql');
+  assert.equal(res.file, expected);
+  assert.equal(res.externalFile, expected);
+  assert.equal(res.libraryFile, lib.paths('execute', ref).sql);
+  const text = fs.readFileSync(expected, 'utf8');
+  assert.equal(fs.readFileSync(res.libraryFile, 'utf8'), text, 'the library copy is the same script');
+  assert.ok(text.includes(`-- Script file    : ${expected}`));
+  assert.deepEqual(lintExecuteScript(text).errors, []);
+  const [item] = lib.list();
+  assert.equal(item.stage, 'execute');
+  assert.equal(item.externalFile, expected);
+  assert.equal(lib.executeInfo(ref).folder, 'Sipariş_DB_Scripts_V1');
+});
+
+test('a script root file is never overwritten; the error offers the next number', () => {
+  const lib = tempLibrary();
+  const r = tempRoot();
+  lib.saveExecuteScript({ ref, sql: fixSql, target: target(r, 'Topic_V1', '02_fix_ONIZLEME.sql') });
+  const file = path.join(r.real, 'Topic_V1', '02_fix_ONIZLEME.sql');
+  const before = fs.readFileSync(file, 'utf8');
+  const other = { ...ref, name: 'other' };
+  assert.throws(() => lib.saveExecuteScript({ ref: other, sql: fixSql, target: target(r, 'Topic_V1', '02_fix_ONIZLEME.sql') }), /already exists.*never overwrites.*starting with 03_/s);
+  assert.throws(() => lib.saveExecuteScript({ ref: other, sql: fixSql, replace: true, target: target(r, 'Topic_V1', '02_fix_ONIZLEME.sql') }), /never overwrites/);
+  assert.equal(fs.readFileSync(file, 'utf8'), before);
+  assert.equal(lib.exists('execute', other), false, 'nothing is written to the library either');
+});
+
+test('script root checks run before anything is written', () => {
+  const lib = tempLibrary();
+  const r = tempRoot();
+  assert.throws(() => lib.saveExecuteScript({ ref, sql: 'UPDATE t SET a = 1;', target: target(r, 'New_V1', '00_x.sql') }), /rejected/);
+  assert.deepEqual(fs.readdirSync(r.dir), [], 'lint failed: no folder created');
+  const missing = { ...target(r, 'New_V1', '00_x.sql'), dir: path.join(r.dir, 'missing') };
+  assert.throws(() => lib.saveExecuteScript({ ref, sql: fixSql, target: missing }), err => err.errorCode === 'NOT_FOUND' && /does not exist/.test(err.message));
+  assert.equal(fs.existsSync(missing.dir), false, 'the root itself is never created');
+  lib.saveExecuteScript({ ref, sql: fixSql });
+  assert.throws(() => lib.saveExecuteScript({ ref, sql: fixSql, target: target(r, 'New_V1', '00_x.sql') }), /Pass replace=true/);
+  assert.deepEqual(fs.readdirSync(r.dir), [], 'library name taken: no folder created');
+});
+
+const badScriptNames = [
+  ['parent reference', '..', '00_x.sql'],
+  ['double dot inside', 'a..b', '00_x.sql'],
+  ['slash', 'a/b', '00_x.sql'],
+  ['backslash', 'a\\b', '00_x.sql'],
+  ['drive', 'C:', '00_x.sql'],
+  ['space', 'a b', '00_x.sql'],
+  ['leading dot', '.hidden', '00_x.sql'],
+  ['trailing dot', 'x.', '00_x.sql'],
+  ['reserved device name', 'CON', '00_x.sql'],
+  ['too long', 'a'.repeat(81), '00_x.sql'],
+  ['file not .sql', 'Topic', '00_x.txt'],
+  ['file with separator', 'Topic', '../00_x.sql'],
+  ['empty file name', 'Topic', ''],
+];
+
+for (const [name, folder, fileName] of badScriptNames) {
+  test(`script root names reject ${name}`, () => {
+    const lib = tempLibrary();
+    const r = tempRoot();
+    assert.throws(() => lib.saveExecuteScript({ ref, sql: fixSql, target: target(r, folder, fileName) }), LibraryError);
+    assert.deepEqual(fs.readdirSync(r.dir), []);
+  });
+}
+
+test('script root names allow Turkish letters, digits, _ - and .', () => {
+  assert.equal(validateScriptName('ExampleTimesheet_DB_Scripts_V1.2', 'Folder'), 'ExampleTimesheet_DB_Scripts_V1.2');
+  assert.equal(validateScriptName('03_Commit_Sonrası_Kontrol.sql', 'File name', { sqlFile: true }), '03_Commit_Sonrası_Kontrol.sql');
+  assert.equal(validateScriptName('İşlem-ÇĞÖŞÜ', 'Folder'), 'İşlem-ÇĞÖŞÜ');
+});
+
+test('a folder link or junction that leaves the script root is refused', t => {
+  const lib = tempLibrary();
+  const r = tempRoot();
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-outside-test-'));
+  try {
+    fs.symlinkSync(outside, path.join(r.dir, 'Escape'), 'junction');
+  } catch (err) {
+    t.skip(`cannot create a link here: ${err.code}`);
+    return;
+  }
+  assert.throws(() => lib.saveExecuteScript({ ref, sql: fixSql, target: target(r, 'Escape', '00_x.sql') }), /resolves outside the root/);
+  assert.deepEqual(fs.readdirSync(outside), []);
+});
+
+test('a dangling link at the target file name is never followed', t => {
+  const lib = tempLibrary();
+  const r = tempRoot();
+  fs.mkdirSync(path.join(r.dir, 'Topic'));
+  const outsideFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-outside-test-')), 'victim.sql');
+  try {
+    fs.symlinkSync(outsideFile, path.join(r.dir, 'Topic', '00_x.sql'), 'file');
+  } catch (err) {
+    t.skip(`cannot create a file link here: ${err.code}`);
+    return;
+  }
+  assert.throws(() => lib.saveExecuteScript({ ref, sql: fixSql, target: target(r, 'Topic', '00_x.sql') }), /already exists/);
+  assert.equal(fs.existsSync(outsideFile), false);
+});
+
+test('replacing a script without a root drops the old external path', () => {
+  const lib = tempLibrary();
+  const r = tempRoot();
+  lib.saveExecuteScript({ ref, sql: fixSql, target: target(r, 'Topic', '00_x.sql') });
+  lib.saveExecuteScript({ ref, sql: fixSql, replace: true });
+  assert.equal(lib.executeInfo(ref), null);
+  assert.equal(lib.list()[0].externalFile, undefined);
+  assert.ok(fs.existsSync(path.join(r.real, 'Topic', '00_x.sql')), 'the external file itself is left alone');
+});
+
+test('the report service resolves script root names and needs root, folder and fileName together', () => {
+  const r = tempRoot();
+  const fakeDb = { resolveProfile: name => name };
+  const svc = new ReportService(fakeDb, fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-lib-test-')), null, { scriptRoots: new Map([['dbeaver', { dir: r.dir }]]) });
+  const args = { ...ref, sql: fixSql };
+  const res = svc.saveExecute({ ...args, root: 'DBeaver', folder: 'Topic', fileName: '00_x.sql' });
+  assert.equal(res.externalFile, path.join(r.real, 'Topic', '00_x.sql'));
+  assert.throws(() => svc.saveExecute({ ...args, name: 'b', root: 'other', folder: 'Topic', fileName: '01_x.sql' }), /Unknown script root "other"\. Configured: dbeaver/);
+  assert.throws(() => svc.saveExecute({ ...args, name: 'c', root: 'dbeaver', folder: 'Topic' }), /go together/);
+  assert.throws(() => svc.saveExecute({ ...args, name: 'd', fileName: '01_x.sql' }), /go together/);
+  const plain = svc.saveExecute({ ...args, name: 'e' });
+  assert.equal(plain.externalFile, null);
 });
 
 test('rendered HTML embeds the report safely', () => {
