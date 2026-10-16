@@ -12,7 +12,7 @@ no extra statement.
 | `tmp_*`, `temp_*`, `*_tmp`, `*_temp`, `test_*`, `*_test` | scratch tables |
 | `*_log_*`, `*_log`, `*_logs`, `*_history`, `*_hist`, `*_audit` | audit or history copies of a live table |
 | `*_YYYYMMDD`, `*_2024*`, `*_v2` next to an undated twin | dated snapshots |
-| `x_*`, `del_*`, `silinen_*`, `eski_*`, `yedek_*` | retired tables (Turkish: silinen = deleted, eski = old, yedek = backup) |
+| `x_*`, `del_*`, `deleted_*`, `old_*`, `backup_*` | retired tables (also try the same words in the languages the schema uses) |
 
 Keep a skipped table when the user asks for history or logs, when the live
 twin does not exist, or when it is the only match. Name what you skipped in
@@ -36,7 +36,7 @@ one line so the user can ask for it.
 
 ## Search terms
 
-Try the business word in Turkish and English, singular and plural, and the
-common abbreviations of the codebase (for example `orders`, `sip`, `order`;
-`fatura`, `fat`, `invoice`). Use `%` only when a plain contains-match is too
-broad.
+Try the business word in the languages the schema may use, singular and
+plural, and the common abbreviations of the codebase (for example `orders`,
+`order`, `ord`; `invoices`, `invoice`, `inv`). Use `%` only when a plain
+contains-match is too broad.

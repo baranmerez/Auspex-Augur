@@ -39,7 +39,7 @@ when).
   (`payload ? 'orderNo'`), `octet_length(file) <= <limit>`.
 - CHECK cannot read other rows or tables: cross-row rules belong in a
   trigger or a unique index.
-- Unique business key (for example firm + external document number) to make
+- Unique business key (for example tenant + external document number) to make
   imports idempotent.
 - Foreign keys to master tables when the family has them; name every
   constraint (`<table>_<col>_chk`, `_fk`, `_uq` or the house style).

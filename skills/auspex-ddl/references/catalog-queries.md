@@ -2,7 +2,7 @@
 
 Use these only when the server has no tool for functions or triggers
 (`describe_functions`, triggers in `describe_tables`). Each is one `query`
-call with the name stem as `$1` (for example `%example_co%`); three statements
+call with the name stem as `$1` (for example `%example%`); three statements
 cover the whole family. They read the system catalog only and pass the
 Auspex SQL guard as written.
 

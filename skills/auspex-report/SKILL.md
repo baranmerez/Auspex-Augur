@@ -1,6 +1,6 @@
 ---
 name: auspex-report
-description: "Build a combined analysis report through the read-only Auspex MCP server: clarify period, filters and output in one round, apply remembered business rules, resolve status codes from lookup tables, guard against join fan-out, duplicates, NULLs and cancelled rows, then save, run and hand over the report from the Auspex report library. Use when the user asks for a report, summary, totals or a grouped list from database tables. TR: rapor, sipariş raporu, fatura raporu, bölge/personel bazında toplam, gruplama, hasarlı/sorunlu barkod, rapor kütüphanesi, Auspex."
+description: "Build a combined analysis report through the read-only Auspex MCP server: clarify period, filters and output in one round, apply remembered business rules, resolve status codes from their source, guard against join fan-out, duplicates, NULLs and rows in excluded states, then save, run and hand over the report from the Auspex report library. Use when the user asks for a report, summary, totals or a grouped list from database tables."
 ---
 
 # Auspex report
@@ -20,7 +20,8 @@ late one.
    proposed default. Never ask what memory, the request or the catalog
    already answers.
 4. **Never invent a business rule or a code meaning.** Status codes are read
-   from lookup tables and confirmed by the user before they filter a report.
+   from their source (lookup table, enum type, CHECK constraint or column
+   comment) and confirmed by the user before they filter a report.
 5. **Grain before join.** Every 1:N child is pre-aggregated to the parent key
    before it is joined (see [correctness-checks.md](references/correctness-checks.md)).
 6. **Plan before run.** `explain` (estimated, no analyze) before the first
@@ -29,7 +30,7 @@ late one.
 7. **Approval is the user's.** `approve_report` only after the user
    explicitly approved this report in this conversation. The user can also
    approve or revoke a report themselves in the viewer (browser or desktop
-   app, *Onayla* / *Onayı geri al*); do not say approval is only possible
+   app, *Approve* / *Revoke approval*); do not say approval is only possible
    through chat.
 8. **No personal values** in answers or notes; masked previews only.
 
@@ -38,36 +39,32 @@ late one.
 1. **Profile, memory, parse.** Profile check. `table_knowledge` on named
    tables. Split the request into: period and date column, filters, grain
    (one row per what), output columns, grouping, sums/counts, joined sources,
-   special states to check (for example damaged or problem barcodes).
+   special states to check (for example rows in an error or retry state).
 2. **Questions (one message, max 3).** Only for gaps; use
    [question-templates.md](references/question-templates.md):
    - period, filter and which date column defines it;
    - tables or codes the user already knows;
    - output columns, grouping and sums.
    List the remembered rules you will apply as defaults, for example
-   "order reports: status_code > 50, cancelled excluded (memory rule)".
+   "reports on example.orders use status_code = 1 only (memory rule)".
+   There is no default for cancelled or deleted rows: when a state or
+   soft-delete column exists and no rule is remembered, ask neutrally whether
+   those rows count, and save the answer with `remember kind=rule`.
 3. **Locate.** `search` for missing tables; one `describe_tables` for all
    involved tables; `relation_stats` (when available) or foreign keys for
    join paths. Follow the auspex-explore skill for unknown areas.
-4. **Resolve codes.** For each ambiguous state (for example "damaged" vs
-   "delivery problem"), find the lookup table, read its code list with one
-   small query, propose the codes and confirm them with the user. Save the
-   confirmed mapping with `remember kind=rule`.
-   A code or status column without a foreign key (for example
-   `damageddeliverystatuscode`): split its name into word parts (`damaged`,
-   `delivery`, `status`, `code`) and run ONE `search` with a %-joined pattern of
-   the distinctive parts (`damaged%status%code`), plus variants with the
-   table's family prefix (`acme%status`); confirm by reading the code list
-   with one query. Example: `damageddeliverystatuscode` ->
-   `import_acme_damaged_items_status_codes`. Only if that fails, try
-   `search` with `searchSource` for function bodies that decode the code, and
-   only then ask the user.
+4. **Resolve codes.** For each ambiguous state (for example "failed" vs
+   "pending retry"), read the code list from its source (lookup table, enum
+   type, CHECK constraint or column comment) with one small query, propose
+   the codes and confirm them with the user. Save the confirmed mapping with
+   `remember kind=rule`. For a code or status column without a foreign key,
+   follow the code-column lookup step of the auspex-explore skill.
 5. **Measure risk.** One `profile_tables` call with `parent` = the report's
    driving table and `window` = the period: fan-out of every child, fill rate
    of join and filter columns.
 6. **Write SQL.** CTE per source, children aggregated to the parent key,
    explicit column list, filters from step 2, NULL handling stated,
-   cancelled rows excluded per rule. Checklist:
+   rows in excluded states removed per rule. Checklist:
    [correctness-checks.md](references/correctness-checks.md).
 7. **Explain.** `explain` without analyze. Check for sequential scans on
    large tables and row estimates that explode after a join. Narrow by
@@ -95,27 +92,29 @@ sql-data-reconciliation (totals do not match) or sql-query-reviewer skills.
 ## Report query as a file
 
 When the user wants the report SQL in their scripts folder, ask where (same
-proposal as below, for example `<Topic>_DB_Scripts_V1/raporlar/NN_name.sql`)
+proposal as below: `<root>/<folder>/<file>.sql` in the user's own convention)
 and pass `root`, `folder` and `fileName` to `save_report` after the yes.
 It writes a new file each time, never overwriting one.
 
 ## Change scripts (only when the user asks for a fix)
 
 A report never changes data. When the user asks for a data fix from its
-findings, write it with the postgres-safe-dml flow (BEGIN, DEFINE, PROCESS,
-MATCH, CORRECT or FAIL, ROLLBACK) and save it with `save_execute_script`.
+findings, write it as `BEGIN ... ROLLBACK` (enforced, with no `COMMIT` and a
+`WHERE` on every `UPDATE`/`DELETE`) in the recommended step structure
+DEFINE, PROCESS, MATCH, CORRECT or FAIL, and save it with
+`save_execute_script`.
 Write its title, purpose and comments in the `notesLanguage` from `list_profiles` (ask once if null); step markers and SQL stay as written:
 
-- **Ask where first, never invent it.** Propose
-  `<root>/<Topic>_DB_Scripts_V1/NN_name[_ONIZLEME].sql` with a root from
-  `list_profiles` (`scriptRoots`) and the user's numbering: `00` preflight
-  (read-only), `01`, `02` ... preview steps (`_ONIZLEME`), then a
-  `NN_Commit_Sonrasi_Kontrol.sql` step. Save with `root`, `folder` and
-  `fileName` only after the user's yes. An existing file is never
-  overwritten; on that error propose the next number.
-- **README summary in the answer** (not as a file unless asked): one line
-  per file, run order, which result tables to send back.
-- **Judge returned results:** every MATCH item YES or NO with the figures
+- **Ask where first, never invent it.** Propose a location from
+  `scriptRoots` in `list_profiles`: `<root>/<folder>/<file>.sql`, following
+  the folder and numbering convention the user already uses (look at the
+  existing files first). If there is none, propose a short descriptive file
+  name. Never invent a convention. List every file name. Save with `root`,
+  `folder` and `fileName` only after the user's yes. An existing file is
+  never overwritten; on that error propose a new name.
+- **Summary in the answer** (not as a file unless asked): one line per
+  file, run order, which result tables to send back.
+- **Judge returned results:** every verification check YES or NO with the figures
   as evidence; missing or unclear output is NO, with what is missing.
 
 ## Answer shape

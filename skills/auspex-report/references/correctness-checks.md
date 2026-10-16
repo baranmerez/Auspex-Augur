@@ -13,16 +13,16 @@ description.
 
 ```sql
 WITH inv AS (
-  SELECT f.order_id, sum(f.tutar) AS fatura_tutar, count(*) AS fatura_adet
-  FROM sales.fatura f
-  WHERE f.tarih >= $1 AND f.tarih < $2
-  GROUP BY f.order_id
+  SELECT i.order_id, sum(i.amount) AS invoice_amount, count(*) AS invoice_count
+  FROM test.invoices i
+  WHERE i.created_at >= $1 AND i.created_at < $2
+  GROUP BY i.order_id
 )
-SELECT s.bolge_id, sum(s.tutar) AS order_amount, sum(inv.fatura_tutar) AS fatura_tutar
-FROM sales.orders s
-LEFT JOIN inv ON inv.order_id = s.id
-WHERE s.tarih >= $1 AND s.tarih < $2
-GROUP BY s.bolge_id;
+SELECT o.customer_id, sum(o.amount) AS order_amount, sum(inv.invoice_amount) AS invoice_amount
+FROM example.orders o
+LEFT JOIN inv ON inv.order_id = o.order_id
+WHERE o.created_at >= $1 AND o.created_at < $2
+GROUP BY o.customer_id;
 ```
 
 - Two children of the same parent are never joined to each other directly
@@ -49,15 +49,17 @@ GROUP BY s.bolge_id;
 
 ## Cancelled, deleted, test rows
 
-- Apply the remembered rules (status thresholds, cancelled flags, soft-delete
-  columns such as `silindi`, `aktif`, `deleted_at`).
-- When no rule exists and such a column is present, ask in the question
-  round (proposed default: exclude) and save the answer as a rule.
+- Apply the remembered rules (status codes, cancelled flags, soft-delete
+  columns such as `is_deleted`, `is_active`, `deleted_at`).
+- There is no default. When such a column is present and no rule exists,
+  ask neutrally in the question round whether those rows count, and save the
+  answer as a rule.
 
 ## Status codes
 
-- Read the lookup table's code and name columns with one small query.
-- Similar words are not the same state (damaged vs delivery problem vs
+- Read the code list from its source (lookup table, enum type, CHECK
+  constraint or column comment) with one small query.
+- Similar words are not the same state (failed vs pending retry vs
   returned): propose the mapping, confirm it, then filter.
 - Filter on codes, not names; names change.
 
