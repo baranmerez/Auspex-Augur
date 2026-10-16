@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import { roleGraph } from './fixtures/roleGraph.js';
+import { roleGraph, roleTables } from './fixtures/roleGraph.js';
 
 // Runs the roles block of src/viewer.html (Reference / Dependent ranking used
 // by the Graph, ER diagram and Flow views) in isolation over the fixture graph.
@@ -12,7 +12,7 @@ const block = page.match(/\/\/ roles:start[\s\S]*?\/\/ roles:end/)?.[0];
 function loadRoles() {
   assert.ok(block, 'roles block found in viewer.html');
   const context = vm.createContext({});
-  vm.runInContext(`${block}\nthis.roleGroups = roleGroups; this.roleColor = roleColor; this.flowWidth = flowWidth; this.roleTop = roleTop; this.roleShown = roleShown; this.roleLimitIn = roleLimitIn; this.roleToggled = roleToggled;`, context);
+  vm.runInContext(`${block}\nthis.roleGroups = roleGroups; this.roleColor = roleColor; this.flowWidth = flowWidth; this.roleTop = roleTop; this.roleShown = roleShown; this.roleLimitIn = roleLimitIn; this.roleToggled = roleToggled; this.tableOf = tableOf; this.joinLabel = joinLabel; this.joinLabels = joinLabels; this.centerColumns = centerColumns;`, context);
   return context;
 }
 
@@ -118,4 +118,52 @@ test('top 5 / top 10 toggles are independent per view and side', () => {
   assert.equal(roleLimitIn({ ref: true, dep: true }, 'er', 'ref'), roleShown);
   assert.equal(roleLimitIn(true, 'er', 'ref'), roleShown);
   assert.equal(roleLimitIn(roleToggled(true, 'er', 'dep'), 'er', 'dep'), roleTop);
+});
+
+test('join labels name the referencing column, then the referenced table and column', () => {
+  const { roleGroups, joinLabel, joinLabels, tableOf } = loadRoles();
+  assert.equal(tableOf('db1.siparis'), 'siparis');
+  assert.equal(tableOf('siparis'), 'siparis');
+  const g = roleGroups(roleGraph(), 'db1.siparis');
+  const satir = g.dep.find(x => x.id === 'db1.siparis_satir');
+  assert.deepEqual(Array.from(joinLabels(satir, 'db1.siparis')), ['siparis_id → siparis.id']);
+  const cari = g.ref.find(x => x.id === 'db1.cr_cari');
+  assert.deepEqual(Array.from(joinLabels(cari, 'db1.siparis')), ['cari_id → cr_cari.id']);
+  // The brief's examples and a composite key.
+  assert.equal(joinLabel('dep', { centerCols: ['siparisid'], nbCols: ['siparisid'] }, 'db1.siparis', 'db1.siparis_detay'), 'siparisid → siparis.siparisid');
+  assert.equal(joinLabel('ref', { centerCols: ['musterikartkodu'], nbCols: ['hesapkartkodu'] }, 'db1.siparis', 'db1.hesap_kartlari'), 'musterikartkodu → hesap_kartlari.hesapkartkodu');
+  assert.equal(joinLabel('ref', { centerCols: ['a', 'b'], nbCols: ['x', 'y'] }, 'db1.c', 'db1.n'), '(a, b) → n.(x, y)');
+  assert.equal(joinLabel('dep', { centerCols: [], nbCols: [] }, 'db1.c', 'db1.n'), '? → c.?');
+});
+
+test('depth 2: join labels point at the opened dependent, not the center', () => {
+  const { roleGroups, joinLabels } = loadRoles();
+  const g = roleGroups(roleGraph(), 'db1.siparis_satir');
+  const teslim = g.dep.find(x => x.id === 'db1.siparis_satir_teslim');
+  assert.deepEqual(Array.from(joinLabels(teslim, 'db1.siparis_satir')), ['siparis_satir_id → siparis_satir.id']);
+});
+
+test('center columns: PK, FK, referenced, used and noted columns are tagged', () => {
+  const { centerColumns } = loadRoles();
+  const data = roleGraph();
+  data.notes.push({ id: 1, kind: 'rule', status: 'active', schema: 'db1', table: 'siparis', column: 'alan_01', text: 'x' },
+    { id: 2, kind: 'rule', status: 'archived', schema: 'db1', table: 'siparis', column: 'alan_02', text: 'y' });
+  const rec = roleTables(data).find(x => x.table === 'siparis');
+  rec.usedColumns = { alan_03: { count: 2 } };
+  const c = centerColumns(data, 'db1.siparis', rec);
+  assert.deepEqual(Array.from(c.pk), ['id']);
+  assert.equal(c.cols.length, rec.columns.length);
+  assert.equal(c.notes.length, 1, 'active notes only');
+  assert.deepEqual(Array.from(c.tagsOf('id')), ['PK']);
+  assert.deepEqual(Array.from(c.tagsOf('cari_id')), ['FK']);
+  assert.deepEqual(Array.from(c.tagsOf('ana_siparis_id')), ['FK'], 'self reference');
+  assert.deepEqual(Array.from(c.tagsOf('alan_03')), ['U']);
+  assert.deepEqual(Array.from(c.tagsOf('alan_01')), ['N']);
+  assert.deepEqual(Array.from(c.tagsOf('alan_02')), []);
+  assert.ok(c.keyCols.every(k => c.tagsOf(k.name).length));
+  // Without a record the columns come from the relations alone, without types.
+  const bare = centerColumns(data, 'db1.siparis', null);
+  assert.deepEqual(Array.from(bare.pk), []);
+  assert.ok(bare.cols.some(x => x.name === 'cari_id') && bare.cols.every(x => x.type === ''));
+  assert.ok(bare.cols.some(x => x.name === 'id'), 'referenced by its dependents');
 });
