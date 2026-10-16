@@ -33,7 +33,7 @@ export function slugify(name) {
   return slug;
 }
 
-// One folder level (db, schema or category): readable, Turkish allowed, no path tricks.
+// One folder level (db, schema or category): readable, Unicode letters allowed, no path tricks.
 export function validateSegment(value, label) {
   const v = String(value || '').normalize('NFC').trim();
   if (!v) throw new LibraryError(`${label} is required.`);
@@ -337,7 +337,7 @@ export class Library {
       ...(external ? [commentLines('Script file    : ', external.file)] : []),
       `-- Written        : ${new Date().toISOString()} by an AI agent via Auspex`,
       '-- NOT executed by Auspex. Run it yourself with a role that has the',
-      '-- required privileges, review the MATCH results, then replace the final',
+      '-- required privileges, review the verification results, then replace the final',
       '-- ROLLBACK with COMMIT only if every check is correct.',
       ...(lint.functionBodies ? [functionBodyNote] : []),
       '-- =====================================================================',
@@ -369,7 +369,7 @@ export class Library {
 }
 
 // ---------- script roots ----------
-// One folder or file name inside a script root: letters (Turkish included),
+// One folder or file name inside a script root: Unicode letters,
 // digits, _ - and . only, so it cannot hold a separator, a drive, a space
 // or a parent reference.
 const scriptNamePattern = /^[\p{L}\p{N}_.-]+$/u;
@@ -389,7 +389,7 @@ export function validateScriptName(value, label, { sqlFile = false } = {}) {
 }
 
 // A folder inside a script root: one or two names joined by "/", for example
-// Orders_DB_Scripts_V1 or Orders_DB_Scripts_V1/reports.
+// example or example/reports. Two levels is a safety limit, not a required layout.
 const maxFolderLevels = 2;
 
 export function validateScriptFolder(value) {
@@ -436,17 +436,22 @@ function walkScriptFolder(t, create) {
   return { path: current, complete: true };
 }
 
-// Next free script number in a folder: one more than the highest NN_ prefix.
+// Next free script number in a folder: one more than the highest NN_ prefix,
+// or null when no file in the folder starts with a number.
 function nextScriptNumber(dir) {
   let names = [];
   try { names = fs.readdirSync(dir); } catch { /* folder not created yet */ }
   const numbers = names.map(f => /^(\d+)_/.exec(f)?.[1]).filter(Boolean);
+  if (!numbers.length) return null;
   const width = Math.max(2, ...numbers.map(n => n.length));
-  return String(numbers.length ? Math.max(...numbers.map(Number)) + 1 : 0).padStart(width, '0');
+  return String(Math.max(...numbers.map(Number)) + 1).padStart(width, '0');
 }
 
+// Suggests a number only when the folder already numbers its files.
 function existsMessage(file, dir) {
-  return `Script file already exists: ${file}. Auspex never overwrites it; choose a new file name, for example starting with ${nextScriptNumber(dir)}_.`;
+  const next = nextScriptNumber(dir);
+  const hint = next ? `choose a new file name, for example starting with ${next}_` : 'choose a new file name';
+  return `Script file already exists: ${file}. Auspex never overwrites it; ${hint}.`;
 }
 
 // Checks a script-root target without writing anything.
