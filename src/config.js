@@ -14,11 +14,15 @@ import path from 'node:path';
 // elsewhere); node-postgres reads it automatically when no password is given.
 // The same file may hold a top-level "scriptRoots" object (name -> absolute
 // directory) for change scripts; AUSPEX_SCRIPT_ROOT_<NAME> adds one from env,
-// and an optional top-level "notesLanguage" (language code such as tr or pt-BR).
+// an optional top-level "notesLanguage" (language code such as tr or pt-BR), and
+// an optional top-level "auspexRoot" (this checkout, for the desktop app's
+// approve/revoke through src/stageCli.js).
 const profilePrefix = 'AUSPEX_DB_';
 const scriptRootPrefix = 'AUSPEX_SCRIPT_ROOT_';
 export const scriptRootsKey = 'scriptRoots';
 export const notesLanguageKey = 'notesLanguage';
+export const auspexRootKey = 'auspexRoot';
+const settingKeys = new Set([scriptRootsKey, notesLanguageKey, auspexRootKey]);
 const notesLanguagePattern = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/i;
 const profileNamePattern = /^[a-z][a-z0-9_-]{0,39}$/;
 const profileKeys = new Set(['url', 'description', 'maxTimeoutSeconds', 'maxQueriesPerMinute']);
@@ -121,12 +125,12 @@ function readProfilesData(file) {
 
 // Reads and validates the profiles file. A missing file means no file profiles;
 // any other problem is an error so a broken file is never silently ignored.
-// The "scriptRoots" and "notesLanguage" keys are not profiles.
+// The "scriptRoots", "notesLanguage" and "auspexRoot" keys are not profiles.
 export function readProfilesFile(file) {
   const data = readProfilesData(file);
   if (!data) return [];
   const seen = new Set();
-  return Object.entries(data).filter(([rawName]) => rawName !== scriptRootsKey && rawName !== notesLanguageKey).map(([rawName, profile]) => {
+  return Object.entries(data).filter(([rawName]) => !settingKeys.has(rawName)).map(([rawName, profile]) => {
     const name = rawName.toLowerCase();
     const where = `profile "${rawName}" in ${file}`;
     if (!profileNamePattern.test(name)) throw new Error(`Invalid ${where}: names use a-z, 0-9, - and _ and start with a letter.`);
@@ -176,6 +180,23 @@ export function readNotesLanguage(file) {
     throw new Error(`Invalid "${notesLanguageKey}" in ${file}: expected a language code such as tr, en or pt-BR.`);
   }
   return value;
+}
+
+// The Auspex checkout the desktop app runs src/stageCli.js from, or null when
+// unset: an absolute, existing directory that holds src/stageCli.js.
+export function readAuspexRoot(file) {
+  const value = readProfilesData(file)?.[auspexRootKey];
+  if (value === undefined) return null;
+  const where = `"${auspexRootKey}" in ${file}`;
+  if (typeof value !== 'string' || !value.trim()) throw new Error(`Invalid ${where}: expected an absolute directory path.`);
+  if (/[ -]/.test(value)) throw new Error(`Invalid ${where}: the path contains control characters.`);
+  if (!path.isAbsolute(value)) throw new Error(`Invalid ${where}: the path must be absolute.`);
+  const dir = path.resolve(value);
+  if (!fs.statSync(dir, { throwIfNoEntry: false })?.isDirectory()) throw new Error(`Invalid ${where}: the directory does not exist.`);
+  if (!fs.statSync(path.join(dir, 'src', 'stageCli.js'), { throwIfNoEntry: false })?.isFile()) {
+    throw new Error(`Invalid ${where}: the directory has no src/stageCli.js (expected the Auspex checkout).`);
+  }
+  return dir;
 }
 
 // Script roots from the profiles file and from AUSPEX_SCRIPT_ROOT_<NAME>:
@@ -261,6 +282,7 @@ export function loadConfig(env = process.env) {
     profilesFile,
     scriptRoots: readScriptRoots(profilesFile, env),
     notesLanguage: readNotesLanguage(profilesFile),
+    auspexRoot: readAuspexRoot(profilesFile),
     maxRows: intFromEnv(env, 'AUSPEX_MAX_ROWS', 500, 1, 10000),
     exportMaxRows: intFromEnv(env, 'AUSPEX_EXPORT_MAX_ROWS', 100000, 1, 5000000),
     // Whole-export budget on top of the per-statement timeout.

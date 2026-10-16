@@ -258,3 +258,34 @@ for (const [name, value] of [['a number', 42], ['an empty string', ''], ['free t
     assert.throws(() => loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: file }), /Invalid "notesLanguage"/);
   });
 }
+
+test('auspexRoot is read from the profiles file, null when absent, and is not a profile', () => {
+  const root = path.join(dir, 'auspex-checkout');
+  fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src', 'stageCli.js'), '');
+  const file = profilesFile({ local: { url: 'postgresql://Auspex@localhost/postgres' }, auspexRoot: `${root}${path.sep}` });
+  const config = loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: file });
+  assert.equal(config.auspexRoot, root);
+  assert.deepEqual([...config.profiles.keys()], ['local']);
+  assert.deepEqual(readProfilesFile(file).map(p => p.name), ['local']);
+  assert.equal(loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: path.join(dir, 'none.json') }).auspexRoot, null);
+});
+
+{
+  const noCli = path.join(dir, 'not-a-checkout');
+  fs.mkdirSync(noCli, { recursive: true });
+  const cases = [
+    ['a number', 42, /absolute directory path/],
+    ['an empty string', '', /absolute directory path/],
+    ['a relative path', 'auspex', /must be absolute/],
+    ['a control character', path.join(dir, 'a\nb'), /control characters/],
+    ['a missing directory', path.join(dir, 'missing-root'), /does not exist/],
+    ['a directory without src/stageCli.js', noCli, /no src\/stageCli\.js/],
+  ];
+  for (const [name, value, message] of cases) {
+    test(`auspexRoot rejects ${name}`, () => {
+      const file = profilesFile({ auspexRoot: value });
+      assert.throws(() => loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: file }), message);
+    });
+  }
+}
