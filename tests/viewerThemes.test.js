@@ -81,21 +81,21 @@ test('ready themes: light and dark are built in, six in all', () => {
 test('custom themes: validated records, one per name, export and import round trip', () => {
   const { themeRecord, themeUpsert, themeExport, themeImport, themeSpecOf, themeIdOf } = load();
   assert.equal(themeRecord({ name: '  ', bg: '#000', accent: '#fff' }), null);
-  assert.equal(themeRecord({ name: 'Mother', bg: 'nope', accent: '#fff' }), null);
-  const rec = plain(themeRecord({ name: ' Nostromo night ', bg: '#000', accent: '#FFF', contrast: 'high', extra: 'dropped' }));
-  assert.deepEqual(rec, { id: themeIdOf('Nostromo night'), name: 'Nostromo night', bg: '#000000', accent: '#ffffff', contrast: 'high' });
+  assert.equal(themeRecord({ name: 'Example', bg: 'nope', accent: '#fff' }), null);
+  const rec = plain(themeRecord({ name: ' Example night ', bg: '#000', accent: '#FFF', contrast: 'high', extra: 'dropped' }));
+  assert.deepEqual(rec, { id: themeIdOf('Example night'), name: 'Example night', bg: '#000000', accent: '#ffffff', contrast: 'high' });
   let list = themeUpsert([], rec);
-  list = themeUpsert(list, { name: 'NOSTROMO NIGHT', bg: '#111111', accent: '#ffffff' });
+  list = themeUpsert(list, { name: 'EXAMPLE NIGHT', bg: '#111111', accent: '#ffffff' });
   assert.equal(list.length, 1);
   assert.equal(list[0].bg, '#111111');
-  assert.equal(themeSpecOf(list[0].id, list).name, 'NOSTROMO NIGHT');
-  list = themeUpsert(list, { name: 'Sulaco day', bg: '#fafafa', accent: '#2a78d6' });
+  assert.equal(themeSpecOf(list[0].id, list).name, 'EXAMPLE NIGHT');
+  list = themeUpsert(list, { name: 'Test day', bg: '#fafafa', accent: '#2a78d6' });
   const text = themeExport(list);
   const back = themeImport(text, []);
   assert.equal(back.added, 2);
   assert.equal(back.skipped, 0);
   assert.deepEqual(plain(back.list), plain(list));
-  const mixed = themeImport(JSON.stringify([{ name: 'Mother', bg: '#123', accent: '#abc' }, { name: 'bad', bg: 'x' }, 7]), list);
+  const mixed = themeImport(JSON.stringify([{ name: 'Example', bg: '#123', accent: '#abc' }, { name: 'bad', bg: 'x' }, 7]), list);
   assert.deepEqual([mixed.added, mixed.skipped, mixed.list.length], [1, 2, 3]);
   assert.equal(themeImport('{not json', list).error, 'not valid JSON');
   assert.equal(themeImport(JSON.stringify({ name: 'Single', bg: '#000', accent: '#fff' }), []).added, 1);
