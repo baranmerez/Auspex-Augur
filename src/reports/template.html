@@ -147,9 +147,16 @@
   .arrow { color: var(--text-3); padding: 0 6px; }
 
   pre.sql { margin: 0; padding: 14px 16px; background: var(--code); font: 12.5px/1.6 var(--mono); white-space: pre-wrap; word-break: break-word; overflow: auto; }
-  .kw { color: var(--accent-ink); font-weight: 600; }
-  .str { color: var(--good-ink); }
-  .cm { color: var(--text-3); font-style: italic; }
+  .sq-kw { color: var(--accent-ink); font-weight: 600; }
+  .sq-fn { color: color-mix(in oklab, var(--accent-ink) 55%, var(--critical)); }
+  .sq-id { color: color-mix(in oklab, var(--text) 80%, var(--accent)); }
+  .sq-str { color: var(--good-ink); }
+  .sq-num { color: var(--warn-ink); }
+  .sq-param { color: var(--critical); font-weight: 600; }
+  .sq-dq { color: var(--warn-ink); font-weight: 600; }
+  .sq-op { color: var(--text-2); }
+  .sq-cm { color: var(--text-3); font-style: italic; }
+  .sq-step { color: var(--accent-ink); font-weight: 700; background: var(--accent-soft); border-radius: 4px; }
   .btn { border: 1px solid var(--line); background: var(--surface); border-radius: 7px; padding: 4px 10px; font-size: 12px; color: var(--text-2); }
   .btn:hover { background: var(--surface-2); color: var(--text); }
 
@@ -371,22 +378,169 @@ function warnText(w) {
   }
 }
 
-// ---------- tiny SQL highlighter ----------
-const KW = /\b(select|from|where|join|left|right|full|inner|outer|cross|lateral|on|and|or|not|in|exists|group|by|order|having|limit|offset|with|as|union|all|distinct|case|when|then|else|end|is|null|between|like|ilike|asc|desc|over|partition|filter|values|table|using|coalesce|count|sum|avg|min|max|true|false)\b/gi;
-function highlight(sql) {
-  const out = [];
-  const re = /(--[^\n]*|\/\*[\s\S]*?\*\/)|('(?:[^']|'')*')|([^'\-/]+|[\s\S])/g;
-  for (const m of sql.matchAll(re)) {
-    if (m[1]) out.push(h('span', { class: 'cm' }, m[1]));
-    else if (m[2]) out.push(h('span', { class: 'str' }, m[2]));
-    else {
-      let last = 0; const s = m[0];
-      for (const k of s.matchAll(KW)) { out.push(s.slice(last, k.index)); out.push(h('span', { class: 'kw' }, k[0])); last = k.index + k[0].length; }
-      out.push(s.slice(last));
+// ---------- SQL highlighter ----------
+// sql-highlight:start (identical in src/viewer.html and src/reports/template.html; tests/sqlHighlight.test.js)
+// PostgreSQL tokenizer for highlighting. sqlTokens() is pure: it returns
+// { type, v } tokens whose texts join back to the input exactly. Types: kw,
+// fn, id, str, num, cm, step (a script step marker comment: BEGIN, DEFINE,
+// PROCESS, MATCH, CORRECT/FAIL, ROLLBACK), op, param ($1, :name), dq (a
+// dollar quote delimiter), ws and plain. A dollar-quoted body right after AS
+// or DO is a function body and is tokenized as SQL; any other is a string.
+// The renderers only create elements and set textContent, never HTML.
+const sqlKeywords = new Set(('select from where join left right full inner outer cross lateral natural on using and or not in exists any some all ' +
+  'group by order having limit offset fetch first next rows row only with recursive as union intersect except distinct case when then else end ' +
+  'is null isnull notnull between like ilike similar asc desc nulls last over partition window filter within values table default ' +
+  'insert into update set delete returning merge matched truncate create alter drop rename add column constraint primary key foreign references ' +
+  'unique check index concurrently if replace view materialized function procedure trigger returns language schema sequence ' +
+  'begin commit rollback savepoint release transaction start isolation level read write committed uncommitted serializable repeatable ' +
+  'lock share exclusive mode nowait skip locked do declare raise notice exception perform execute return loop for foreach while exit ' +
+  'continue elsif cascade restrict temp temporary grant revoke to analyze explain verbose vacuum true false interval cast collate array ' +
+  'of no action deferrable initially deferred immediate generated always identity stored local session reset show').split(' '));
+const sqlFunctions = new Set(('count sum avg min max coalesce nullif greatest least now ' +
+  'string_agg array_agg json_agg jsonb_agg json_build_object jsonb_build_object to_json to_jsonb row_number rank dense_rank ntile lag lead ' +
+  'first_value last_value percentile_cont percentile_disc round trunc date_trunc date_part extract age to_char to_date to_timestamp to_number ' +
+  'upper lower initcap trim btrim ltrim rtrim length char_length substring substr position strpos replace concat concat_ws format left right lpad rpad ' +
+  'split_part regexp_replace regexp_match regexp_matches abs floor ceil ceiling power sqrt mod random generate_series unnest array_length ' +
+  'cardinality md5 encode decode pg_typeof bool_and bool_or every').split(' '));
+// Functions called without parentheses.
+const sqlBare = new Set(['current_date', 'current_time', 'current_timestamp', 'localtime', 'localtimestamp', 'current_user', 'session_user']);
+// A word before "(" that names a table or a column list, not a call.
+const sqlNotCall = new Set(['into', 'table', 'references', 'on', 'view', 'with', 'index', 'type', 'only', 'update', 'from', 'join']);
+const sqlStep = /^--[\s=#*~+\-–—]*(?:(?:[Ss][Tt][Ee][Pp]\s*)?\d+\s*[.):\-–—]?\s*)?(?:BEGIN|DEFINE|PROCESS|MATCH|CORRECT|FAIL|ROLLBACK)(?=\s*(?:$|[:=(/|\-–—]|[Oo][Rr]\b|[Aa][Nn][Dd]\b))/;
+const sqlRe = {
+  ws: /\s+/y,
+  word: /[A-Za-z_À-￿][\w$À-￿]*(?:\.(?:[A-Za-z_À-￿][\w$À-￿]*|"(?:[^"]|"")*"|\*))*/y,
+  num: /(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?/y,
+  dq: /\$(?:[A-Za-z_À-￿][\wÀ-￿]*)?\$/y,
+  param: /\$\d+/y,
+  named: /:(?:[A-Za-z_][\w]*|'[^'\n]*'|"[^"\n]*")/y,
+  op: /::|<=|>=|<>|!=|\|\||->>|->|#>>|#>|@>|<@|&&|[-+*/%<>=~!@#^&|?,;()[\]{}.:]/y,
+};
+const sqlWordChar = c => !!c && /[\w$À-￿]/.test(c);
+function sqlTokens(sql, depth = 0) {
+  const s = String(sql ?? ''), n = s.length, out = [];
+  let i = 0, last = '';
+  const match = re => { re.lastIndex = i; const m = re.exec(s); return m ? m[0] : null; };
+  const push = (type, v) => {
+    const p = out[out.length - 1];
+    if (p && p.type === type && (type === 'ws' || type === 'plain')) p.v += v; else out.push({ type, v });
+    i += v.length;
+    if (type !== 'ws' && type !== 'cm' && type !== 'step') last = type === 'kw' ? v.toLowerCase() : type;
+  };
+  const nextChar = from => { let j = from; while (j < n && /\s/.test(s[j])) j++; return s[j]; };
+  while (i < n) {
+    const c = s[i], d = s[i + 1], afterWord = i > 0 && sqlWordChar(s[i - 1]);
+    let m;
+    if (c === '-' && d === '-') {
+      let j = s.indexOf('\n', i); if (j < 0) j = n;
+      if (s[j - 1] === '\r') j--;
+      const v = s.slice(i, j);
+      let k = i - 1; while (k >= 0 && (s[k] === ' ' || s[k] === '\t')) k--;
+      push((k < 0 || s[k] === '\n') && sqlStep.test(v) ? 'step' : 'cm', v);
+    } else if (c === '/' && d === '*') {
+      let open = 1, j = i + 2;
+      while (j < n && open) {
+        if (s[j] === '/' && s[j + 1] === '*') { open++; j += 2; } else if (s[j] === '*' && s[j + 1] === '/') { open--; j += 2; } else j++;
+      }
+      push('cm', s.slice(i, Math.min(j, n)));
+    } else if (c === "'" || ((c === 'E' || c === 'e') && d === "'" && !afterWord)) {
+      const esc = c !== "'";
+      let j = i + (esc ? 2 : 1);
+      while (j < n) {
+        if (esc && s[j] === '\\') { j += 2; continue; }
+        if (s[j] === "'") { if (s[j + 1] === "'") { j += 2; continue; } j++; break; }
+        j++;
+      }
+      push('str', s.slice(i, Math.min(j, n)));
+    } else if (c === '"') {
+      let j = i + 1;
+      while (j < n) { if (s[j] === '"') { if (s[j + 1] === '"') { j += 2; continue; } j++; break; } j++; }
+      push('id', s.slice(i, Math.min(j, n)));
+    } else if (c === '$' && (m = match(sqlRe.param))) {
+      push('param', m);
+    } else if (c === '$' && !afterWord && (m = match(sqlRe.dq))) {
+      const asCode = (last === 'as' || last === 'do') && depth < 2;
+      const end = s.indexOf(m, i + m.length);
+      const body = s.slice(i + m.length, end < 0 ? n : end);
+      push('dq', m);
+      if (asCode) { for (const tk of sqlTokens(body, depth + 1)) out.push(tk); i += body.length; } else if (body) push('str', body);
+      if (end >= 0) push('dq', m);
+      last = 'dq';
+    } else if (c === ':' && d !== ':' && s[i - 1] !== ':' && (m = match(sqlRe.named))) {
+      push('param', m);
+    } else if (/\d/.test(c) || (c === '.' && /\d/.test(d || ''))) {
+      m = afterWord ? null : match(sqlRe.num);
+      push(m ? 'num' : 'plain', m || c);
+    } else if ((m = match(sqlRe.word))) {
+      const lower = m.toLowerCase(), call = nextChar(i + m.length) === '(';
+      const simple = !m.includes('.');
+      const type = simple && (call ? sqlFunctions.has(lower) : sqlBare.has(lower)) ? 'fn'
+        : simple && sqlKeywords.has(lower) ? 'kw'
+        : call && !sqlNotCall.has(last) ? 'fn' : 'id';
+      push(type, m);
+    } else if ((m = match(sqlRe.ws))) {
+      push('ws', m);
+    } else if ((m = match(sqlRe.op))) {
+      push('op', m);
+    } else {
+      push('plain', c);
     }
   }
   return out;
 }
+// Tokens split into lines (no line breaks inside); "\r\n" counts as one break.
+function sqlLines(tokens) {
+  const lines = [[]];
+  for (const tk of tokens) {
+    const parts = tk.v.split('\n');
+    parts.forEach((part, k) => {
+      if (k > 0) lines.push([]);
+      const v = k < parts.length - 1 && part.endsWith('\r') ? part.slice(0, -1) : part;
+      if (v) lines[lines.length - 1].push({ type: tk.type, v });
+    });
+  }
+  return lines;
+}
+// Width of a line's leading whitespace in characters (a tab counts 4).
+function sqlIndent(line) {
+  let w = 0;
+  for (const tk of line) {
+    if (tk.type !== 'ws' && tk.type !== 'plain') break;
+    const lead = /^[ \t]*/.exec(tk.v)[0];
+    for (const ch of lead) w += ch === '\t' ? 4 : 1;
+    if (lead.length < tk.v.length) break;
+  }
+  return w;
+}
+// A step header line: a step marker comment, or a transaction statement
+// alone on its line (BEGIN; COMMIT; ROLLBACK; BEGIN TRANSACTION READ ONLY;).
+function sqlStepLine(line) {
+  const sig = line.filter(tk => tk.type !== 'ws');
+  if (sig.some(tk => tk.type === 'step')) return true;
+  return sig.length > 0 && sig[0].type === 'kw' && /^(begin|commit|rollback|start)$/i.test(sig[0].v)
+    && sig.every(tk => tk.type === 'kw' || (tk.type === 'op' && tk.v === ';'));
+}
+function sqlNode(tk) {
+  if (tk.type === 'ws' || tk.type === 'plain') return document.createTextNode(tk.v);
+  const e = document.createElement('span');
+  e.className = 'sq-' + tk.type;
+  e.textContent = tk.v;
+  return e;
+}
+// Flat highlighted nodes for a <pre>.
+const sqlHighlight = sql => sqlTokens(sql).map(sqlNode);
+// One block per line, for soft wrap with a hanging indent (CSS var --ind).
+function sqlLineNodes(sql) {
+  return sqlLines(sqlTokens(sql)).map(line => {
+    const e = document.createElement('div');
+    e.className = 'sq-line' + (sqlStepLine(line) ? ' sq-step-line' : '');
+    e.style.setProperty('--ind', String(Math.min(sqlIndent(line), 40)));
+    e.append(...line.map(sqlNode));
+    return e;
+  });
+}
+// sql-highlight:end
+const highlight = sqlHighlight;
 
 // ---------- line diff (LCS) ----------
 function diffLines(a, b) {
