@@ -140,7 +140,9 @@ flowchart LR
      error — also when the SQL guard rejects the query.
    - Library and memory changes (`save_report`, `approve_report`,
      `save_execute_script`, `render_reports`, `share_report`, `remember`): which report or
-     note, the SQL hash and version or note id and status, and the error.
+     note, the SQL hash and version or note id and status, and the error;
+     for a report or script saved into a script root also the root, folder
+     and file name and the written paths.
      The SQL text, note text, evidence and reasons are not logged.
    - Not logged: tools that only read local files (`table_knowledge`,
      `list_reports`, `list_profiles`) and calls the MCP SDK rejects for
@@ -162,7 +164,7 @@ flowchart LR
 
 | Tool | What it does |
 |---|---|
-| 🗂️ `list_profiles` | Configured profiles (description, host, database, user, timeout limit, role check; never passwords) |
+| 🗂️ `list_profiles` | Configured profiles (description, host, database, user, timeout limit, role check; never passwords) and script roots (name and folder) |
 | 🔐 `check_profile` | Checks that a profile's database role is read-only; a role that can write blocks the profile |
 | 🔎 `search` | Tables, views, columns, functions and triggers whose name or comment matches a text, across all schemas, in one statement; with estimated rows and privileges; optionally function source text too (`searchSource`) |
 | 📁 `list_schemas` | Non-system schemas with owner, relation count, usage privilege, comment |
@@ -175,12 +177,12 @@ flowchart LR
 | ▶️ `query` | One read-only statement, max `AUSPEX_MAX_ROWS` rows, `$1..$n` params, optional `timeoutSeconds` |
 | 🧠 `explain` | Estimated plan by default; `analyze: true` runs `EXPLAIN (ANALYZE, BUFFERS)` read-only, under the timeout, rolled back |
 | 📤 `export_csv` | Streams the result to a new UTF-8 CSV file (`<time>_<random>_<name>.csv`, never overwrites) within a row, size and total-time budget; returns only path, columns, row count, size and `stopReason` when a limit cut it short |
-| 📝 `save_report` | Saves a read-only query as a versioned report draft in the library |
+| 📝 `save_report` | Saves a read-only query as a versioned report draft in the library; with `root`, `folder` and `fileName` also as a new `.sql` file in a configured script root |
 | 🏁 `run_report` | Runs a report: plan + timings + masked preview, history, regenerated HTML; returns a compact summary |
 | ✅ `approve_report` | Moves a draft into `SELECT/` after the user approved it |
 | 📚 `list_reports` / 🎨 `render_reports` | Lists the library; re-renders every report HTML from stored JSON |
 | 📨 `share_report` | Writes a copy of a report to send to someone: masked preview and figures only, no SQL, plan, parameters or history |
-| 🧾 `save_execute_script` | Writes a change script into `EXECUTE/` for a human to run — never executed by Auspex |
+| 🧾 `save_execute_script` | Writes a change script into `EXECUTE/` for a human to run — never executed by Auspex; with `root`, `folder` and `fileName` also as a new file in a configured script root (for example the DBeaver Scripts folder) |
 | 🧠 `table_knowledge` | What the schema memory knows about a table — key and used columns, relations, table notes, database-wide notes, recent changes, unexplored neighbors — without touching the database |
 | 📌 `remember` | Adds, confirms or archives a note: a rule the user stated, an observation backed by evidence, or an unconfirmed inference |
 
@@ -404,7 +406,7 @@ with `AUSPEX_LIBRARY_DIR`):
 library/
 ├── _drafts/<db>/<schema>/<category>/<name>.sql|.report.json|.html   work in progress
 ├── SELECT/<db>/<schema>/<category>/<name>.sql|.report.json|.html    approved reports
-└── EXECUTE/<db>/<schema>/<category>/<name>.sql                      change scripts for a human
+└── EXECUTE/<db>/<schema>/<category>/<name>.sql|.execute.json        change scripts for a human (.execute.json: file in a script root)
 ```
 
 - **The agent only writes SQL.** `run_report` executes it read-only in one
@@ -432,13 +434,53 @@ library/
   closed: no other transaction statement (`END`, `ABORT`, an early `ROLLBACK`,
   a second `BEGIN`, `PREPARE TRANSACTION`) is allowed in between, only
   `SAVEPOINT` / `RELEASE` / `ROLLBACK TO`; `DO` blocks, `CALL`, `CREATE
-  FUNCTION/PROCEDURE`, `MERGE` and psql backslash commands are rejected
-  because their bodies or branches cannot be checked; and each
-  `UPDATE`/`DELETE`, also inside a CTE, needs its own `WHERE` (one inside a
-  subquery does not count). It is a structural check, not a proof that the
-  script is right: a `WHERE` that matches everything (`WHERE true`) passes,
-  and no script is rehearsed against a database (Auspex's role cannot write).
-  A human still reviews every script.
+  PROCEDURE`, `MERGE` and psql backslash commands are rejected because their
+  bodies or branches cannot be checked; and each `UPDATE`/`DELETE`, also
+  inside a CTE, needs its own `WHERE` (one inside a subquery does not count).
+  It is a structural check, not a proof that the script is right: a `WHERE`
+  that matches everything (`WHERE true`) passes, and no script is rehearsed
+  against a database (Auspex's role cannot write). A human still reviews
+  every script.
+- **Functions and triggers in change scripts:** `CREATE [OR REPLACE]
+  FUNCTION` is allowed with `LANGUAGE plpgsql` or `LANGUAGE sql` (unquoted)
+  and exactly one dollar-quoted body (`AS $tag$ ... $tag$`, any tag);
+  `CREATE [OR REPLACE] [CONSTRAINT] TRIGGER` is allowed too, so a table
+  script and its trigger functions can be one script. The body is masked
+  like a string literal: creating a function does not run it, so its
+  statements are **not linted** (an `UPDATE` without `WHERE` inside a body
+  passes, the same statement outside is rejected). The saved file then
+  carries the header line `-- NOTE: function bodies are not linted by
+  Auspex; review them before COMMIT`. Other languages, quoted language
+  names, single-quoted or SQL-standard (`RETURN` / `BEGIN ATOMIC`) bodies
+  are rejected. Warnings: `SECURITY DEFINER`, and a later statement that
+  calls a function created in the same script (its body runs there;
+  triggers also fire on the script's own DML).
+- **Script roots:** to keep change scripts where you run them (for example
+  DBeaver's `General\Scripts`, one folder per topic), name the folder in
+  `scriptRoots` in the profiles file or as `AUSPEX_SCRIPT_ROOT_<NAME>` (see
+  Profiles file). `save_execute_script` with `root` (the name), `folder`
+  (one or two levels joined by `/`, for example `Orders_DB_Scripts_V1` or
+  `Orders_DB_Scripts_V1/reports`, created if missing) and `fileName` (ending
+  in `.sql`) writes the script to `<root>/<folder>/<fileName>` and keeps the
+  `EXECUTE/` copy as the library record (`list_reports` shows its
+  `externalFile`; the header names the file). Each folder level and the
+  file name is one name of letters (Turkish included), digits, `_`, `-` and
+  `.`, at most 80 characters, without `..`, a leading or trailing dot or a
+  Windows device name; empty levels, absolute or drive paths and a third
+  level are refused. The root must exist; Auspex never creates it. A file
+  that already exists is never overwritten (the error proposes the next
+  free `NN_` number), and a folder level that resolves outside its parent
+  through a link or junction is refused. `replace` only applies to the
+  library copy. The lint runs before anything is written. This only writes
+  files; no database is touched.
+- **Report queries in a script root:** `save_report` takes the same `root`,
+  `folder` and `fileName` and writes the read-only query (checked by the SQL
+  guard, one statement) as a new `.sql` file with a comment header, for
+  running in DBeaver or another tool; the draft lists it under
+  `externalFiles`. The change-script lint is not involved. A read-only
+  check file with several SELECTs (for example a post-commit check) goes
+  through `save_execute_script` wrapped in `BEGIN; ... ROLLBACK;`, which the
+  lint already accepts.
 - **Several Auspex processes:** two MCP clients or a script can share one
   library and memory folder. Every change runs under a lock file
   (`<library>/.lock`, `<memory>/<profile>/.lock`), so concurrent writers do
@@ -712,6 +754,23 @@ Windows; override with `AUSPEX_PROFILES_FILE`):
 | `maxTimeoutSeconds` | no | Ceiling for `timeoutSeconds` on this profile (1-3600) |
 | `maxQueriesPerMinute` | no | Query budget for this profile (1-10000); overrides `AUSPEX_MAX_QUERIES_PER_MINUTE` |
 
+An optional top-level `scriptRoots` object names folders for change scripts
+(see Report library, Script roots); it is not a profile:
+
+```json
+{
+  "scriptRoots": {
+    "dbeaver": "C:\\Users\\<you>\\DBeaver workspace\\General\\Scripts"
+  }
+}
+```
+
+Each value is an absolute directory path; a relative path, control
+characters, a URL or anything that looks like a password stops the server at
+startup. Root names follow the profile-name rules. If the folder is under
+AppData, check that saved scripts appear there: MSIX-packaged clients may
+redirect AppData writes (see Configuration).
+
 Profile names are case-insensitive and use `a-z`, `0-9`, `-`, `_`. Restart
 your MCP client session after editing (profiles are read at start). A missing
 file means no file profiles; an invalid file stops the server with a message
@@ -727,6 +786,7 @@ naming the problem.
 | `AUSPEX_HOME` | `~/.auspex` | Folder for `profiles.json`, `logs/` and `exports/` |
 | `AUSPEX_PROFILES_FILE` | `<home>/profiles.json` | Profiles file location |
 | `AUSPEX_DB_<NAME>` | none | Extra profile from the environment, e.g. `AUSPEX_DB_LOCAL`; the same name in the file and env is an error |
+| `AUSPEX_SCRIPT_ROOT_<NAME>` | none | Extra script root (absolute folder for `save_execute_script`), e.g. `AUSPEX_SCRIPT_ROOT_DBEAVER`; the same name in `scriptRoots` and env is an error |
 | `AUSPEX_MAX_ROWS` | 500 | Row cap for `query` |
 | `AUSPEX_EXPORT_MAX_ROWS` | 100000 | Row cap for `export_csv` |
 | `AUSPEX_EXPORT_MAX_BYTES` | 104857600 | Size cap for one `export_csv` file (100 MB), BOM and header included |
