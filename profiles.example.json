@@ -11,5 +11,8 @@
   "shop-test": {
     "url": "postgresql://Auspex@10.0.0.8:5432/shopdb",
     "description": "Shop test server (VPN)"
+  },
+  "scriptRoots": {
+    "dbeaver": "C:\\Users\\<you>\\DBeaver workspace\\General\\Scripts"
   }
 }
