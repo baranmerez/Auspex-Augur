@@ -350,6 +350,15 @@
   .sch-legend { position: absolute; left: 12px; bottom: 10px; display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--text-2);
     background: color-mix(in srgb, var(--surface) 90%, transparent); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; max-width: calc(100% - 70px); }
   .sch-legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .g3d-host { position: absolute; inset: 0; }
+  .g3d-host canvas { display: block; }
+  .g3d-bar { position: absolute; left: 12px; top: 10px; right: 56px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; pointer-events: none; }
+  .g3d-bar > * { pointer-events: auto; }
+  .g3d-status { font-size: 12px; color: var(--text-2); background: color-mix(in srgb, var(--surface) 90%, transparent); border: 1px solid var(--line);
+    border-radius: 8px; padding: 4px 9px; overflow-wrap: anywhere; }
+  .g3d-bar .icon-btn:disabled { opacity: .45; cursor: default; }
+  .g3d-tip { font: 12px/1.4 "Segoe UI", system-ui, sans-serif; }
+  .g3d-tip b { display: block; }
   .sch-zoom { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 4px; }
   .sch-zoom button { width: 30px; height: 30px; padding: 0; justify-content: center; }
   .insp { position: sticky; top: var(--sticky-top); max-height: calc(100vh - var(--sticky-top) - 20px); overflow: auto; }
@@ -695,6 +704,12 @@ const TR = {
   'selected table': 'seçili tablo', '{n} columns': '{n} kolon', '{n} notes': '{n} not',
   'Edge width: linked rows, log scale (estimated)': 'Çizgi kalınlığı: bağlı satır, log ölçek (tahmini)',
   'Show the report list': 'Rapor listesini göster', 'Hide the report list': 'Rapor listesini gizle',
+  '+1 depth': '+1 derinlik', 'Show one more ring of related tables': 'İlişkili tabloların bir halkasını daha göster',
+  'Show every table (Esc)': 'Tüm tabloları göster (Esc)', '3D relation graph': '3B ilişki grafiği', 'Graph dimension': 'Graph boyutu',
+  '{t} · depth {d} · {n} tables': '{t} · derinlik {d} · {n} tablo', 'All tables · {n}': 'Tüm tablolar · {n}',
+  'Click a table to focus it': 'Odaklanmak için bir tabloya tıklayın', 'Loading 3D view…': '3B görünüm yükleniyor…',
+  '3D view unavailable ({r}); showing the 2D graph.': '3B görünüm kullanılamıyor ({r}); 2B graph gösteriliyor.',
+  'WebGL is not available': 'WebGL kullanılamıyor', 'the 3D library could not be loaded': '3B kütüphanesi yüklenemedi',
 };
 let lang = 'en';
 try { lang = localStorage.getItem('auspex.viewer.lang') || ((navigator.language || '').toLowerCase().startsWith('tr') ? 'tr' : 'en'); } catch {}
@@ -841,7 +856,7 @@ const state = {
   memSchema: '', memErAll: false, memPos: new Map(), schemaKey: null,
 };
 try { Object.assign(state, JSON.parse(localStorage.getItem('auspex.viewer') || '{}'), { all: [], seen: new Set(), firstLoad: true, open: null, reports: null, reportDoc: null, memory: null, memView: null, memPos: new Map() }); } catch {}
-const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy, memHideFaint: state.memHideFaint, memExpand: state.memExpand, repListCollapsed: state.repListCollapsed })); } catch {} };
+const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy, memHideFaint: state.memHideFaint, memGraph3d: state.memGraph3d, memExpand: state.memExpand, repListCollapsed: state.repListCollapsed })); } catch {} };
 
 // In the Tauri desktop app the same routes are served by the Rust `api` command.
 const tauriCore = window.__TAURI__?.core;
@@ -1662,6 +1677,47 @@ function centerColumns(data, centerId, rec) {
 }
 // roles:end
 
+// graph3d:start (tests/viewerGraph3d.test.js runs this block in isolation)
+// Pure parts of the 3D Graph view (3d-force-graph, vendored in src/vendor).
+const graph3dVendor = 'vendor/3d-force-graph-1.80.1.min.js';
+// The sphere volume follows val, so a log of the row estimate keeps one huge
+// table from swallowing the view; tables without an estimate get 1.
+function graph3dVal(n) {
+  const v = n?.estRows ?? n?.estimatedRows;
+  return Number.isFinite(v) && v > 0 ? 1 + 1.5 * Math.log10(1 + v) : 1;
+}
+// Nodes and links for 3d-force-graph from memGraph() output (self references
+// and edges to tables outside the shown schema are already dropped). The
+// library swaps link.source/target for node objects, so from/to keep the ids.
+function graph3dData(g) {
+  return {
+    nodes: g.nodes.map(n => ({ id: n.id, table: n.table, state: n.state || 'unexplored', val: graph3dVal(n) })),
+    links: g.edges.map(e => ({ source: e.from, target: e.to, from: e.from, to: e.to, level: e.level })),
+  };
+}
+// Tables within `depth` relation hops of the center, either direction: ring 0
+// is the center, ring 1 the tables it references (Reference) and the tables
+// referencing it (Dependent), ring 2 their neighbours, and so on. Every
+// relation level counts, as in the 2D graph. Returns a Map of id -> ring.
+function focusRings(edges, center, depth) {
+  const rings = new Map();
+  if (!center) return rings;
+  const adj = new Map();
+  const add = (a, b) => { if (!adj.has(a)) adj.set(a, new Set()); adj.get(a).add(b); };
+  for (const e of edges) if (e.from !== e.to) { add(e.from, e.to); add(e.to, e.from); }
+  rings.set(center, 0);
+  let frontier = [center];
+  for (let d = 1; d <= depth && frontier.length; d++) {
+    const next = [];
+    for (const id of frontier) for (const nb of adj.get(id) || []) if (!rings.has(nb)) { rings.set(nb, d); next.push(nb); }
+    frontier = next;
+  }
+  return rings;
+}
+// True when one more ring would add tables.
+const focusCanGrow = (edges, center, depth) => focusRings(edges, center, depth + 1).size > focusRings(edges, center, depth).size;
+// graph3d:end
+
 const roleName = role => t(role === 'ref' ? 'Reference' : 'Dependent');
 // "~1.2M linked" when the edge carries linkedRows, else "~1.2M rows"; both estimated.
 const roleFigure = g => g.weight === null ? t('no estimate') : t(g.fromLinks ? '~{n} linked (est.)' : '~{n} rows (est.)', { n: compact(g.weight) });
@@ -1738,10 +1794,10 @@ function inspector(data, id) {
       h('div', {}, h('b', {}, fmt(rels.length)), h('span', {}, t('Relations'))),
       h('div', {}, h('b', {}, fmt(active.length)), h('span', {}, t('Notes')))),
     h('div', { class: 'acts' },
-      state.memMode !== 'graph' ? h('button', { class: 'icon-btn', onclick: () => { setMemFocus(id); state.memMode = 'graph'; persist(); renderSchema(); } }, t('Graph')) : null,
+      state.memMode !== 'graph' ? h('button', { class: 'icon-btn', onclick: () => { setMemFocus(id); state.memShowAll = false; state.mem3dDepth = 1; state.memMode = 'graph'; persist(); renderSchema(); } }, t('Graph')) : null,
       state.memMode !== 'er' ? h('button', { class: 'icon-btn', onclick: () => { state.memMode = 'er'; persist(); renderSchema(); } }, t('ER diagram')) : null,
       state.memMode !== 'flow' ? h('button', { class: 'icon-btn', onclick: () => { state.memMode = 'flow'; persist(); renderSchema(); } }, t('Flow')) : null,
-      state.memMode === 'graph' ? h('button', { class: 'icon-btn', onclick: () => { setMemFocus(id); state.memShowAll = false; state.memAnimateIn = true; renderSchema(); } }, t('Focus here')) : null),
+      state.memMode === 'graph' ? h('button', { class: 'icon-btn', onclick: () => { if (graph3d?.focusOn(id)) return; setMemFocus(id); state.memShowAll = false; state.memAnimateIn = true; renderSchema(); } }, t('Focus here')) : null),
     h('h4', {}, h('span', {}, t('Notes')), h('span', { class: 'grow' }),
       archived.length ? h('button', { onclick: () => { state.memArchived = !state.memArchived; renderInspector(); } }, state.memArchived ? t('Hide archived') : t('Show archived ({n})', { n: archived.length })) : null),
     active.length || (state.memArchived && archived.length) ? [active.map(noteCard), state.memArchived ? archived.map(noteCard) : null] : h('div', { class: 'muted', style: 'font-size:13px' }, t('No notes yet.')),
@@ -1766,6 +1822,7 @@ function renderInspector() {
 }
 function focusTable(id) {
   if (state.memMode === 'flow' && state.tab === 'schema') { flowCenter(id); return; }
+  if (state.memMode === 'graph' && graph3d?.focusOn(id)) return;
   setMemSel(id);
   if (state.memMode === 'graph' && graphSim?.index.has(id)) { graphSim.select(id); return; }
   if (state.memMode === 'graph') { setMemFocus(id); state.memAnimateIn = true; }
@@ -1788,9 +1845,221 @@ function roleLegend(withFaint) {
     withFaint ? h('span', {}, faint(), t('beyond top 10')) : null];
 }
 
+// ---------- 3D graph (3d-force-graph, vendored, loaded on first use) ----------
+// Clicking a table focuses it: only it and its direct neighbours stay, "+1
+// depth" adds a ring, "All" or Esc shows every table again. The instance is
+// disposed whenever the view is left, so WebGL contexts do not pile up.
+let graph3d = null;
+let graph3dLib = null;
+// English reason the 3D view is unavailable ('' while it works); the Graph view falls back to 2D.
+let graph3dOff = '';
+let webglState = null;
+function webglOk() {
+  if (webglState === null) {
+    try {
+      const ctx = document.createElement('canvas').getContext('webgl2') || document.createElement('canvas').getContext('webgl');
+      webglState = !!ctx;
+      ctx?.getExtension('WEBGL_lose_context')?.loseContext();
+    } catch { webglState = false; }
+  }
+  return webglState;
+}
+function loadGraph3d() {
+  if (window.ForceGraph3D) return Promise.resolve(window.ForceGraph3D);
+  graph3dLib ??= new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = graph3dVendor;
+    s.onload = () => (window.ForceGraph3D ? resolve(window.ForceGraph3D) : reject(new Error('ForceGraph3D missing')));
+    s.onerror = () => reject(new Error('load failed'));
+    document.head.append(s);
+  });
+  return graph3dLib;
+}
+// Any CSS color (var(), light-dark(), color-mix()) as #rrggbb for WebGL.
+let colorCtx = null;
+function cssHex(value) {
+  const probe = h('span', { style: 'display:none' });
+  probe.style.color = value;
+  document.body.append(probe);
+  const c = getComputedStyle(probe).color;
+  probe.remove();
+  colorCtx ??= document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+  colorCtx.clearRect(0, 0, 1, 1);
+  colorCtx.fillStyle = '#000';
+  colorCtx.fillStyle = c;
+  colorCtx.fillRect(0, 0, 1, 1);
+  const [r, g, b] = colorCtx.getImageData(0, 0, 1, 1).data;
+  return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+function graph3dPalette() {
+  const memo = new Map();
+  const c = v => { if (!memo.has(v)) memo.set(v, cssHex(v)); return memo.get(v); };
+  return {
+    bg: c('var(--surface)'), center: c('var(--text)'), dim: c('var(--line-strong)'), faint: c('var(--role-other)'),
+    node: { explored: c('var(--accent)'), seen: c('color-mix(in srgb, var(--accent) 45%, var(--surface))'), unexplored: c('var(--text-3)') },
+    level: { fk: c('var(--text-3)'), used: c('var(--accent)'), suggested: c('var(--warn-ink)') },
+    role: (role, rank) => c(roleColor(role, rank)),
+  };
+}
+function graph3dTip(n, g) {
+  const src = g.byId.get(n.id);
+  return h('div', { class: 'g3d-tip' }, h('b', {}, n.id), h('div', {}, stateLabel(n.state)),
+    Number.isFinite(src?.estimatedRows) ? h('div', {}, `${t('Est. rows')}: ${compact(src.estimatedRows)}`) : null,
+    h('div', {}, `${t('Relations')}: ${fmt(g.adj.get(n.id)?.size ?? 0)}`));
+}
+
+function graph3dCanvas(g, data) {
+  const db = state.db;
+  const ctl = { alive: true, fg: null, q: '', inView: true, paused: false, flyOnStop: false };
+  graph3d = ctl;
+  const host = h('div', { class: 'g3d-host', role: 'img', 'aria-label': t('3D relation graph') });
+  const status = h('span', { class: 'g3d-status' }, t('Loading 3D view…'));
+  const deeperBtn = h('button', { class: 'icon-btn', title: t('Show one more ring of related tables'), onclick: () => ctl.deeper() }, t('+1 depth'));
+  const allBtn = h('button', { class: 'icon-btn', title: t('Show every table (Esc)'), onclick: () => ctl.showAll() }, t('All'));
+  const wrap = h('div', { class: 'panel sch-canvas g3d' }, host, h('div', { class: 'g3d-bar' }, status, deeperBtn, allBtn), legend(),
+    h('div', { class: 'sch-zoom' }, h('button', { class: 'icon-btn', title: t('Fit to view'), onclick: () => ctl.fit() }, '⤢')));
+  deeperBtn.disabled = allBtn.disabled = true;
+
+  const gd = graph3dData(g);
+  const byId = new Map(gd.nodes.map(n => [n.id, n]));
+  ctl.has = id => byId.has(id);
+  // Positions survive a rebuild (refresh, language) like the 2D graph's.
+  const saved = state.mem3dPos || (state.mem3dPos = new Map());
+  let seeded = gd.nodes.length > 0;
+  for (const n of gd.nodes) { const p = saved.get(db + '|' + n.id); if (p) Object.assign(n, p); else seeded = false; }
+  ctl.save = () => { for (const n of gd.nodes) if (Number.isFinite(n.x)) saved.set(db + '|' + n.id, { x: n.x, y: n.y, z: n.z }); };
+
+  let pal = graph3dPalette();
+  let rings = null, roleOf = new Map();
+  let depth = state.mem3dDepth || 1;
+  const focusId = () => (state.memShowAll ? null : memFocus());
+  const centerId = () => focusId() || memSel();
+  // FK edges of the focused (or, in All, the selected) table take its role colors by rank.
+  const paintRoles = () => {
+    const id = centerId();
+    const roles = id ? roleGroups(data, id) : { ref: [], dep: [] };
+    roleOf = new Map([...roles.ref.map(x => [`${id}>${x.id}`, x]), ...roles.dep.map(x => [`${x.id}>${id}`, x])]);
+  };
+  const roleLink = l => (l.level === 'fk' ? roleOf.get(`${l.from}>${l.to}`) : null) || null;
+  const shownNode = n => !rings || rings.has(n.id);
+  const shownLink = l => {
+    if (rings && !(rings.has(l.from) && rings.has(l.to))) return false;
+    const r = roleLink(l);
+    return !(state.memHideFaint && r && r.rank > roleTop);
+  };
+  const nodeColor = n => (ctl.q && !n.id.toLowerCase().includes(ctl.q) ? pal.dim : n.id === centerId() ? pal.center : pal.node[n.state] || pal.node.unexplored);
+  const linkColor = l => { const r = roleLink(l); return r ? (r.rank > roleTop ? pal.faint : pal.role(r.role, r.rank)) : pal.level[l.level] || pal.level.fk; };
+  const linkWidth = l => { const r = roleLink(l); return r && r.rank <= roleTop ? 1.4 : 0; };
+  const apply = () => {
+    const f = focusId();
+    rings = f && byId.has(f) ? focusRings(gd.links, f, depth) : null;
+    paintRoles();
+    ctl.fg?.nodeVisibility(n => shownNode(n)).linkVisibility(l => shownLink(l))
+      .nodeColor(n => nodeColor(n)).linkColor(l => linkColor(l)).linkWidth(l => linkWidth(l))
+      .linkDirectionalArrowLength(() => (rings ? 3.5 : 0)).linkDirectionalArrowColor(l => linkColor(l));
+    status.textContent = rings ? t('{t} · depth {d} · {n} tables', { t: f, d: depth, n: fmt(rings.size) })
+      : `${t('All tables · {n}', { n: fmt(gd.nodes.length) })} · ${t('Click a table to focus it')}`;
+    deeperBtn.disabled = !rings || !focusCanGrow(gd.links, f, depth);
+    allBtn.disabled = !rings;
+  };
+  // Camera flies to the table, far enough back to show the rings around it.
+  const flyTo = (id, ms = reduceMotion ? 0 : 900) => {
+    const fg = ctl.fg, n = byId.get(id);
+    if (!fg || !n || !Number.isFinite(n.x)) return;
+    let r = 0;
+    for (const m of gd.nodes) if (rings?.has(m.id) && Number.isFinite(m.x)) r = Math.max(r, Math.hypot(m.x - n.x, m.y - n.y, m.z - n.z));
+    const cam = fg.cameraPosition();
+    let dx = cam.x - n.x, dy = cam.y - n.y, dz = cam.z - n.z, len = Math.hypot(dx, dy, dz);
+    if (len < 1) { dx = 0; dy = 0; dz = 1; len = 1; }
+    const dist = Math.max(90, r * 1.8 + 40);
+    fg.cameraPosition({ x: n.x + dx / len * dist, y: n.y + dy / len * dist, z: n.z + dz / len * dist }, { x: n.x, y: n.y, z: n.z }, ms);
+  };
+  ctl.focusOn = id => {
+    if (!ctl.alive || !byId.has(id)) return false;
+    setMemSel(id); setMemFocus(id);
+    state.memShowAll = false;
+    depth = state.mem3dDepth = 1;
+    apply(); renderInspector(); flyTo(id);
+    return true;
+  };
+  ctl.deeper = () => {
+    const f = focusId();
+    if (!rings || !focusCanGrow(gd.links, f, depth)) return;
+    depth = state.mem3dDepth = depth + 1;
+    apply(); flyTo(f);
+  };
+  ctl.showAll = () => {
+    if (!rings) return false;
+    state.memShowAll = true;
+    apply(); ctl.fit();
+    return true;
+  };
+  ctl.fit = () => ctl.fg?.zoomToFit(reduceMotion ? 0 : 800, 30, n => shownNode(n));
+  ctl.search = q => { if (q === ctl.q) return; ctl.q = q; ctl.fg?.nodeColor(n => nodeColor(n)); };
+  ctl.recolor = () => { pal = graph3dPalette(); ctl.fg?.backgroundColor(pal.bg); apply(); };
+  ctl.refresh = () => apply();
+  // Render only while the page is visible and the canvas is on screen.
+  ctl.sync = () => {
+    const fg = ctl.fg;
+    if (!fg) return;
+    const off = document.hidden || !ctl.inView;
+    if (off && !ctl.paused) { ctl.paused = true; fg.pauseAnimation(); } else if (!off && ctl.paused) { ctl.paused = false; fg.resumeAnimation(); }
+  };
+  const fail = reason => { graph3dOff = reason; if (graph3d === ctl) { state.schemaKey = null; renderSchema(); } };
+  const build = FG => {
+    let fg;
+    try { fg = new FG(host, { controlType: 'orbit' }); } catch { fail('WebGL is not available'); return; }
+    ctl.fg = fg;
+    const box = host.getBoundingClientRect();
+    fg.width(box.width || 800).height(box.height || 560).backgroundColor(pal.bg).showNavInfo(false)
+      .nodeId('id').nodeVal('val').nodeRelSize(3).nodeResolution(10).nodeOpacity(0.92).linkOpacity(0.55)
+      .linkDirectionalArrowRelPos(1)
+      .nodeLabel(n => graph3dTip(n, g))
+      .onNodeClick(n => { if (shownNode(n)) ctl.focusOn(n.id); })
+      .onNodeHover(n => { host.style.cursor = n ? 'pointer' : ''; })
+      .onNodeDragEnd(() => ctl.save())
+      .warmupTicks(seeded ? 0 : 40).cooldownTicks(seeded ? 40 : 250)
+      .onEngineStop(() => {
+        ctl.save();
+        if (!ctl.flyOnStop) return;
+        ctl.flyOnStop = false;
+        const f = focusId();
+        if (rings && f) flyTo(f); else ctl.fit();
+      });
+    apply();
+    fg.graphData(gd);
+    ctl.flyOnStop = true;
+    ctl.io = new IntersectionObserver(([en]) => { ctl.inView = en.isIntersecting; ctl.sync(); });
+    ctl.io.observe(wrap);
+    ctl.ro = new ResizeObserver(() => { const b = host.getBoundingClientRect(); if (b.width && b.height) fg.width(b.width).height(b.height); });
+    ctl.ro.observe(host);
+    document.addEventListener('visibilitychange', ctl.sync);
+  };
+  ctl.start = () => {
+    loadGraph3d().then(FG => { if (ctl.alive) build(FG); }, () => { if (ctl.alive) fail('the 3D library could not be loaded'); });
+  };
+  ctl.dispose = () => {
+    ctl.alive = false;
+    document.removeEventListener('visibilitychange', ctl.sync);
+    ctl.io?.disconnect(); ctl.ro?.disconnect();
+    const fg = ctl.fg;
+    ctl.fg = null;
+    if (fg) {
+      ctl.save();
+      try { fg.pauseAnimation(); fg._destructor(); } catch {}
+      try { fg.controls()?.dispose?.(); } catch {}
+      try { const r = fg.renderer(); r.dispose(); r.forceContextLoss(); } catch {}
+    }
+    host.replaceChildren();
+  };
+  return wrap;
+}
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => graph3d?.recolor());
+
 // ---------- force-directed graph (no library) ----------
 let graphSim = null;
 function stopGraph() {
+  if (graph3d) { graph3d.dispose(); graph3d = null; }
   if (!graphSim) return;
   graphSim.save();
   graphSim.stopped = true;
@@ -2043,7 +2312,9 @@ function graphCanvas(g, visible, depth, data) {
 }
 addEventListener('resize', () => graphSim?.resize());
 function applyMemSearch() {
-  graphSim?.search(state.tab === 'schema' ? F.text.value.trim().toLowerCase() : '');
+  const q = state.tab === 'schema' ? F.text.value.trim().toLowerCase() : '';
+  graphSim?.search(q);
+  graph3d?.search(q);
 }
 
 // ---------- ER diagram ----------
@@ -2428,11 +2699,15 @@ function renderSchema() {
   let focus = memFocus();
   if (!focus || !g.byId.has(focus)) focus = sel && g.byId.has(sel) ? sel : defaultRoot(g);
   if (!['graph', 'er', 'flow'].includes(state.memMode)) state.memMode = 'graph';
+  const want3d = state.memMode === 'graph' && state.memGraph3d !== false;
+  if (want3d && !graph3dOff && !webglOk()) graph3dOff = 'WebGL is not available';
+  const use3d = want3d && !graph3dOff;
+  if (use3d && focus && focus !== memFocus()) setMemFocus(focus);
   const expandKey = JSON.stringify(state.memExpand || {});
   const key = [state.db, data.generatedAt, state.memMode, g.schema, lang, !!state.memTimeline,
     state.memMode === 'er' ? `${sel}|${!!state.memErAll}|${expandKey}`
       : state.memMode === 'flow' ? `${sel}|${expandKey}|${state.memFlowOpen}|${(state.memFlowTrail || []).join(',')}`
-      : `${focus}|${!!state.memShowAll}`].join('|');
+      : use3d ? '3d' : `${focus}|${!!state.memShowAll}|2d`].join('|');
   if (state.schemaKey === key && view.firstChild) { applyMemSearch(); return; }
   state.schemaKey = key;
   stopGraph();
@@ -2449,15 +2724,22 @@ function renderSchema() {
   const bar = h('div', { class: 'panel' },
     h('div', { class: 'sch-bar' },
       h('div', { class: 'seg', role: 'group', 'aria-label': t('View') }, [['graph', t('Graph')], ['er', t('ER diagram')], ['flow', t('Flow')]].map(([k, label]) =>
-        h('button', { class: state.memMode === k ? 'on' : '', onclick: () => { state.memMode = k; if (k === 'graph' && sel) setMemFocus(sel); persist(); renderSchema(); } }, label))),
+        h('button', { class: state.memMode === k ? 'on' : '', onclick: () => {
+          if (k === 'graph' && state.memMode !== 'graph') { state.memShowAll = false; state.mem3dDepth = 1; }
+          state.memMode = k; if (k === 'graph' && sel) setMemFocus(sel); persist(); renderSchema();
+        } }, label))),
+      state.memMode === 'graph' ? h('div', { class: 'seg', role: 'group', 'aria-label': t('Graph dimension') }, [['2d', '2D'], ['3d', '3D']].map(([k, label]) =>
+        h('button', { class: (k === '3d') === (state.memGraph3d !== false) ? 'on' : '', onclick: () => { state.memGraph3d = k === '3d'; persist(); renderSchema(); } }, label))) : null,
       schemaSel,
-      state.memMode === 'graph' ? h('button', { class: 'icon-btn', onclick: () => { state.memShowAll = !state.memShowAll; state.memAnimateIn = true; renderSchema(); } }, state.memShowAll ? t('Focus view') : t('Show all')) : null,
+      state.memMode === 'graph' && !use3d ? h('button', { class: 'icon-btn', onclick: () => { state.memShowAll = !state.memShowAll; state.memAnimateIn = true; renderSchema(); } }, state.memShowAll ? t('Focus view') : t('Show all')) : null,
       state.memMode === 'graph' ? h('button', { class: 'icon-btn', 'aria-pressed': String(!!state.memHideFaint), title: t('Edges of the selected table ranked beyond 10'), onclick: ev => {
         state.memHideFaint = !state.memHideFaint; persist();
         document.querySelector('#v-schema svg.graph')?.classList.toggle('hide-faint', state.memHideFaint);
+        graph3d?.refresh();
         ev.currentTarget.setAttribute('aria-pressed', String(state.memHideFaint));
         ev.currentTarget.textContent = state.memHideFaint ? t('Show beyond top 10') : t('Hide beyond top 10');
       } }, state.memHideFaint ? t('Show beyond top 10') : t('Hide beyond top 10')) : null,
+      want3d && graph3dOff ? h('span', { class: 'muted', style: 'font-size:12px' }, t('3D view unavailable ({r}); showing the 2D graph.', { r: t(graph3dOff) })) : null,
       h('div', { class: 'sch-stats' },
         h('span', {}, h('b', {}, fmt(S.explored)), t('explored')), h('span', {}, h('b', {}, fmt(S.seen)), t('seen')),
         h('span', {}, h('b', {}, fmt(S.unexplored)), t('not explored')), h('span', {}, h('b', {}, fmt(S.edges)), t('relations')),
@@ -2474,6 +2756,8 @@ function renderSchema() {
     canvas = h('div', { class: 'panel sch-canvas er' }, h('div', { class: 'rep-empty' }, t('Loading…')));
   } else if (state.memMode === 'flow' && sel) {
     canvas = h('div', { class: 'panel sch-canvas flow' }, h('div', { class: 'rep-empty' }, t('Loading…')));
+  } else if (use3d) {
+    canvas = g.nodes.length ? graph3dCanvas(g, data) : h('div', { class: 'panel sch-canvas' }, emptyState(t('No tables match.')));
   } else {
     let visible, depth;
     if (state.memShowAll) {
@@ -2487,6 +2771,7 @@ function renderSchema() {
   }
   put(view, bar, h('div', { class: 'sch' }, canvas, state.memInspHost));
   if (graphSim && state.memMode === 'graph') graphSim.start();
+  if (graph3d && use3d) graph3d.start();
   if (state.memMode === 'er' && sel) buildEr(canvas, data, sel, key);
   if (state.memMode === 'flow' && sel) buildFlow(canvas, data, sel, key);
   applyMemSearch();
@@ -2547,7 +2832,7 @@ function applyTheme() {
   if (t === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', t);
   document.querySelectorAll('#theme button').forEach(b => b.classList.toggle('on', b.dataset.v === t));
 }
-document.querySelectorAll('#theme button').forEach(b => b.addEventListener('click', () => { state.theme = b.dataset.v; persist(); applyTheme(); if (state.tab === 'reports') renderReports(); }));
+document.querySelectorAll('#theme button').forEach(b => b.addEventListener('click', () => { state.theme = b.dataset.v; persist(); applyTheme(); graph3d?.recolor(); if (state.tab === 'reports') renderReports(); }));
 
 let liveTimer = null;
 function applyLive() {
@@ -2562,7 +2847,7 @@ $('refreshBtn').addEventListener('click', () => load());
 document.addEventListener('keydown', ev => {
   const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName);
   if (ev.key === '/' && !typing) { ev.preventDefault(); F.text.focus(); }
-  else if (ev.key === 'Escape') { closeDbMenu(); if (typing) document.activeElement.blur(); else if (state.open) { state.open = null; render(); } }
+  else if (ev.key === 'Escape') { closeDbMenu(); if (typing) document.activeElement.blur(); else if (state.open) { state.open = null; render(); } else if (state.tab === 'schema' && graph3d) graph3d.showAll(); }
   else if (!typing && (ev.key === 'r' || ev.key === 'R') && !ev.ctrlKey && !ev.metaKey) load();
   else if (!typing && (ev.key === 'd' || ev.key === 'D') && !ev.ctrlKey && !ev.metaKey) { $('dbsel').classList.contains('open') ? closeDbMenu() : openDbMenu(); }
   else if (!typing && ['1', '2', '3', '4', '5', '6'].includes(ev.key)) switchTab(tabNames[Number(ev.key) - 1]);
