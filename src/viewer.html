@@ -385,6 +385,20 @@
   .g3d-bar .icon-btn:disabled { opacity: .45; cursor: default; }
   .g3d-tip { font: 12px/1.4 "Segoe UI", system-ui, sans-serif; }
   .g3d-tip b { display: block; }
+  .g3d-labels { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+  .g3d-lbl, .g3d-layer { position: absolute; left: 0; top: 0; white-space: nowrap; max-width: 240px; overflow: hidden; text-overflow: ellipsis;
+    font-size: 12px; line-height: 1.3; padding: 1px 6px; border-radius: 5px; color: var(--text); will-change: transform;
+    background: color-mix(in srgb, var(--surface) 84%, transparent); }
+  .g3d-lbl.ref { border-right: 3px solid var(--role-ref-1); }
+  .g3d-lbl.dep { border-left: 3px solid var(--role-dep-1); }
+  .g3d-lbl.center { font-weight: 650; border: 1px solid var(--line-strong); }
+  .g3d-lbl.dim { opacity: .35; }
+  .g3d-layer { font-weight: 650; color: var(--text-2); background: var(--surface-2); border: 1px solid var(--line); }
+  .g3d-layer.ref { color: var(--role-ref-1); }
+  .g3d-layer.dep { color: var(--role-dep-1); }
+  .g3d-picks { display: contents; }
+  .g3d-pick { display: inline-flex; align-items: center; gap: 5px; background: color-mix(in srgb, var(--surface) 90%, transparent); border-radius: 8px; padding-left: 6px; }
+  .g3d-bar .icon-btn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-ink); border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
   .sch-zoom { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 4px; }
   .sch-zoom button { width: 30px; height: 30px; padding: 0; justify-content: center; }
   .insp { position: sticky; top: var(--sticky-top); max-height: calc(100vh - var(--sticky-top) - 20px); overflow: auto; }
@@ -741,6 +755,8 @@ const TR = {
   '3D view unavailable ({r}); showing the 2D graph.': '3B görünüm kullanılamıyor ({r}); 2B graph gösteriliyor.',
   'WebGL is not available': 'WebGL kullanılamıyor', 'Pick a table in {s}': '{s} şemasından bir tablo seçin', '{s}: {n} · whole database: {all}': '{s}: {n} · tüm veritabanı: {all}', 'Totals of schema {s}': '{s} şemasının toplamları',
   'No table of this schema is explored yet; pick one to make it the center.': 'Bu şemada henüz keşfedilmiş tablo yok; merkez yapmak için birini seçin.', '{n} relations': '{n} ilişki', 'the 3D library could not be loaded': '3B kütüphanesi yüklenemedi',
+  'Non-FK relations': 'FK dışı ilişkiler', 'Used and suggested relations (not foreign keys)': 'Kullanılan ve önerilen ilişkiler (yabancı anahtar olmayan)',
+  'Show one more layer on both sides': 'İki yana birer katman daha ekle', '{role}: tables per layer': '{role}: katman başına tablo',
 };
 let lang = 'en';
 try { lang = localStorage.getItem('auspex.viewer.lang') || ((navigator.language || '').toLowerCase().startsWith('tr') ? 'tr' : 'en'); } catch {}
@@ -887,7 +903,7 @@ const state = {
   memSchema: '', memErAll: false, memPos: new Map(), schemaKey: null,
 };
 try { Object.assign(state, JSON.parse(localStorage.getItem('auspex.viewer') || '{}'), { all: [], seen: new Set(), firstLoad: true, open: null, reports: null, reportDoc: null, memory: null, memView: null, memPos: new Map() }); } catch {}
-const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy, memHideFaint: state.memHideFaint, memGraph3d: state.memGraph3d, memExpand: state.memExpand, repListCollapsed: state.repListCollapsed, sqlWrap: state.sqlWrap })); } catch {} };
+const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy, memHideFaint: state.memHideFaint, memGraph3d: state.memGraph3d, memGraphSoft: state.memGraphSoft, memExpand: state.memExpand, repListCollapsed: state.repListCollapsed, sqlWrap: state.sqlWrap })); } catch {} };
 
 // In the Tauri desktop app the same routes are served by the Rust `api` command.
 const tauriCore = window.__TAURI__?.core;
@@ -2059,6 +2075,95 @@ function focusRings(edges, center, depth) {
 }
 // True when one more ring would add tables.
 const focusCanGrow = (edges, center, depth) => focusRings(edges, center, depth + 1).size > focusRings(edges, center, depth).size;
+// Directed layers around a focused table, for fixed 3D positions:
+//   center  x = 0
+//   ref     tables the center references (Reference / Instance), then the
+//           tables those reference, ...: layer d at x = -d * gap
+//   dep     tables referencing the center (Dependent / Beslenen), then the
+//           tables referencing those, ...: layer d at x = +d * gap
+// Layers are built depth by depth, the ref side before the dep side, and a
+// table is placed once, on the side and depth where it is first discovered
+// (a table both referenced and referencing lands on the ref side). Tables cut
+// by a side's limit count as discovered, so they never reappear deeper. Self
+// references are ignored. Within a layer tables are ordered by rank (linked
+// rows, then their own row estimate, then id) and laid out on a y/z grid of
+// at most layerMaxRows rows; rank 1 is at the top of the front column.
+// opts: depth (>= 1), limits { ref, dep } (a number or Infinity per layer),
+// soft (true: used and suggested relations count too; false: FK only) and
+// rows (id -> row estimate or null). Returns the placed nodes, one header per
+// layer, the links between placed tables (kind ref, dep or cross) and
+// canGrow (true when one more depth would add tables).
+const layerGap = 220, layerRowGap = 28, layerColGap = 60, layerMaxRows = 10;
+function layeredLayout(edges, center, opts = {}) {
+  const depth = Math.max(1, Math.floor(opts.depth) || 1);
+  const limitOf = side => { const v = opts.limits?.[side]; return v === Infinity || (Number.isFinite(v) && v > 0) ? v : 5; };
+  const rowsOf = typeof opts.rows === 'function' ? opts.rows : () => null;
+  const use = edges.filter(e => e.from !== e.to && (opts.soft || e.level === 'fk'));
+  const out = new Map(), inc = new Map();
+  const push = (m, k, e) => { if (!m.has(k)) m.set(k, []); m.get(k).push(e); };
+  for (const e of use) { push(out, e.from, e); push(inc, e.to, e); }
+  const result = { nodes: [], layers: [], links: [], canGrow: false };
+  if (!center) return result;
+  const placed = new Map([[center, { id: center, side: 'center', depth: 0, rank: 1, x: 0, y: 0, z: 0 }]]);
+  const seen = new Set([center]);
+  const frontier = { ref: [center], dep: [center] };
+  const desc = (a, b) => (b ?? -1) - (a ?? -1);
+  for (let d = 1; d <= depth + 1; d++) {
+    for (const side of ['ref', 'dep']) {
+      const cand = new Map();
+      for (const p of frontier[side]) {
+        for (const e of (side === 'ref' ? out : inc).get(p) || []) {
+          const id = side === 'ref' ? e.to : e.from;
+          if (seen.has(id)) continue;
+          const c = cand.get(id) || { id, linked: null };
+          if (Number.isFinite(e.linkedRows)) c.linked = Math.max(c.linked ?? 0, e.linkedRows);
+          cand.set(id, c);
+        }
+      }
+      const list = [...cand.values()].map(c => ({ ...c, rows: rowsOf(c.id) }))
+        .sort((a, b) => desc(a.linked, b.linked) || desc(a.rows, b.rows) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      if (d > depth) { if (list.length) result.canGrow = true; continue; }
+      for (const c of list) seen.add(c.id);
+      const kept = list.slice(0, limitOf(side));
+      const rowsN = Math.min(kept.length, layerMaxRows), cols = Math.ceil(kept.length / layerMaxRows) || 0;
+      const x = (side === 'ref' ? -1 : 1) * d * layerGap;
+      kept.forEach((c, i) => {
+        const col = Math.floor(i / rowsN), row = i % rowsN;
+        // Odd columns shift half a row so labels of the columns interleave.
+        const y = ((rowsN - 1) / 2 - row) * layerRowGap - (col % 2 ? layerRowGap / 2 : 0);
+        const z = ((cols - 1) / 2 - col) * layerColGap;
+        placed.set(c.id, { id: c.id, side, depth: d, rank: i + 1, x, y, z });
+      });
+      if (list.length) result.layers.push({ side, depth: d, x, top: ((rowsN - 1) / 2) * layerRowGap + layerRowGap, shown: kept.length, total: list.length });
+      frontier[side] = kept.map(c => c.id);
+    }
+  }
+  result.nodes = [...placed.values()];
+  result.layers.unshift({ side: 'center', depth: 0, x: 0, top: layerRowGap, shown: 1, total: 1 });
+  // One link per direction and table pair, FK first; the kind follows the
+  // layering (ref: one layer outward on the ref side, dep: one layer inward on
+  // the dep side), anything else is a cross link.
+  const order = { fk: 0, used: 1, suggested: 2 };
+  const links = new Map();
+  for (const e of use) {
+    const a = placed.get(e.from), b = placed.get(e.to);
+    if (!a || !b) continue;
+    const key = e.from + '>' + e.to, prev = links.get(key);
+    if (prev && (order[prev.level] ?? 3) <= (order[e.level] ?? 3)) continue;
+    const kind = b.side === 'ref' && (a.side === 'center' || a.side === 'ref') && b.depth === a.depth + 1 ? 'ref'
+      : a.side === 'dep' && (b.side === 'center' || b.side === 'dep') && a.depth === b.depth + 1 ? 'dep' : 'cross';
+    links.set(key, { from: e.from, to: e.to, level: e.level, kind, rank: kind === 'ref' ? b.rank : kind === 'dep' ? a.rank : null });
+  }
+  result.links = [...links.values()];
+  return result;
+}
+// Ids of the `n` most connected tables (relation count, then id), for the
+// labels of the free All layout.
+function topConnected(edges, n) {
+  const deg = new Map();
+  for (const e of edges) if (e.from !== e.to) { deg.set(e.from, (deg.get(e.from) || 0) + 1); deg.set(e.to, (deg.get(e.to) || 0) + 1); }
+  return [...deg.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)).slice(0, n).map(([id]) => id);
+}
 // graph3d:end
 
 const roleName = role => t(role === 'ref' ? 'Reference' : 'Dependent');
@@ -2189,9 +2294,10 @@ function roleLegend(withFaint) {
 }
 
 // ---------- 3D graph (3d-force-graph, vendored, loaded on first use) ----------
-// Clicking a table focuses it: only it and its direct neighbours stay, "+1
-// depth" adds a ring, "All" or Esc shows every table again. The instance is
-// disposed whenever the view is left, so WebGL contexts do not pile up.
+// Clicking a table focuses it in directed layers (see layeredLayout), "+1
+// depth" adds a layer on both sides, "All" or Esc shows every table again.
+// The instance is disposed whenever the view is left, so WebGL contexts do not
+// pile up.
 let graph3d = null;
 let graph3dLib = null;
 // English reason the 3D view is unavailable ('' while it works); the Graph view falls back to 2D.
@@ -2251,102 +2357,223 @@ function graph3dTip(n, g) {
     h('div', {}, `${t('Relations')}: ${fmt(g.adj.get(n.id)?.size ?? 0)}`));
 }
 
+// A focused table is drawn in directed layers (layeredLayout): its Reference
+// tables in layers to the left, its Dependent tables to the right, at fixed
+// positions. "All" (or Esc) shows every table in the free force layout.
+// Table names and layer headers are HTML labels projected onto the canvas
+// each frame the camera moves (the vendored bundle does not expose three.js).
+const graph3dAllLabels = 30;
 function graph3dCanvas(g, data) {
   const db = state.db;
-  const ctl = { alive: true, fg: null, q: '', inView: true, paused: false, flyOnStop: false };
+  const ctl = { alive: true, fg: null, q: '', inView: true, paused: false, flyOnStop: false, raf: 0, moving: false };
   graph3d = ctl;
   const host = h('div', { class: 'g3d-host', role: 'img', 'aria-label': t('3D relation graph') });
+  const labels = h('div', { class: 'g3d-labels', 'aria-hidden': 'true' });
   const status = h('span', { class: 'g3d-status' }, t('Loading 3D view…'));
-  const deeperBtn = h('button', { class: 'icon-btn', title: t('Show one more ring of related tables'), onclick: () => ctl.deeper() }, t('+1 depth'));
+  const picks = h('span', { class: 'g3d-picks' });
+  const softBtn = h('button', { class: 'icon-btn', title: t('Used and suggested relations (not foreign keys)'), onclick: () => { state.memGraphSoft = !softOn(); persist(); relayout(); } }, t('Non-FK relations'));
+  const deeperBtn = h('button', { class: 'icon-btn', title: t('Show one more layer on both sides'), onclick: () => ctl.deeper() }, t('+1 depth'));
   const allBtn = h('button', { class: 'icon-btn', title: t('Show every table (Esc)'), onclick: () => ctl.showAll() }, t('All'));
-  const wrap = h('div', { class: 'panel sch-canvas g3d' }, host, h('div', { class: 'g3d-bar' }, status, deeperBtn, allBtn), legend(),
+  const wrap = h('div', { class: 'panel sch-canvas g3d' }, host, labels, h('div', { class: 'g3d-bar' }, status, picks, softBtn, deeperBtn, allBtn), legend(),
     h('div', { class: 'sch-zoom' }, h('button', { class: 'icon-btn', title: t('Fit to view'), onclick: () => ctl.fit() }, '⤢')));
   deeperBtn.disabled = allBtn.disabled = true;
 
   const gd = graph3dData(g);
   const byId = new Map(gd.nodes.map(n => [n.id, n]));
   ctl.has = id => byId.has(id);
-  // Positions survive a rebuild (refresh, language) like the 2D graph's.
+  const oneSchema = new Set(g.nodes.map(n => n.schema)).size === 1;
+  const labelText = n => (oneSchema || (g.schema && !n.outside) ? n.table || n.id : n.id);
+  // Free-layout positions survive a rebuild (refresh, language) like the 2D graph's.
   const saved = state.mem3dPos || (state.mem3dPos = new Map());
   let seeded = gd.nodes.length > 0;
   for (const n of gd.nodes) { const p = saved.get(db + '|' + n.id); if (p) Object.assign(n, p); else seeded = false; }
   ctl.save = () => { for (const n of gd.nodes) if (Number.isFinite(n.x)) saved.set(db + '|' + n.id, { x: n.x, y: n.y, z: n.z }); };
 
   let pal = graph3dPalette();
-  let rings = null, roleOf = new Map();
+  let lay = null, layNodes = null, roleOf = new Map();
   let depth = state.mem3dDepth || 1;
+  let labelItems = [], lastKey = '', frameDist = 0;
+  const softOn = () => state.memGraphSoft !== false;
   const focusId = () => (state.memShowAll ? null : memFocus());
   const centerId = () => focusId() || memSel();
-  // FK edges of the focused (or, in All, the selected) table take its role colors by rank.
+  const sideLimit = side => roleLimitIn(state.memExpand, 'graph', side);
+  // In All, FK edges of the selected table take its role colors by rank.
   const paintRoles = () => {
     const id = centerId();
-    const roles = id ? roleGroups(data, id) : { ref: [], dep: [] };
+    const roles = id && !lay ? roleGroups(data, id) : { ref: [], dep: [] };
     roleOf = new Map([...roles.ref.map(x => [`${id}>${x.id}`, x]), ...roles.dep.map(x => [`${x.id}>${id}`, x])]);
   };
   const roleLink = l => (l.level === 'fk' ? roleOf.get(`${l.from}>${l.to}`) : null) || null;
-  const shownNode = n => !rings || rings.has(n.id);
   const shownLink = l => {
-    if (rings && !(rings.has(l.from) && rings.has(l.to))) return false;
+    if (l.level !== 'fk' && !softOn()) return false;
+    if (lay) return true;
     const r = roleLink(l);
     return !(state.memHideFaint && r && r.rank > roleTop);
   };
-  const nodeColor = n => (ctl.q && !n.id.toLowerCase().includes(ctl.q) ? pal.dim : n.id === centerId() ? pal.center : n.outside ? pal.dim : pal.node[n.state] || pal.node.unexplored);
-  const linkColor = l => { const r = roleLink(l); return r ? (r.rank > roleTop ? pal.faint : pal.role(r.role, r.rank)) : pal.level[l.level] || pal.level.fk; };
-  const linkWidth = l => { const r = roleLink(l); return r && r.rank <= roleTop ? 1.4 : 0; };
-  const apply = () => {
-    const f = focusId();
-    rings = f && byId.has(f) ? focusRings(gd.links, f, depth) : null;
-    paintRoles();
-    ctl.fg?.nodeVisibility(n => shownNode(n)).linkVisibility(l => shownLink(l))
-      .nodeColor(n => nodeColor(n)).linkColor(l => linkColor(l)).linkWidth(l => linkWidth(l))
-      .linkDirectionalArrowLength(() => (rings ? 3.5 : 0)).linkDirectionalArrowColor(l => linkColor(l));
-    status.textContent = rings ? t('{t} · depth {d} · {n} tables', { t: f, d: depth, n: fmt(rings.size) })
-      : `${t('All tables · {n}', { n: fmt(gd.nodes.length) })} · ${t('Click a table to focus it')}`;
-    deeperBtn.disabled = !rings || !focusCanGrow(gd.links, f, depth);
-    allBtn.disabled = !rings;
+  const matches = n => !ctl.q || n.id.toLowerCase().includes(ctl.q);
+  const nodeColor = n => (!matches(n) ? pal.dim : n.id === centerId() ? pal.center : n.outside ? pal.dim : pal.node[n.state] || pal.node.unexplored);
+  const linkColor = l => {
+    if (l.level !== 'fk') return pal.level[l.level] || pal.level.fk;
+    if (lay) return l.kind === 'cross' || l.rank > roleTop ? pal.faint : pal.role(l.kind, l.rank);
+    const r = roleLink(l);
+    return r ? (r.rank > roleTop ? pal.faint : pal.role(r.role, r.rank)) : pal.level.fk;
   };
-  // Camera flies to the table, far enough back to show the rings around it.
-  const flyTo = (id, ms = reduceMotion ? 0 : 900) => {
-    const fg = ctl.fg, n = byId.get(id);
-    if (!fg || !n || !Number.isFinite(n.x)) return;
-    let r = 0;
-    for (const m of gd.nodes) if (rings?.has(m.id) && Number.isFinite(m.x)) r = Math.max(r, Math.hypot(m.x - n.x, m.y - n.y, m.z - n.z));
-    const cam = fg.cameraPosition();
-    let dx = cam.x - n.x, dy = cam.y - n.y, dz = cam.z - n.z, len = Math.hypot(dx, dy, dz);
-    if (len < 1) { dx = 0; dy = 0; dz = 1; len = 1; }
-    const dist = Math.max(90, r * 1.8 + 40);
-    fg.cameraPosition({ x: n.x + dx / len * dist, y: n.y + dy / len * dist, z: n.z + dz / len * dist }, { x: n.x, y: n.y, z: n.z }, ms);
+  const linkWidth = l => {
+    if (lay) return l.level === 'fk' && l.kind !== 'cross' ? (l.rank <= roleTop ? 1.6 : 0.8) : 0;
+    const r = roleLink(l);
+    return r && r.rank <= roleTop ? 1.4 : 0;
+  };
+  const arrowLength = l => (lay ? (l.level === 'fk' ? 6 : 3.5) : 0);
+
+  // Top-N picker per side: tables per layer, shared by every depth.
+  const sidePicker = side => {
+    const total = Math.max(0, ...lay.layers.filter(L => L.side === side).map(L => L.total));
+    if (total <= roleShown) return null;
+    const limit = sideLimit(side), active = roleActive(limit, total), title = roleName(side);
+    return h('span', { class: 'g3d-pick', title: t('{role}: tables per layer', { role: title }) }, h('i', { class: 'role-sw ' + side }),
+      h('div', { class: 'seg sm topn', role: 'group', 'aria-label': t('{role}: tables per layer', { role: title }) }, roleOptions(total).map(n => {
+        const label = n === Infinity ? t('All') : String(n);
+        const tip = n === Infinity ? t('{role}: show all {n} tables', { role: title, n: fmt(total) }) : t('{role}: show the top {n}', { role: title, n });
+        return h('button', { class: n === active ? 'on' : '', 'aria-pressed': String(n === active), title: tip, 'aria-label': tip,
+          onclick: () => { state.memExpand = roleLimitSet(state.memExpand, 'graph', side, n); persist(); relayout(); } }, label);
+      })));
+  };
+  const layerTitle = L => (L.side === 'center' ? t('Center')
+    : `${roleName(L.side)} ${L.depth} · ${L.total > L.shown ? `${fmt(L.shown)}/${fmt(L.total)}` : fmt(L.shown)}`);
+  // Labels: every table of the layers plus the layer headers; in All the most
+  // connected tables, the selected one and search matches.
+  const buildLabels = () => {
+    const items = [];
+    if (lay) {
+      for (const n of layNodes.values()) items.push({ n, cls: `g3d-lbl ${n.side}${n.id === centerId() ? ' center' : ''}${matches(n) ? '' : ' dim'}`, text: labelText(n), at: n.side });
+      for (const L of lay.layers) items.push({ n: { x: L.x, y: L.top, z: 0 }, cls: 'g3d-layer ' + L.side, text: layerTitle(L), at: 'center' });
+    } else {
+      const ids = new Set(topConnected(g.edges, graph3dAllLabels));
+      const sel = memSel();
+      if (sel) ids.add(sel);
+      if (ctl.q) for (const n of gd.nodes) { if (ids.size >= graph3dAllLabels * 2) break; if (matches(n)) ids.add(n.id); }
+      for (const id of ids) { const n = byId.get(id); if (n) items.push({ n, cls: `g3d-lbl all${id === sel ? ' center' : ''}${matches(n) ? '' : ' dim'}`, text: labelText(n), at: 'below' }); }
+    }
+    for (const it of items) { it.el = h('span', { class: it.cls }, it.text); it.k = 0; }
+    labels.replaceChildren(...items.map(it => it.el));
+    labelItems = items;
+    lastKey = '';
+  };
+  const anchor = {
+    ref: 'translate(-100%, -50%) translateX(-9px)', dep: 'translate(0, -50%) translateX(9px)',
+    center: 'translate(-50%, -100%) translateY(-11px)', below: 'translate(-50%, 9px)',
+  };
+  // Projects the labels; skipped while neither the camera nor the nodes move.
+  const placeLabels = () => {
+    const fg = ctl.fg, cam = fg.camera(), p = cam.position, tg = fg.controls()?.target || { x: 0, y: 0, z: 0 };
+    const W = host.clientWidth, H = host.clientHeight;
+    const key = [p.x, p.y, p.z, tg.x, tg.y, tg.z, W, H].map(v => Math.round((v || 0) * 10)).join(',');
+    if (key === lastKey && !ctl.moving) return;
+    lastKey = key;
+    let dx = tg.x - p.x, dy = tg.y - p.y, dz = tg.z - p.z;
+    const len = Math.hypot(dx, dy, dz) || 1;
+    dx /= len; dy /= len; dz /= len;
+    const ref = frameDist || len;
+    for (const it of labelItems) {
+      const n = it.n, el = it.el;
+      const vx = n.x - p.x, vy = n.y - p.y, vz = n.z - p.z;
+      const s = Number.isFinite(n.x) && vx * dx + vy * dy + vz * dz > 1 ? fg.graph2ScreenCoords(n.x, n.y, n.z) : null;
+      if (!s || s.x < -240 || s.x > W + 240 || s.y < -40 || s.y > H + 40) { el.style.display = 'none'; continue; }
+      const d = Math.hypot(vx, vy, vz);
+      const k = Math.round(Math.min(1.3, Math.max(0.85, ref / d)) * 20) / 20;
+      if (k !== it.k) { it.k = k; el.style.fontSize = `${(12 * k).toFixed(1)}px`; }
+      el.style.display = '';
+      el.style.transform = `translate(${s.x.toFixed(1)}px, ${s.y.toFixed(1)}px) ${anchor[it.at]}`;
+      el.style.zIndex = String(Math.max(1, Math.round(100000 - d)));
+    }
+  };
+  const loop = () => {
+    ctl.raf = 0;
+    if (!ctl.alive || !ctl.fg || ctl.paused) return;
+    placeLabels();
+    ctl.raf = requestAnimationFrame(loop);
+  };
+
+  const paint = () => {
+    paintRoles();
+    ctl.fg?.nodeColor(n => nodeColor(n)).linkVisibility(l => shownLink(l)).linkColor(l => linkColor(l)).linkWidth(l => linkWidth(l))
+      .linkDirectionalArrowLength(l => arrowLength(l)).linkDirectionalArrowColor(l => linkColor(l));
+    const f = focusId();
+    status.textContent = lay ? t('{t} · depth {d} · {n} tables', { t: f, d: depth, n: fmt(lay.nodes.length) })
+      : `${t('All tables · {n}', { n: fmt(gd.nodes.length) })} · ${t('Click a table to focus it')}`;
+    picks.replaceChildren(...(lay ? [sidePicker('ref'), sidePicker('dep')].filter(Boolean) : []));
+    softBtn.setAttribute('aria-pressed', String(softOn()));
+    deeperBtn.disabled = !lay || !lay.canGrow;
+    allBtn.disabled = !lay;
+    buildLabels();
+  };
+  // Camera in front of the layers, slightly above and to the right so the
+  // columns of wide layers separate; far enough back to show every label.
+  const frameLayers = (ms = reduceMotion ? 0 : 800) => {
+    const fg = ctl.fg;
+    if (!fg || !lay) return;
+    let x0 = 0, x1 = 0, y0 = 0, y1 = 0, z1 = 0;
+    for (const n of lay.nodes) { x0 = Math.min(x0, n.x); x1 = Math.max(x1, n.x); y0 = Math.min(y0, n.y); y1 = Math.max(y1, n.y); z1 = Math.max(z1, Math.abs(n.z)); }
+    for (const L of lay.layers) y1 = Math.max(y1, L.top);
+    const box = host.getBoundingClientRect(), aspect = (box.width || 800) / (box.height || 560);
+    const tan = Math.tan(((fg.camera().fov || 50) * Math.PI) / 360);
+    const halfW = (x1 - x0) / 2 + 250, halfH = (y1 - y0) / 2 + 60;
+    const dist = Math.max(halfH / tan, halfW / (tan * aspect), 220) + z1;
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    frameDist = dist;
+    fg.cameraPosition({ x: cx + dist * 0.05, y: cy + dist * 0.1, z: dist }, { x: cx, y: cy, z: 0 }, ms);
+  };
+  // Layered data for a focused table, else the free layout of every table.
+  const relayout = () => {
+    const fg = ctl.fg, f = focusId();
+    if (f && byId.has(f)) {
+      lay = layeredLayout(g.edges, f, { depth, limits: { ref: sideLimit('ref'), dep: sideLimit('dep') }, soft: softOn(), rows: id => rowEstimate(g.byId.get(id)) });
+      layNodes = new Map(lay.nodes.map(p => {
+        const n = byId.get(p.id);
+        return [p.id, { id: p.id, table: n.table, state: n.state, val: n.val, outside: n.outside, side: p.side, depth: p.depth, rank: p.rank, x: p.x, y: p.y, z: p.z, fx: p.x, fy: p.y, fz: p.z }];
+      }));
+      fg?.enableNodeDrag(false).warmupTicks(0).cooldownTicks(5)
+        .graphData({ nodes: [...layNodes.values()], links: lay.links.map(l => ({ ...l, source: l.from, target: l.to })) });
+      ctl.flyOnStop = false;
+    } else {
+      lay = null; layNodes = null; frameDist = 0;
+      if (fg) { fg.enableNodeDrag(true).warmupTicks(seeded ? 0 : 40).cooldownTicks(seeded ? 40 : 250).graphData(gd); ctl.flyOnStop = true; }
+    }
+    ctl.moving = !!fg;
+    paint();
+    if (lay) frameLayers();
   };
   ctl.focusOn = id => {
     if (!ctl.alive || !byId.has(id)) return false;
     setMemSel(id); setMemFocus(id);
     state.memShowAll = false;
     depth = state.mem3dDepth = 1;
-    apply(); renderInspector(); flyTo(id);
+    relayout(); renderInspector();
     return true;
   };
   ctl.deeper = () => {
-    const f = focusId();
-    if (!rings || !focusCanGrow(gd.links, f, depth)) return;
+    if (!lay?.canGrow) return;
     depth = state.mem3dDepth = depth + 1;
-    apply(); flyTo(f);
+    relayout();
   };
   ctl.showAll = () => {
-    if (!rings) return false;
+    if (!lay) return false;
     state.memShowAll = true;
-    apply(); ctl.fit();
+    relayout();
+    if (seeded) ctl.fit();
     return true;
   };
-  ctl.fit = () => ctl.fg?.zoomToFit(reduceMotion ? 0 : 800, 30, n => shownNode(n));
-  ctl.search = q => { if (q === ctl.q) return; ctl.q = q; ctl.fg?.nodeColor(n => nodeColor(n)); };
-  ctl.recolor = () => { pal = graph3dPalette(); ctl.fg?.backgroundColor(pal.bg); apply(); };
-  ctl.refresh = () => apply();
+  ctl.fit = () => (lay ? frameLayers() : ctl.fg?.zoomToFit(reduceMotion ? 0 : 800, 30));
+  ctl.search = q => { if (q === ctl.q) return; ctl.q = q; ctl.fg?.nodeColor(n => nodeColor(n)); buildLabels(); };
+  ctl.recolor = () => { pal = graph3dPalette(); ctl.fg?.backgroundColor(pal.bg); paint(); };
+  ctl.refresh = () => paint();
   // Render only while the page is visible and the canvas is on screen.
   ctl.sync = () => {
     const fg = ctl.fg;
     if (!fg) return;
     const off = document.hidden || !ctl.inView;
-    if (off && !ctl.paused) { ctl.paused = true; fg.pauseAnimation(); } else if (!off && ctl.paused) { ctl.paused = false; fg.resumeAnimation(); }
+    if (off && !ctl.paused) { ctl.paused = true; fg.pauseAnimation(); cancelAnimationFrame(ctl.raf); ctl.raf = 0; }
+    else if (!off && ctl.paused) { ctl.paused = false; fg.resumeAnimation(); lastKey = ''; ctl.raf ||= requestAnimationFrame(loop); }
   };
   const fail = reason => { graph3dOff = reason; if (graph3d === ctl) { state.schemaKey = null; renderSchema(); } };
   const build = FG => {
@@ -2355,34 +2582,34 @@ function graph3dCanvas(g, data) {
     ctl.fg = fg;
     const box = host.getBoundingClientRect();
     fg.width(box.width || 800).height(box.height || 560).backgroundColor(pal.bg).showNavInfo(false)
-      .nodeId('id').nodeVal('val').nodeRelSize(3).nodeResolution(10).nodeOpacity(0.92).linkOpacity(0.55)
-      .linkDirectionalArrowRelPos(1)
+      .nodeId('id').nodeVal('val').nodeRelSize(3).nodeResolution(10).nodeOpacity(0.92).linkOpacity(0.6)
+      .linkDirectionalArrowRelPos(1).linkDirectionalArrowResolution(8)
       .nodeLabel(n => graph3dTip(n, g))
-      .onNodeClick(n => { if (shownNode(n)) ctl.focusOn(n.id); })
+      .onNodeClick(n => ctl.focusOn(n.id))
       .onNodeHover(n => { host.style.cursor = n ? 'pointer' : ''; })
-      .onNodeDragEnd(() => ctl.save())
-      .warmupTicks(seeded ? 0 : 40).cooldownTicks(seeded ? 40 : 250)
+      .onNodeDragEnd(() => { if (!lay) ctl.save(); })
       .onEngineStop(() => {
-        ctl.save();
+        ctl.moving = false;
+        if (lay) return;
+        ctl.save(); seeded = true;
         if (!ctl.flyOnStop) return;
         ctl.flyOnStop = false;
-        const f = focusId();
-        if (rings && f) flyTo(f); else ctl.fit();
+        ctl.fit();
       });
-    apply();
-    fg.graphData(gd);
-    ctl.flyOnStop = true;
+    relayout();
     ctl.io = new IntersectionObserver(entries => { ctl.inView = entries.at(-1).isIntersecting; ctl.sync(); });
     ctl.io.observe(wrap);
     ctl.ro = new ResizeObserver(() => { const b = host.getBoundingClientRect(); if (b.width && b.height) fg.width(b.width).height(b.height); });
     ctl.ro.observe(host);
     document.addEventListener('visibilitychange', ctl.sync);
+    ctl.raf = requestAnimationFrame(loop);
   };
   ctl.start = () => {
     loadGraph3d().then(FG => { if (ctl.alive) build(FG); }, () => { if (ctl.alive) fail('the 3D library could not be loaded'); });
   };
   ctl.dispose = () => {
     ctl.alive = false;
+    cancelAnimationFrame(ctl.raf); ctl.raf = 0;
     document.removeEventListener('visibilitychange', ctl.sync);
     ctl.io?.disconnect(); ctl.ro?.disconnect();
     const fg = ctl.fg;
@@ -2393,7 +2620,7 @@ function graph3dCanvas(g, data) {
       try { fg.controls()?.dispose?.(); } catch {}
       try { const r = fg.renderer(); r.dispose(); r.forceContextLoss(); } catch {}
     }
-    host.replaceChildren();
+    host.replaceChildren(); labels.replaceChildren();
   };
   return wrap;
 }
