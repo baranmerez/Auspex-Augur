@@ -70,7 +70,7 @@ cd auspex && npm install && npm test
 4. **Register the server** in your MCP client ([see below](#-register-with-an-mcp-client)).
 
 > [!TIP]
-> Start the agent with "work on the `shop` database" and it goes straight to
+> Start the agent with "work on the `example` database" and it goes straight to
 > work. If you don't name one, it lists the profiles and asks.
 
 ## 🧭 How it works
@@ -166,7 +166,7 @@ flowchart LR
 |---|---|
 | 🗂️ `list_profiles` | Configured profiles (description, host, database, user, timeout limit, role check; never passwords) and script roots (name and folder) |
 | 🔐 `check_profile` | Checks that a profile's database role is read-only; a role that can write blocks the profile |
-| 🔎 `search` | Tables, views, columns, functions and triggers whose name or comment matches a text, across all schemas, in one statement; with estimated rows and privileges; optionally function source text too (`searchSource`) |
+| 🔎 `search` | Tables, views, columns, functions and triggers whose name or comment contains a text (always a case-insensitive contains-match), across all schemas, in one statement; with estimated rows and privileges; optionally function source text too (`searchSource`) |
 | 📁 `list_schemas` | Non-system schemas with owner, relation count, usage privilege, comment |
 | 📋 `list_tables` | Tables/views in a schema with estimated rows, size, SELECT privilege, comment; optional ILIKE filter |
 | 🧬 `describe_table` | Columns (with identity, generated and owned sequence), types, defaults, comments, constraints incl. checks, indexes, incoming FKs, triggers, row level security, partitioning, view definition; records the table in the schema memory and reports changes since the last time |
@@ -182,7 +182,7 @@ flowchart LR
 | ✅ `approve_report` | Moves a draft into `SELECT/` after the user approved it |
 | 📚 `list_reports` / 🎨 `render_reports` | Lists the library; re-renders every report HTML from stored JSON |
 | 📨 `share_report` | Writes a copy of a report to send to someone: masked preview and figures only, no SQL, plan, parameters or history |
-| 🧾 `save_execute_script` | Writes a change script into `EXECUTE/` for a human to run — never executed by Auspex; with `root`, `folder` and `fileName` also as a new file in a configured script root (for example the DBeaver Scripts folder) |
+| 🧾 `save_execute_script` | Writes a change script into `EXECUTE/` for a human to run — never executed by Auspex; with `root`, `folder` and `fileName` also as a new file in a configured script root (for example a folder of saved SQL scripts) |
 | 🧠 `table_knowledge` | What the schema memory knows about a table — key and used columns, relations, table notes, database-wide notes, recent changes, unexplored neighbors — without touching the database |
 | 📌 `remember` | Adds, confirms or archives a note: a rule the user stated, an observation backed by evidence, or an unconfirmed inference |
 
@@ -250,7 +250,7 @@ be narrowed by `window` (`from <= column < to`) and by `parentFilter`, up to 5
 conditions `{ column, op, value | values }` with `op` one of `=`, `<>`, `>`,
 `>=`, `<`, `<=` (one `value`), `in`, `not in` (`values`, 1 to 100) or
 `is null`, `is not null` (neither), e.g.
-`[{ "column": "status_code", "op": ">", "value": 50 }]`. All conditions are
+`[{ "column": "status_code", "op": "in", "values": [1, 2] }]`. All conditions are
 ANDed; each column must exist in the parent table (otherwise
 `INVALID_INPUT`), and every value is a bound parameter, never SQL text. The
 fan-out stays one statement. Table and column
@@ -278,8 +278,8 @@ incoming foreign keys, plus a view) smaller than the full answer.
 
 ### Reading table DDL, triggers and functions
 
-For integration work (for example "show the import table for one firm and
-every function and trigger around it, then design the same for another firm")
+For integration work (for example "show the import table for one customer and
+every function and trigger around it, then design the same for another customer")
 the catalog tools return the structure needed to rebuild it:
 
 - `describe_table` / `describe_tables` per table: columns with `identity`
@@ -441,7 +441,9 @@ library/
   It is a structural check, not a proof that the script is right: a `WHERE`
   that matches everything (`WHERE true`) passes, and no script is rehearsed
   against a database (Auspex's role cannot write). A human still reviews
-  every script.
+  every script. Inside the transaction, `DEFINE → PROCESS → MATCH → CORRECT
+  or FAIL` comments are the recommended step structure (scope, change,
+  verification, assertions); they are highlighted but not enforced.
 - **Functions and triggers in change scripts:** `CREATE [OR REPLACE]
   FUNCTION` is allowed with `LANGUAGE plpgsql` or `LANGUAGE sql` (unquoted)
   and exactly one dollar-quoted body (`AS $tag$ ... $tag$`, any tag);
@@ -459,27 +461,30 @@ library/
   TRIGGER` or a function `RETURNS trigger`, since trigger bodies run during
   the dry run.
 - **Script roots:** to keep change scripts where you run them (for example
-  DBeaver's `General\Scripts`, one folder per topic), name the folder in
+  a folder of saved SQL scripts in your SQL client), name the folder in
   `scriptRoots` in the profiles file or as `AUSPEX_SCRIPT_ROOT_<NAME>` (see
   Profiles file). `save_execute_script` with `root` (the name), `folder`
-  (one or two levels joined by `/`, for example `Orders_DB_Scripts_V1` or
-  `Orders_DB_Scripts_V1/reports`, created if missing) and `fileName` (ending
+  (one or two levels joined by `/`, for example `example` or
+  `example/reports`, created if missing) and `fileName` (ending
   in `.sql`) writes the script to `<root>/<folder>/<fileName>` and keeps the
   `EXECUTE/` copy as the library record (`list_reports` shows its
-  `externalFile`; the header names the file). Each folder level and the
-  file name is one name of letters (Turkish included), digits, `_`, `-` and
+  `externalFile`; the header names the file). Auspex assumes no folder layout
+  or naming convention; the limit of two levels is a safety limit, not a
+  layout. Each folder level and the
+  file name is one name of letters (any Unicode letter), digits, `_`, `-` and
   `.`, at most 80 characters, without `..`, a leading or trailing dot or a
   Windows device name; empty levels, absolute or drive paths and a third
   level are refused. The root must exist; Auspex never creates it. A file
-  that already exists is never overwritten (the error proposes the next
-  free `NN_` number), and a folder level that resolves outside its parent
+  that already exists is never overwritten (when the folder's files start
+  with a number such as `03_`, the error proposes the next free one;
+  otherwise it asks for a new file name), and a folder level that resolves outside its parent
   through a link or junction is refused. `replace` only applies to the
   library copy. The lint runs before anything is written. This only writes
   files; no database is touched.
 - **Report queries in a script root:** `save_report` takes the same `root`,
   `folder` and `fileName` and writes the read-only query (checked by the SQL
   guard, one statement) as a new `.sql` file with a comment header, for
-  running in DBeaver or another tool; the draft lists it under
+  running in your SQL client; the draft lists it under
   `externalFiles`. The change-script lint is not involved. A read-only
   check file with several SELECTs (for example a post-commit check) goes
   through `save_execute_script` wrapped in `BEGIN; ... ROLLBACK;`, which the
@@ -513,9 +518,10 @@ library/
   description are kept as written, so keep secrets out of them.
 
 > [!NOTE]
-> Masking is a name-based safety net (English and Turkish names, including
-> compounds such as `aliciadi`). Free-text and JSON columns can still contain
-> personal data; add them to a report's `mask` list. A shared copy is no
+> Masking is a name-based safety net. The built-in name lists cover English
+> and Turkish column names (including Turkish compounds without separators);
+> add other names, and free-text or JSON columns that can contain personal
+> data, to a report's `mask` list. A shared copy is no
 > anonymization: its preview rows are exactly what the masking left, so check
 > them before sending.
 
@@ -662,7 +668,7 @@ server from the same files at startup).
 | Skill | Prompt | Use it for |
 |---|---|---|
 | [`auspex-explore`](skills/auspex-explore/SKILL.md) | `explore` | Finding tables, reading structure and relations, fill rates and fan-out, recording findings in the schema memory with few statements |
-| [`auspex-report`](skills/auspex-report/SKILL.md) | `report` | A combined report: one round of at most 3 questions, remembered rules as defaults, status codes from lookup tables, fan-out/duplicate/NULL/cancelled-row checks, then save, run and approve in the report library |
+| [`auspex-report`](skills/auspex-report/SKILL.md) | `report` | A combined report: one round of at most 3 questions, remembered rules as defaults, status codes from their source (lookup table, enum, check or comment), fan-out/duplicate/NULL checks and a question about excluded states, then save, run and approve in the report library |
 | [`auspex-ddl`](skills/auspex-ddl/SKILL.md) | `ddl` | Studying an existing table family (tables, functions, triggers) and designing a similar one: analysis note plus a `BEGIN ... ROLLBACK` script via `save_execute_script`, never executed by Auspex |
 
 Each `SKILL.md` holds the core rules and workflow; longer checklists live in
@@ -700,12 +706,17 @@ Opens a local page at http://127.0.0.1:4719 (port: `AUSPEX_VIEWER_PORT`):
 - **Overview** — stat tiles, activity over time, usage by profile, tool and table, slowest operations, recent errors
 - **Operations** — sortable, paged log with full SQL, parameters and errors (the status shows the error code, the detail the correlation ID); copy and CSV/JSON download
 - **Tables** — which tables were accessed, how often and by which profile
-- **Reports** — the report library by database, schema and category (the list collapses to a rail), with each report's HTML: the question it answers at the top, the metrics in one strip with a plan-warnings badge that opens the list, and sticky tabs that open on *Preview*
-- **Schema** — the schema memory of a database in three views, an inspector with notes, relations and history, and a timeline of schema changes. A badge in the header counts schema changes you have not seen yet. Around a selected table, foreign keys give two roles: **Reference** (TR *Instance*: tables it points to, such as status codes) and **Dependent** (TR *Beslenen*: tables that point to it, such as order lines). Each role is ranked by linked rows, then by the table's row estimate; both are planner estimates, and a relation without a linked-row figure falls back to the row estimate.
-  - *Graph* — force-directed (focus on a table or *Show all*); the selected table's FK edges are blue (Reference) or orange (Dependent), darkest at rank 1 and lightest at rank 10; edges beyond the top 10 are grey and dashed and can be hidden
-  - *ER diagram* — Reference tables on the left, Dependent tables on the right, top 5 each (expandable to 10), every card with its rank, linked rows and explored state; the rest stay in the inspector's Relations list
-  - *Flow* — Reference → Center → Dependent swimlanes, edge width by linked rows (log scale); a Dependent opens its own dependents as a further lane (depth 2), clicking a table makes it the center and the trail leads back
+- **Reports** — the report library by database, schema and category (the list collapses to a rail; a filter box narrows it by name, category or stage), with each report's HTML: the question it answers at the top, the metrics in one strip with a plan-warnings badge that opens the list, and sticky tabs that open on *Preview*. SQL and change scripts are syntax-highlighted (step markers stand out, long lines soft-wrap), copy buttons inside a report work from the viewer, and drafts and approved reports can be approved or revoked (see below)
+- **Schema** — the schema memory of a database in three views, an inspector with notes, relations and history, and a timeline of schema changes. A schema picker moves the selection and the view center into the chosen schema. A badge in the header counts schema changes you have not seen yet. Around a selected table, foreign keys give two roles: **Reference** (TR *Instance*: tables it points to, such as status codes) and **Dependent** (TR *Beslenen*: tables that point to it, such as order lines). Each role is ranked by linked rows, then by the table's row estimate; both are planner estimates, and a relation without a linked-row figure falls back to the row estimate.
+  - *Graph* — a 3D graph (with a 2D fallback): click a table to focus it, and the focused table's Reference and Dependent tables are laid out in directed layers with always-visible labels; *+1 depth* adds the next ring and *Show all* shows everything. The focused table's FK edges are blue (Reference) or orange (Dependent), darkest at rank 1 and lightest at rank 10; edges beyond the top 10 are grey and dashed and can be hidden
+  - *ER diagram* — Reference tables on the left, Dependent tables on the right, with a per-side top-N picker (5, 10, 25, 50 or All), every card with its rank, linked rows and explored state; the rest stay in the inspector's Relations list
+  - *Flow* — Reference → Center → Dependent swimlanes around a center card, edge width by linked rows (log scale) and edges labelled with their join columns; the same top-N picker per side; a Dependent opens its own dependents as a further labelled lane (depth 2), clicking a table makes it the center and the trail leads back
 - **Profiles** — configured databases with connection details (never passwords) and the latest role check; a `check_profile` that failed shows "unable to assess" with its code, never as a passed check
+
+The viewer uses the full window width with one page scroll, has an English
+and Turkish interface, and offers ready themes plus a theme generator that
+checks contrast; custom themes are saved in the browser and can be exported
+and imported as JSON.
 
 The role colors and lane backgrounds are CSS variables at the top of
 `src/viewer.html` (`--role-ref-1`, `--role-ref-10`, `--role-dep-1`,
@@ -817,9 +828,9 @@ Windows; override with `AUSPEX_PROFILES_FILE`):
 
 ```json
 {
-  "shop": {
-    "url": "postgresql://Auspex@10.0.0.5:5432/shopdb",
-    "description": "Shop PRODUCTION (VPN)",
+  "example": {
+    "url": "postgresql://Auspex@db.example.test:5432/exampledb",
+    "description": "Example PRODUCTION",
     "maxTimeoutSeconds": 180,
     "maxQueriesPerMinute": 30
   }
@@ -839,12 +850,13 @@ An optional top-level `scriptRoots` object names folders for change scripts
 ```json
 {
   "scriptRoots": {
-    "dbeaver": "C:\\Users\\<you>\\DBeaver workspace\\General\\Scripts"
+    "scripts": "/path/to/sql-scripts"
   }
 }
 ```
 
-Each value is an absolute directory path; a relative path, control
+The root name is only a label you pick (`scripts` here); use any name that
+follows the profile-name rules. Each value is an absolute directory path; a relative path, control
 characters, a URL or anything that looks like a password stops the server at
 startup. Root names follow the profile-name rules. If the folder is under
 AppData, check that saved scripts appear there: MSIX-packaged clients may
@@ -856,7 +868,7 @@ profile and an invalid value stops the server at startup:
 
 ```json
 {
-  "notesLanguage": "tr"
+  "notesLanguage": "en"
 }
 ```
 
@@ -872,7 +884,7 @@ at startup:
 
 ```json
 {
-  "auspexRoot": "C:\\src\\auspex"
+  "auspexRoot": "/path/to/auspex"
 }
 ```
 
@@ -891,7 +903,7 @@ naming the problem.
 | `AUSPEX_HOME` | `~/.auspex` | Folder for `profiles.json`, `logs/` and `exports/` |
 | `AUSPEX_PROFILES_FILE` | `<home>/profiles.json` | Profiles file location |
 | `AUSPEX_DB_<NAME>` | none | Extra profile from the environment, e.g. `AUSPEX_DB_LOCAL`; the same name in the file and env is an error |
-| `AUSPEX_SCRIPT_ROOT_<NAME>` | none | Extra script root (absolute folder for `save_execute_script`), e.g. `AUSPEX_SCRIPT_ROOT_DBEAVER`; the same name in `scriptRoots` and env is an error |
+| `AUSPEX_SCRIPT_ROOT_<NAME>` | none | Extra script root (absolute folder for `save_execute_script`), e.g. `AUSPEX_SCRIPT_ROOT_SCRIPTS`; the same name in `scriptRoots` and env is an error |
 | `AUSPEX_ROOT` | `auspexRoot` in the profiles file | Auspex checkout the desktop app runs `src/stageCli.js` from (report approve/revoke) |
 | `AUSPEX_NODE` | `node` on `PATH` | Absolute path of the Node executable the desktop app uses for approve/revoke |
 | `AUSPEX_MAX_ROWS` | 500 | Row cap for `query` |
@@ -900,9 +912,9 @@ naming the problem.
 | `AUSPEX_EXPORT_MAX_MS` | 300000 | Total time cap for one `export_csv` (5 min), on top of the per-statement timeout; covers fetching, writing and closing the file (see CSV export budget) |
 | `AUSPEX_STATEMENT_TIMEOUT_MS` | 30000 | Default statement timeout per call |
 | `AUSPEX_MAX_STATEMENT_TIMEOUT_MS` | 300000 | Ceiling for the per-call `timeoutSeconds` |
-| `AUSPEX_MAX_STATEMENT_TIMEOUT_MS_<NAME>` | global ceiling | Ceiling for one profile, e.g. `_SHOP=120000` |
+| `AUSPEX_MAX_STATEMENT_TIMEOUT_MS_<NAME>` | global ceiling | Ceiling for one profile, e.g. `_EXAMPLE=120000` |
 | `AUSPEX_MAX_QUERIES_PER_MINUTE` | 60 | Query budget: database operations per profile in any sliding minute, per process (1-10000). One tool call or library call counts once, however many statements it runs; over the budget a call is refused before connecting and the refusal is audited |
-| `AUSPEX_MAX_QUERIES_PER_MINUTE_<NAME>` | file value or global | Query budget for one profile, e.g. `_SHOP=30`; overrides `maxQueriesPerMinute` in the profiles file |
+| `AUSPEX_MAX_QUERIES_PER_MINUTE_<NAME>` | file value or global | Query budget for one profile, e.g. `_EXAMPLE=30`; overrides `maxQueriesPerMinute` in the profiles file |
 | `AUSPEX_MAX_CELL_CHARS` | 2000 | Long text values are cut in `query` output |
 | `AUSPEX_DATA_DIR` | `<home>` | Base for `exports/` and `logs/` |
 | `AUSPEX_EXPORT_DIR`, `AUSPEX_LOG_DIR` | under data dir | Override each folder |
@@ -946,7 +958,7 @@ GRANT SELECT ON ALL TABLES IN SCHEMA <schema> TO "Auspex";  -- or a column/view 
 > rules for the role. Prefer a read replica for heavy analysis.
 
 The scripts in [`scripts/`](scripts) do all of this with a
-`BEGIN → DEFINE → PROCESS → MATCH → CORRECT/FAIL → ROLLBACK` flow, so you can
+`BEGIN → DEFINE → PROCESS → MATCH → CORRECT/FAIL → ROLLBACK` step structure, so you can
 review every result before committing.
 
 ## 🧪 Tests
