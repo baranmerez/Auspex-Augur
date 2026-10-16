@@ -60,23 +60,41 @@ export function shareableReport(meta) {
   };
 }
 
+// Join column pairs of approved reports on one database: the "used" level
+// of relations in the schema memory. Only results produced by the approved
+// SQL count; a stale last run from an older revision teaches nothing.
+export function approvedJoinPairs(library, profile) {
+  return library.list()
+    .filter(i => i.stage === 'approved' && i.db === profile)
+    .flatMap(i => {
+      const meta = library.readMeta('approved', i);
+      if (!meta?.last || meta.last.sqlHash !== library.activeHash('approved', i, meta)) return [];
+      return meta.last.summary?.joins ?? [];
+    })
+    .flatMap(j => j.columnPairs ?? []);
+}
+
 // Stage changes without a database, shared by approve_report and the viewer:
 // the library move and the regenerated HTML happen under one library lock.
 // by: who asked for the change, recorded in meta.stageHistory.
-export function approveInLibrary(library, ref, { by = null } = {}) {
-  return library.locked(() => {
-    const r = library.approve(ref, { by });
-    library.writeHtml('approved', ref, renderReport(r.meta));
-    return r;
+// memory (optional SchemaMemory): its view is rebuilt afterwards, outside the
+// library lock, because approved reports' joins are its "used" relations.
+function changeStage(library, ref, { by, memory }, move, stage) {
+  const r = library.locked(() => {
+    const moved = move(ref, { by });
+    library.writeHtml(stage, ref, renderReport(moved.meta));
+    return moved;
   });
+  try { memory?.rebuildView(r.ref.db); } catch { /* the view is rebuilt on the next memory change */ }
+  return r;
 }
 
-export function revokeInLibrary(library, ref, { by = null } = {}) {
-  return library.locked(() => {
-    const r = library.revoke(ref, { by });
-    library.writeHtml('draft', ref, renderReport(r.meta));
-    return r;
-  });
+export function approveInLibrary(library, ref, { by = null, memory = null } = {}) {
+  return changeStage(library, ref, { by, memory }, (x, o) => library.approve(x, o), 'approved');
+}
+
+export function revokeInLibrary(library, ref, { by = null, memory = null } = {}) {
+  return changeStage(library, ref, { by, memory }, (x, o) => library.revoke(x, o), 'draft');
 }
 
 export class ReportService {
@@ -92,16 +110,7 @@ export class ReportService {
   // Join column pairs of approved reports on one database: the "used" level
   // of relations in the schema memory.
   approvedJoinPairs(profile) {
-    // Only results produced by the approved SQL count; a stale last run from
-    // an older revision teaches nothing.
-    return this.library.list()
-      .filter(i => i.stage === 'approved' && i.db === profile)
-      .flatMap(i => {
-        const meta = this.library.readMeta('approved', i);
-        if (!meta?.last || meta.last.sqlHash !== this.library.activeHash('approved', i, meta)) return [];
-        return meta.last.summary?.joins ?? [];
-      })
-      .flatMap(j => j.columnPairs ?? []);
+    return approvedJoinPairs(this.library, profile);
   }
 
   learn(profile, plan, summary) {
@@ -177,15 +186,20 @@ export class ReportService {
     };
     // The run is appended to the metadata as it is now on disk (another
     // process may have saved meanwhile), and the HTML is rendered from that.
-    this.library.locked(() => {
-      const updated = this.library.appendRun(stage, ref, run, last);
-      this.library.writeHtml(stage, ref, renderReport(updated));
+    // The report may also have been approved or revoked (viewer) during the
+    // run: then the run goes to the stage it lives in now.
+    const savedStage = this.library.locked(() => {
+      const now = this.library.exists(stage, ref) ? stage : ['draft', 'approved'].find(s => this.library.exists(s, ref));
+      if (!now) throw new ToolError('NOT_FOUND', `Report ${refLabel(ref)} was moved or removed while it ran (stage changed during run); the run was not saved.`);
+      const updated = this.library.appendRun(now, ref, run, last);
+      this.library.writeHtml(now, ref, renderReport(updated));
+      return now;
     });
-    const html = this.library.paths(stage, ref).html;
+    const html = this.library.paths(savedStage, ref).html;
     const learned = this.learn(result.profile, result.plan, summary);
 
     return {
-      report: refLabel(ref), stage, version, htmlFile: html, note,
+      report: refLabel(ref), stage: savedStage, version, htmlFile: html, note,
       durationMs, explainMs: run.explainMs, previewMs: run.previewMs,
       ...planDigest(summary),
       columns: columns.map(c => `${c.name} ${c.type}`),
@@ -198,9 +212,8 @@ export class ReportService {
 
   approve(input) {
     const ref = this.ref(input);
-    const res = approveInLibrary(this.library, ref, { by: this.db?.source ?? null });
     // Its joins now count as "used" relations in the schema memory view.
-    try { this.memory?.rebuildView(ref.db); } catch { /* the view is rebuilt on the next memory change */ }
+    const res = approveInLibrary(this.library, ref, { by: this.db?.source ?? null, memory: this.memory });
     return { report: refLabel(ref), stage: 'approved', version: res.meta.approvedVersion, sqlFile: res.paths.sql, htmlFile: res.paths.html };
   }
 
