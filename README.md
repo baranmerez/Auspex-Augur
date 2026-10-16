@@ -748,9 +748,8 @@ report, the from/to stage and the version, or the error. The Origin and token
 checks stop other web pages, but any local process on this machine could still
 call these routes, so the audit actor `viewer` is not proof of a human click.
 Approve and revoke also rebuild the schema memory view, since approved
-reports' joins are its "used" relations. The desktop app only
-reads files and shows a note instead of the buttons: approve from the browser
-viewer or through `approve_report`.
+reports' joins are its "used" relations. The desktop app offers the same
+buttons (see below).
 
 ### 🖥️ Desktop app (Tauri)
 
@@ -769,6 +768,43 @@ WebView2. Output: `desktop/src-tauri/target/release/auspex-augur.exe`.
 > [!NOTE]
 > Start the desktop app from Explorer. When it is launched from inside an
 > MSIX-packaged app, Windows may redirect its "Start with Windows" entry.
+
+#### Approving reports in the desktop app
+
+The *Reports* tab of the desktop app has the same **Approve** / **Revoke
+approval** (TR *Onayla* / *Onayı geri al*) buttons and confirm dialog as the
+browser viewer. The library logic is not duplicated in Rust: the app's
+`approve_report` / `revoke_report` commands run the Node stage CLI of your
+Auspex checkout,
+
+```bash
+node <auspexRoot>/src/stageCli.js approve|revoke --db=<db> --schema=<schema> --category=<category> --name=<name>
+```
+
+which applies the viewer's checks (the report location exactly as the library
+lists it, at most 200 characters per part, the report must exist and be in the
+right stage), takes the same library lock, records `stageHistory`,
+regenerates the HTML and rebuilds the schema memory view. Every run is written
+to the audit log with `source` and `actor` `desktop`. The CLI prints one
+JSON line (`{"ok":true,"stage":..,"version":..}` or
+`{"ok":false,"code":..,"message":..}`) and exits with 1 on errors. It honours
+`AUSPEX_HOME` and the folder overrides like the server, and never touches a
+database or the network.
+
+Requirements:
+
+- **Node 20+** on `PATH`, or `AUSPEX_NODE` set to the absolute path of
+  `node.exe`. Only absolute `PATH` entries are searched.
+- **The Auspex folder**: `AUSPEX_ROOT`, or a top-level `"auspexRoot"` in
+  `~/.auspex/profiles.json` (see Profiles file), pointing at the checkout that
+  holds `src/stageCli.js`. Without it the app shows "Auspex folder not found"
+  (TR "Auspex klasörü bulunamadı") with how to set it.
+
+The app starts only this fixed program and script, passes each part of the
+report location as its own argument (never through a shell), checks the parts
+in Rust first, and stops the CLI after 30 seconds. Only `api`,
+`approve_report` and `revoke_report` are allowed in the window's capability;
+there is no shell plugin.
 
 ## 🗂️ Profiles file
 
@@ -824,6 +860,18 @@ profile and an invalid value stops the server at startup:
 unset the model asks the user once which language notes, report texts and change-script texts should be saved in and
 suggests adding the key. Existing notes are not translated.
 
+An optional top-level `auspexRoot` is the absolute path of your Auspex
+checkout; the desktop app runs `src/stageCli.js` from it to approve or revoke
+reports (`AUSPEX_ROOT` takes precedence). It is not a profile; a value that is
+not an absolute, existing directory holding `src/stageCli.js` stops the server
+at startup:
+
+```json
+{
+  "auspexRoot": "C:\\src\\auspex"
+}
+```
+
 Profile names are case-insensitive and use `a-z`, `0-9`, `-`, `_`. Restart
 your MCP client session after editing (profiles are read at start). A missing
 file means no file profiles; an invalid file stops the server with a message
@@ -840,6 +888,8 @@ naming the problem.
 | `AUSPEX_PROFILES_FILE` | `<home>/profiles.json` | Profiles file location |
 | `AUSPEX_DB_<NAME>` | none | Extra profile from the environment, e.g. `AUSPEX_DB_LOCAL`; the same name in the file and env is an error |
 | `AUSPEX_SCRIPT_ROOT_<NAME>` | none | Extra script root (absolute folder for `save_execute_script`), e.g. `AUSPEX_SCRIPT_ROOT_DBEAVER`; the same name in `scriptRoots` and env is an error |
+| `AUSPEX_ROOT` | `auspexRoot` in the profiles file | Auspex checkout the desktop app runs `src/stageCli.js` from (report approve/revoke) |
+| `AUSPEX_NODE` | `node` on `PATH` | Absolute path of the Node executable the desktop app uses for approve/revoke |
 | `AUSPEX_MAX_ROWS` | 500 | Row cap for `query` |
 | `AUSPEX_EXPORT_MAX_ROWS` | 100000 | Row cap for `export_csv` |
 | `AUSPEX_EXPORT_MAX_BYTES` | 104857600 | Size cap for one `export_csv` file (100 MB), BOM and header included |
