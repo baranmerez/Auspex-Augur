@@ -16,9 +16,9 @@ function load() {
 }
 
 const reports = [
-  { name: 'order-status-summary', title: 'Order status summary', category: 'Sipariş İşlemleri', stage: 'draft', db: 'acme', schema: 'app', description: 'ignored' },
-  { name: 'invoice-match', title: 'Invoice match', category: 'IRSALIYE kontrol', stage: 'approved', db: 'acme', schema: 'app' },
-  { name: 'acme-00-preflight', title: 'acme-00-preflight', category: 'Integration', stage: 'execute', db: 'acme', schema: 'app' },
+  { name: 'order-status-summary', title: 'Order status summary', category: 'Sipariş İşlemleri', stage: 'draft', db: 'example', schema: 'app', description: 'ignored' },
+  { name: 'invoice-match', title: 'Invoice match', category: 'IRSALIYE kontrol', stage: 'approved', db: 'example', schema: 'app' },
+  { name: 'example-00-preflight', title: 'example-00-preflight', category: 'Integration', stage: 'execute', db: 'example', schema: 'app' },
 ];
 const pick = (q, labels = { draft: 'taslak', approved: 'onaylı', execute: 'execute' }) => {
   const { reportMatches } = load();
@@ -31,10 +31,10 @@ test('an empty query keeps every report', () => {
 });
 
 test('name, title, category and stage match case-insensitively', () => {
-  assert.deepEqual(pick('PREFLIGHT'), ['acme-00-preflight']);
+  assert.deepEqual(pick('PREFLIGHT'), ['example-00-preflight']);
   assert.deepEqual(pick('status summary'), ['order-status-summary'], 'every word must match');
-  assert.deepEqual(pick('integration'), ['acme-00-preflight']);
-  assert.deepEqual(pick('execute'), ['acme-00-preflight'], 'stage key');
+  assert.deepEqual(pick('integration'), ['example-00-preflight']);
+  assert.deepEqual(pick('execute'), ['example-00-preflight'], 'stage key');
   assert.deepEqual(pick('taslak'), ['order-status-summary'], 'stage label');
   assert.deepEqual(pick('ONAYLI'), ['invoice-match'], 'stage label, dotless i');
   assert.deepEqual(pick('ignored'), [], 'the description is not searched');

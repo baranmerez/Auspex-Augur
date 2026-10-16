@@ -346,7 +346,7 @@ test('export_csv removes the partial file when the query fails', async () => {
 
 test('report library: save, run with ANALYZE, mask, render HTML, version and approve', async () => {
   const svc = new ReportService(db, fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-it-lib-')));
-  const ref = { db: 'local', schema: 'auspex_test', category: 'Genel Çalışma', name: 'Workers by region' };
+  const ref = { db: 'local', schema: 'auspex_test', category: 'Örnek Çalışma', name: 'Workers by region' };
   svc.save({ ...ref, title: 'Workers by region', sql: 'select r.name as region, w.full_name from auspex_test.worker w join auspex_test.region r on r.id = w.region_id order by w.id' });
   const run = await svc.run(ref);
   assert.equal(run.analyzed, true);

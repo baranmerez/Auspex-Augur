@@ -15,8 +15,8 @@ const serverPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..',
 let client;
 
 before(async () => {
-  const env = { ...process.env, AUSPEX_HOME: home, AUSPEX_PROFILES_FILE: path.join(home, 'none.json'), AUSPEX_DB_SHOP: 'postgresql://auspex@127.0.0.1:1/shop' };
-  for (const k of Object.keys(env)) if (/^AUSPEX_DB_/i.test(k) && k !== 'AUSPEX_DB_SHOP') delete env[k];
+  const env = { ...process.env, AUSPEX_HOME: home, AUSPEX_PROFILES_FILE: path.join(home, 'none.json'), AUSPEX_DB_EXAMPLE: 'postgresql://auspex@127.0.0.1:1/example' };
+  for (const k of Object.keys(env)) if (/^AUSPEX_DB_/i.test(k) && k !== 'AUSPEX_DB_EXAMPLE') delete env[k];
   client = new Client({ name: 'prompts-test', version: '1.0.0' });
   await client.connect(new StdioClientTransport({ command: process.execPath, args: [serverPath], env, stderr: 'ignore' }));
 });
@@ -34,11 +34,11 @@ test('the three workflow prompts are listed with the skill descriptions and thei
 
 test('a prompt returns the skill body and references, with the profile and goal', async () => {
   const skill = loadSkill('auspex-report');
-  const r = await client.getPrompt({ name: 'report', arguments: { profile: 'shop', goal: 'December orders by region' } });
+  const r = await client.getPrompt({ name: 'report', arguments: { profile: 'example', goal: 'December orders by region' } });
   assert.equal(r.messages.length, 1);
   const text = r.messages[0].content.text;
   assert.equal(r.messages[0].role, 'user');
-  assert.match(text, /^Follow the auspex-report workflow below\.\nProfile: shop \(named by the user/);
+  assert.match(text, /^Follow the auspex-report workflow below\.\nProfile: example \(named by the user/);
   assert.match(text, /Goal: December orders by region/);
   assert.ok(text.includes(skill.body), 'skill body is included unchanged');
   for (const ref of skill.references) {

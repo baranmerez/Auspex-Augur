@@ -67,7 +67,7 @@ test('search text is always a contains pattern; inner wildcards are kept', () =>
   assert.equal(toIlikePattern('invoice'), '%invoice%');
   assert.equal(toIlikePattern('  invoice  '), '%invoice%');
   assert.equal(toIlikePattern('invoice%'), '%invoice%');
-  assert.equal(toIlikePattern('acme%code'), '%acme%code%');
+  assert.equal(toIlikePattern('example%code'), '%example%code%');
   assert.equal(toIlikePattern('%x'), '%x%');
   assert.equal(toIlikePattern('a_b'), '%a_b%');
   assert.equal(toIlikePattern('%a%'), '%a%');

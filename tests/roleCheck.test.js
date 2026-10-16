@@ -59,7 +59,7 @@ function fakeDb(facts) {
     release() {},
   };
   const audit = [];
-  const db = new ReadOnlyDatabase({ profiles: new Map([['shop', 'postgresql://u@127.0.0.1:1/a']]), statementTimeoutMs: 30000, maxStatementTimeoutMs: 300000 },
+  const db = new ReadOnlyDatabase({ profiles: new Map([['example', 'postgresql://u@127.0.0.1:1/a']]), statementTimeoutMs: 30000, maxStatementTimeoutMs: 300000 },
     { audit: e => audit.push(e), source: 'mcp' });
   db.pool = () => ({ connect: async () => { connects++; return client; } });
   return { db, sent, audit, connects: () => connects };
@@ -69,38 +69,38 @@ const roleQueries = sent => sent.filter(s => s.includes('from pg_roles where rol
 
 test('the check runs once per profile, warnings do not block, and the result is audited', async () => {
   const { db, sent, audit } = fakeDb(clean());
-  const run = () => db.withReadOnly('shop', client => client.query('USER QUERY'));
+  const run = () => db.withReadOnly('example', client => client.query('USER QUERY'));
   assert.deepEqual((await run()).rows, [['ran']]);
   await run();
   assert.equal(roleQueries(sent), 1, 'checked on first use only');
-  assert.equal(db.roleCheck('shop').status, 'warning');
+  assert.equal(db.roleCheck('example').status, 'warning');
   const entry = audit.find(e => e.tool === 'role_check');
   assert.deepEqual({ profile: entry.profile, roleStatus: entry.roleStatus, warnings: entry.warnings, source: entry.source },
-    { profile: 'shop', roleStatus: 'warning', warnings: ['create_on_schema'], source: 'mcp' });
+    { profile: 'example', roleStatus: 'warning', warnings: ['create_on_schema'], source: 'mcp' });
 });
 
 test('a role that can write blocks every call; later calls fail without connecting', async () => {
   const facts = { ...clean(), writable: [{ schema: 'sales', name: 'orders', total: '1' }] };
   const { db, sent, audit, connects } = fakeDb(facts);
-  await assert.rejects(db.withReadOnly('shop', client => client.query('USER QUERY')), err => err instanceof RoleCheckError && /not read-only.*sales\.orders/.test(err.message));
+  await assert.rejects(db.withReadOnly('example', client => client.query('USER QUERY')), err => err instanceof RoleCheckError && /not read-only.*sales\.orders/.test(err.message));
   assert.ok(!sent.includes('USER QUERY'), 'the user query never ran');
   assert.ok(sent.includes('ROLLBACK'), 'the transaction was rolled back');
   assert.equal(connects(), 1);
-  await assert.rejects(db.query('shop', 'select 1'), RoleCheckError);
+  await assert.rejects(db.query('example', 'select 1'), RoleCheckError);
   assert.equal(connects(), 1, 'no new connection for a known blocked profile');
   assert.deepEqual(audit.find(e => e.tool === 'role_check').blocking, ['writable_tables']);
 
   // After the grant is fixed, check_profile runs the check again.
   facts.writable = [];
-  const again = await db.checkProfile('shop');
+  const again = await db.checkProfile('example');
   assert.equal(again.status, 'warning');
-  assert.deepEqual((await db.withReadOnly('shop', client => client.query('USER QUERY'))).rows, [['ran']]);
+  assert.deepEqual((await db.withReadOnly('example', client => client.query('USER QUERY'))).rows, [['ran']]);
 });
 
 test('check_profile reports a blocked role instead of throwing', async () => {
   const { db } = fakeDb({ ...clean(), role: { ...cleanRole, rolsuper: true } });
-  const r = await db.checkProfile('shop');
-  assert.equal(r.profile, 'shop');
+  const r = await db.checkProfile('example');
+  assert.equal(r.profile, 'example');
   assert.equal(r.status, 'blocked');
   assert.deepEqual(codes(r.blocking), ['superuser']);
 });

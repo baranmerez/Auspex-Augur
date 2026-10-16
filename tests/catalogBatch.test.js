@@ -10,14 +10,14 @@ import { SchemaMemory } from '../src/memory/store.js';
 
 const col = (name, extra = {}) => ({ name, type: 'integer', baseType: 23, canSelect: true, ...extra });
 
-// Relations the fake catalog knows: shop.customer (parent) and shop.order_1 ..
-// shop.order_10 with a foreign key customer_id -> customer(id).
+// Relations the fake catalog knows: example.customer (parent) and example.order_1 ..
+// example.order_10 with a foreign key customer_id -> customer(id).
 function knownRelations(extra = {}) {
   const rels = {
-    'shop.customer': { oid: '100', relkind: 'r', estimated_rows: '4', columns: [col('id'), col('created_on', { type: 'date', baseType: 1082 }), col('name', { type: 'text', baseType: 25 })], foreign_keys: [] },
+    'example.customer': { oid: '100', relkind: 'r', estimated_rows: '4', columns: [col('id'), col('created_on', { type: 'date', baseType: 1082 }), col('name', { type: 'text', baseType: 25 })], foreign_keys: [] },
   };
   for (let n = 1; n <= 10; n++) {
-    rels[`shop.order_${n}`] = {
+    rels[`example.order_${n}`] = {
       oid: String(200 + n), relkind: 'r', estimated_rows: '9',
       columns: [col('id'), col('customer_id'), col('note', { type: 'text', baseType: 25 })],
       foreign_keys: [{ name: `order_${n}_customer_fk`, refOid: 100, columns: ['customer_id'], refColumns: ['id'] }],
@@ -73,22 +73,22 @@ function fakeDb(extra = {}) {
     release() {},
   };
   const db = new ReadOnlyDatabase({
-    profiles: new Map([['shop', 'postgresql://u@127.0.0.1:1/a']]),
+    profiles: new Map([['example', 'postgresql://u@127.0.0.1:1/a']]),
     statementTimeoutMs: 30000, maxStatementTimeoutMs: 300000, maxRows: 500,
   }, { audit: e => audit.push(e) });
   db.pool = () => ({ connect: async () => client });
   // The role check is covered in roleCheck.test.js; here the role is known good.
-  db.roleChecks.set('shop', { status: 'ok', blocking: [], warnings: [] });
+  db.roleChecks.set('example', { status: 'ok', blocking: [], warnings: [] });
   return { db, sent, audit };
 }
 
-const orders = n => Array.from({ length: n }, (_, i) => `shop.order_${i + 1}`);
+const orders = n => Array.from({ length: n }, (_, i) => `example.order_${i + 1}`);
 
 test('describe_tables sends the same number of statements for 1 and 10 tables', async () => {
   const one = fakeDb();
-  const r1 = await describeTables(one.db, 'shop', orders(1));
+  const r1 = await describeTables(one.db, 'example', orders(1));
   const ten = fakeDb();
-  const r10 = await describeTables(ten.db, 'shop', orders(10));
+  const r10 = await describeTables(ten.db, 'example', orders(10));
   assert.equal(r1.statements, 6);
   assert.equal(r10.statements, 6);
   assert.equal(one.sent.length, ten.sent.length, 'BEGIN, settings, catalog statements and ROLLBACK only');
@@ -99,22 +99,22 @@ test('describe_tables sends the same number of statements for 1 and 10 tables', 
 
 test('describe_tables summary of 10 tables is smaller than the full answer and keeps every column', async (t) => {
   const { db } = fakeDb();
-  const r = await describeTables(db, 'shop', orders(10));
+  const r = await describeTables(db, 'example', orders(10));
   const summaries = r.tables.map(summarizeDescribedTable);
   assert.deepEqual(summaries[0].columns, ['id integer not null', 'customer_id integer', 'note text']);
   assert.deepEqual(summaries[0].referencedBy, { count: 0, tables: [] });
   const full = JSON.stringify(r.tables.map(({ profile, oid, columns, ...rest }) => ({ ...rest, columns: columns.map(({ attnum, ...c }) => c) }))).length;
   const summary = JSON.stringify(summaries).length;
-  t.diagnostic(`fixture shop.order_1..10: full ${full} characters, summary ${summary} (${Math.round((1 - summary / full) * 100)}% smaller)`);
+  t.diagnostic(`fixture example.order_1..10: full ${full} characters, summary ${summary} (${Math.round((1 - summary / full) * 100)}% smaller)`);
   assert.ok(summary < full);
 });
 
 test('describe_tables reports unknown and invalid names per table', async () => {
   const { db, sent } = fakeDb();
-  const r = await describeTables(db, 'shop', ['shop.order_1', 'shop.missing', 'shop.x";drop table y', 'shop.a;b']);
+  const r = await describeTables(db, 'example', ['example.order_1', 'example.missing', 'example.x";drop table y', 'example.a;b']);
   assert.equal(r.found, 1);
   assert.equal(r.notFound, 3);
-  assert.match(r.tables[1].error, /shop\.missing not found/);
+  assert.match(r.tables[1].error, /example\.missing not found/);
   assert.match(r.tables[2].error, /Invalid table/);
   assert.match(r.tables[3].error, /Invalid table/);
   assert.ok(!sent.some(s => s.text.includes('drop table')), 'an invalid name never reaches the database');
@@ -122,45 +122,45 @@ test('describe_tables reports unknown and invalid names per table', async () => 
 
 test('describe_table reuses the batch path and still fails for an unknown table', async () => {
   const { db } = fakeDb();
-  const r = await describeTable(db, 'shop', 'shop', 'order_2');
-  assert.equal(r.relation, 'shop.order_2');
+  const r = await describeTable(db, 'example', 'example', 'order_2');
+  assert.equal(r.relation, 'example.order_2');
   assert.equal(r.oid, 202);
-  await assert.rejects(describeTable(db, 'shop', 'shop', 'missing'), /Relation shop\.missing not found\./);
+  await assert.rejects(describeTable(db, 'example', 'example', 'missing'), /Relation example\.missing not found\./);
 });
 
 test('describe_tables results are recorded in the schema memory for each table', async () => {
   const { db } = fakeDb();
-  const r = await describeTables(db, 'shop', [...orders(3), 'shop.missing']);
+  const r = await describeTables(db, 'example', [...orders(3), 'example.missing']);
   const memory = new SchemaMemory(fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-batch-mem-')));
   const found = r.tables.filter(t => !t.error);
-  const first = memory.recordDescribeMany('shop', found);
+  const first = memory.recordDescribeMany('example', found);
   assert.deepEqual(first.map(m => m.recorded), ['first time', 'first time', 'first time']);
-  for (const n of [1, 2, 3]) assert.equal(memory.readTable('shop', 'shop', `order_${n}`).columns.length, 3);
-  assert.equal(memory.readTable('shop', 'shop', 'missing'), null);
-  const again = memory.recordDescribeMany('shop', found);
+  for (const n of [1, 2, 3]) assert.equal(memory.readTable('example', 'example', `order_${n}`).columns.length, 3);
+  assert.equal(memory.readTable('example', 'example', 'missing'), null);
+  const again = memory.recordDescribeMany('example', found);
   assert.deepEqual(again.map(m => m.recorded), ['updated', 'updated', 'updated']);
   assert.ok(again.every(m => m.changesSinceLast === undefined));
 });
 
-const parent = { table: 'shop.customer', key: 'id' };
+const parent = { table: 'example.customer', key: 'id' };
 const window = { column: 'created_on', from: '2026-01-01', to: '2026-02-01' };
 
 test('profile_tables sends the same number of statements for 1 and 10 tables', async () => {
   const one = fakeDb();
-  const r1 = await profileTables(one.db, 'shop', { tables: orders(1), parent, window });
+  const r1 = await profileTables(one.db, 'example', { tables: orders(1), parent, window });
   const ten = fakeDb();
-  const r10 = await profileTables(ten.db, 'shop', { tables: orders(10), parent, window });
+  const r10 = await profileTables(ten.db, 'example', { tables: orders(10), parent, window });
   assert.equal(r1.statements, 3);
   assert.equal(r10.statements, 3);
   assert.equal(one.sent.length, ten.sent.length);
   assert.equal(ten.audit.filter(e => e.tool === 'profile_tables').length, 1);
   const noParent = fakeDb();
-  assert.equal((await profileTables(noParent.db, 'shop', { tables: orders(10) })).statements, 2);
+  assert.equal((await profileTables(noParent.db, 'example', { tables: orders(10) })).statements, 2);
 });
 
 test('profile_tables returns ratios and fan-out figures, never row values', async () => {
   const { db, sent } = fakeDb();
-  const r = await profileTables(db, 'shop', { tables: ['shop.order_1'], parent, window, sampleRows: 1000 });
+  const r = await profileTables(db, 'example', { tables: ['example.order_1'], parent, window, sampleRows: 1000 });
   const t = r.tables[0];
   assert.deepEqual(t.sample, { method: 'limit', rows: 10 });
   assert.deepEqual(t.columns[1], { column: 'customer_id', type: 'integer', fillRate: 0.8, distinctInSample: 5 });
@@ -175,17 +175,17 @@ test('profile_tables returns ratios and fan-out figures, never row values', asyn
 
 test('profile_tables rejects names with quotes or semicolons before any SQL is sent', async () => {
   for (const bad of [
-    { tables: ['shop.order_1"; select 1; --'] },
-    { tables: ['shop.order_1;'] },
-    { tables: ["shop.o'x"] },
+    { tables: ['example.order_1"; select 1; --'] },
+    { tables: ['example.order_1;'] },
+    { tables: ["example.o'x"] },
     { tables: ['order_1'] },
-    { tables: ['shop.order_1'], parent: { table: 'shop.customer', key: 'id"' } },
-    { tables: ['shop.order_1'], parent, window: { ...window, column: 'created_on;' } },
-    { tables: ['shop.order_1'], window },
-    { tables: ['shop.order_1:customer_id'] },
+    { tables: ['example.order_1'], parent: { table: 'example.customer', key: 'id"' } },
+    { tables: ['example.order_1'], parent, window: { ...window, column: 'created_on;' } },
+    { tables: ['example.order_1'], window },
+    { tables: ['example.order_1:customer_id'] },
   ]) {
     const { db, sent, audit } = fakeDb();
-    await assert.rejects(profileTables(db, 'shop', bad), /Invalid|give parent/);
+    await assert.rejects(profileTables(db, 'example', bad), /Invalid|give parent/);
     assert.equal(sent.length, 0, JSON.stringify(bad));
     assert.ok(audit.at(-1).error, 'the refused call is audited');
   }
@@ -193,23 +193,23 @@ test('profile_tables rejects names with quotes or semicolons before any SQL is s
 
 test('profile_tables quotes every identifier from the catalog and the SQL passes the guard', async () => {
   const odd = {
-    'shop.weird': {
+    'example.weird': {
       oid: '300', relkind: 'r', estimated_rows: '1000000',
       columns: [col('we"ird'), col('update'), col('select', { canSelect: false }), col('customer_id')],
       foreign_keys: [],
     },
   };
   const { db, sent } = fakeDb(odd);
-  const r = await profileTables(db, 'shop', { tables: ['shop.weird:customer_id', 'shop.order_1'], parent });
+  const r = await profileTables(db, 'example', { tables: ['example.weird:customer_id', 'example.order_1'], parent });
   const stats = sent.find(s => s.text.includes('count(distinct '));
   assert.equal(assertReadOnlyQuery(stats.text), stats.text);
   assert.match(stats.text, /count\("we""ird"\)/);
   assert.match(stats.text, /count\(distinct "update"::text\)/);
   assert.ok(!stats.text.includes('"select"'), 'a column without privilege is not read');
-  assert.match(stats.text, /from "shop"\."weird" tablesample system \(2\.4\) limit \$1/);
+  assert.match(stats.text, /from "example"\."weird" tablesample system \(2\.4\) limit \$1/);
   const fanOut = sent.find(s => s.text.includes('auspex_parent'));
   assert.equal(assertReadOnlyQuery(fanOut.text), fanOut.text);
-  assert.match(fanOut.text, /select distinct "id" as k from "shop"\."customer" where "id" is not null limit \$1/);
+  assert.match(fanOut.text, /select distinct "id" as k from "example"\."customer" where "id" is not null limit \$1/);
   const weird = r.tables[0];
   assert.deepEqual(weird.sample, { method: 'tablesample', percent: 2.4, rows: 10 });
   assert.deepEqual(weird.columnsWithoutPrivilege, ['select']);
@@ -218,31 +218,31 @@ test('profile_tables quotes every identifier from the catalog and the SQL passes
 
 test('profile_tables reports per table: unknown relation, missing foreign key, incompatible column', async () => {
   const { db } = fakeDb({
-    'shop.loose': { oid: '400', relkind: 'r', estimated_rows: null, columns: [col('customer_ref', { type: 'text', baseType: 25 })], foreign_keys: [] },
+    'example.loose': { oid: '400', relkind: 'r', estimated_rows: null, columns: [col('customer_ref', { type: 'text', baseType: 25 })], foreign_keys: [] },
   });
-  const r = await profileTables(db, 'shop', { tables: ['shop.missing', 'shop.loose', 'shop.order_1', 'shop.customer'], parent });
+  const r = await profileTables(db, 'example', { tables: ['example.missing', 'example.loose', 'example.order_1', 'example.customer'], parent });
   assert.match(r.tables[0].error, /not found/);
   assert.match(r.tables[1].fanOut.error, /No single-column foreign key/);
   assert.equal(r.tables[2].fanOut.childRows, 9);
   assert.deepEqual(r.tables[3].fanOut, { skipped: 'this is the parent table' });
   const typed = fakeDb({
-    'shop.loose': { oid: '400', relkind: 'r', estimated_rows: null, columns: [col('customer_ref', { type: 'text', baseType: 25 })], foreign_keys: [] },
+    'example.loose': { oid: '400', relkind: 'r', estimated_rows: null, columns: [col('customer_ref', { type: 'text', baseType: 25 })], foreign_keys: [] },
   });
-  const r2 = await profileTables(typed.db, 'shop', { tables: ['shop.loose:customer_ref'], parent });
+  const r2 = await profileTables(typed.db, 'example', { tables: ['example.loose:customer_ref'], parent });
   assert.match(r2.tables[0].fanOut.error, /cannot be compared/);
   assert.equal(r2.statements, 2, 'no fan-out statement when no table can be linked');
 });
 
 test('profile_tables fails as a whole for an unknown parent or parent column', async () => {
   const { db } = fakeDb();
-  await assert.rejects(profileTables(db, 'shop', { tables: ['shop.order_1'], parent: { table: 'shop.nope', key: 'id' } }), /Parent shop\.nope not found/);
-  await assert.rejects(profileTables(db, 'shop', { tables: ['shop.order_1'], parent: { table: 'shop.customer', key: 'nope' } }), /Parent key column nope/);
-  await assert.rejects(profileTables(db, 'shop', { tables: ['shop.order_1'], parent, window: { ...window, column: 'nope' } }), /Window column nope/);
+  await assert.rejects(profileTables(db, 'example', { tables: ['example.order_1'], parent: { table: 'example.nope', key: 'id' } }), /Parent example\.nope not found/);
+  await assert.rejects(profileTables(db, 'example', { tables: ['example.order_1'], parent: { table: 'example.customer', key: 'nope' } }), /Parent key column nope/);
+  await assert.rejects(profileTables(db, 'example', { tables: ['example.order_1'], parent, window: { ...window, column: 'nope' } }), /Window column nope/);
 });
 
 test('profile_tables parentFilter: every value is a parameter, ANDed with the window, still 3 statements', async () => {
   const { db, sent, audit } = fakeDb();
-  const evil = "x'; drop table shop.customer; --";
+  const evil = "x'; drop table example.customer; --";
   const parentFilter = [
     { column: 'id', op: '>', value: 50 },
     { column: 'name', op: 'in', values: [evil, 'b'] },
@@ -250,7 +250,7 @@ test('profile_tables parentFilter: every value is a parameter, ANDed with the wi
     { column: 'created_on', op: 'is not null' },
     { column: 'name', op: 'NOT  IN', values: ['c'] },
   ];
-  const r = await profileTables(db, 'shop', { tables: orders(2), parent, window, parentFilter, sampleRows: 1000 });
+  const r = await profileTables(db, 'example', { tables: orders(2), parent, window, parentFilter, sampleRows: 1000 });
   assert.equal(r.statements, 3);
   const fanOut = sent.find(s => s.text.includes('auspex_parent'));
   assert.deepEqual(fanOut.params, [1000, '2026-01-01', '2026-02-01', 50, [evil, 'b'], [1, 2], ['c']]);
@@ -261,7 +261,7 @@ test('profile_tables parentFilter: every value is a parameter, ANDed with the wi
   assert.deepEqual(audit.at(-1).parentFilter, parentFilter, 'the filter is in the audit log');
 
   const noWindow = fakeDb();
-  await profileTables(noWindow.db, 'shop', { tables: orders(1), parent, parentFilter: [{ column: 'name', op: '=', value: 'Ege' }] });
+  await profileTables(noWindow.db, 'example', { tables: orders(1), parent, parentFilter: [{ column: 'name', op: '=', value: 'Ege' }] });
   const sql = noWindow.sent.find(s => s.text.includes('auspex_parent'));
   assert.deepEqual(sql.params, [20000, 'Ege']);
   assert.match(sql.text, /where "id" is not null and "name" = \$2 limit \$1/);
@@ -281,7 +281,7 @@ test('profile_tables parentFilter refuses bad input with INVALID_INPUT', async (
   ];
   for (const [f, message] of before) {
     const { db, sent } = fakeDb();
-    await assert.rejects(profileTables(db, 'shop', { tables: orders(1), parent, parentFilter: [f] }), err => err.errorCode === 'INVALID_INPUT' && message.test(err.message), JSON.stringify(f));
+    await assert.rejects(profileTables(db, 'example', { tables: orders(1), parent, parentFilter: [f] }), err => err.errorCode === 'INVALID_INPUT' && message.test(err.message), JSON.stringify(f));
     assert.equal(sent.length, 0, `refused before any SQL: ${JSON.stringify(f)}`);
   }
   for (const bad of [
@@ -290,20 +290,20 @@ test('profile_tables parentFilter refuses bad input with INVALID_INPUT', async (
     { tables: orders(1), parentFilter: [{ column: 'id', op: 'is null' }] },
   ]) {
     const { db, sent } = fakeDb();
-    await assert.rejects(profileTables(db, 'shop', bad), err => err.errorCode === 'INVALID_INPUT', JSON.stringify(bad));
+    await assert.rejects(profileTables(db, 'example', bad), err => err.errorCode === 'INVALID_INPUT', JSON.stringify(bad));
     assert.equal(sent.length, 0);
   }
   const { db, sent } = fakeDb();
-  await assert.rejects(profileTables(db, 'shop', { tables: orders(1), parent, parentFilter: [{ column: 'nope', op: 'is null' }] }),
-    err => err.errorCode === 'INVALID_INPUT' && /parentFilter\[0\] column nope not found in shop\.customer/.test(err.message));
+  await assert.rejects(profileTables(db, 'example', { tables: orders(1), parent, parentFilter: [{ column: 'nope', op: 'is null' }] }),
+    err => err.errorCode === 'INVALID_INPUT' && /parentFilter\[0\] column nope not found in example\.customer/.test(err.message));
   assert.ok(!sent.some(s => s.text.includes('auspex_parent')), 'an unknown column stops before the fan-out statement');
 });
 
 test('profile_tables enforces table and sample limits and the timeout ceiling', async () => {
   const { db } = fakeDb();
-  await assert.rejects(profileTables(db, 'shop', { tables: orders(10).concat(Array.from({ length: 21 }, (_, i) => `shop.t${i}`)) }), /1 to 30/);
-  await assert.rejects(profileTables(db, 'shop', { tables: orders(1), sampleRows: 200001 }), /sampleRows/);
-  await assert.rejects(profileTables(db, 'shop', { tables: orders(1), timeoutSeconds: 301 }), /exceeds/);
+  await assert.rejects(profileTables(db, 'example', { tables: orders(10).concat(Array.from({ length: 21 }, (_, i) => `example.t${i}`)) }), /1 to 30/);
+  await assert.rejects(profileTables(db, 'example', { tables: orders(1), sampleRows: 200001 }), /sampleRows/);
+  await assert.rejects(profileTables(db, 'example', { tables: orders(1), timeoutSeconds: 301 }), /exceeds/);
 });
 
 test('table names parse strictly and identifiers quote safely', () => {
