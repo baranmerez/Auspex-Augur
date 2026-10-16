@@ -466,7 +466,8 @@ fn valid_ref_part(key: &str, s: &str) -> bool {
 fn node_program() -> Result<PathBuf, Value> {
     if let Some(p) = env("AUSPEX_NODE") {
         let p = PathBuf::from(p);
-        if p.is_absolute() && p.is_file() {
+        let exe_ok = !cfg!(windows) || p.extension().is_some_and(|e| e.eq_ignore_ascii_case("exe"));
+        if p.is_absolute() && exe_ok && p.is_file() {
             return Ok(p);
         }
         return Err(stage_error("NODE_NOT_FOUND", "AUSPEX_NODE must be the absolute path of the Node executable (node.exe)."));
@@ -531,7 +532,10 @@ fn parse_cli_output(stdout: &str, stderr: &str, exit: Option<i32>) -> Result<Val
         _ => {
             let detail: String = stderr.trim().chars().take(300).collect();
             let code = exit.map(|c| c.to_string()).unwrap_or_else(|| "none".into());
-            Err(stage_error("CLI_FAILED", format!("src/stageCli.js gave no result (exit code {code}). {detail}").trim_end().to_string()))
+            Err(stage_error(
+                "CLI_FAILED",
+                format!("src/stageCli.js gave no result (exit code {code}); the change may or may not have been applied. Reload the list. {detail}").trim_end().to_string(),
+            ))
         }
     }
 }
@@ -569,7 +573,12 @@ fn run_stage_cli(action: &str, parts: &[String; 4]) -> Result<Value, Value> {
             Ok(None) if started.elapsed() >= STAGE_TIMEOUT => {
                 let _ = child.kill();
                 let _ = child.wait();
-                return Err(stage_error("TIMEOUT", format!("src/stageCli.js did not finish within {} s and was stopped.", STAGE_TIMEOUT.as_secs())));
+                let e = stage_error(
+                    "TIMEOUT",
+                    format!("src/stageCli.js did not finish within {} s and was stopped; the change may or may not have been applied. Reload the list.", STAGE_TIMEOUT.as_secs()),
+                );
+                audit_uncertain(action, parts, started.elapsed(), &e);
+                return Err(e);
             }
             Ok(None) => std::thread::sleep(Duration::from_millis(50)),
             Err(e) => return Err(stage_error("INTERNAL", e.to_string())),
@@ -577,7 +586,54 @@ fn run_stage_cli(action: &str, parts: &[String; 4]) -> Result<Value, Value> {
     };
     let stdout = out.join().unwrap_or_default();
     let stderr = err.join().unwrap_or_default();
-    parse_cli_output(&stdout, &stderr, status.code())
+    let result = parse_cli_output(&stdout, &stderr, status.code());
+    if let Err(e) = &result {
+        if e["code"] == json!("CLI_FAILED") {
+            audit_uncertain(action, parts, started.elapsed(), e);
+        }
+    }
+    result
+}
+
+// Days since 1970-01-01 -> (year, month, day), proleptic Gregorian (H. Hinnant's civil_from_days).
+fn civil_from_days(days: i64) -> (i64, u32, u32) {
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    (yoe + era * 400 + i64::from(m <= 2), m, d)
+}
+
+// UTC timestamp as JavaScript's toISOString() writes it: 2026-10-16T08:00:00.000Z.
+fn iso_now() -> String {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+    let secs = now.as_secs() as i64;
+    let (y, m, d) = civil_from_days(secs.div_euclid(86_400));
+    let s = secs.rem_euclid(86_400);
+    format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}.{:03}Z", s / 3600, s % 3600 / 60, s % 60, now.subsec_millis())
+}
+
+// When the CLI timed out or gave no result it may not have written its own
+// audit line, so the app writes one in the same format and place as
+// src/auditLog.js (<log dir>/<UTC day>.jsonl). Best effort, like the JS log.
+fn audit_uncertain(action: &str, parts: &[String; 4], elapsed: Duration, err: &Value) {
+    let (tool, from, to) = if action == "approve" { ("approve_report", "draft", "approved") } else { ("revoke_report", "approved", "draft") };
+    let ts = iso_now();
+    let entry = json!({
+        "ts": ts, "source": "desktop", "tool": tool, "actor": "desktop", "fromStage": from, "toStage": to,
+        "profile": parts[0], "report": parts.join("/"), "ms": elapsed.as_millis() as u64,
+        "error": err["message"], "errorCode": err["code"],
+    });
+    let dir = log_dir();
+    let _ = fs::create_dir_all(&dir).and_then(|_| {
+        use std::io::Write;
+        let mut f = fs::OpenOptions::new().create(true).append(true).open(dir.join(format!("{}.jsonl", &ts[..10])))?;
+        f.write_all(format!("{entry}\n").as_bytes())
+    });
 }
 
 async fn stage_command(action: &'static str, parts: [String; 4]) -> Result<Value, Value> {
@@ -725,6 +781,28 @@ mod tests {
         let e = parse_cli_output("", "SyntaxError: x", Some(1)).unwrap_err();
         assert_eq!(e["code"], json!("CLI_FAILED"));
         assert!(e["message"].as_str().unwrap().contains("SyntaxError"));
+    }
+
+    #[test]
+    fn uncertain_outcomes_are_audited_like_the_js_log() {
+        assert_eq!(civil_from_days(0), (1970, 1, 1));
+        assert_eq!(civil_from_days(20_742), (2026, 10, 16));
+        assert_eq!(civil_from_days(11_016), (2000, 2, 29));
+        let ts = iso_now();
+        assert_eq!((ts.len(), &ts[10..11], &ts[23..]), (24, "T", "Z"), "{ts}");
+        let dir = std::env::temp_dir().join(format!("auspex-audit-test-{}", std::process::id()));
+        std::env::set_var("AUSPEX_LOG_DIR", &dir);
+        let parts = ["exampledb".to_string(), "example".into(), "Example Reports".into(), "example-report".into()];
+        audit_uncertain("approve", &parts, Duration::from_millis(30_001), &stage_error("TIMEOUT", "may or may not have been applied"));
+        std::env::remove_var("AUSPEX_LOG_DIR");
+        let file = fs::read_dir(&dir).unwrap().next().unwrap().unwrap().path();
+        assert!(file.file_name().unwrap().to_string_lossy().ends_with(".jsonl"));
+        let line: Value = serde_json::from_str(fs::read_to_string(&file).unwrap().trim()).unwrap();
+        assert_eq!(
+            (line["source"].clone(), line["actor"].clone(), line["tool"].clone(), line["report"].clone(), line["errorCode"].clone(), line["ms"].clone()),
+            (json!("desktop"), json!("desktop"), json!("approve_report"), json!("exampledb/example/Example Reports/example-report"), json!("TIMEOUT"), json!(30_001))
+        );
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

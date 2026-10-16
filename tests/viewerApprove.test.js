@@ -228,7 +228,7 @@ test('the desktop page invokes the Tauri command with only the report location a
 });
 
 test('every setup text of the desktop has a Turkish translation', () => {
-  for (const code of ['AUSPEX_ROOT_MISSING', 'NODE_NOT_FOUND']) {
+  for (const code of ['AUSPEX_ROOT_MISSING', 'AUSPEX_ROOT_INVALID', 'NODE_NOT_FOUND', 'TIMEOUT', 'CLI_FAILED']) {
     const text = page.match(new RegExp(`${code}: '([^']+)'`))?.[1];
     assert.ok(text, code);
     assert.ok(page.includes(`'${text}': '`), `TR entry for ${code}`);

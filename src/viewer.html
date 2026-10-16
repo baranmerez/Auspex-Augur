@@ -830,6 +830,8 @@ const TR = {
   'Revoke report approval': 'Rapor onayını geri al',
   'Auspex folder not found. Set "auspexRoot" in ~/.auspex/profiles.json (or the AUSPEX_ROOT environment variable) to the Auspex folder that holds src/stageCli.js.': 'Auspex klasörü bulunamadı. ~/.auspex/profiles.json içinde "auspexRoot" değerini (ya da AUSPEX_ROOT ortam değişkenini) src/stageCli.js dosyasını içeren Auspex klasörüne ayarlayın.',
   'Node was not found. Install Node 20+ so it is on PATH, or set AUSPEX_NODE to the path of node.exe.': 'Node bulunamadı. Node 20+ kurun (PATH üzerinde olsun) ya da AUSPEX_NODE değişkenini node.exe yoluna ayarlayın.',
+  'The Auspex folder setting is invalid: AUSPEX_ROOT or "auspexRoot" in ~/.auspex/profiles.json must be the absolute path of the Auspex folder that holds src/stageCli.js.': 'Auspex klasörü ayarı geçersiz: AUSPEX_ROOT ya da ~/.auspex/profiles.json içindeki "auspexRoot", src/stageCli.js dosyasını içeren Auspex klasörünün mutlak yolu olmalı.',
+  'The change may or may not have been applied; reload the list.': 'İşlem uygulanmış olabilir; listeyi yenileyin.',
 };
 let lang = 'en';
 try { lang = localStorage.getItem('auspex.viewer.lang') || ((navigator.language || '').toLowerCase().startsWith('tr') ? 'tr' : 'en'); } catch {}
@@ -1793,10 +1795,14 @@ async function postStageChange(fetchFn, token, path, r) {
   return data;
 }
 // Desktop: the Tauri command with only the report location. Setup problems
-// (no Auspex folder, no Node) come back as a fixed text the page translates.
+// (no or a wrong Auspex folder, no Node) and an unknown outcome (the CLI timed
+// out or gave no result) come back as a fixed text the page translates.
 const stageSetupTexts = {
   AUSPEX_ROOT_MISSING: 'Auspex folder not found. Set "auspexRoot" in ~/.auspex/profiles.json (or the AUSPEX_ROOT environment variable) to the Auspex folder that holds src/stageCli.js.',
+  AUSPEX_ROOT_INVALID: 'The Auspex folder setting is invalid: AUSPEX_ROOT or "auspexRoot" in ~/.auspex/profiles.json must be the absolute path of the Auspex folder that holds src/stageCli.js.',
   NODE_NOT_FOUND: 'Node was not found. Install Node 20+ so it is on PATH, or set AUSPEX_NODE to the path of node.exe.',
+  TIMEOUT: 'The change may or may not have been applied; reload the list.',
+  CLI_FAILED: 'The change may or may not have been applied; reload the list.',
 };
 async function invokeStageChange(invoke, command, r) {
   try {
@@ -1846,6 +1852,8 @@ async function runStageChange(r, sc) {
     try { state.reports = await getJson('/api/reports'); } catch (err) { state.reports = { error: err.message, reports: [] }; }
   } catch (err) {
     toast(err.viewerRestarted ? t('The viewer was restarted; reload the page') : err.setupText ? t(err.setupText) : err.message);
+    // Outcome unknown (desktop CLI timed out or gave no result): show the library as it is now.
+    if (err.code === 'TIMEOUT' || err.code === 'CLI_FAILED') { try { state.reports = await getJson('/api/reports'); } catch {} }
   } finally {
     state.stagePending = null;
     state.reportViewNode = null;
