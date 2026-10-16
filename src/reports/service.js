@@ -100,15 +100,21 @@ export class ReportService {
     return ref;
   }
 
+  // With root, folder and fileName the query is also written as a new file
+  // into that script root (see Library.saveDraftUnlocked).
   save(input) {
     const ref = this.ref(input);
+    const { target, rest } = this.scriptTarget(input);
     // SQL, metadata and HTML are written under one lock, so they always match.
     const saved = this.library.locked(() => {
-      const s = this.library.saveDraft({ ...input, ref });
+      const s = this.library.saveDraft({ ...rest, ref, target });
       this.library.writeHtml('draft', ref, renderReport(this.library.readMeta('draft', ref)));
       return s;
     });
-    return { report: refLabel(ref), stage: 'draft', version: saved.version, sqlFile: saved.paths.sql, htmlFile: saved.paths.html };
+    return {
+      report: refLabel(ref), stage: 'draft', version: saved.version, sqlFile: saved.paths.sql, htmlFile: saved.paths.html,
+      ...(saved.externalFile ? { externalFile: saved.externalFile } : {}),
+    };
   }
 
   async run(input, { analyze = 'auto', previewRows = 50, returnRows = 20, timeoutSeconds, params } = {}) {
@@ -226,22 +232,26 @@ export class ReportService {
     return this.library.list().filter(i => (!filter.db || i.db === filter.db.toLowerCase()) && (!filter.stage || i.stage === filter.stage));
   }
 
+  // Splits root, folder and fileName off a tool input: { target, rest }, where
+  // target is null (library only) or a configured script root location.
+  scriptTarget(input) {
+    const { root, folder, fileName, ...rest } = input;
+    if (root === undefined && folder === undefined && fileName === undefined) return { target: null, rest };
+    if (!root || !folder || !fileName) throw new ToolError('INVALID_INPUT', 'root, folder and fileName go together: pass all three to write into a script root, or none for the library only.');
+    const name = String(root).toLowerCase();
+    const configured = this.scriptRoots.get(name);
+    if (!configured) {
+      const names = [...this.scriptRoots.keys()].join(', ') || 'none (add "scriptRoots" to profiles.json)';
+      throw new ToolError('INVALID_INPUT', `Unknown script root "${root}". Configured: ${names}.`);
+    }
+    return { target: { root: name, dir: configured.dir, folder, fileName }, rest };
+  }
+
   // With root, folder and fileName the script is also written into that
   // configured script root (see Library.saveExecuteScriptUnlocked).
   saveExecute(input) {
     const ref = this.ref(input);
-    const { root, folder, fileName, ...rest } = input;
-    let target = null;
-    if (root !== undefined || folder !== undefined || fileName !== undefined) {
-      if (!root || !folder || !fileName) throw new ToolError('INVALID_INPUT', 'root, folder and fileName go together: pass all three to write into a script root, or none for the library only.');
-      const name = String(root).toLowerCase();
-      const configured = this.scriptRoots.get(name);
-      if (!configured) {
-        const names = [...this.scriptRoots.keys()].join(', ') || 'none (add "scriptRoots" to profiles.json)';
-        throw new ToolError('INVALID_INPUT', `Unknown script root "${root}". Configured: ${names}.`);
-      }
-      target = { root: name, dir: configured.dir, folder, fileName };
-    }
+    const { target, rest } = this.scriptTarget(input);
     return this.library.saveExecuteScript({ ...rest, ref, target });
   }
 }
