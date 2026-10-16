@@ -411,7 +411,7 @@ tool('render_reports', {
 
 tool('save_execute_script', {
   title: 'Save change script',
-  description: 'Writes an INSERT/UPDATE/DELETE/DDL script to EXECUTE/<db>/<schema>/<category>/<name>.sql for the user to run with a privileged role. Auspex never executes it. The script must start with BEGIN, end with ROLLBACK, contain no COMMIT and have WHERE on every UPDATE/DELETE. With root, folder and fileName it is also written as a new file to <script root>/<folder>/<fileName> (script roots: see list_profiles); ask the user for that location before saving. An existing file there is never overwritten.',
+  description: 'Writes an INSERT/UPDATE/DELETE/DDL script to EXECUTE/<db>/<schema>/<category>/<name>.sql for the user to run with a privileged role. Auspex never executes it. The script must start with BEGIN, end with ROLLBACK, contain no COMMIT and have WHERE on every UPDATE/DELETE. CREATE [OR REPLACE] FUNCTION with LANGUAGE plpgsql or sql and one dollar-quoted body, and CREATE TRIGGER, are allowed; the body is not linted (the file header says so), DO blocks and CALL are rejected. With root, folder and fileName it is also written as a new file to <script root>/<folder>/<fileName> (script roots: see list_profiles); ask the user for that location before saving. An existing file there is never overwritten.',
   inputSchema: {
     ...refArgs,
     sql: z.string().min(1).describe('The change script (BEGIN ... MATCH checks ... ROLLBACK).'),
