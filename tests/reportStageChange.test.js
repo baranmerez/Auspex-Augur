@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Library, sqlHash } from '../src/reports/library.js';
-import { approveInLibrary, revokeInLibrary } from '../src/reports/service.js';
+import { approveInLibrary, revokeInLibrary, approvedJoinPairs, ReportService } from '../src/reports/service.js';
+import { SchemaMemory } from '../src/memory/store.js';
 
 // Approve and revoke in the library, as the viewer and approve_report use them.
 const ref = { db: 'exampledb', schema: 'example', category: 'Example Reports', name: 'example-report' };
@@ -73,4 +74,48 @@ test('missing reports and path tricks are refused', () => {
   assert.throws(() => lib.approve({ ...ref, name: 'missing-report' }), err => err.errorCode === 'NOT_FOUND');
   assert.throws(() => lib.revoke({ ...ref, category: '..' }), err => err.errorCode === 'INVALID_INPUT');
   assert.throws(() => lib.approve({ ...ref, schema: 'example/../../x' }), err => err.errorCode === 'INVALID_INPUT');
+});
+
+test('approve and revoke rebuild the schema memory view: the joins are "used" relations only while approved', () => {
+  const lib = new Library(fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-stage-mem-')));
+  const joinSql = 'select o.order_id from example.orders o join example.customers c on c.customer_id = o.customer_id';
+  lib.saveDraft({ ref, sql: joinSql });
+  const last = { sqlHash: sqlHash(joinSql), summary: { joins: [{ columnPairs: [{ left: 'example.orders.customer_id', right: 'example.customers.customer_id' }] }] } };
+  lib.appendRun('draft', ref, { at: '2026-10-01T08:00:00.000Z', sqlHash: sqlHash(joinSql), durationMs: 5, rows: 1, warnings: [] }, last);
+  const memory = new SchemaMemory(fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-stage-memdir-')), { approvedJoins: p => approvedJoinPairs(lib, p) });
+  const usedEdges = () => JSON.parse(fs.readFileSync(path.join(memory.root, 'exampledb', 'graph.json'), 'utf8')).edges.filter(e => e.level === 'used');
+
+  approveInLibrary(lib, ref, { by: 'viewer', memory });
+  assert.deepEqual(usedEdges().map(e => [e.from, e.to, e.columns]), [['example.orders', 'example.customers', ['customer_id']]]);
+  revokeInLibrary(lib, ref, { by: 'viewer', memory });
+  assert.deepEqual(usedEdges(), []);
+});
+
+test('a run whose report was approved meanwhile is saved to the stage it lives in now', async () => {
+  const lib = draftWithRun();
+  const plan = [{ Plan: { 'Node Type': 'Result', 'Total Cost': 0.01, 'Plan Rows': 1 } }];
+  let move = () => {};
+  const db = {
+    source: 'test',
+    resolveProfile: name => name,
+    async runReport(profile) {
+      move(); // the viewer changes the stage while the query runs
+      return { profile, plan, columns: [{ name: 'order_id', type: 'integer' }], rows: [[1]], explainMs: 1, previewMs: 1, previewExecuted: true, truncated: false, serverVersion: '16' };
+    },
+  };
+  const service = new ReportService(db, lib.root);
+
+  move = () => approveInLibrary(lib, ref);
+  const approvedRun = await service.run(ref, { analyze: false });
+  assert.equal(approvedRun.stage, 'approved');
+  assert.equal(lib.readMeta('approved', ref).runs.length, 2);
+  assert.ok(approvedRun.htmlFile.includes(`${path.sep}SELECT${path.sep}`));
+
+  move = () => revokeInLibrary(lib, ref);
+  const revokedRun = await service.run(ref, { analyze: false });
+  assert.equal(revokedRun.stage, 'draft');
+  assert.equal(lib.readMeta('draft', ref).runs.length, 3);
+
+  move = () => { for (const f of Object.values(lib.paths('draft', ref))) fs.rmSync(f, { force: true }); };
+  await assert.rejects(service.run(ref, { analyze: false }), err => err.errorCode === 'NOT_FOUND' && /stage changed during run/.test(err.message));
 });
