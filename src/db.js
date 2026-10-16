@@ -409,7 +409,7 @@ export class ReadOnlyDatabase {
             started = true;
             columns = res.fields.map(f => f.name);
             textColumn = res.fields.map(f => mode === 'spreadsheet' && !nonTextTypes.has(f.dataTypeID));
-            // BOM so Excel opens UTF-8 (Turkish characters) correctly. Column
+            // BOM so Excel opens UTF-8 (non-ASCII characters) correctly. Column
             // names are text too: spreadsheet mode neutralizes them like text cells.
             const head = '﻿' + columns.map(c => csvCell(mode === 'spreadsheet' ? spreadsheetSafe(c) : c, delimiter)).join(delimiter) + '\r\n';
             const headBytes = Buffer.byteLength(head);

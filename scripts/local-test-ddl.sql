@@ -1,5 +1,5 @@
 -- Auspex local test setup, part 2: DDL objects (LOCAL PostgreSQL 16 only, never production)
--- Run in DBeaver connected as a superuser to the local "postgres" database, AFTER
+-- Run in your SQL client connected as a superuser to the local "postgres" database, AFTER
 -- scripts/local-test-setup.sql was committed. CI runs both scripts in that order.
 -- Adds the objects the catalog tools describe (triggers, functions, checks,
 -- identity/serial/generated columns, partitioning, row level security) and

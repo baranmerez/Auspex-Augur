@@ -164,7 +164,7 @@ tool('check_profile', {
 
 tool('search', {
   title: 'Search tables and columns',
-  description: 'Finds tables, views, materialized views, columns, functions (incl. procedures) and triggers whose name or comment matches the text, across all non-system schemas (or one schema), in one statement. Case-insensitive; always a contains-match (a leading and trailing % are added); % and _ inside the text are ILIKE wildcards, e.g. acme%code. Returns estimated rows (null = never analyzed, unknown), SELECT privilege for relations and columns, EXECUTE privilege for functions and the trigger function for triggers. With searchSource, functions whose source text contains the text are found too (matchedIn "source"; the source is not returned, use describe_functions). At most 500 matches (truncated).',
+  description: 'Finds tables, views, materialized views, columns, functions (incl. procedures) and triggers whose name or comment matches the text, across all non-system schemas (or one schema), in one statement. Case-insensitive; always a contains-match (a leading and trailing % are added); % and _ inside the text are ILIKE wildcards, e.g. example%code. Returns estimated rows (null = never analyzed, unknown), SELECT privilege for relations and columns, EXECUTE privilege for functions and the trigger function for triggers. With searchSource, functions whose source text contains the text are found too (matchedIn "source"; the source is not returned, use describe_functions). At most 500 matches (truncated).',
   inputSchema: {
     profile: profileArg,
     text: z.string().min(1).describe('Text to find, e.g. invoice or customer.'),
@@ -271,7 +271,7 @@ tool('profile_tables', {
       op: z.enum(parentFilterOps).describe('Comparison; "in" / "not in" take values, "is null" / "is not null" take neither value nor values.'),
       value: parentFilterValueArg.optional().describe('The value for = <> > >= < <=.'),
       values: z.array(parentFilterValueArg).min(1).max(maxParentFilterValues).optional().describe('The values for in and not in.'),
-    })).min(1).max(maxParentFilters).optional().describe(`Up to ${maxParentFilters} conditions on parent columns, ANDed with each other and with window, e.g. [{"column": "status_code", "op": ">", "value": 50}]. Requires parent.`),
+    })).min(1).max(maxParentFilters).optional().describe(`Up to ${maxParentFilters} conditions on parent columns, ANDed with each other and with window, e.g. [{"column": "status_code", "op": "in", "values": [1, 2]}]. Requires parent.`),
     sampleRows: z.number().int().min(1).max(maxSampleRows).optional().describe(`Rows sampled per table for column statistics; also caps the distinct parent keys used for fan-out. Default ${defaultSampleRows}.`),
     timeoutSeconds: timeoutArg,
   },
@@ -338,7 +338,7 @@ tool('export_csv', {
     sql: z.string(),
     params: paramsArg,
     fileName: z.string().optional().describe('Base file name; a timestamp and a random part are added, so an existing file is never overwritten.'),
-    delimiter: z.enum([',', ';', '\t']).optional().describe('Default ",". Use ";" for Turkish-locale Excel.'),
+    delimiter: z.enum([',', ';', '\t']).optional().describe('Default ",". Use ";" when your spreadsheet locale uses a comma as decimal separator.'),
     mode: z.enum(['raw', 'spreadsheet']).optional().describe('raw (default): exact values, for scripts and other tools. spreadsheet: text cells starting with = + - @, tab or carriage return get a leading apostrophe so Excel, LibreOffice or Google Sheets do not run them as formulas; numbers and dates stay exact. Use spreadsheet when a person will open the file in a spreadsheet.'),
     timeoutSeconds: timeoutArg,
   },
@@ -352,7 +352,7 @@ const reportDetails = args => ({ profile: args.db, report: [args.db, args.schema
 const refArgs = {
   db: z.string().min(1).describe('Database = the profile name the report runs on (first folder level).'),
   schema: z.string().min(1).describe('Main schema of the report (second folder level).'),
-  category: z.string().min(1).describe('Category folder, e.g. "Barcode reports" or "General".'),
+  category: z.string().min(1).describe('Category folder, e.g. "Order reports" or "General".'),
   name: z.string().min(1).describe('Report name; stored as an ASCII kebab-case file name.'),
 };
 
@@ -360,8 +360,8 @@ const refArgs = {
 // file in a configured folder, never overwriting one. Audited by name.
 const scriptRootArgs = {
   root: z.string().min(1).optional().describe('Name of a configured script root (list_profiles). Needs folder and fileName. Ask the user for the location first.'),
-  folder: z.string().min(1).optional().describe('Folder inside the root, one or two levels joined by "/", created if missing, e.g. Orders_DB_Scripts_V1 or Orders_DB_Scripts_V1/reports. Letters, digits, _ - . only.'),
-  fileName: z.string().min(1).optional().describe('New file name ending in .sql, e.g. 02_orders_fix.sql. Letters, digits, _ - . only. An existing file is never overwritten.'),
+  folder: z.string().min(1).optional().describe('Folder inside the root, one or two levels joined by "/", created if missing, e.g. example or example/reports (two levels is a safety limit, not a layout). Letters, digits, _ - . only.'),
+  fileName: z.string().min(1).optional().describe('New file name ending in .sql, e.g. fix_orders.sql; follow the naming the folder already uses. Letters, digits, _ - . only. An existing file is never overwritten.'),
 };
 const scriptRootDetails = args => (args.root !== undefined || args.folder !== undefined || args.fileName !== undefined
   ? { root: args.root, folder: args.folder, fileName: args.fileName } : {});
@@ -425,10 +425,10 @@ tool('render_reports', {
 
 tool('save_execute_script', {
   title: 'Save change script',
-  description: 'Writes an INSERT/UPDATE/DELETE/DDL script to EXECUTE/<db>/<schema>/<category>/<name>.sql for the user to run with a privileged role. Auspex never executes it. The script must start with BEGIN, end with ROLLBACK, contain no COMMIT and have WHERE on every UPDATE/DELETE. CREATE [OR REPLACE] FUNCTION with LANGUAGE plpgsql or sql and one dollar-quoted body, and CREATE TRIGGER, are allowed; the body is not linted (the file header says so), DO blocks and CALL are rejected. With root, folder and fileName it is also written as a new file to <script root>/<folder>/<fileName> (script roots: see list_profiles); ask the user for that location before saving. An existing file there is never overwritten. Write title, purpose and comments in the notesLanguage from list_profiles (ask once if null); SQL and the step markers BEGIN, DEFINE, PROCESS, MATCH, CORRECT/FAIL, ROLLBACK are not translated, only the text after them.',
+  description: 'Writes an INSERT/UPDATE/DELETE/DDL script to EXECUTE/<db>/<schema>/<category>/<name>.sql for the user to run with a privileged role. Auspex never executes it. The script must start with BEGIN, end with ROLLBACK, contain no COMMIT and have WHERE on every UPDATE/DELETE. CREATE [OR REPLACE] FUNCTION with LANGUAGE plpgsql or sql and one dollar-quoted body, and CREATE TRIGGER, are allowed; the body is not linted (the file header says so), DO blocks and CALL are rejected. With root, folder and fileName it is also written as a new file to <script root>/<folder>/<fileName> (script roots: see list_profiles); ask the user for that location before saving. An existing file there is never overwritten. Write title, purpose and comments in the notesLanguage from list_profiles (ask once if null); SQL and the step markers BEGIN, DEFINE, PROCESS, MATCH, CORRECT/FAIL, ROLLBACK are not translated, only the text after them. BEGIN, the final ROLLBACK, no COMMIT and WHERE on every UPDATE/DELETE are enforced; DEFINE, PROCESS, MATCH and CORRECT or FAIL are the recommended step structure.',
   inputSchema: {
     ...refArgs,
-    sql: z.string().min(1).describe('The change script (BEGIN ... MATCH checks ... ROLLBACK).'),
+    sql: z.string().min(1).describe('The change script (BEGIN ... verification checks ... ROLLBACK).'),
     title: z.string().optional().describe('Write it in the notesLanguage from list_profiles (ask once if null).'),
     purpose: z.string().optional().describe('What the script changes and why. Write it in the notesLanguage from list_profiles (ask once if null).'),
     relatedReport: z.string().optional().describe('Report that motivated the change, e.g. db/schema/category/name.'),

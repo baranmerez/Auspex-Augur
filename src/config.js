@@ -5,16 +5,16 @@ import path from 'node:path';
 // Profiles come from two sources:
 //   1. A profiles file (default ~/.auspex/profiles.json, override with
 //      AUSPEX_PROFILES_FILE):
-//        { "shop": { "url": "postgresql://Auspex@10.0.0.5:5432/shopdb",
-//                    "description": "Shop prod (VPN)", "maxTimeoutSeconds": 180,
-//                    "maxQueriesPerMinute": 30 } }
+//        { "example": { "url": "postgresql://Auspex@db.example.test:5432/exampledb",
+//                       "description": "Example PRODUCTION", "maxTimeoutSeconds": 180,
+//                       "maxQueriesPerMinute": 30 } }
 //   2. Environment variables AUSPEX_DB_<NAME> holding a connection string.
 // A name defined in both is an error. Passwords never go into either: keep them
 // in pgpass (%APPDATA%\postgresql\pgpass.conf on Windows, ~/.pgpass
 // elsewhere); node-postgres reads it automatically when no password is given.
 // The same file may hold a top-level "scriptRoots" object (name -> absolute
 // directory) for change scripts; AUSPEX_SCRIPT_ROOT_<NAME> adds one from env,
-// an optional top-level "notesLanguage" (language code such as tr or pt-BR), and
+// an optional top-level "notesLanguage" (language code such as en or pt-BR), and
 // an optional top-level "auspexRoot" (this checkout, for the desktop app's
 // approve/revoke through src/stageCli.js).
 const profilePrefix = 'AUSPEX_DB_';
@@ -158,8 +158,8 @@ export function readProfilesFile(file) {
   });
 }
 
-// A script root is a folder the user keeps change scripts in, for example the
-// DBeaver Scripts folder. Only its name and path are stored: an absolute path
+// A script root is a folder the user keeps change scripts in, for example a
+// folder of saved SQL scripts. Only its name and path are stored: an absolute path
 // without control characters and nothing that looks like a connection string
 // or a password. Whether it exists is checked when a script is saved.
 const passwordLike = /:\/\/|\b(password|passwd|pwd|secret|token)\s*[=:]/i;
@@ -261,7 +261,7 @@ export function loadConfig(env = process.env) {
     throw new Error('AUSPEX_MAX_STATEMENT_TIMEOUT_MS must not be lower than AUSPEX_STATEMENT_TIMEOUT_MS.');
   }
 
-  // Per-profile ceiling from env, e.g. AUSPEX_MAX_STATEMENT_TIMEOUT_MS_SHOP=120000,
+  // Per-profile ceiling from env, e.g. AUSPEX_MAX_STATEMENT_TIMEOUT_MS_EXAMPLE=120000,
   // overrides maxTimeoutSeconds from the file.
   for (const name of profiles.keys()) {
     const key = `AUSPEX_MAX_STATEMENT_TIMEOUT_MS_${name.toUpperCase()}`;

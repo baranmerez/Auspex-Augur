@@ -8,10 +8,10 @@
 BEGIN;
 
 -- 2. DEFINE
--- The only place to edit: one row per schema, e.g. ('public'), ('accounting').
+-- The only place to edit: one row per schema, e.g. ('example').
 -- Leave the table empty (delete the INSERT) to target every non-system schema.
 CREATE TEMP TABLE requested_schema (schema_name name PRIMARY KEY) ON COMMIT DROP;
-INSERT INTO requested_schema (schema_name) VALUES ('schema_a'), ('schema_b');
+INSERT INTO requested_schema (schema_name) VALUES ('example');
 
 CREATE TEMP TABLE grant_target ON COMMIT DROP AS
 SELECT n.nspname AS schema_name
