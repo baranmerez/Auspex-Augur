@@ -424,7 +424,8 @@ library/
   `EXPLAIN ANALYZE` is skipped when the previous run took more than 30 s, so a
   slow query is not executed twice without asking.
 - **Approval:** drafts move to `SELECT/` only through `approve_report`, which
-  the server instructions restrict to an explicit user approval. Approval also
+  the server instructions restrict to an explicit user approval, or through
+  the user's own click in the viewer (see *Approving reports in the viewer*). Approval also
   requires a successful run of the current SQL (`run_report`); an older
   revision's run does not count.
 - **Change scripts:** `save_execute_script` only writes files. A script must
@@ -712,8 +713,40 @@ The role colors and lane backgrounds are CSS variables at the top of
 each written once as `light-dark(light theme, dark theme)`. Reports rendered
 before template v2 keep their old layout until `render_reports` re-renders them.
 
-It binds to 127.0.0.1 only, accepts only GET, rejects other Host headers,
-never connects to a database and never shows passwords.
+It binds to 127.0.0.1 only, rejects other Host headers, never connects to a
+database and never shows passwords. Every route is GET-only except the two
+approval routes below.
+
+#### Approving reports in the viewer
+
+On the *Reports* tab a draft has an **Approve** (TR *Onayla*) button and an
+approved report a **Revoke approval** (TR *Onayı geri al*) button. Each opens a
+confirm dialog with the report name, SQL version, last run, rows and warnings.
+Approval moves the draft into `SELECT/` exactly like `approve_report` (it still
+needs a successful run of the current SQL); revoking moves it back into
+`_drafts/`, keeps its SQL versions and runs, and is refused while another
+draft of the same report exists. Both regenerate the report HTML and record
+the change in the report's `stageHistory`. Only files in the local report
+library change; no database is involved.
+
+The two routes (`POST /api/reports/approve`, `POST /api/reports/revoke`) accept
+a request only when all of these hold:
+
+- the Host header is the viewer's own loopback address;
+- the `Origin` header is exactly the viewer's own origin (missing or foreign: 403);
+- the `X-Auspex-Token` header matches a random token created per viewer
+  process and embedded only in the served page (403 otherwise);
+- the body is `application/json`, at most 4 KB, and holds only `db`,
+  `schema`, `category` and `name` exactly as the library lists them (no
+  path tricks: 400);
+- the report exists (404) and is in the right stage (409).
+
+There are no CORS headers, and the page cannot be framed by another site
+(`X-Frame-Options: DENY`). Every request that passed the origin and token
+checks is written to the audit log with `source` and `actor` `viewer`, the
+report, the from/to stage and the version, or the error. The desktop app only
+reads files and shows a note instead of the buttons: approve from the browser
+viewer or through `approve_report`.
 
 ### 🖥️ Desktop app (Tauri)
 
