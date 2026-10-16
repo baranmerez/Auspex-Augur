@@ -1,0 +1,2 @@
+# Vendored files are kept byte for byte so their recorded sha256 stays valid.
+src/vendor/** -text
