@@ -59,7 +59,7 @@
   /* Header */
   .top { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 88%, transparent);
     backdrop-filter: saturate(1.4) blur(10px); border-bottom: 1px solid var(--line); }
-  .top-inner { max-width: 1440px; margin: 0 auto; padding: 12px 24px 0; }
+  .top-inner { padding: 12px 24px 0; }
   .brand { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .logo { width: 30px; height: 30px; flex: none; }
   .logo .ring { transform-origin: 16px 16px; animation: spin 14s linear infinite; }
@@ -89,7 +89,10 @@
   nav.tabs .count { font-size: 11px; color: var(--text-3); margin-left: 4px; font-variant-numeric: tabular-nums; }
   .tab-ink { position: absolute; bottom: -1px; height: 2px; background: var(--accent); border-radius: 2px; transition: left .3s var(--ease), width .3s var(--ease); }
 
-  main { max-width: 1440px; margin: 0 auto; padding: 16px 24px 60px; }
+  /* Full width; the page is the only vertical scroller. Side panels below the
+     sticky header use --sticky-top and keep their own max-height. */
+  main { padding: 16px 24px 60px; }
+  :root { --sticky-top: 130px; }
 
   /* Filters */
   .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
@@ -187,7 +190,7 @@
   th .arr.desc { transform: rotate(180deg); }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   td.time { font: 12px var(--mono); color: var(--text-2); white-space: nowrap; }
-  td.sum { font: 12px var(--mono); max-width: 520px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  td.sum { font: 12px var(--mono); max-width: max(520px, 40vw); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   tr.r { cursor: pointer; transition: background .15s; }
   tr.r:hover { background: var(--surface-2); }
   tr.r.open { background: var(--accent-soft); }
@@ -270,11 +273,11 @@
   select option { background: var(--surface); color: var(--text); }
 
   /* Reports */
-  .rep { display: grid; grid-template-columns: minmax(280px, 340px) 1fr; gap: 14px; align-items: start; }
-  .rep-list { max-height: calc(100vh - 250px); overflow: auto; position: sticky; top: 130px; }
+  .rep { display: grid; grid-template-columns: minmax(280px, 340px) minmax(0, 1fr); gap: 14px; align-items: start; }
+  .rep-list { max-height: calc(100vh - var(--sticky-top) - 20px); overflow: auto; position: sticky; top: var(--sticky-top); }
   .rep-list .stagebar { padding: 10px 12px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--surface); z-index: 1; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
   .rep.collapsed { grid-template-columns: auto minmax(0, 1fr); }
-  .rep-rail { position: sticky; top: 130px; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 10px 6px; }
+  .rep-rail { position: sticky; top: var(--sticky-top); display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 10px 6px; }
   .rep-rail .rail-label { writing-mode: vertical-rl; font-size: 12px; color: var(--text-3); white-space: nowrap; }
   @media (max-width: 900px) { .rep.collapsed { grid-template-columns: 1fr; } .rep-rail { position: static; flex-direction: row; justify-content: flex-start; } .rep-rail .rail-label { writing-mode: horizontal-tb; } }
   .rep-group { padding: 8px 12px 2px; font-size: 11px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--text-3); }
@@ -289,12 +292,14 @@
   .badge.approved { background: var(--good-soft); color: var(--good-ink); }
   .badge.execute { background: var(--critical-soft); color: var(--critical); }
   .rep-view { min-height: 420px; display: flex; flex-direction: column; overflow: hidden; }
+  /* The HTML report posts its own height (see themedReport), so the frame grows
+     with it and never scrolls on its own; until then it fills the window. */
   .rep-view .bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 10px 14px; border-bottom: 1px solid var(--line); }
   .rep-view .bar .grow { flex: 1; }
   .rep-view .crumbs { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--text-3); }
   .rep-view .crumb { border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; color: var(--text-2); }
   .rep-view iframe { width: 100%; height: calc(100vh - 230px); min-height: 520px; border: 0; background: var(--bg); display: block; }
-  .rep-view pre { margin: 0; padding: 14px 16px; font: 12.5px/1.6 var(--mono); white-space: pre-wrap; word-break: break-word; max-height: calc(100vh - 230px); overflow: auto; }
+  .rep-view pre { margin: 0; padding: 14px 16px; font: 12.5px/1.6 var(--mono); white-space: pre-wrap; word-break: break-word; overflow-x: auto; }
   .rep-empty { padding: 60px 30px; text-align: center; color: var(--text-3); }
   .rep-empty b { color: var(--text); }
   .rep-empty code { font: 12px var(--mono); background: var(--surface-2); padding: 1px 6px; border-radius: 4px; }
@@ -313,7 +318,7 @@
   .sch-stats b { color: var(--text); font-variant-numeric: tabular-nums; margin-right: 3px; }
   .sch { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 14px; align-items: start; margin-top: 14px; }
   .sch-canvas { position: relative; overflow: hidden; height: calc(100vh - 300px); min-height: 520px; }
-  .sch-canvas.er { overflow: auto; }
+  .sch-canvas.er { height: auto; overflow-x: auto; overflow-y: hidden; }
   .sch-canvas svg.graph { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; user-select: none; }
   .sch-canvas svg.graph.panning { cursor: grabbing; }
   .g-edge { stroke: var(--line-strong); stroke-width: 1.2; transition: opacity .2s; }
@@ -345,7 +350,7 @@
   .sch-legend span { display: inline-flex; align-items: center; gap: 5px; }
   .sch-zoom { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 4px; }
   .sch-zoom button { width: 30px; height: 30px; padding: 0; justify-content: center; }
-  .insp { position: sticky; top: 130px; max-height: calc(100vh - 150px); overflow: auto; }
+  .insp { position: sticky; top: var(--sticky-top); max-height: calc(100vh - var(--sticky-top) - 20px); overflow: auto; }
   .insp h3 { margin: 0; font-size: 15px; word-break: break-all; }
   .insp .sub { font-size: 12px; color: var(--text-3); margin-top: 4px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
   .insp .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0 4px; }
@@ -1300,10 +1305,55 @@ async function loadReport(r) {
   renderReports();
 }
 // Report HTML follows the viewer theme when the viewer forces one.
+// Also inside the viewer only (never in the saved file or "Open in new tab"), the
+// report uses the full width, its tables drop their inner vertical scroll and
+// it posts its height so the frame grows instead of scrolling on its own.
+// Sticky table headers cannot follow the viewer's page scroll across the frame.
+const reportEmbedCss = `<style id="auspex-viewer-embed">
+  html { overflow-y: hidden; }
+  .wrap { max-width: none; }
+  .tbl-wrap { max-height: none !important; overflow-x: auto; overflow-y: hidden; }
+  .tbl-wrap table { width: max-content; min-width: 100%; }
+  .tbl-wrap th, .tbl-wrap td { padding: 8px 14px; white-space: nowrap; }
+  .tbl-wrap td.long { white-space: normal; min-width: 32ch; max-width: 70ch; overflow-wrap: anywhere; }
+</style>`;
+const reportEmbedJs = `<script>(() => {
+  const mark = () => {
+    for (const c of document.querySelectorAll('.tbl-wrap td:not(.num):not([data-len])')) {
+      const n = c.textContent.length;
+      c.dataset.len = n;
+      if (n > 60) { c.classList.add('long'); if (!c.title) c.title = c.textContent; }
+    }
+    for (const c of document.querySelectorAll('.tbl-wrap th:not([title])')) if (c.textContent) c.title = c.textContent;
+  };
+  let last = 0;
+  const post = () => {
+    const hgt = Math.ceil(document.body.getBoundingClientRect().height);
+    if (hgt !== last) { last = hgt; parent.postMessage({ auspexReportHeight: hgt }, '*'); }
+  };
+  const tick = () => { mark(); post(); };
+  new MutationObserver(tick).observe(document.body, { childList: true, subtree: true });
+  new ResizeObserver(post).observe(document.body);
+  addEventListener('load', tick);
+  tick();
+})();<\/script>`;
 function themedReport(html) {
   const th = state.theme && state.theme !== 'auto' ? state.theme : null;
-  return html.replace('<html lang="en">', `<html lang="${lang}" data-lang="${lang}"${th ? ` data-theme="${th}"` : ''}>`);
+  let out = html.replace('<html lang="en">', `<html lang="${lang}" data-lang="${lang}"${th ? ` data-theme="${th}"` : ''}>`);
+  const head = out.indexOf('</head>'), body = out.lastIndexOf('</body>');
+  if (head < 0 || body < head) return out;
+  out = out.slice(0, body) + reportEmbedJs + out.slice(body);
+  return out.slice(0, head) + reportEmbedCss + out.slice(head);
 }
+// The embedded report posts its height; only a report frame of this page may
+// resize itself, and only within sane bounds.
+window.addEventListener('message', ev => {
+  const hgt = ev.data?.auspexReportHeight;
+  if (!Number.isFinite(hgt)) return;
+  for (const f of document.querySelectorAll('.rep-view iframe')) {
+    if (f.contentWindow === ev.source) f.style.height = `${Math.min(Math.max(Math.round(hgt), 240), 200000)}px`;
+  }
+});
 function reportView(r) {
   if (!r) return h('div', { class: 'panel rep-view' }, h('div', { class: 'rep-empty' }, h('b', {}, t('Select a report')), h('div', {}, t('Its plan, joins, timings, preview and history open here.'))));
   if (state.reportViewNode && state.reportViewKey === repKey(r) && state.reportViewTheme === state.theme + lang) return state.reportViewNode;
