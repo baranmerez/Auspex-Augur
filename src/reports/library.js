@@ -65,6 +65,11 @@ function writeAtomic(file, text) {
   renameRetrying(tmp, file); // the viewer may be reading the target on Windows
 }
 
+// Approve/revoke history in the report metadata, newest last.
+function recordStageChange(meta, change) {
+  meta.stageHistory = [...(meta.stageHistory || []), change].slice(-maxRuns);
+}
+
 export class Library {
   constructor(root) {
     this.root = path.resolve(root);
@@ -197,11 +202,12 @@ export class Library {
   }
 
   // Moves a draft into SELECT/..., replacing an older approved version.
-  approve(ref) {
-    return this.locked(() => this.approveUnlocked(ref));
+  // by: who asked for the change (recorded in meta.stageHistory), e.g. 'viewer'.
+  approve(ref, options = {}) {
+    return this.locked(() => this.approveUnlocked(ref, options));
   }
 
-  approveUnlocked(ref) {
+  approveUnlocked(ref, { by = null } = {}) {
     const r = normalizeRef(ref);
     if (!this.exists('draft', r)) throw new LibraryError(`No draft "${refLabel(r)}" to approve.`, 'NOT_FOUND');
     const from = this.paths('draft', r);
@@ -218,12 +224,45 @@ export class Library {
     meta.activeHash = hash;
     meta.activeVersion = version;
     meta.approvedVersion = version;
+    recordStageChange(meta, { at: meta.approvedAt, from: 'draft', to: 'approved', version, by });
     writeAtomic(to.meta, JSON.stringify(meta, null, 2) + '\n');
     fs.copyFileSync(from.sql, to.sql);
     if (fs.existsSync(from.html)) fs.copyFileSync(from.html, to.html);
     for (const f of Object.values(from)) fs.rmSync(f, { force: true });
     this.pruneEmpty(path.dirname(from.sql), path.join(this.root, stages.draft));
     return { ref: r, stage: 'approved', paths: to, meta };
+  }
+
+  // Moves an approved report back into _drafts/... (revokes the approval).
+  // SQL versions and runs stay; the approval stays in meta.stageHistory.
+  // Refused while a draft of the same report exists, so no work is replaced.
+  revoke(ref, options = {}) {
+    return this.locked(() => this.revokeUnlocked(ref, options));
+  }
+
+  revokeUnlocked(ref, { by = null } = {}) {
+    const r = normalizeRef(ref);
+    if (!this.exists('approved', r)) throw new LibraryError(`No approved report "${refLabel(r)}" to revoke.`, 'NOT_FOUND');
+    if (this.exists('draft', r)) throw new LibraryError(`"${refLabel(r)}" has an open draft; approve or remove that draft before revoking the approval.`, 'PRECONDITION_FAILED');
+    const from = this.paths('approved', r);
+    const to = this.paths('draft', r);
+    const meta = this.readMeta('approved', r);
+    if (!meta) throw new LibraryError(`Report metadata of "${refLabel(r)}" is missing.`, 'NOT_FOUND');
+    const now = new Date().toISOString();
+    const version = meta.approvedVersion ?? meta.activeVersion ?? null;
+    meta.status = 'draft';
+    meta.updatedAt = now;
+    meta.revokedAt = now;
+    meta.revokedVersion = version;
+    delete meta.approvedAt;
+    delete meta.approvedVersion;
+    recordStageChange(meta, { at: now, from: 'approved', to: 'draft', version, by });
+    writeAtomic(to.meta, JSON.stringify(meta, null, 2) + '\n');
+    fs.copyFileSync(from.sql, to.sql);
+    if (fs.existsSync(from.html)) fs.copyFileSync(from.html, to.html);
+    for (const f of Object.values(from)) fs.rmSync(f, { force: true });
+    this.pruneEmpty(path.dirname(from.sql), path.join(this.root, stages.approved));
+    return { ref: r, stage: 'draft', paths: to, meta, version };
   }
 
   // Hash of the SQL the report currently stands for: the recorded active
