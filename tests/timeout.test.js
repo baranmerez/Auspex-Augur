@@ -63,10 +63,14 @@ test('timeout over the ceiling is rejected before connecting', async () => {
   await assert.rejects(db.query('prod', 'select 1', [], 10, 600), /exceeds the 120 s limit/);
 });
 
-test('search text becomes a contains pattern unless it has wildcards', () => {
+test('search text is always a contains pattern; inner wildcards are kept', () => {
   assert.equal(toIlikePattern('invoice'), '%invoice%');
   assert.equal(toIlikePattern('  invoice  '), '%invoice%');
-  assert.equal(toIlikePattern('invoice%'), 'invoice%');
-  assert.equal(toIlikePattern('a_b'), 'a_b');
+  assert.equal(toIlikePattern('invoice%'), '%invoice%');
+  assert.equal(toIlikePattern('vestel%kod'), '%vestel%kod%');
+  assert.equal(toIlikePattern('%x'), '%x%');
+  assert.equal(toIlikePattern('a_b'), '%a_b%');
+  assert.equal(toIlikePattern('%a%'), '%a%');
+  assert.equal(toIlikePattern('x'), '%x%');
   assert.throws(() => toIlikePattern('  '), /empty/);
 });

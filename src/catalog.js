@@ -215,11 +215,12 @@ where $3 and (a.attname ilike $1 or col_description(r.oid, a.attnum) ilike $1)
 order by 2, 3, 4, 5
 limit 501`;
 
-// Plain words become a contains-match; a pattern with % or _ is used as given.
+// Always a contains-match: a leading and trailing % are added when missing;
+// % and _ inside the text keep their ILIKE meaning.
 export function toIlikePattern(text) {
   const value = String(text || '').trim();
   if (!value) throw new ToolError('INVALID_INPUT', 'Search text is empty.');
-  return /[%_]/.test(value) ? value : `%${value}%`;
+  return `${value.startsWith('%') ? '' : '%'}${value}${value.endsWith('%') ? '' : '%'}`;
 }
 
 export async function search(db, profile, text, schema, includeColumns = true, { includeRoutines = true, searchSource = false } = {}) {

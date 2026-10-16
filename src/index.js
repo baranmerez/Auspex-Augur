@@ -61,6 +61,7 @@ const instructions = [
   'Before describing a table again, call table_knowledge: it answers from memory without touching the database.',
   `When you need several tables, do not loop over describe_table or send one measuring query per table: use describe_tables for the structure of up to ${maxDescribeTables} tables and profile_tables for row estimates, fill rates, distinct counts and parent-child fan-out of up to ${maxProfileTables} tables. Each takes a constant number of statements however many tables are listed. To see which neighbours of a table matter most, relation_stats ranks its referenced (instance) and referencing (dependent) tables by estimated linked rows from planner statistics, without reading data.`,
   'When the user states a business rule, save it with remember kind=rule. Save a finding from data as kind=observation with evidence (the SQL and aggregate figures only, never row values or personal data). Your own interpretations are kind=inference; never present them as fact, and confirm one only after the user agreed.',
+  'Write schema-memory notes in the notesLanguage from list_profiles. If it is null, ask the user once "Which language should notes be saved in?" (in the user language), use the answer for this conversation and suggest adding "notesLanguage": "<code>" to profiles.json. Do not translate existing notes.',
   'Results may carry notes for the tables they touched; take them into account.',
   'When a report or analysis is finished and results listed unexploredNeighbors, name them and ask the user whether to explore them. Only after a yes, call describe_tables on them (structure only); do not query their data unless asked.',
 ].join(' ');
@@ -122,7 +123,7 @@ if (typeof server.createToolError === 'function') {
 
 tool('list_profiles', {
   title: 'List connection profiles',
-  description: 'Lists configured database profiles with description, host, database, user, timeout limit and query budget per minute (never passwords), and the script roots (named folders save_execute_script can write change scripts into). Call this and ask the user which profile to use when they have not named one in this conversation; show each description so production databases are clearly marked.',
+  description: 'Lists configured database profiles with description, host, database, user, timeout limit and query budget per minute (never passwords), the script roots (named folders save_execute_script can write change scripts into) and notesLanguage (language for schema-memory notes, null when not configured). Call this and ask the user which profile to use when they have not named one in this conversation; show each description so production databases are clearly marked.',
   inputSchema: {},
 }, async () => ({
   limits: {
@@ -131,6 +132,8 @@ tool('list_profiles', {
   },
   exportDir: config.exportDir,
   profilesFile: config.profilesFile,
+  // Language for schema-memory notes; null = not configured, ask the user.
+  notesLanguage: config.notesLanguage,
   // Folders save_execute_script can write into (root parameter).
   scriptRoots: [...config.scriptRoots].map(([name, r]) => ({ name, path: r.dir, source: r.source })),
   profiles: [...config.profiles].map(([name, cs]) => ({
@@ -161,7 +164,7 @@ tool('check_profile', {
 
 tool('search', {
   title: 'Search tables and columns',
-  description: 'Finds tables, views, materialized views, columns, functions (incl. procedures) and triggers whose name or comment matches the text, across all non-system schemas (or one schema), in one statement. Case-insensitive; plain text is a contains-match, % and _ work as ILIKE wildcards. Returns estimated rows (null = never analyzed, unknown), SELECT privilege for relations and columns, EXECUTE privilege for functions and the trigger function for triggers. With searchSource, functions whose source text contains the text are found too (matchedIn "source"; the source is not returned, use describe_functions). At most 500 matches (truncated).',
+  description: 'Finds tables, views, materialized views, columns, functions (incl. procedures) and triggers whose name or comment matches the text, across all non-system schemas (or one schema), in one statement. Case-insensitive; always a contains-match (a leading and trailing % are added); % and _ inside the text are ILIKE wildcards, e.g. vestel%kod. Returns estimated rows (null = never analyzed, unknown), SELECT privilege for relations and columns, EXECUTE privilege for functions and the trigger function for triggers. With searchSource, functions whose source text contains the text are found too (matchedIn "source"; the source is not returned, use describe_functions). At most 500 matches (truncated).',
   inputSchema: {
     profile: profileArg,
     text: z.string().min(1).describe('Text to find, e.g. invoice or customer.'),
@@ -242,7 +245,7 @@ tool('describe_functions', {
   inputSchema: {
     profile: profileArg,
     functions: z.array(z.string().min(1)).min(1).max(maxDescribeFunctions).optional().describe('Functions as schema.name, e.g. ["sales.order_before_insert"].'),
-    pattern: z.string().min(1).optional().describe('Instead of functions: name pattern (plain text = contains, % and _ = ILIKE wildcards); at most 50 matches.'),
+    pattern: z.string().min(1).optional().describe('Instead of functions: name pattern (always a contains-match; % and _ inside the text are ILIKE wildcards); at most 50 matches.'),
     schema: z.string().min(1).optional().describe('With pattern: only this schema.'),
     maxChars: z.number().int().min(1).max(maxDefinitionChars).optional().describe(`Characters of each definition to return. Default ${defaultDefinitionChars}.`),
   },
@@ -450,7 +453,7 @@ tool('table_knowledge', {
 
 tool('remember', {
   title: 'Remember a fact about the data',
-  description: 'Adds, confirms or archives a note in the local schema memory of a profile (no database access). kind=rule: a business rule the user stated. kind=observation: a finding backed by evidence (SQL plus aggregate figures; dated). kind=inference: your own interpretation, shown as unconfirmed. Notes never contain row values or personal data. action=confirm turns an inference into a rule or observation, only after the user agreed. Notes are archived with a reason, never deleted.',
+  description: 'Adds, confirms or archives a note in the local schema memory of a profile (no database access). kind=rule: a business rule the user stated. kind=observation: a finding backed by evidence (SQL plus aggregate figures; dated). kind=inference: your own interpretation, shown as unconfirmed. Notes never contain row values or personal data. Write the note text in the notesLanguage from list_profiles; if it is null, ask the user once which language notes should be saved in, use the answer for this conversation and suggest adding "notesLanguage" to profiles.json (existing notes are not translated). action=confirm turns an inference into a rule or observation, only after the user agreed. Notes are archived with a reason, never deleted.',
   inputSchema: {
     profile: profileArg,
     action: z.enum(['add', 'confirm', 'archive']),
