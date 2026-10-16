@@ -353,11 +353,22 @@ const refArgs = {
   name: z.string().min(1).describe('Report name; stored as an ASCII kebab-case file name.'),
 };
 
+// Optional script-root location (save_report, save_execute_script): a new
+// file in a configured folder, never overwriting one. Audited by name.
+const scriptRootArgs = {
+  root: z.string().min(1).optional().describe('Name of a configured script root (list_profiles). Needs folder and fileName. Ask the user for the location first.'),
+  folder: z.string().min(1).optional().describe('Folder inside the root, one or two levels joined by "/", created if missing, e.g. Orders_DB_Scripts_V1 or Orders_DB_Scripts_V1/reports. Letters, digits, _ - . only.'),
+  fileName: z.string().min(1).optional().describe('New file name ending in .sql, e.g. 02_orders_fix.sql. Letters, digits, _ - . only. An existing file is never overwritten.'),
+};
+const scriptRootDetails = args => (args.root !== undefined || args.folder !== undefined || args.fileName !== undefined
+  ? { root: args.root, folder: args.folder, fileName: args.fileName } : {});
+
 tool('save_report', {
   title: 'Save report draft',
-  description: 'Saves a read-only SQL query as a report draft in the library (_drafts/<db>/<schema>/<category>/<name>.sql) with a fixed HTML template. Saving changed SQL adds a new version. Then call run_report.',
+  description: 'Saves a read-only SQL query as a report draft in the library (_drafts/<db>/<schema>/<category>/<name>.sql) with a fixed HTML template. Saving changed SQL adds a new version. Then call run_report. With root, folder and fileName the query is also written as a new .sql file into that script root (see list_profiles) for the user to run in their own tool; ask the user for the location first.',
   inputSchema: {
     ...refArgs,
+    ...scriptRootArgs,
     sql: z.string().min(1).describe('A single read-only SQL statement.'),
     title: z.string().optional().describe('Human-readable title shown in the report.'),
     description: z.string().optional().describe('What the report answers and how to read it.'),
@@ -365,8 +376,8 @@ tool('save_report', {
     mask: z.array(z.string()).optional().describe('Extra result columns to mask in previews.'),
     unmask: z.array(z.string()).optional().describe('Columns to exempt from automatic masking (only when the user agreed).'),
   },
-}, async args => db.audited('save_report', { ...reportDetails(args), sqlHash: sqlHash(args.sql) }, () => reports.save(args),
-  r => ({ version: r.version, stage: r.stage })));
+}, async args => db.audited('save_report', { ...reportDetails(args), sqlHash: sqlHash(args.sql), ...scriptRootDetails(args) }, () => reports.save(args),
+  r => ({ version: r.version, stage: r.stage, ...(r.externalFile ? { file: r.externalFile } : {}) })));
 
 tool('run_report', {
   title: 'Run report',
@@ -420,13 +431,10 @@ tool('save_execute_script', {
     relatedReport: z.string().optional().describe('Report that motivated the change, e.g. db/schema/category/name.'),
     expectedRows: z.union([z.number(), z.string()]).optional().describe('Expected affected rows.'),
     replace: z.boolean().optional().describe('Overwrite an existing library script with the same name (never the file in a script root).'),
-    root: z.string().min(1).optional().describe('Name of a configured script root (list_profiles). Needs folder and fileName.'),
-    folder: z.string().min(1).optional().describe('One folder inside the root, created if missing, e.g. Orders_DB_Scripts_V1. Letters, digits, _ - . only.'),
-    fileName: z.string().min(1).optional().describe('New file name ending in .sql, e.g. 02_orders_fix.sql. Letters, digits, _ - . only.'),
+    ...scriptRootArgs,
   },
 }, async args => db.audited('save_execute_script', {
-  ...reportDetails(args), sqlHash: sqlHash(args.sql), replace: args.replace === true,
-  ...(args.root !== undefined ? { root: args.root, folder: args.folder, fileName: args.fileName } : {}),
+  ...reportDetails(args), sqlHash: sqlHash(args.sql), replace: args.replace === true, ...scriptRootDetails(args),
 }, () => reports.saveExecute(args), r => ({ warnings: r.warnings?.length ?? 0, ...(r.externalFile ? { libraryFile: r.libraryFile } : {}) })));
 
 // ---------- schema memory ----------
