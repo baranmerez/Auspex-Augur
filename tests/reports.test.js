@@ -616,18 +616,18 @@ test('the slow-report fallback says whether the preview still executed the query
 
 test('a shared copy leaves out SQL, parameters, plan expressions, history and database names', async () => {
   const markers = ['SQLMARK', 'PARAMMARK', 'PLANMARK', 'MAILMARK'];
-  const plan = [{ Plan: { 'Node Type': 'Seq Scan', 'Relation Name': 'customers', Schema: 'crm_secret', Alias: 'c', Filter: "(note = 'PLANMARK'::text)",
+  const plan = [{ Plan: { 'Node Type': 'Seq Scan', 'Relation Name': 'customers', Schema: 'example_secret', Alias: 'c', Filter: "(note = 'PLANMARK'::text)",
     'Startup Cost': 0, 'Total Cost': 10, 'Plan Rows': 1, 'Actual Total Time': 1, 'Actual Rows': 1, 'Actual Loops': 1 }, 'Planning Time': 0.1, 'Execution Time': 1 }];
   const fake = {
     resolveProfile: n => String(n).toLowerCase(),
     async runReport(profile) {
-      return { profile, serverVersion: '16.0', analyzed: true, plan, explainMs: 1, previewMs: 1, previewExecuted: true,
+      return { profile, serverVersion: '16.0-SRVMARK', analyzed: true, plan, explainMs: 1, previewMs: 1, previewExecuted: true,
         columns: [{ name: 'id', type: 'integer' }, { name: 'email', type: 'text' }], rows: [[1, 'MAILMARK@example.com']], rowCount: 1, truncated: false };
     },
   };
   const svc = new ReportService(fake, fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-share-test-')));
-  const r = { db: 'prodshop', schema: 'crm_secret', category: 'Shared', name: 'customers' };
-  svc.save({ ...r, title: 'Customer check', sql: "select id, email from crm_secret.customers where note = 'SQLMARK' and id = $1" });
+  const r = { db: 'prodexample', schema: 'example_secret', category: 'Shared', name: 'customers' };
+  svc.save({ ...r, title: 'Customer check', sql: "select id, email from example_secret.customers where note = 'SQLMARK' and id = $1" });
   await svc.run(r, { params: ['PARAMMARK'] });
   await svc.run(r, { params: ['PARAMMARK'] });
 
@@ -639,7 +639,7 @@ test('a shared copy leaves out SQL, parameters, plan expressions, history and da
   const shared = svc.share(r, outDir);
   assert.match(path.basename(shared.file), /_customers\.share\.html$/);
   const html = fs.readFileSync(shared.file, 'utf8');
-  for (const m of [...markers, 'prodshop', 'crm_secret', '16.0']) assert.ok(!html.includes(m), `${m} is not in the shared copy`);
+  for (const m of [...markers, 'prodexample', 'example_secret', 'SRVMARK']) assert.ok(!html.includes(m), `${m} is not in the shared copy`);
   const report = embedded(html);
   assert.equal(report.shareable, true);
   assert.deepEqual(report.runs, []);
