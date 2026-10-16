@@ -201,3 +201,43 @@ test('files live under AUSPEX_HOME, by default ~/.auspex (never AppData)', () =>
   assert.equal(config.logDir, path.join(dir, 'logs'));
   assert.equal(config.exportDir, path.join(dir, 'exports'));
 });
+
+test('script roots come from the profiles file and AUSPEX_SCRIPT_ROOT_<NAME>, and are not profiles', () => {
+  const rootA = path.join(dir, 'Scripts A');
+  const rootB = path.join(dir, 'Scripts B');
+  const file = profilesFile({
+    local: { url: 'postgresql://Auspex@localhost/postgres' },
+    scriptRoots: { DBeaver: rootA },
+  });
+  const config = loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: file, AUSPEX_SCRIPT_ROOT_SPARE: rootB });
+  assert.deepEqual([...config.profiles.keys()], ['local']);
+  assert.deepEqual(readProfilesFile(file).map(p => p.name), ['local']);
+  assert.deepEqual([...config.scriptRoots], [['dbeaver', { dir: rootA, source: 'file' }], ['spare', { dir: rootB, source: 'env' }]]);
+  assert.equal(loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: path.join(dir, 'none.json') }).scriptRoots.size, 0);
+  assert.throws(() => loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: file, AUSPEX_SCRIPT_ROOT_DBEAVER: rootB }), /defined both/);
+});
+
+const invalidRoots = [
+  ['a relative path', { s: 'Scripts' }, /must be absolute/],
+  ['an empty path', { s: '' }, /absolute directory path/],
+  ['a value that is not text', { s: 42 }, /absolute directory path/],
+  ['a URL', { s: 'postgresql://u:p@h/db' }, /must not look like a URL/],
+  ['a password option', { s: path.join(dir, 'password=x') }, /hold a password/],
+  ['a control character', { s: path.join(dir, 'a\nb') }, /control characters/],
+  ['a bad name', { '1x': dir }, /names use a-z/],
+  ['a duplicate name', { s: dir, S: dir }, /defined twice/],
+];
+
+for (const [name, roots, message] of invalidRoots) {
+  test(`script roots reject ${name}`, () => {
+    const file = profilesFile({ scriptRoots: roots });
+    assert.throws(() => loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: file }), message);
+  });
+}
+
+test('script roots must be an object; env roots are validated too', () => {
+  assert.throws(() => loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: profilesFile({ scriptRoots: [dir] }) }), /expected an object/);
+  const none = path.join(dir, 'none.json');
+  assert.throws(() => loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: none, AUSPEX_SCRIPT_ROOT_X: 'relative' }), /must be absolute/);
+  assert.throws(() => loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: none, AUSPEX_SCRIPT_ROOT_9: dir }), /AUSPEX_SCRIPT_ROOT_9/);
+});

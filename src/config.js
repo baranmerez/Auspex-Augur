@@ -12,7 +12,11 @@ import path from 'node:path';
 // A name defined in both is an error. Passwords never go into either: keep them
 // in pgpass (%APPDATA%\postgresql\pgpass.conf on Windows, ~/.pgpass
 // elsewhere); node-postgres reads it automatically when no password is given.
+// The same file may hold a top-level "scriptRoots" object (name -> absolute
+// directory) for change scripts; AUSPEX_SCRIPT_ROOT_<NAME> adds one from env.
 const profilePrefix = 'AUSPEX_DB_';
+const scriptRootPrefix = 'AUSPEX_SCRIPT_ROOT_';
+export const scriptRootsKey = 'scriptRoots';
 const profileNamePattern = /^[a-z][a-z0-9_-]{0,39}$/;
 const profileKeys = new Set(['url', 'description', 'maxTimeoutSeconds', 'maxQueriesPerMinute']);
 const maxQueriesLimit = 10000;
@@ -91,14 +95,13 @@ export function defaultProfilesFile(env = process.env) {
   return path.join(auspexHome(env), 'profiles.json');
 }
 
-// Reads and validates the profiles file. A missing file means no file profiles;
-// any other problem is an error so a broken file is never silently ignored.
-export function readProfilesFile(file) {
+// Parsed profiles file, or null when it does not exist.
+function readProfilesData(file) {
   let text;
   try {
     text = fs.readFileSync(file, 'utf8');
   } catch (err) {
-    if (err.code === 'ENOENT') return [];
+    if (err.code === 'ENOENT') return null;
     throw new Error(`Cannot read profiles file ${file}: ${err.message}`);
   }
   let data;
@@ -110,9 +113,17 @@ export function readProfilesFile(file) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     throw new Error(`Profiles file ${file} must be a JSON object of profiles.`);
   }
+  return data;
+}
 
+// Reads and validates the profiles file. A missing file means no file profiles;
+// any other problem is an error so a broken file is never silently ignored.
+// The "scriptRoots" key is not a profile (see readScriptRoots).
+export function readProfilesFile(file) {
+  const data = readProfilesData(file);
+  if (!data) return [];
   const seen = new Set();
-  return Object.entries(data).map(([rawName, profile]) => {
+  return Object.entries(data).filter(([rawName]) => rawName !== scriptRootsKey).map(([rawName, profile]) => {
     const name = rawName.toLowerCase();
     const where = `profile "${rawName}" in ${file}`;
     if (!profileNamePattern.test(name)) throw new Error(`Invalid ${where}: names use a-z, 0-9, - and _ and start with a letter.`);
@@ -138,6 +149,48 @@ export function readProfilesFile(file) {
       maxQueriesPerMinute: queries ?? null,
     };
   });
+}
+
+// A script root is a folder the user keeps change scripts in, for example the
+// DBeaver Scripts folder. Only its name and path are stored: an absolute path
+// without control characters and nothing that looks like a connection string
+// or a password. Whether it exists is checked when a script is saved.
+const passwordLike = /:\/\/|\b(password|passwd|pwd|secret|token)\s*[=:]/i;
+
+function validateScriptRoot(value, where) {
+  if (typeof value !== 'string' || !value.trim()) throw new Error(`Invalid ${where}: expected an absolute directory path.`);
+  if (/[\u0000-\u001f\u007f]/.test(value)) throw new Error(`Invalid ${where}: the path contains control characters.`);
+  if (passwordLike.test(value)) throw new Error(`Invalid ${where}: a script root is a directory path; it must not look like a URL or hold a password.`);
+  if (!path.isAbsolute(value)) throw new Error(`Invalid ${where}: the path must be absolute.`);
+  return path.resolve(value);
+}
+
+// Script roots from the profiles file and from AUSPEX_SCRIPT_ROOT_<NAME>:
+// name -> { dir, source }. Names follow the profile-name rules; the same name
+// in both places is an error.
+export function readScriptRoots(file, env = process.env) {
+  const roots = new Map();
+  const fromFile = readProfilesData(file)?.[scriptRootsKey];
+  if (fromFile !== undefined) {
+    if (!fromFile || typeof fromFile !== 'object' || Array.isArray(fromFile)) {
+      throw new Error(`Invalid "${scriptRootsKey}" in ${file}: expected an object of name -> absolute directory.`);
+    }
+    for (const [rawName, dir] of Object.entries(fromFile)) {
+      const name = rawName.toLowerCase();
+      const where = `script root "${rawName}" in ${file}`;
+      if (!profileNamePattern.test(name)) throw new Error(`Invalid ${where}: names use a-z, 0-9, - and _ and start with a letter.`);
+      if (roots.has(name)) throw new Error(`Script root "${name}" is defined twice in ${file} (names are case-insensitive).`);
+      roots.set(name, { dir: validateScriptRoot(dir, where), source: 'file' });
+    }
+  }
+  for (const [key, value] of Object.entries(env)) {
+    if (!key.toUpperCase().startsWith(scriptRootPrefix) || !value) continue;
+    const name = key.slice(scriptRootPrefix.length).toLowerCase();
+    if (!profileNamePattern.test(name)) throw new Error(`Invalid ${key}: script root names use a-z, 0-9, - and _ and start with a letter.`);
+    if (roots.has(name)) throw new Error(`Script root "${name}" is defined both in ${file} and in ${key}; keep only one.`);
+    roots.set(name, { dir: validateScriptRoot(value, `script root "${name}" in ${key}`), source: 'env' });
+  }
+  return roots;
 }
 
 export function loadConfig(env = process.env) {
@@ -193,6 +246,7 @@ export function loadConfig(env = process.env) {
     profiles,
     profileInfo,
     profilesFile,
+    scriptRoots: readScriptRoots(profilesFile, env),
     maxRows: intFromEnv(env, 'AUSPEX_MAX_ROWS', 500, 1, 10000),
     exportMaxRows: intFromEnv(env, 'AUSPEX_EXPORT_MAX_ROWS', 100000, 1, 5000000),
     // Whole-export budget on top of the per-statement timeout.
