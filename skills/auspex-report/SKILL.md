@@ -49,7 +49,15 @@ late one.
 4. **Resolve codes.** For each ambiguous state (for example "damaged" vs
    "delivery problem"), find the lookup table, read its code list with one
    small query, propose the codes and confirm them with the user. Save the
-   confirmed mapping with `remember kind=rule`.
+   confirmed mapping with `remember kind=rule`. A code or status column without a foreign key (for example
+   `damageddeliverystatuscode`): split its name into word parts (`damaged`,
+   `delivery`, `status`, `code`) and run ONE `search` with a %-joined pattern of
+   the distinctive parts (`damaged%status%code`), plus variants with the
+   table's family prefix (`acme%status`); confirm by reading the code list
+   with one query. Example: `damageddeliverystatuscode` ->
+   `import_acme_damaged_items_status_codes`. Only if that fails, try
+   `search` with `searchSource` for function bodies that decode the code, and
+   only then ask the user.
 5. **Measure risk.** One `profile_tables` call with `parent` = the report's
    driving table and `window` = the period: fan-out of every child, fill rate
    of join and filter columns.

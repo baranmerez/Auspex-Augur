@@ -51,6 +51,15 @@ database statements, and leave the answer in the schema memory.
    (tables it references, tables that reference it, ranked by estimated
    linked rows). Otherwise read foreign keys and incoming foreign keys from
    `describe_tables` and treat same-named id columns as suggested relations.
+   A code or status column without a foreign key (for example
+   `damageddeliverystatuscode`): split its name into word parts (`damaged`,
+   `delivery`, `status`, `code`) and run ONE `search` with a %-joined pattern of
+   the distinctive parts (`damaged%status%code`), plus variants with the
+   table's family prefix (`acme%status`); confirm by reading the code list
+   with one query. Example: `damageddeliverystatuscode` ->
+   `import_acme_damaged_items_status_codes`. Only if that fails, try
+   `search` with `searchSource` for function bodies that decode the code, and
+   only then ask the user.
 5. **Measurement.** One `profile_tables` call: fill rate and distinct count
    per column; with `parent`, fan-out of child tables over the center table.
    Narrow with `window` on a date column for large parents.
