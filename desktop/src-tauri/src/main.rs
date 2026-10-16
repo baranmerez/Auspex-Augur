@@ -3,11 +3,17 @@
 // profiles, the report library and the schema memory under ~/.auspex. Read-only, never connects to a database, never
 // returns passwords. Mirrors the routes of src/viewer.js; the Node config in
 // src/config.js stays the source of truth for validation.
+// The only writes: `approve_report` / `revoke_report` run the Node stage CLI
+// (src/stageCli.js of the Auspex checkout), which moves one report in the
+// local library exactly like the viewer's approval routes.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::collections::HashMap;
 use std::fs;
+use std::io::Read;
 use std::path::PathBuf;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use percent_encoding::percent_decode_str;
 use serde_json::{json, Map, Value};
@@ -142,12 +148,15 @@ fn list_reports() -> Value {
                         };
                         let last = meta.get("runs").and_then(Value::as_array).and_then(|r| r.last()).cloned();
                         let updated = meta.get("updatedAt").cloned().unwrap_or(Value::Null);
+                        // Drafts carry the SQL version an approval would approve (confirm dialog).
+                        let active = if stage == "draft" { meta.get("activeVersion").cloned().unwrap_or(Value::Null) } else { Value::Null };
                         out.push(json!({
                             "stage": stage, "db": db, "schema": schema, "category": category, "name": name,
                             "title": meta.get("title").cloned().unwrap_or(json!(name)),
                             "description": meta.get("description").cloned().unwrap_or(Value::Null),
                             "versions": meta.get("sqlVersions").and_then(Value::as_array).map(|a| a.len()),
                             "approvedVersion": meta.get("approvedVersion").cloned().unwrap_or(Value::Null),
+                            "activeVersion": active,
                             "updatedAt": updated,
                             "runs": meta.get("runs").and_then(Value::as_array).map(|a| a.len()).unwrap_or(0),
                             "lastRun": last.map(|r| json!({
@@ -314,8 +323,9 @@ fn profiles() -> Value {
             match parsed {
                 Ok(Value::Object(entries)) => {
                     for (name, p) in entries {
-                        // Named folders for change scripts and the notes language, not profiles.
-                        if name == "scriptRoots" || name == "notesLanguage" {
+                        // Named folders for change scripts, the notes language and the
+                        // Auspex checkout: settings, not profiles.
+                        if name == "scriptRoots" || name == "notesLanguage" || name == AUSPEX_ROOT_KEY {
                             continue;
                         }
                         let url_text = p.get("url").and_then(Value::as_str).unwrap_or("");
@@ -416,6 +426,176 @@ fn api(path: String, query: HashMap<String, String>) -> Result<Value, String> {
     }
 }
 
+// ---------- report stage changes (approve / revoke) ----------
+// The library logic stays in Node: these commands run
+// `node <auspexRoot>/src/stageCli.js approve|revoke --db=.. --schema=.. --category=.. --name=..`
+// without a shell, with a fixed program and script, and read its one-line JSON
+// result. This is the app's only process execution besides opening Explorer.
+
+const AUSPEX_ROOT_KEY: &str = "auspexRoot";
+const STAGE_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_CLI_OUTPUT: u64 = 64 * 1024;
+const REF_KEYS: [&str; 4] = ["db", "schema", "category", "name"];
+
+fn stage_error(code: &str, message: impl Into<String>) -> Value {
+    json!({ "code": code, "message": message.into() })
+}
+
+// One part of a report location as the library lists it (validateRefInput and
+// normalizeRef in src/reports): non-empty, at most 200 UTF-16 units, no
+// surrounding spaces, a folder segment; the database in lower case; the name
+// a slug (a-z, 0-9, single dashes inside). Node checks again (NFC, slugify).
+fn valid_ref_part(key: &str, s: &str) -> bool {
+    if s.is_empty() || s.encode_utf16().count() > 200 || s.trim() != s || !valid_segment(s) {
+        return false;
+    }
+    match key {
+        "db" => s.to_lowercase() == s,
+        "name" => {
+            s.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+                && !s.starts_with('-')
+                && !s.ends_with('-')
+                && !s.contains("--")
+        }
+        _ => true,
+    }
+}
+
+// Node: AUSPEX_NODE (absolute path of the executable), else `node` found in
+// an absolute PATH entry (never the current or the app folder).
+fn node_program() -> Result<PathBuf, Value> {
+    if let Some(p) = env("AUSPEX_NODE") {
+        let p = PathBuf::from(p);
+        if p.is_absolute() && p.is_file() {
+            return Ok(p);
+        }
+        return Err(stage_error("NODE_NOT_FOUND", "AUSPEX_NODE must be the absolute path of the Node executable (node.exe)."));
+    }
+    let exe = if cfg!(windows) { "node.exe" } else { "node" };
+    std::env::var_os("PATH")
+        .and_then(|paths| std::env::split_paths(&paths).filter(|d| d.is_absolute()).map(|d| d.join(exe)).find(|p| p.is_file()))
+        .ok_or_else(|| stage_error("NODE_NOT_FOUND", "Node was not found on PATH; install Node 20+ or set AUSPEX_NODE to node.exe."))
+}
+
+// "auspexRoot" from the profiles file, if present.
+fn auspex_root_from_file() -> Option<Value> {
+    let text = fs::read_to_string(profiles_file()).ok()?;
+    let data: Value = serde_json::from_str(text.trim_start_matches('\u{feff}')).ok()?;
+    data.get(AUSPEX_ROOT_KEY).cloned()
+}
+
+// The Auspex checkout: AUSPEX_ROOT, else "auspexRoot" in profiles.json; an
+// absolute directory holding src/stageCli.js (same check as config.js).
+fn auspex_root() -> Result<PathBuf, Value> {
+    let (value, source) = match env("AUSPEX_ROOT") {
+        Some(v) => (Value::String(v), "AUSPEX_ROOT".to_string()),
+        None => match auspex_root_from_file() {
+            Some(v) => (v, format!("\"{AUSPEX_ROOT_KEY}\" in {}", profiles_file().display())),
+            None => {
+                return Err(stage_error(
+                    "AUSPEX_ROOT_MISSING",
+                    format!(
+                        "Auspex folder not found. Set \"{AUSPEX_ROOT_KEY}\" in {} (or the AUSPEX_ROOT environment variable) to the Auspex folder that holds src/stageCli.js.",
+                        profiles_file().display()
+                    ),
+                ))
+            }
+        },
+    };
+    let text = value.as_str().unwrap_or("");
+    let dir = PathBuf::from(text);
+    if text.is_empty() || text.chars().any(char::is_control) || !dir.is_absolute() || !dir.join("src").join("stageCli.js").is_file() {
+        return Err(stage_error("AUSPEX_ROOT_INVALID", format!("{source} must be the absolute path of the Auspex folder that holds src/stageCli.js.")));
+    }
+    Ok(dir)
+}
+
+fn read_capped<R: Read + Send + 'static>(r: R) -> std::thread::JoinHandle<String> {
+    std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = r.take(MAX_CLI_OUTPUT).read_to_end(&mut buf);
+        String::from_utf8_lossy(&buf).into_owned()
+    })
+}
+
+// The CLI's result: its last stdout line as JSON. ok:true -> Ok, ok:false ->
+// Err({ code, message }), anything else -> CLI_FAILED with the exit code.
+fn parse_cli_output(stdout: &str, stderr: &str, exit: Option<i32>) -> Result<Value, Value> {
+    let line = stdout.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("");
+    match serde_json::from_str::<Value>(line) {
+        Ok(v) if v.get("ok") == Some(&Value::Bool(true)) => Ok(v),
+        Ok(v) if v.get("ok") == Some(&Value::Bool(false)) => Err(stage_error(
+            v.get("code").and_then(Value::as_str).unwrap_or("INTERNAL"),
+            v.get("message").and_then(Value::as_str).unwrap_or("The stage change failed."),
+        )),
+        _ => {
+            let detail: String = stderr.trim().chars().take(300).collect();
+            let code = exit.map(|c| c.to_string()).unwrap_or_else(|| "none".into());
+            Err(stage_error("CLI_FAILED", format!("src/stageCli.js gave no result (exit code {code}). {detail}").trim_end().to_string()))
+        }
+    }
+}
+
+fn run_stage_cli(action: &str, parts: &[String; 4]) -> Result<Value, Value> {
+    if action != "approve" && action != "revoke" {
+        return Err(stage_error("INVALID_INPUT", "Unknown stage action."));
+    }
+    for (key, value) in REF_KEYS.iter().zip(parts.iter()) {
+        if !valid_ref_part(key, value) {
+            return Err(stage_error("INVALID_INPUT", format!("Invalid report {key}.")));
+        }
+    }
+    let node = node_program()?;
+    let root = auspex_root()?;
+    let mut cmd = Command::new(&node);
+    cmd.arg(root.join("src").join("stageCli.js")).arg(action);
+    // One argv entry per part, as --key=value so a value can never read as an option.
+    for (key, value) in REF_KEYS.iter().zip(parts.iter()) {
+        cmd.arg(format!("--{key}={value}"));
+    }
+    cmd.current_dir(&root).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW: no console window flashes up
+    }
+    let mut child = cmd.spawn().map_err(|e| stage_error("NODE_START_FAILED", format!("Could not start {}: {e}", node.display())))?;
+    let out = read_capped(child.stdout.take().expect("piped stdout"));
+    let err = read_capped(child.stderr.take().expect("piped stderr"));
+    let started = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if started.elapsed() >= STAGE_TIMEOUT => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(stage_error("TIMEOUT", format!("src/stageCli.js did not finish within {} s and was stopped.", STAGE_TIMEOUT.as_secs())));
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(50)),
+            Err(e) => return Err(stage_error("INTERNAL", e.to_string())),
+        }
+    };
+    let stdout = out.join().unwrap_or_default();
+    let stderr = err.join().unwrap_or_default();
+    parse_cli_output(&stdout, &stderr, status.code())
+}
+
+async fn stage_command(action: &'static str, parts: [String; 4]) -> Result<Value, Value> {
+    tauri::async_runtime::spawn_blocking(move || run_stage_cli(action, &parts))
+        .await
+        .map_err(|e| stage_error("INTERNAL", e.to_string()))?
+}
+
+#[tauri::command]
+async fn approve_report(db: String, schema: String, category: String, name: String) -> Result<Value, Value> {
+    stage_command("approve", [db, schema, category, name]).await
+}
+
+#[tauri::command]
+async fn revoke_report(db: String, schema: String, category: String, name: String) -> Result<Value, Value> {
+    stage_command("revoke", [db, schema, category, name]).await
+}
+
 fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
@@ -428,7 +608,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![HIDDEN_ARG])))
-        .invoke_handler(tauri::generate_handler![api])
+        .invoke_handler(tauri::generate_handler![api, approve_report, revoke_report])
         .setup(|app| {
             let enabled = app.autolaunch().is_enabled().unwrap_or(false);
             let open = MenuItem::with_id(app, "open", "Open Auspex Augur", true, None::<&str>)?;
@@ -513,6 +693,52 @@ mod tests {
         assert_eq!(m["host"], json!("::1"));
         assert_eq!(m["port"], json!("5433"));
         assert_eq!(describe("postgresql://u@%2Fvar%2Frun%2Fpostgresql/x")["host"], json!("/var/run/postgresql"));
+    }
+
+    #[test]
+    fn report_parts_are_library_locations_only() {
+        assert!(valid_ref_part("db", "exampledb"));
+        assert!(valid_ref_part("schema", "example"));
+        assert!(valid_ref_part("category", "Example Reports"));
+        assert!(valid_ref_part("category", "Örnek Raporlar"));
+        assert!(valid_ref_part("name", "example-report-2"));
+        for (key, bad) in [
+            ("db", ""), ("db", "ExampleDB"), ("db", "../x"), ("schema", ".."), ("schema", "../../SELECT"), ("schema", " example"),
+            ("category", "Example Reports/../.."), ("category", r"a\b"), ("category", "a\nb"), ("category", "x."),
+            ("name", "Example Report"), ("name", "../example-report"), ("name", "-x"), ("name", "x-"), ("name", "a--b"), ("name", "--db=x"),
+        ] {
+            assert!(!valid_ref_part(key, bad), "{key}={bad}");
+        }
+        assert!(!valid_ref_part("category", &"a".repeat(81)));
+        let bad_name = ["exampledb".to_string(), "example".into(), "Example Reports".into(), "Bad Name".into()];
+        assert_eq!(run_stage_cli("approve", &bad_name).unwrap_err()["code"], json!("INVALID_INPUT"));
+        let ok = ["exampledb".to_string(), "example".into(), "Example Reports".into(), "example-report".into()];
+        assert_eq!(run_stage_cli("delete", &ok).unwrap_err()["code"], json!("INVALID_INPUT"));
+    }
+
+    #[test]
+    fn cli_output_maps_to_result_or_error() {
+        let ok = parse_cli_output("{\"ok\":true,\"stage\":\"approved\",\"version\":1}\n", "", Some(0)).unwrap();
+        assert_eq!(ok["version"], json!(1));
+        let e = parse_cli_output("{\"ok\":false,\"code\":\"PRECONDITION_FAILED\",\"message\":\"is approved, not draft\"}\n", "", Some(1)).unwrap_err();
+        assert_eq!((e["code"].clone(), e["message"].clone()), (json!("PRECONDITION_FAILED"), json!("is approved, not draft")));
+        let e = parse_cli_output("", "SyntaxError: x", Some(1)).unwrap_err();
+        assert_eq!(e["code"], json!("CLI_FAILED"));
+        assert!(e["message"].as_str().unwrap().contains("SyntaxError"));
+    }
+
+    #[test]
+    fn auspex_root_must_hold_the_stage_cli() {
+        let dir = std::env::temp_dir().join(format!("auspex-root-test-{}", std::process::id()));
+        fs::create_dir_all(dir.join("src")).unwrap();
+        std::env::set_var("AUSPEX_ROOT", &dir);
+        assert_eq!(auspex_root().unwrap_err()["code"], json!("AUSPEX_ROOT_INVALID"));
+        fs::write(dir.join("src").join("stageCli.js"), "").unwrap();
+        assert_eq!(auspex_root().unwrap(), dir);
+        std::env::set_var("AUSPEX_ROOT", "relative/auspex");
+        assert_eq!(auspex_root().unwrap_err()["code"], json!("AUSPEX_ROOT_INVALID"));
+        std::env::remove_var("AUSPEX_ROOT");
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
