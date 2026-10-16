@@ -822,7 +822,7 @@ const TR = {
   '{n} colors adjusted for contrast': 'Kontrast için {n} renk ayarlandı', '{n} adjusted': '{n} ayarlandı',
 'Non-FK relations': 'FK dışı ilişkiler', 'Used and suggested relations (not foreign keys)': 'Kullanılan ve önerilen ilişkiler (yabancı anahtar olmayan)',
   'Show one more layer on both sides': 'İki yana birer katman daha ekle', '{role}: tables per layer': '{role}: katman başına tablo',
-  'Approve': 'Onayla', 'Revoke approval': 'Onayı geri al', 'Report approved': 'Onaylandı', 'Approval revoked': 'Onay geri alındı', 'Cancel': 'Vazgeç', 'Working…': 'İşleniyor…',
+  'The viewer was restarted; reload the page': 'Görüntüleyici yeniden başlatıldı; sayfayı yenileyin', 'Approve': 'Onayla', 'Revoke approval': 'Onayı geri al', 'Report approved': 'Onaylandı', 'Approval revoked': 'Onay geri alındı', 'Cancel': 'Vazgeç', 'Working…': 'İşleniyor…',
   'Approve this report?': 'Bu rapor onaylansın mı?', 'Revoke the approval of this report?': 'Bu raporun onayı geri alınsın mı?',
   'It moves to Approved (SELECT). Only files in the local report library change.': 'Rapor Onaylı (SELECT) aşamasına geçer. Yalnızca yerel rapor kütüphanesindeki dosyalar değişir.',
   'It moves back to Drafts; its SQL versions and runs stay. Only files in the local report library change.': 'Rapor Taslaklar aşamasına döner; SQL sürümleri ve çalıştırmaları kalır. Yalnızca yerel rapor kütüphanesindeki dosyalar değişir.',
@@ -1786,6 +1786,8 @@ async function postStageChange(fetchFn, token, path, r) {
   });
   let data = null;
   try { data = await res.json(); } catch {}
+  // A token refusal means the viewer restarted (new token) since the page loaded.
+  if (res.status === 403 && data?.code === 'TOKEN_INVALID') throw Object.assign(new Error(data.error), { viewerRestarted: true });
   if (!res.ok) throw new Error(data?.error || res.statusText || `HTTP ${res.status}`);
   return data;
 }
@@ -1827,7 +1829,7 @@ async function runStageChange(r, sc) {
     toast(t(sc.done));
     try { state.reports = await getJson('/api/reports'); } catch (err) { state.reports = { error: err.message, reports: [] }; }
   } catch (err) {
-    toast(err.message);
+    toast(err.viewerRestarted ? t('The viewer was restarted; reload the page') : err.message);
   } finally {
     state.stagePending = null;
     state.reportViewNode = null;

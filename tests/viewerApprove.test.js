@@ -110,6 +110,7 @@ test('requests without the right origin, token or host are refused and change no
     for (const k of Object.keys(headers)) if (headers[k] === undefined) delete headers[k];
     const res = await request({ method: 'POST', path: '/api/reports/approve', body, headers });
     assert.equal(res.status, 403, JSON.stringify(c));
+    assert.equal(res.json.code, 'x-auspex-token' in c ? 'TOKEN_INVALID' : 'ORIGIN_INVALID', JSON.stringify(c));
     assert.equal(res.headers['access-control-allow-origin'], undefined);
   }
   const foreignHost = await request({ method: 'POST', path: '/api/reports/approve', body,
@@ -153,6 +154,9 @@ test('approve and revoke move the report, answer 404/409 otherwise, and are audi
   assert.deepEqual([ok.json.stage, ok.json.version], ['approved', 1]);
   assert.equal(lib.exists('approved', ref), true);
   assert.equal(lib.exists('draft', ref), false);
+  const graph = path.join(home, 'memory', 'exampledb', 'graph.json');
+  assert.ok(fs.existsSync(graph), 'the schema memory view is rebuilt');
+  fs.rmSync(graph);
   assert.equal((await post('/api/reports/approve', ref)).status, 409, 'already approved');
 
   const listed = (await request({ path: '/api/reports' })).json.reports;
@@ -162,6 +166,7 @@ test('approve and revoke move the report, answer 404/409 otherwise, and are audi
   const back = await post('/api/reports/revoke', ref);
   assert.equal(back.status, 200, back.text);
   assert.deepEqual([back.json.stage, back.json.version], ['draft', 1]);
+  assert.ok(fs.existsSync(graph), 'rebuilt again on revoke');
   assert.equal(lib.exists('draft', ref), true);
   assert.equal((await post('/api/reports/revoke', ref)).status, 409, 'already a draft');
 
@@ -230,5 +235,7 @@ test('the page sends the token and only the report location, and surfaces server
   assert.equal(calls[0].init.headers['X-Auspex-Token'], 'tok');
   assert.equal(calls[0].init.headers['Content-Type'], 'application/json');
   assert.deepEqual(JSON.parse(calls[0].init.body), ref);
-  await assert.rejects(postStageChange(fakeFetch(409), 'tok', '/api/reports/approve', r), /approved, not draft/);
+  await assert.rejects(postStageChange(fakeFetch(409), 'tok', '/api/reports/approve', r), err => /approved, not draft/.test(err.message) && !err.viewerRestarted);
+  const refused = async () => ({ ok: false, status: 403, statusText: '', json: async () => ({ error: 'Missing or invalid token', code: 'TOKEN_INVALID' }) });
+  await assert.rejects(postStageChange(refused, 'old-token', '/api/reports/approve', r), err => err.viewerRestarted === true);
 });
