@@ -232,10 +232,11 @@ export class Library {
         for (const f of fs.readdirSync(path.join(base, db, schema, category)).filter(x => x.endsWith('.sql'))) {
           const ref = { db, schema, category, name: f.slice(0, -4) };
           const meta = stage === 'execute' ? null : this.readMeta(stage, ref);
+          const externalFile = stage === 'execute' ? this.executeInfo(ref)?.externalFile : null;
           const lastRun = meta?.runs?.at(-1);
           const file = path.join(base, db, schema, category, f);
           out.push({
-            stage, ...ref, title: meta?.title ?? ref.name, description: meta?.description || null,
+            stage, ...ref, ...(externalFile ? { externalFile } : {}), title: meta?.title ?? ref.name, description: meta?.description || null,
             versions: meta?.sqlVersions?.length ?? null, approvedVersion: meta?.approvedVersion ?? null,
             updatedAt: meta?.updatedAt ?? fs.statSync(file).mtime.toISOString(),
             runs: meta?.runs?.length ?? 0,
@@ -252,13 +253,20 @@ export class Library {
     return this.locked(() => this.saveExecuteScriptUnlocked(input));
   }
 
-  saveExecuteScriptUnlocked({ ref, title, purpose, relatedReport, expectedRows, sql, replace = false }) {
+  // With target ({ root, dir, folder, fileName }) the script is also written to
+  // <dir>/<folder>/<fileName>, a new file that never replaces an existing one;
+  // the EXECUTE copy stays the library record and its .execute.json sidecar
+  // records the external path. Nothing is written before every check passed.
+  saveExecuteScriptUnlocked({ ref, title, purpose, relatedReport, expectedRows, sql, replace = false, target = null }) {
     const lint = lintExecuteScript(sql);
     if (lint.errors.length) throw new LibraryError(`EXECUTE script rejected:\n- ${lint.errors.join('\n- ')}`);
     this.ensure();
     const r = normalizeRef(ref);
-    const file = `${this.base('execute', r)}.sql`;
+    const base = this.base('execute', r);
+    const file = `${base}.sql`;
+    const sidecar = `${base}.execute.json`;
     if (fs.existsSync(file) && !replace) throw new LibraryError(`EXECUTE script already exists: ${file}. Pass replace=true to overwrite.`);
+    const external = target ? prepareScriptTarget(target) : null;
     const header = [
       '-- =====================================================================',
       commentLines('', title || r.name),
@@ -266,6 +274,7 @@ export class Library {
       commentLines('Purpose        : ', purpose || '-'),
       commentLines('Related report : ', relatedReport || '-'),
       commentLines('Expected rows  : ', expectedRows ?? '-'),
+      ...(external ? [commentLines('Script file    : ', external.file)] : []),
       `-- Written        : ${new Date().toISOString()} by an AI agent via Auspex`,
       '-- NOT executed by Auspex. Run it yourself with a role that has the',
       '-- required privileges, review the MATCH results, then replace the final',
@@ -277,9 +286,117 @@ export class Library {
     // The written file, header included, must pass the same checks as the body.
     const finalLint = lintExecuteScript(text);
     if (finalLint.errors.length) throw new LibraryError(`EXECUTE script rejected after adding the header:\n- ${finalLint.errors.join('\n- ')}`);
+    const externalFile = external ? writeScriptTarget(external, text) : null;
     writeAtomic(file, text);
-    return { ref: r, file, warnings: lint.warnings };
+    if (external) {
+      const info = { externalFile, root: external.root, folder: external.folder, fileName: external.fileName, savedAt: new Date().toISOString(), sqlHash: sqlHash(text) };
+      writeAtomic(sidecar, JSON.stringify(info, null, 2) + '\n');
+    } else {
+      fs.rmSync(sidecar, { force: true }); // a replaced script no longer points at the old file
+    }
+    return { ref: r, file: externalFile ?? file, libraryFile: file, externalFile, warnings: lint.warnings };
   }
+
+  // External file of an EXECUTE script saved into a script root, or null.
+  executeInfo(ref) {
+    try {
+      return JSON.parse(fs.readFileSync(`${this.base('execute', ref)}.execute.json`, 'utf8'));
+    } catch {
+      return null;
+    }
+  }
+}
+
+// ---------- script roots ----------
+// One folder or file name inside a script root: letters (Turkish included),
+// digits, _ - and . only, so it cannot hold a separator, a drive, a space
+// or a parent reference.
+const scriptNamePattern = /^[\p{L}\p{N}_.-]+$/u;
+const windowsReservedName = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])(\..*)?$/i;
+const maxScriptName = 80;
+
+export function validateScriptName(value, label, { sqlFile = false } = {}) {
+  const v = String(value ?? '').normalize('NFC');
+  if (!v) throw new LibraryError(`${label} is required.`);
+  if (v.length > maxScriptName) throw new LibraryError(`${label} is too long (max ${maxScriptName} characters).`);
+  if (!scriptNamePattern.test(v)) throw new LibraryError(`Invalid ${label.toLowerCase()} "${v}": use letters, digits, _, - and . only (one name, no spaces or path separators).`);
+  // Windows drops trailing dots, so "x." would land on "x".
+  if (v.includes('..') || v.startsWith('.') || v.endsWith('.')) throw new LibraryError(`Invalid ${label.toLowerCase()} "${v}": no "..", and no leading or trailing dot.`);
+  if (windowsReservedName.test(v)) throw new LibraryError(`Invalid ${label.toLowerCase()} "${v}": reserved device name on Windows.`);
+  if (sqlFile && !/\.sql$/i.test(v)) throw new LibraryError(`Invalid ${label.toLowerCase()} "${v}": it must end with .sql.`);
+  return v;
+}
+
+// Real path of root/<folder> when it exists, null when it does not. Refused
+// when it is not a folder directly inside the real root, for example a link
+// or junction that points elsewhere.
+function realFolderInside(realRoot, folderPath, t) {
+  let real;
+  try {
+    real = fs.realpathSync.native(folderPath);
+  } catch (err) {
+    if (err.code === 'ENOENT') return null;
+    throw err;
+  }
+  if (path.dirname(real) !== realRoot) throw new LibraryError(`Folder "${t.folder}" of script root "${t.root}" resolves outside the root (link or junction); refused.`);
+  if (!fs.statSync(real).isDirectory()) throw new LibraryError(`"${t.folder}" in script root "${t.root}" is not a folder.`);
+  return real;
+}
+
+// Next free script number in a folder: one more than the highest NN_ prefix.
+function nextScriptNumber(dir) {
+  let names = [];
+  try { names = fs.readdirSync(dir); } catch { /* folder not created yet */ }
+  const numbers = names.map(f => /^(\d+)_/.exec(f)?.[1]).filter(Boolean);
+  const width = Math.max(2, ...numbers.map(n => n.length));
+  return String(numbers.length ? Math.max(...numbers.map(Number)) + 1 : 0).padStart(width, '0');
+}
+
+function existsMessage(file, dir) {
+  return `Script file already exists: ${file}. Auspex never overwrites it; choose a new file name, for example starting with ${nextScriptNumber(dir)}_.`;
+}
+
+// Checks a script-root target without writing anything.
+function prepareScriptTarget({ root, dir, folder, fileName }) {
+  const t = { root, dir, folder: validateScriptName(folder, 'Folder'), fileName: validateScriptName(fileName, 'File name', { sqlFile: true }) };
+  let realRoot;
+  try {
+    realRoot = fs.realpathSync.native(dir);
+  } catch (err) {
+    if (err.code === 'ENOENT') throw new LibraryError(`Script root "${root}" (${dir}) does not exist; create the folder or fix the configuration.`, 'NOT_FOUND');
+    throw err;
+  }
+  if (!fs.statSync(realRoot).isDirectory()) throw new LibraryError(`Script root "${root}" (${dir}) is not a folder.`);
+  t.realRoot = realRoot;
+  t.folderPath = path.join(realRoot, t.folder);
+  t.realFolder = realFolderInside(realRoot, t.folderPath, t);
+  t.file = path.join(t.realFolder ?? t.folderPath, t.fileName);
+  // lstat also sees a dangling link at the target name.
+  if (t.realFolder && fs.lstatSync(t.file, { throwIfNoEntry: false })) throw new LibraryError(existsMessage(t.file, t.realFolder));
+  return t;
+}
+
+// Creates the folder when missing, checks it again, and writes the file
+// exclusively (wx): an existing file or link is never replaced.
+function writeScriptTarget(t, text) {
+  let realFolder = t.realFolder;
+  if (!realFolder) {
+    try {
+      fs.mkdirSync(t.folderPath);
+    } catch (err) {
+      if (err.code !== 'EEXIST') throw err;
+    }
+    realFolder = realFolderInside(t.realRoot, t.folderPath, t);
+    if (!realFolder) throw new LibraryError(`Folder "${t.folder}" could not be created in script root "${t.root}".`);
+  }
+  const file = path.join(realFolder, t.fileName);
+  try {
+    fs.writeFileSync(file, text, { encoding: 'utf8', flag: 'wx' });
+  } catch (err) {
+    if (err.code === 'EEXIST') throw new LibraryError(existsMessage(file, realFolder));
+    throw err;
+  }
+  return file;
 }
 
 // Turns metadata into SQL comment lines: every line of the value (LF, CRLF or

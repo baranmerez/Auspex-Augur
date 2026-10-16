@@ -10,13 +10,15 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 // Starts the real MCP server over stdio with a temporary home and a profile
 // that is never connected to: every tool used here works without a database.
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-audit-test-'));
+const scriptRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-audit-root-'));
 const serverPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'index.js');
 let client;
 
 before(async () => {
   const env = { ...process.env, AUSPEX_HOME: home, AUSPEX_PROFILES_FILE: path.join(home, 'none.json'), AUSPEX_DB_SHOP: 'postgresql://auspex@127.0.0.1:1/shop',
-    AUSPEX_DB_TINY: 'postgresql://auspex@127.0.0.1:1/tiny', AUSPEX_MAX_QUERIES_PER_MINUTE_TINY: '1' };
-  for (const k of Object.keys(env)) if (/^AUSPEX_(DB|MAX_QUERIES_PER_MINUTE)_/i.test(k) && !['AUSPEX_DB_SHOP', 'AUSPEX_DB_TINY', 'AUSPEX_MAX_QUERIES_PER_MINUTE_TINY'].includes(k)) delete env[k];
+    AUSPEX_DB_TINY: 'postgresql://auspex@127.0.0.1:1/tiny', AUSPEX_MAX_QUERIES_PER_MINUTE_TINY: '1', AUSPEX_SCRIPT_ROOT_SCRATCH: scriptRoot };
+  const keep = ['AUSPEX_DB_SHOP', 'AUSPEX_DB_TINY', 'AUSPEX_MAX_QUERIES_PER_MINUTE_TINY', 'AUSPEX_SCRIPT_ROOT_SCRATCH'];
+  for (const k of Object.keys(env)) if (/^AUSPEX_(DB|MAX_QUERIES_PER_MINUTE|SCRIPT_ROOT)_/i.test(k) && !keep.includes(k)) delete env[k];
   client = new Client({ name: 'audit-test', version: '1.0.0' });
   await client.connect(new StdioClientTransport({ command: process.execPath, args: [serverPath], env, stderr: 'ignore' }));
 });
@@ -67,6 +69,26 @@ test('report, script and memory changes are audited on success and failure, with
 
   const raw = JSON.stringify(entries);
   for (const marker of [secretText, 'REASON-MARKER', 'sql_marker', '4242']) assert.ok(!raw.includes(marker), `${marker} is not logged`);
+});
+
+test('list_profiles shows script roots; a script saved into one is audited with its path and names', async () => {
+  const listed = JSON.parse((await call('list_profiles', {})).content[0].text);
+  assert.deepEqual(listed.scriptRoots, [{ name: 'scratch', path: path.resolve(scriptRoot), source: 'env' }]);
+
+  const args = { ...ref, name: 'rooted', root: 'scratch', folder: 'Audit_DB_Scripts_V1', fileName: '00_audit_preflight.sql', sql: 'BEGIN;\nUPDATE sales.t SET a = 4343 WHERE id = 1;\nROLLBACK;' };
+  const saved = await call('save_execute_script', args);
+  assert.ok(!saved.isError, saved.content[0].text);
+  const file = path.join(fs.realpathSync.native(scriptRoot), 'Audit_DB_Scripts_V1', '00_audit_preflight.sql');
+  assert.equal(JSON.parse(saved.content[0].text).externalFile, file);
+  const again = await call('save_execute_script', { ...args, name: 'rooted-2' });
+  assert.ok(again.isError, 'the existing file is never overwritten');
+
+  const [ok, refused] = auditEntries().filter(e => e.tool === 'save_execute_script' && e.root === 'scratch');
+  assert.equal(ok.file, file);
+  assert.ok(ok.libraryFile.endsWith('rooted.sql'));
+  assert.deepEqual([ok.folder, ok.fileName], ['Audit_DB_Scripts_V1', '00_audit_preflight.sql']);
+  assert.match(refused.error, /already exists/);
+  assert.ok(!JSON.stringify([ok, refused]).includes('4343'), 'no SQL text in the audit log');
 });
 
 test('local read-only tools add no entries; calls rejected by input validation are not logged', async () => {
