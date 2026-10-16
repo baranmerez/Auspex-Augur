@@ -11,7 +11,7 @@ const block = page.match(/\/\/ scope:start[\s\S]*?\/\/ scope:end/)?.[0];
 function loadScope() {
   assert.ok(block, 'scope block found in viewer.html');
   const context = vm.createContext({});
-  vm.runInContext(`${block}\nthis.scopeGraph = scopeGraph; this.defaultRoot = defaultRoot; this.schemaCenter = schemaCenter; this.schemaTables = schemaTables;`, context);
+  vm.runInContext(`${block}\nthis.scopeGraph = scopeGraph; this.defaultRoot = defaultRoot; this.schemaCenter = schemaCenter; this.schemaTables = schemaTables; this.scopeStats = scopeStats;`, context);
   return context;
 }
 
@@ -85,4 +85,19 @@ test('the pick list of a schema has explored tables first, then by relations, th
   assert.deepEqual(Array.from(schemaTables(scopeGraph(graph(), 'audit')), n => n.id), ['audit.log_entries', 'audit.sessions']);
   assert.deepEqual(Array.from(schemaTables(scopeGraph(graph(), 'stage')), n => n.id), ['stage.raw_files', 'stage.raw_rows']);
   assert.deepEqual(Array.from(schemaTables(scopeGraph(graph(), 'app')), n => n.id), ['app.orders', 'app.customers', 'app.order_lines', 'app.notes']);
+});
+
+test('schema totals count its own tables, the relations touching it and its active notes', () => {
+  const { scopeStats } = loadScope();
+  const data = graph();
+  data.notes = [
+    { id: 1, status: 'active', schema: 'billing', table: 'invoices', text: 'a' },
+    { id: 2, status: 'archived', schema: 'billing', table: 'invoices', text: 'b' },
+    { id: 3, status: 'active', schema: 'app', table: 'orders', text: 'c' },
+    { id: 4, status: 'active', text: 'database-wide' },
+  ];
+  assert.equal(scopeStats(data, ''), null);
+  assert.deepEqual({ ...scopeStats(data, 'billing') }, { explored: 2, seen: 0, unexplored: 1, edges: 4, notes: 1 });
+  assert.deepEqual({ ...scopeStats(data, 'stage') }, { explored: 0, seen: 1, unexplored: 1, edges: 2, notes: 0 }, 'self reference counts, as in the summary');
+  assert.deepEqual({ ...scopeStats(data, 'audit') }, { explored: 0, seen: 0, unexplored: 2, edges: 2, notes: 0 });
 });
