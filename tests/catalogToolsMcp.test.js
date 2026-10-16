@@ -51,6 +51,13 @@ test('describe_functions and the extended search are listed with their input sch
   assert.match(tools.find(t => t.name === 'describe_tables').description, /6, or 7 when/);
 });
 
+test('save_report text fields and the server instructions point to notesLanguage', async () => {
+  const { tools } = await client.listTools();
+  const props = tools.find(t => t.name === 'save_report').inputSchema.properties;
+  for (const field of ['title', 'description', 'note']) assert.match(props[field].description, /notesLanguage/);
+  assert.match(client.getInstructions(), /save_report title, description and note/);
+});
+
 test('describe_tables offers detail summary (default) or full; a bad value is refused by the schema', async () => {
   const { tools } = await client.listTools();
   const describe = tools.find(t => t.name === 'describe_tables');
