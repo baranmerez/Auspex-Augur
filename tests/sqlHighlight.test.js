@@ -112,3 +112,35 @@ test('a very long script tokenizes in linear time', () => {
   assert.equal(join(sqlTokens(open)), open);
   assert.ok(performance.now() - t1 < 3000);
 });
+
+test('a single line with 200k tokens renders without spreading arguments', () => {
+  // Fake DOM: append() counts its arguments; a spread of every token of the
+  // line would pass them all at once (and overflow the stack in a browser).
+  let maxArgs = 0, appended = 0;
+  const element = () => ({ className: '', textContent: '', style: { setProperty() {} },
+    append(...nodes) { maxArgs = Math.max(maxArgs, nodes.length); appended += nodes.length; } });
+  const document = { createElement: element, createTextNode: v => ({ text: v }) };
+  const context = vm.createContext({ document });
+  vm.runInContext(`${viewerBlock}\nthis.sqlLineNodes = sqlLineNodes; this.sqlTokens = sqlTokens;`, context);
+  const sql = 'INSERT INTO app.orders (id) VALUES ' + Array.from({ length: 50000 }, (_, i) => `(${i})`).join(',') + ';';
+  const tokens = context.sqlTokens(sql).length;
+  assert.ok(tokens >= 200000, `${tokens} tokens`);
+  const lines = context.sqlLineNodes(sql);
+  assert.equal(lines.length, 1);
+  assert.equal(maxArgs, 1, 'one node per append call');
+  assert.equal(appended, tokens);
+  assert.doesNotMatch(viewerBlock, /append\(\.\.\./, 'no spread into append');
+});
+
+test('step marker detection stays fast on very long comments', () => {
+  const { sqlTokens } = load();
+  for (const comment of ['-- 1' + ' '.repeat(200000) + 'x', '--' + '='.repeat(200000), '-- MATCH' + ' '.repeat(200000) + 'x', '-- Step 1' + ' \t'.repeat(100000)]) {
+    const t0 = performance.now();
+    const tokens = sqlTokens(comment);
+    assert.ok(performance.now() - t0 < 500, 'linear');
+    assert.equal(join(tokens), comment);
+  }
+  // Short markers still count; a marker beyond the bounded head does not.
+  assert.equal(sqlTokens('-- 2. DEFINE: scope')[0].type, 'step');
+  assert.equal(sqlTokens('--' + '='.repeat(300) + ' MATCH')[0].type, 'cm');
+});

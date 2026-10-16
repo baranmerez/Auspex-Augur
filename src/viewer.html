@@ -1495,6 +1495,9 @@ const sqlBare = new Set(['current_date', 'current_time', 'current_timestamp', 'l
 // A word before "(" that names a table or a column list, not a call.
 const sqlNotCall = new Set(['into', 'table', 'references', 'on', 'view', 'with', 'index', 'type', 'only', 'update', 'from', 'join']);
 const sqlStep = /^--[\s=#*~+\-–—]*(?:(?:[Ss][Tt][Ee][Pp]\s*)?\d+\s*[.):\-–—]?\s*)?(?:BEGIN|DEFINE|PROCESS|MATCH|CORRECT|FAIL|ROLLBACK)(?=\s*(?:$|[:=(/|\-–—]|[Oo][Rr]\b|[Aa][Nn][Dd]\b))/;
+// Only the start of a comment can be a step marker; a bounded head keeps the
+// marker regex linear on very long comments (long runs of spaces or "=").
+const sqlHead = v => (v.length > 160 ? v.slice(0, 160) + '\u0000' : v);
 const sqlRe = {
   ws: /\s+/y,
   word: /[A-Za-z_À-￿][\w$À-￿]*(?:\.(?:[A-Za-z_À-￿][\w$À-￿]*|"(?:[^"]|"")*"|\*))*/y,
@@ -1524,7 +1527,7 @@ function sqlTokens(sql, depth = 0) {
       if (s[j - 1] === '\r') j--;
       const v = s.slice(i, j);
       let k = i - 1; while (k >= 0 && (s[k] === ' ' || s[k] === '\t')) k--;
-      push((k < 0 || s[k] === '\n') && sqlStep.test(v) ? 'step' : 'cm', v);
+      push((k < 0 || s[k] === '\n') && sqlStep.test(sqlHead(v)) ? 'step' : 'cm', v);
     } else if (c === '/' && d === '*') {
       let open = 1, j = i + 2;
       while (j < n && open) {
@@ -1623,7 +1626,9 @@ function sqlLineNodes(sql) {
     const e = document.createElement('div');
     e.className = 'sq-line' + (sqlStepLine(line) ? ' sq-step-line' : '');
     e.style.setProperty('--ind', String(Math.min(sqlIndent(line), 40)));
-    e.append(...line.map(sqlNode));
+    // One append per token: spreading a long line (100k+ tokens) as call
+    // arguments overflows the stack.
+    for (const tk of line) e.append(sqlNode(tk));
     return e;
   });
 }
@@ -1665,7 +1670,32 @@ function reportMatches(r, query, stageLabel = '') {
   return words.every(w => hay.includes(w));
 }
 // report-filter:end
+// focus-keep:start (tests/viewerFocusKeep.test.js runs this block in isolation)
+// Re-rendering the report list replaces its filter input (live refresh every
+// 5 s, a report finishing loading); these keep its focus and caret, so the
+// next keys go to the input and not to the page shortcuts.
+function captureFocus(doc, id) {
+  const el = doc.activeElement;
+  if (!el || el.id !== id) return null;
+  return { start: el.selectionStart ?? null, end: el.selectionEnd ?? null, dir: el.selectionDirection || 'none' };
+}
+function restoreFocus(doc, id, saved) {
+  if (!saved) return false;
+  const el = doc.getElementById(id);
+  if (!el) return false;
+  if (doc.activeElement !== el) el.focus({ preventScroll: true });
+  if (saved.start !== null) { try { el.setSelectionRange(saved.start, saved.end ?? saved.start, saved.dir); } catch {} }
+  return true;
+}
+// Page shortcuts stay off while the user types in a field.
+const isTypingIn = el => !!el && (/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName) || el.isContentEditable === true);
+// focus-keep:end
 function renderReports() {
+  const saved = captureFocus(document, 'repFilter');
+  drawReports();
+  restoreFocus(document, 'repFilter', saved);
+}
+function drawReports() {
   const data = state.reports;
   const all = (data?.reports || []).filter(r => !state.db || r.db === state.db);
   $('cReports').textContent = all.length ? fmt(all.length) : '';
@@ -1699,13 +1729,7 @@ function renderReports() {
       h('button', { class: state.stageFilter === k ? 'on' : '', onclick: () => { state.stageFilter = k; persist(); renderReports(); } }, `${label} ${count(k)}`))),
     h('button', { class: 'icon-btn sm', 'aria-expanded': 'true', title: t('Hide the report list'), onclick: toggleList }, '«'),
     h('input', { id: 'repFilter', class: 'rep-filter', type: 'search', value: rq, placeholder: t('Filter by name, category or stage'), 'aria-label': t('Filter reports'),
-      oninput: ev => {
-        const el = ev.target, at = el.selectionStart;
-        state.repFilter = el.value;
-        renderReports();
-        const next = $('repFilter');
-        if (next) { next.focus(); try { next.setSelectionRange(at, at); } catch {} }
-      } }));
+      oninput: ev => { state.repFilter = ev.target.value; renderReports(); } }));
   const groups = new Map();
   for (const r of list) {
     const key = (state.db ? '' : r.db + ' › ') + r.schema + ' › ' + r.category;
@@ -3194,7 +3218,7 @@ $('liveBtn').addEventListener('click', () => { state.live = !state.live; persist
 $('refreshBtn').addEventListener('click', () => load());
 
 document.addEventListener('keydown', ev => {
-  const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName);
+  const typing = isTypingIn(document.activeElement);
   if (ev.key === '/' && !typing) { ev.preventDefault(); F.text.focus(); }
   else if (ev.key === 'Escape') { closeDbMenu(); if (typing) document.activeElement.blur(); else if (state.open) { state.open = null; render(); } else if (state.tab === 'schema' && graph3d) graph3d.showAll(); }
   else if (!typing && (ev.key === 'r' || ev.key === 'R') && !ev.ctrlKey && !ev.metaKey) load();
