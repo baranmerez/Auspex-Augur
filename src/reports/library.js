@@ -501,8 +501,9 @@ export function lintExecuteScript(sql) {
   const warnings = [];
   const source = String(sql || '');
   let masked;
+  const identifiers = []; // quoted identifiers: { end, name } with the real spelling
   try {
-    masked = stripLiteralsAndComments(source);
+    masked = stripLiteralsAndComments(source, identifiers);
   } catch (err) {
     return { errors: [err.message], warnings, functionBodies: 0 };
   }
@@ -518,7 +519,13 @@ export function lintExecuteScript(sql) {
   if (!statements.length) return { errors: ['Script is empty.'], warnings, functionBodies: 0 };
   const words = s => s.toLowerCase().match(/[a-z_]+/g) || [];
   let functionBodies = 0;
+  // Names of functions created in the script, as PostgreSQL compares them:
+  // unquoted folded to lower case, quoted exactly as written.
   const createdFunctions = new Set();
+  const quotedAt = new Map(identifiers.map(q => [q.end, q.name]));
+  const nameAt = (token, end) => (token.startsWith('"') ? quotedAt.get(end) : token.toLowerCase());
+  const nameToken = '([A-Za-z_][A-Za-z0-9_$]*|"[^"]*")';
+  let triggersCreated = false;
 
   const first = words(statements[0]);
   if (!(first[0] === 'begin' || (first[0] === 'start' && first[1] === 'transaction'))) {
@@ -547,8 +554,14 @@ export function lintExecuteScript(sql) {
       const problem = functionProblem(s, parts[i].start, source, w);
       if (problem) errors.push(`Statement ${n} ${problem}`);
       else functionBodies++;
-      const name = /\bfunction\s+(?:[a-z_][a-z0-9_$]*\s*\.\s*)?([a-z_][a-z0-9_$]*)\s*\(/i.exec(s)?.[1];
-      if (name) createdFunctions.add(name.toLowerCase());
+      const m = new RegExp(`\\bfunction\\s+(?:${nameToken}\\s*\\.\\s*)?${nameToken}\\s*\\(`, 'i').exec(s);
+      if (m) {
+        const end = parts[i].start + m.index + m[0].lastIndexOf(m[2]) + m[2].length;
+        const name = nameAt(m[2], end);
+        if (name) createdFunctions.add(name);
+      }
+      const returns = w.indexOf('returns');
+      if (returns >= 0 && w[returns + 1] === 'trigger') triggersCreated = true;
       if (w.includes('security') && w.includes('definer')) warnings.push(`Statement ${n} creates a SECURITY DEFINER function; check its owner and that it sets search_path.`);
     } else if (routine === 'procedure' || (w[0] === 'create' && w.slice(1, 4).some(x => x === 'function' || x === 'procedure'))) {
       errors.push(`Statement ${n} creates a procedure or an unsupported function form; its body cannot be checked.`);
@@ -557,9 +570,13 @@ export function lintExecuteScript(sql) {
     if (s.includes('\\')) errors.push(`Statement ${n} contains a psql backslash command.`);
     if (routine !== 'trigger') for (const write of writesWithoutWhere(s)) errors.push(`Statement ${n} has ${write} without WHERE.`);
     // A body created above runs when the script calls it (triggers also fire on DML).
+    if (routine === 'trigger') triggersCreated = true;
     if (!routine) {
-      const called = [...s.matchAll(/([a-z_][a-z0-9_$]*)\s*\(/gi)].map(m => m[1].toLowerCase()).filter(x => createdFunctions.has(x));
+      const called = [...s.matchAll(new RegExp(`${nameToken}\\s*\\(`, 'g'))]
+        .map(m => nameAt(m[1], parts[i].start + m.index + m[1].length)).filter(x => createdFunctions.has(x));
       for (const fn of new Set(called)) warnings.push(`Statement ${n} calls ${fn}(), created in this script; its body was not linted and runs here.`);
+      const writes = w.some((x, k) => x === 'insert' || x === 'delete' || (x === 'update' && !['for', 'key'].includes(w[k - 1])));
+      if (triggersCreated && writes) warnings.push(`Statement ${n} writes rows after triggers or trigger functions were created in this script; trigger bodies were not linted and run during the dry run.`);
     }
     if (w[0] === 'truncate' || w[0] === 'drop') warnings.push(`Statement ${n} is ${w[0].toUpperCase()}; double-check it is intended.`);
   });

@@ -452,9 +452,11 @@ library/
   carries the header line `-- NOTE: function bodies are not linted by
   Auspex; review them before COMMIT`. Other languages, quoted language
   names, single-quoted or SQL-standard (`RETURN` / `BEGIN ATOMIC`) bodies
-  are rejected. Warnings: `SECURITY DEFINER`, and a later statement that
-  calls a function created in the same script (its body runs there;
-  triggers also fire on the script's own DML).
+  are rejected. Warnings: `SECURITY DEFINER`; a later statement that calls
+  a function created in the same script (quoted names included), since its
+  body runs there; and every `INSERT`/`UPDATE`/`DELETE` after a `CREATE
+  TRIGGER` or a function `RETURNS trigger`, since trigger bodies run during
+  the dry run.
 - **Script roots:** to keep change scripts where you run them (for example
   DBeaver's `General\Scripts`, one folder per topic), name the folder in
   `scriptRoots` in the profiles file or as `AUSPEX_SCRIPT_ROOT_<NAME>` (see
