@@ -74,6 +74,7 @@ test('report, script and memory changes are audited on success and failure, with
 test('list_profiles shows script roots; a script saved into one is audited with its path and names', async () => {
   const listed = JSON.parse((await call('list_profiles', {})).content[0].text);
   assert.deepEqual(listed.scriptRoots, [{ name: 'scratch', path: path.resolve(scriptRoot), source: 'env' }]);
+  assert.equal(listed.notesLanguage, null);
 
   const args = { ...ref, name: 'rooted', root: 'scratch', folder: 'Audit_DB_Scripts_V1', fileName: '00_audit_preflight.sql', sql: 'BEGIN;\nUPDATE sales.t SET zqscriptmarker = 1 WHERE id = 1;\nROLLBACK;' };
   const saved = await call('save_execute_script', args);
@@ -162,4 +163,21 @@ test('query budget refusal is QUERY_BUDGET_EXCEEDED with retryAfterSeconds, per 
   const [logged] = auditEntries().filter(x => x.correlationId === refused.correlationId);
   assert.equal(logged.errorCode, 'QUERY_BUDGET_EXCEEDED');
   assert.ok(!JSON.stringify(refused).includes('127.0.0.1'), 'no connection details in the envelope');
+});
+
+test('list_profiles returns notesLanguage from the profiles file and does not list it as a profile', async () => {
+  const langHome = fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-lang-test-'));
+  const file = path.join(langHome, 'profiles.json');
+  fs.writeFileSync(file, JSON.stringify({ notesLanguage: 'pt-BR' }));
+  const env = { ...process.env, AUSPEX_HOME: langHome, AUSPEX_PROFILES_FILE: file, AUSPEX_DB_SHOP: 'postgresql://auspex@127.0.0.1:1/shop' };
+  for (const k of Object.keys(env)) if (/^AUSPEX_(DB|MAX_QUERIES_PER_MINUTE|SCRIPT_ROOT)_/i.test(k) && k !== 'AUSPEX_DB_SHOP') delete env[k];
+  const other = new Client({ name: 'lang-test', version: '1.0.0' });
+  await other.connect(new StdioClientTransport({ command: process.execPath, args: [serverPath], env, stderr: 'ignore' }));
+  try {
+    const listed = JSON.parse((await other.callTool({ name: 'list_profiles', arguments: {} })).content[0].text);
+    assert.equal(listed.notesLanguage, 'pt-BR');
+    assert.deepEqual(listed.profiles.map(p => p.name), ['shop']);
+  } finally {
+    await other.close();
+  }
 });

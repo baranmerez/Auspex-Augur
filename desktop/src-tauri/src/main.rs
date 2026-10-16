@@ -314,8 +314,8 @@ fn profiles() -> Value {
             match parsed {
                 Ok(Value::Object(entries)) => {
                     for (name, p) in entries {
-                        // Named folders for change scripts, not a profile.
-                        if name == "scriptRoots" {
+                        // Named folders for change scripts and the notes language, not profiles.
+                        if name == "scriptRoots" || name == "notesLanguage" {
                             continue;
                         }
                         let url_text = p.get("url").and_then(Value::as_str).unwrap_or("");
