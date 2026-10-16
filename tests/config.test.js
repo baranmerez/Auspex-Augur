@@ -241,3 +241,20 @@ test('script roots must be an object; env roots are validated too', () => {
   assert.throws(() => loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: none, AUSPEX_SCRIPT_ROOT_X: 'relative' }), /must be absolute/);
   assert.throws(() => loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: none, AUSPEX_SCRIPT_ROOT_9: dir }), /AUSPEX_SCRIPT_ROOT_9/);
 });
+
+test('notesLanguage is read from the profiles file, null when absent, and is not a profile', () => {
+  const file = profilesFile({ local: { url: 'postgresql://Auspex@localhost/postgres' }, notesLanguage: 'pt-BR' });
+  const config = loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: file });
+  assert.equal(config.notesLanguage, 'pt-BR');
+  assert.deepEqual([...config.profiles.keys()], ['local']);
+  assert.deepEqual(readProfilesFile(file).map(p => p.name), ['local']);
+  assert.equal(loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: path.join(dir, 'none.json') }).notesLanguage, null);
+  assert.equal(loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: profilesFile({ scriptRoots: {} }) }).notesLanguage, null);
+});
+
+for (const [name, value] of [['a number', 42], ['an empty string', ''], ['free text', 'turkish please'], ['an underscore code', 'pt_BR'], ['an array', ['tr']]]) {
+  test(`notesLanguage rejects ${name}`, () => {
+    const file = profilesFile({ notesLanguage: value });
+    assert.throws(() => loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: file }), /Invalid "notesLanguage"/);
+  });
+}

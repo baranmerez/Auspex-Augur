@@ -773,6 +773,20 @@ startup. Root names follow the profile-name rules. If the folder is under
 AppData, check that saved scripts appear there: MSIX-packaged clients may
 redirect AppData writes (see Configuration).
 
+An optional top-level `notesLanguage` sets the language of schema-memory
+notes (a language code such as `tr`, `en`, `de` or `pt-BR`); it is not a
+profile and an invalid value stops the server at startup:
+
+```json
+{
+  "notesLanguage": "tr"
+}
+```
+
+`list_profiles` returns it as `notesLanguage` (`null` when unset). When it is
+unset the model asks the user once which language notes should be saved in and
+suggests adding the key. Existing notes are not translated.
+
 Profile names are case-insensitive and use `a-z`, `0-9`, `-`, `_`. Restart
 your MCP client session after editing (profiles are read at start). A missing
 file means no file profiles; an invalid file stops the server with a message
