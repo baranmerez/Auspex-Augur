@@ -198,20 +198,41 @@ const block = page.match(/\/\/ stage-change:start[\s\S]*?\/\/ stage-change:end/)
 function loadBlock() {
   assert.ok(block, 'stage-change block found in viewer.html');
   const context = vm.createContext({ JSON });
-  vm.runInContext(`${block}\nthis.stageChangeFor = stageChangeFor; this.stageChangeFacts = stageChangeFacts; this.postStageChange = postStageChange;`, context);
+  vm.runInContext(`${block}\nthis.stageChangeFor = stageChangeFor; this.stageChangeFacts = stageChangeFacts; this.postStageChange = postStageChange; this.invokeStageChange = invokeStageChange;`, context);
   return context;
 }
 
-test('the page offers approve on drafts, revoke on approved reports and only a note in the desktop app', () => {
+test('the page offers approve on drafts and revoke on approved reports, with a route and a desktop command', () => {
   const { stageChangeFor } = loadBlock();
-  assert.equal(stageChangeFor({ stage: 'draft' }, false).kind, 'approve');
-  assert.equal(stageChangeFor({ stage: 'draft' }, false).path, '/api/reports/approve');
-  assert.equal(stageChangeFor({ stage: 'approved' }, false).kind, 'revoke');
-  assert.equal(stageChangeFor({ stage: 'approved' }, false).path, '/api/reports/revoke');
-  assert.equal(stageChangeFor({ stage: 'execute' }, false), null);
-  assert.equal(stageChangeFor(null, false), null);
-  assert.equal(stageChangeFor({ stage: 'draft' }, true).kind, 'note');
-  assert.equal(stageChangeFor({ stage: 'approved' }, true).kind, 'note');
+  const pick = sc => [sc.kind, sc.path, sc.command, sc.to];
+  assert.deepEqual(pick(stageChangeFor({ stage: 'draft' })), ['approve', '/api/reports/approve', 'approve_report', 'approved']);
+  assert.deepEqual(pick(stageChangeFor({ stage: 'approved' })), ['revoke', '/api/reports/revoke', 'revoke_report', 'draft']);
+  assert.equal(stageChangeFor({ stage: 'execute' }), null);
+  assert.equal(stageChangeFor(null), null);
+  assert.match(stageChangeFor({ stage: 'draft' }).note, /schema memory view/);
+});
+
+test('the desktop page invokes the Tauri command with only the report location and maps setup errors', async () => {
+  const { invokeStageChange } = loadBlock();
+  const calls = [];
+  const r = { ...ref, stage: 'draft', title: 'T', lastRun: null, extra: 'x' };
+  const okInvoke = async (cmd, args) => { calls.push([cmd, args]); return { ok: true, stage: 'approved', version: 1 }; };
+  assert.equal((await invokeStageChange(okInvoke, 'approve_report', r)).version, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [['approve_report', ref]]);
+  const failing = e => async () => { throw e; };
+  await assert.rejects(invokeStageChange(failing({ code: 'PRECONDITION_FAILED', message: 'Report is approved, not draft.' }), 'approve_report', r),
+    err => err.message === 'Report is approved, not draft.' && err.code === 'PRECONDITION_FAILED' && err.setupText === null);
+  await assert.rejects(invokeStageChange(failing({ code: 'AUSPEX_ROOT_MISSING', message: 'x' }), 'approve_report', r), err => /auspexRoot/.test(err.setupText));
+  await assert.rejects(invokeStageChange(failing({ code: 'NODE_NOT_FOUND', message: 'x' }), 'revoke_report', r), err => /AUSPEX_NODE/.test(err.setupText));
+  await assert.rejects(invokeStageChange(failing('plain text'), 'revoke_report', r), err => err.message === 'plain text');
+});
+
+test('every setup text of the desktop has a Turkish translation', () => {
+  for (const code of ['AUSPEX_ROOT_MISSING', 'NODE_NOT_FOUND']) {
+    const text = page.match(new RegExp(`${code}: '([^']+)'`))?.[1];
+    assert.ok(text, code);
+    assert.ok(page.includes(`'${text}': '`), `TR entry for ${code}`);
+  }
 });
 
 test('confirm facts show name, version, last run, rows and warnings', () => {

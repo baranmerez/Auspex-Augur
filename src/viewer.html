@@ -827,7 +827,9 @@ const TR = {
   'It moves to Approved (SELECT). Only local Auspex files change (report library and schema memory view); no database is touched.': 'Rapor Onaylı (SELECT) aşamasına geçer. Yalnız yerel Auspex dosyaları değişir (rapor kütüphanesi ve şema hafızası görünümü); veritabanına dokunulmaz.',
   'It moves back to Drafts; its SQL versions and runs stay. Only local Auspex files change (report library and schema memory view); no database is touched.': 'Rapor Taslaklar aşamasına döner; SQL sürümleri ve çalıştırmaları kalır. Yalnız yerel Auspex dosyaları değişir (rapor kütüphanesi ve şema hafızası görünümü); veritabanına dokunulmaz.',
   'Report': 'Rapor', 'Location': 'Konum', 'Version': 'Sürüm', 'Last run': 'Son çalıştırma', 'Warnings': 'Uyarılar',
-  'Approve from the browser viewer or via Claude': 'Tarayıcıdaki görüntüleyiciden ya da Claude ile onaylayın', 'Revoke report approval': 'Rapor onayını geri al',
+  'Revoke report approval': 'Rapor onayını geri al',
+  'Auspex folder not found. Set "auspexRoot" in ~/.auspex/profiles.json (or the AUSPEX_ROOT environment variable) to the Auspex folder that holds src/stageCli.js.': 'Auspex klasörü bulunamadı. ~/.auspex/profiles.json içinde "auspexRoot" değerini (ya da AUSPEX_ROOT ortam değişkenini) src/stageCli.js dosyasını içeren Auspex klasörüne ayarlayın.',
+  'Node was not found. Install Node 20+ so it is on PATH, or set AUSPEX_NODE to the path of node.exe.': 'Node bulunamadı. Node 20+ kurun (PATH üzerinde olsun) ya da AUSPEX_NODE değişkenini node.exe yoluna ayarlayın.',
 };
 let lang = 'en';
 try { lang = localStorage.getItem('auspex.viewer.lang') || ((navigator.language || '').toLowerCase().startsWith('tr') ? 'tr' : 'en'); } catch {}
@@ -1752,16 +1754,15 @@ function reportView(r) {
   return node;
 }
 // stage-change:start (tests/viewerApprove.test.js runs this block in isolation)
-// The stage change the Reports view offers: the browser viewer approves a
-// draft or revokes an approval; the desktop app only reads files, so it shows
-// a note instead.
-function stageChangeFor(r, desktop) {
+// The stage change the Reports view offers: approve a draft or revoke an
+// approval. The browser viewer POSTs to path; the desktop app calls the Tauri
+// command, which runs src/stageCli.js (same checks, lock and audit).
+function stageChangeFor(r) {
   if (!r || (r.stage !== 'draft' && r.stage !== 'approved')) return null;
-  if (desktop) return { kind: 'note' };
   return r.stage === 'draft'
-    ? { kind: 'approve', path: '/api/reports/approve', to: 'approved', label: 'Approve', question: 'Approve this report?', done: 'Report approved',
+    ? { kind: 'approve', path: '/api/reports/approve', command: 'approve_report', to: 'approved', label: 'Approve', question: 'Approve this report?', done: 'Report approved',
       note: 'It moves to Approved (SELECT). Only local Auspex files change (report library and schema memory view); no database is touched.' }
-    : { kind: 'revoke', path: '/api/reports/revoke', to: 'draft', label: 'Revoke approval', question: 'Revoke the approval of this report?', done: 'Approval revoked',
+    : { kind: 'revoke', path: '/api/reports/revoke', command: 'revoke_report', to: 'draft', label: 'Revoke approval', question: 'Revoke the approval of this report?', done: 'Approval revoked',
       note: 'It moves back to Drafts; its SQL versions and runs stay. Only local Auspex files change (report library and schema memory view); no database is touched.' };
 }
 // Facts for the confirm dialog: [label, value]; a value of null shows as "–".
@@ -1791,12 +1792,26 @@ async function postStageChange(fetchFn, token, path, r) {
   if (!res.ok) throw new Error(data?.error || res.statusText || `HTTP ${res.status}`);
   return data;
 }
+// Desktop: the Tauri command with only the report location. Setup problems
+// (no Auspex folder, no Node) come back as a fixed text the page translates.
+const stageSetupTexts = {
+  AUSPEX_ROOT_MISSING: 'Auspex folder not found. Set "auspexRoot" in ~/.auspex/profiles.json (or the AUSPEX_ROOT environment variable) to the Auspex folder that holds src/stageCli.js.',
+  NODE_NOT_FOUND: 'Node was not found. Install Node 20+ so it is on PATH, or set AUSPEX_NODE to the path of node.exe.',
+};
+async function invokeStageChange(invoke, command, r) {
+  try {
+    return await invoke(command, { db: r.db, schema: r.schema, category: r.category, name: r.name });
+  } catch (err) {
+    const code = typeof err === 'object' && err ? err.code : undefined;
+    const message = typeof err === 'string' ? err : err?.message || String(err);
+    throw Object.assign(new Error(message), { code, setupText: stageSetupTexts[code] ?? null });
+  }
+}
 // stage-change:end
 const pageToken = document.querySelector('meta[name="auspex-token"]')?.content || '';
 function stageButton(r) {
-  const sc = stageChangeFor(r, !!tauriCore);
+  const sc = stageChangeFor(r);
   if (!sc) return null;
-  if (sc.kind === 'note') return h('span', { class: 'muted', style: 'font-size:12px' }, t('Approve from the browser viewer or via Claude'));
   const pending = state.stagePending === repKey(r);
   return h('button', { class: 'icon-btn' + (sc.kind === 'approve' ? ' primary' : ''), disabled: !!state.stagePending, 'aria-busy': pending ? 'true' : null,
     onclick: () => confirmStageChange(r, sc) }, pending ? t('Working…') : t(sc.label));
@@ -1821,7 +1836,8 @@ async function runStageChange(r, sc) {
   state.reportViewNode = null;
   renderReports();
   try {
-    await postStageChange(fetch, pageToken, sc.path, r);
+    if (tauriCore) await invokeStageChange(tauriCore.invoke, sc.command, r);
+    else await postStageChange(fetch, pageToken, sc.path, r);
     state.reportSel = repKey({ ...r, stage: sc.to });
     state.reportDoc = null;
     if (state.stageFilter !== 'all') state.stageFilter = sc.to;
@@ -1829,7 +1845,7 @@ async function runStageChange(r, sc) {
     toast(t(sc.done));
     try { state.reports = await getJson('/api/reports'); } catch (err) { state.reports = { error: err.message, reports: [] }; }
   } catch (err) {
-    toast(err.viewerRestarted ? t('The viewer was restarted; reload the page') : err.message);
+    toast(err.viewerRestarted ? t('The viewer was restarted; reload the page') : err.setupText ? t(err.setupText) : err.message);
   } finally {
     state.stagePending = null;
     state.reportViewNode = null;

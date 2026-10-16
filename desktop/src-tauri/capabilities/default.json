@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Main window: core defaults only. Data comes from the app's own read-only `api` command.",
+  "description": "Main window: core defaults, the read-only `api` command and the two report stage commands (approve_report, revoke_report run src/stageCli.js). No shell or other process plugin.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "allow-api", "allow-approve-report", "allow-revoke-report"]
 }
