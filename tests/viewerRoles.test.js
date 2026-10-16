@@ -12,7 +12,7 @@ const block = page.match(/\/\/ roles:start[\s\S]*?\/\/ roles:end/)?.[0];
 function loadRoles() {
   assert.ok(block, 'roles block found in viewer.html');
   const context = vm.createContext({});
-  vm.runInContext(`${block}\nthis.roleGroups = roleGroups; this.roleColor = roleColor; this.flowWidth = flowWidth; this.roleTop = roleTop; this.roleShown = roleShown;`, context);
+  vm.runInContext(`${block}\nthis.roleGroups = roleGroups; this.roleColor = roleColor; this.flowWidth = flowWidth; this.roleTop = roleTop; this.roleShown = roleShown; this.roleLimitIn = roleLimitIn; this.roleToggled = roleToggled;`, context);
   return context;
 }
 
@@ -91,4 +91,31 @@ test('flow edge width grows on a log scale and stays in range', () => {
   const mid = flowWidth(1000, 1_000_000);
   assert.ok(mid > 1.5 && mid < 8.5);
   assert.ok(Math.abs(mid - (1.5 + 7 * Math.log10(1001) / Math.log10(1_000_001))) < 1e-9);
+});
+
+test('top 5 / top 10 toggles are independent per view and side', () => {
+  const { roleLimitIn, roleToggled, roleTop, roleShown } = loadRoles();
+  const sides = [['er', 'ref'], ['er', 'dep'], ['flow', 'ref'], ['flow', 'dep'], ['flow', 'dep2']];
+  for (const [view, side] of sides) {
+    const open = roleToggled(undefined, view, side);
+    for (const [v, s] of sides) {
+      const want = v === view && s === side ? roleTop : roleShown;
+      assert.equal(roleLimitIn(open, v, s), want, `${view}.${side} toggled: ${v}.${s}`);
+    }
+    // Toggling the same side again closes it; every other side stays as it was.
+    assert.equal(roleLimitIn(roleToggled(open, view, side), view, side), roleShown);
+  }
+  // Several sides open together keep their own state through further toggles.
+  let s = roleToggled(roleToggled(undefined, 'er', 'ref'), 'er', 'dep');
+  s = roleToggled(s, 'er', 'ref');
+  assert.equal(roleLimitIn(s, 'er', 'ref'), roleShown);
+  assert.equal(roleLimitIn(s, 'er', 'dep'), roleTop);
+  assert.equal(roleLimitIn(s, 'flow', 'dep'), roleShown, 'the ER toggle does not open the Flow lane');
+  // The input object is never mutated (state is replaced, not shared).
+  const frozen = Object.freeze({ 'flow.dep': true });
+  assert.equal(roleLimitIn(roleToggled(frozen, 'flow', 'ref'), 'flow', 'dep'), roleTop);
+  // Old persisted shapes ({ ref: true }, true) open nothing.
+  assert.equal(roleLimitIn({ ref: true, dep: true }, 'er', 'ref'), roleShown);
+  assert.equal(roleLimitIn(true, 'er', 'ref'), roleShown);
+  assert.equal(roleLimitIn(roleToggled(true, 'er', 'dep'), 'er', 'dep'), roleTop);
 });
