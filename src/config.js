@@ -189,7 +189,7 @@ export function readAuspexRoot(file) {
   if (value === undefined) return null;
   const where = `"${auspexRootKey}" in ${file}`;
   if (typeof value !== 'string' || !value.trim()) throw new Error(`Invalid ${where}: expected an absolute directory path.`);
-  if (/[ -]/.test(value)) throw new Error(`Invalid ${where}: the path contains control characters.`);
+  if (/[\u0000-\u001f\u007f]/.test(value)) throw new Error(`Invalid ${where}: the path contains control characters.`);
   if (!path.isAbsolute(value)) throw new Error(`Invalid ${where}: the path must be absolute.`);
   const dir = path.resolve(value);
   if (!fs.statSync(dir, { throwIfNoEntry: false })?.isDirectory()) throw new Error(`Invalid ${where}: the directory does not exist.`);
