@@ -2,11 +2,12 @@
 
 Every script: `BEGIN;` first, `ROLLBACK;` last, never `COMMIT`. A comment
 header per step. Schema-qualified names, explicit column lists, no DML
-without WHERE. `save_execute_script` rejects CREATE FUNCTION / PROCEDURE,
-DO blocks, CALL, MERGE and psql backslash commands; such parts go into
-script B in the answer.
+without WHERE. `save_execute_script` accepts `CREATE [OR REPLACE] FUNCTION`
+with `LANGUAGE plpgsql` or `sql` and one dollar-quoted body, and
+`CREATE TRIGGER`; it rejects procedures, DO blocks, CALL, MERGE and psql
+backslash commands. Function bodies are not linted: review them.
 
-## Script A: tables (via save_execute_script)
+## Preview script: tables, trigger functions and triggers
 
 ```sql
 BEGIN;
@@ -42,6 +43,23 @@ COMMENT ON TABLE <schema>.<firm>_import IS '<purpose, source system>';
 COMMENT ON COLUMN <schema>.<firm>_import.status IS '<allowed values and meaning>';
 -- log table, indexes, remaining comments ...
 
+CREATE OR REPLACE FUNCTION <schema>.<firm>_import_before_write()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = <schema>, pg_temp
+AS $fn$
+BEGIN
+  -- validation; RAISE EXCEPTION with an ERRCODE the application knows
+  NEW.updated_at := now();
+  RETURN NEW;
+END
+$fn$;
+
+CREATE TRIGGER <firm>_import_before_write_trg
+BEFORE INSERT OR UPDATE ON <schema>.<firm>_import
+FOR EACH ROW EXECUTE FUNCTION <schema>.<firm>_import_before_write();
+-- AFTER trigger to the log table in the same way ...
+
 -- =====================================================================
 -- MATCH: verification
 -- =====================================================================
@@ -70,13 +88,13 @@ ORDER BY 2, 3;
 ROLLBACK;
 ```
 
-## Script B: trigger functions and triggers (in the answer)
+## Trigger checks in the same script
 
-Same envelope and steps. PROCESS holds `CREATE OR REPLACE FUNCTION ...
-RETURNS trigger LANGUAGE plpgsql SET search_path = <schema>, pg_temp` and
-the `CREATE TRIGGER` statements. MATCH lists them from `pg_trigger` /
-`pg_proc` and runs the validation cases that must fail or pass, each in its
-own `SAVEPOINT` / `ROLLBACK TO SAVEPOINT` pair:
+MATCH also lists the functions and triggers from `pg_trigger` / `pg_proc`
+and runs the validation cases that must fail or pass, each in its own
+`SAVEPOINT` / `ROLLBACK TO SAVEPOINT` pair (these statements run the
+trigger bodies; `save_execute_script` warns when a script calls a function
+it created):
 
 ```sql
 SAVEPOINT bad_payload;
@@ -87,5 +105,5 @@ ROLLBACK TO SAVEPOINT bad_payload;
 
 A statement that raises an error aborts the rest of a plain script run;
 tell the user to run such checks one by one, or to read the expected error
-and continue from the next SAVEPOINT. State the dependency on script A and
-the run order in the answer.
+and continue from the next SAVEPOINT. State the run order of the numbered
+files in the README summary of the answer.
