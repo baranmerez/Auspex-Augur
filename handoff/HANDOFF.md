@@ -139,7 +139,7 @@ copies remain in that hidden folder and are no longer used.
 ## 6. Setup (new machine)
 
 ```bash
-cd C:/src/mcps/auspex && npm install
+cd <repo> && npm install
 npm test
 ```
 
@@ -152,13 +152,13 @@ pgpass lines. Profile changes are picked up when the client session restarts.
 
 ## 7. Adding a database
 
-1. On the server, in DBeaver as superuser: `scripts/create-auspex-role.sql`
-   (change the password; run with ROLLBACK first, check the MATCH results,
-   then COMMIT).
+1. On the server, in your SQL client as a superuser:
+   `scripts/create-auspex-role.sql` (change the password; run with ROLLBACK
+   first, check the verification results, then COMMIT).
 2. In the same database: `scripts/grant-schemas-readonly.sql` — USAGE +
    SELECT + default privileges for `"Auspex"` only; no other role's
    privileges change. Do not open personal-data or identity schemas (e.g.
-   ASP.NET Identity schemas).
+   user-account or identity schemas).
 3. Add the pgpass line (PowerShell command in the README; the password never
    reaches the screen).
 4. Add a `profiles.json` entry: `url` (no password), `description` (write
@@ -180,15 +180,21 @@ has a hole in that schema.
 - Tabs: Overview (stat tiles, activity chart, by profile/tool/table, slowest
   operations, recent errors), Operations (sort, paging, details, copy,
   CSV/JSON download with error codes), Tables (accesses extracted from SQL),
-  Reports (collapsible library list; report with question line, compact
-  metrics strip, warnings badge, sticky tabs, Preview first), Schema (Graph,
-  ER diagram and Flow views, notes inspector, change timeline), Profiles.
+  Reports (collapsible library list with a filter box; report with question
+  line, compact metrics strip, warnings badge, sticky tabs, Preview first;
+  SQL highlighting; copy relayed to the viewer clipboard), Schema (Graph,
+  ER diagram and Flow views, schema picker, notes inspector, change
+  timeline), Profiles. Full window width with one page scroll.
 - Schema roles: for the selected table, Reference/Instance tables (it points
   at them) and Dependent/Beslenen tables (they point at it), ranked by
-  `linkedRows` then estimated rows, top 5 expandable to 10. Graph edges are
-  blue/orange by role and shaded by rank; Flow shows tinted swimlanes
-  Reference → Center → Dependent, depth 2. Colors are theme tokens at the top
-  of `viewer.html` (`--role-ref-*`, `--role-dep-*`, `--lane-*`).
+  `linkedRows` then estimated rows, with a per-side top-N picker (5, 10, 25,
+  50, All) in ER and Flow. The Graph is a 3D graph (2D fallback) with
+  click-to-focus, directed Reference/Dependent layers and +1 depth; edges are
+  blue/orange by role and shaded by rank. Flow shows tinted swimlanes
+  Reference → Center → Dependent around a center card, with join-column
+  labels, depth 2. Colors are theme tokens at the top of `viewer.html`
+  (`--role-ref-*`, `--role-dep-*`, `--lane-*`); ready themes and a
+  contrast-checked theme generator (custom themes saved, exported, imported).
 - After viewer changes rebuild the desktop app (app closed) and run
   `render_reports` so library HTML uses the current template.
 - The Schema tab reads `graph.json`, which the memory module rebuilds after
@@ -212,7 +218,7 @@ Desktop build: Rust (MSVC toolchain), VS 2022 C++ Build Tools, WebView2;
 
 | Command | Scope | Last result |
 |---|---|---|
-| `npm test` | SQL guard, profiles, config, timeouts, explain, audit and errors (incl. MCP server end to end), reports, change-script lint, CSV export, file lock with child processes, schema memory, catalog batch tools, prompts, skills install, viewer roles (no database) | 338/338 (2026-10-16, Windows, Node 24) |
+| `npm test` | SQL guard, profiles, config, timeouts, explain, audit and errors (incl. MCP server end to end), reports, change-script lint, CSV export, file lock with child processes, schema memory, catalog batch tools, prompts, skills install, viewer roles (no database) | 495 pass, 1 skipped (2026-10-16, Windows, Node 24) |
 | `npm run test:local` | Local PG16 + `auspex_test` schema: writes rejected by the database, unprivileged table, CTE, stacked statements, timeout, connection drop, EXPLAIN ANALYZE, CSV budget cancellation, search, reports, memory, DDL catalog | 39 pass, 4 skipped (DDL fixture not applied locally; CI runs them) |
 | `cargo test` (in `desktop/src-tauri`) | Path validation and profile rules of the desktop API, report-stage argument validation, CLI result mapping, auspexRoot check, audit line for unknown outcomes | 7/7 |
 
@@ -226,9 +232,8 @@ CI: `.github/workflows/ci.yml` runs `npm test` on Ubuntu (Node 20/22/24) and
 Windows (Node 22/24) and `npm run test:local` against a PostgreSQL 16 service
 container (same setup script, run through the container socket with a random
 password). The "Desktop build (Windows)" job runs `cargo test` and `npm run build` in
-`desktop`. All seven jobs are required checks on `main` (branch protection,
-admins exempt); PRs are merged with `gh pr merge --auto --rebase` and their
-branch is deleted automatically.
+`desktop`. Changes go through a pull request and review; required checks run
+in CI.
 
 ## 10. Client-side setup (outside this repo)
 
@@ -247,8 +252,9 @@ outside the repository. The current setup is described in
   display, and reads `auspexRoot` to locate the stage CLI
   (`src/stageCli.js`) for approve/revoke; `src/config.js` is the source of
   truth for validation.
-- **Log file day is UTC:** entries between 00:00 and 03:00 Turkey time land in
-  the previous day's file; the viewer filters by local day.
+- **Log file day is UTC:** in time zones ahead of UTC, entries written shortly
+  after local midnight land in the previous day's file; the viewer filters by
+  local day.
 - **Catalog visibility:** PostgreSQL shows table names to everyone; tables in
   unprivileged schemas appear in search (`can_select = false`) but cannot be
   read.
@@ -267,24 +273,19 @@ outside the repository. The current setup is described in
   reclaimed even though the pid looks alive. A live owner that really held a
   lock that long would lose it; guarded sections are short synchronous file
   work.
-- **Personal data:** SELECT was granted per schema. Personal-data columns are
-  to be inventoried during the first exploration, then revoked or moved
-  behind masked views. Reports never contain personal values.
+- **Personal data:** grant SELECT per schema; inventory personal-data columns
+  during the first exploration, then revoke them or move them behind masked
+  views. Report previews are masked by column name; the built-in name lists
+  cover English and Turkish, other names go into a report's mask list.
 
 ## 12. Next steps
 
-1. Scenario tests on the test database with the Administratum agents: S1
-   combined report (orders by region/personnel with invoice and barcode
-   checks) and S2 integration DDL (study a table family, deliver a
-   BEGIN…ROLLBACK script).
-2. Production readiness review with the user, then production database: role
-   + schema grants + profile (`description`: "PRODUCTION", lower
-   `maxTimeoutSeconds`, lower query budget).
-3. Personal-data column inventory and a privilege decision.
-4. Roadmap #31: T1 evaluation set and T3 approved reports as typed operations
-   (with the remaining T8 per-step timings), then T2; T5–T7 before wide use;
-   T9 deferred.
-5. pgpass deprecation fix; optional desktop file saving and installer.
+1. Scenario tests on a test database: S1 combined report (for example
+   `example.orders` by `customer_id` with `test.invoices` totals and
+   `status_code` checks against `example.status_codes`) and S2 integration
+   DDL (study a table family, deliver a BEGIN…ROLLBACK script).
+2. Remaining roadmap items are tracked in issue #31.
+3. pgpass deprecation fix; optional desktop file saving and installer.
 
 ## 13. History
 
@@ -307,12 +308,10 @@ and Windows rename retries (#10), library and memory changes in the audit log
 (#12), database-wide notes in table_knowledge (#13) and share_report for a
 sanitized copy (#11).
 
-## 14. Security Analyze handoff (2026-10-15)
+## 14. Security review fixes (2026-10-15)
 
-Task: **Auspex Augur / Security Analyze** (`auspex-augur` / `security-analyze`).
-Codex Security scan `8b86b0d7-95e5-42df-90b3-7505b16f878b` completed against
-revision `4d20f27bb227913a527c399dbebca87a0be18bbe` with four low-severity findings.
-The user selected the inline psql lint bypass for the first remediation.
+A security scan reported four low-severity findings. The inline psql lint
+bypass was fixed first.
 
 ### Implemented fix
 
@@ -325,51 +324,23 @@ The user selected the inline psql lint bypass for the first remediation.
   commands, quoted/comment controls, non-ASCII tags, identifier boundaries and
   rejection before creating or overwriting an EXECUTE file.
 
-The user authorized commit and push on 2026-10-15. These four source/test files
-and this handoff belong to the same delivery. No PR or deployment was performed.
-
-### Verification already completed
-
-- Before the source fix, the psql-focused run reproduced five failures.
-- `node --test tests/reports.test.js tests/sqlGuard.test.js`: **132/132 passed**.
-- Initial `node --test tests/*.test.js`: **238/238 passed**, no failures or skips.
-- After fast-forwarding to upstream `1608991`, the required pre-commit gates
-  passed: `npm test` **262/262** and `npm run test:local` **35/35**, no skips.
-- `git diff --check` and syntax checks on the four changed JavaScript files passed.
-- One independent read-only patch review found no concrete issue.
-
 The original and alternate lint triggers are rejected, while benign controls
-pass. Local integration used the existing localhost test profile, with generated
-files redirected to temporary directories. No privileged psql script,
-spreadsheet end-to-end test or POSIX permission test was executed.
+pass.
 
-The completed scan report remains unchanged. Supplemental `artifacts/fix_report.md`
-and `artifacts/psql-fix/{before-fix,focused,package-tests}.log` are retained in
-the local Codex Security collection
-`artifacts-7a5cd8370b1a0d9cb938ec6da56de3bbbc3ecd44d78a23bda03808d5eb049eb0`.
-The same collection contains the delivery logs
-`artifacts/psql-fix/{precommit-unit,precommit-integration}.log`.
+### Remaining findings
 
-### Proposed next work
-
-1. Done: CI passed for the delivery commit `3adfce9`.
-2. Done in #27 (PR #32): spreadsheet-mode headers and Operations CSV text
+1. Done in #27 (PR #32): spreadsheet-mode headers and Operations CSV text
    cells are neutralized; raw export is unchanged.
-3. Prioritize the conditional POSIX artifact-permission finding according to
-   supported Linux/macOS deployments and local-user access. The scan did not
-   establish a Windows ACL exposure.
+2. Open: the conditional POSIX artifact-permission finding, to be weighed
+   against supported Linux/macOS deployments and local-user access. No
+   Windows ACL exposure was established.
 
-This is the recommended order, not authorization to implement the remaining
-findings. The current evidence does not call for another full scan, a new SQL
-parser or a broad architecture refactor. Keep each remediation scoped to its
-finding and regression evidence.
-
+Keep each remediation scoped to its finding and regression evidence.
 
 ## 15. Report engine and exploration (2026-10-15/16)
 
 Goal: make Auspex a fast exploration, combined-report (S1) and integration-DDL
-(S2) tool with low query and token use; it is the base for the user's
-drag-and-drop reporting product built on the order table and its children.
+(S2) tool with low query and token use.
 
 Merged work:
 
@@ -386,14 +357,26 @@ Merged work:
 - Skills `auspex-explore`, `auspex-report`, `auspex-ddl`, MCP prompts and
   `npm run skills:install` (PR #38); viewer roles, Flow view and compact
   report header (PR #40).
+- 2026-10-16: script roots for change scripts and report files, function
+  bodies in change scripts (PR #43); `notesLanguage` for notes, report texts
+  and change-script texts, code lookup in the skills, contains-match search
+  (PRs #44, #45); viewer: full width with one page scroll, Flow center card
+  and join labels, 3D Schema graph with directed layers, per-side top-N
+  picker, schema picker, SQL highlighting for change scripts, report filter,
+  ready themes and a theme generator (PRs #47–#51); report approval revoke
+  and stage history, approve/revoke from the browser viewer and from the
+  desktop app through the stage CLI and `auspexRoot` (PRs #52, #53).
+- 2026-10-16: documentation, skills and tests made generic for any user:
+  examples use one alias set, no assumed SQL client, folder layout, naming
+  convention or business-data language, no default for cancelled or deleted
+  rows (the agent asks and saves the answer as a rule), the step structure
+  of change scripts is described as recommended, and the existing-file
+  error suggests a number only when the folder already numbers its files.
 
 Working agreements:
 
 - Table roles: Instance = tables the center references; Beslenen (Dependent)
   = tables referencing the center; ranked by estimated linked rows, then size.
-- Code changes go Gaunt (implement, PR without auto-merge) → Ravenor (review)
-  → Karamazov (READY/HOLD) → merge. PR #41 was the first one through the full
-  chain; #32–#40 were reviewed afterwards (one P3, fixed in #41).
-- Commits and PRs carry no assistant name or attribution trailer.
-- Exploration batches announce their statement count first; the first real
-  test (order table neighbourhood) used 11 statements.
+- Changes go through a pull request and review; required checks run in CI.
+- Commits and PRs carry no attribution trailer.
+- Exploration batches announce their statement count first.
