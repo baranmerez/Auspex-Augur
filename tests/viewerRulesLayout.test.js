@@ -1,0 +1,79 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+
+// Layout helpers of the Rules tab (src/viewer.html): column sub-groups, counts,
+// dates without seconds and the row builder (archive button, plain-text note).
+const page = fs.readFileSync(new URL('../src/viewer.html', import.meta.url), 'utf8');
+const blockOf = name => page.match(new RegExp(`// ${name}:start[\\s\\S]*?// ${name}:end`))?.[0];
+
+function load() {
+  for (const name of ['report-filter', 'rules-list']) assert.ok(blockOf(name), `${name} block found`);
+  const context = vm.createContext({ JSON });
+  vm.runInContext(`${blockOf('report-filter')}\n${blockOf('rules-list')}
+this.filterRules = filterRules; this.groupRules = groupRules; this.ruleCounts = ruleCounts; this.ruleDay = ruleDay;`, context);
+  return context;
+}
+
+const notes = [
+  { id: 1, kind: 'rule', schema: 'example', table: 'orders', column: 'status_code', text: 'First on the column.', status: 'active' },
+  { id: 2, kind: 'observation', schema: 'example', table: 'orders', column: 'delivered_at', text: 'Filled after delivery.', status: 'active' },
+  { id: 3, kind: 'rule', schema: 'example', table: 'orders', column: null, text: 'Table-level rule.', status: 'active' },
+  { id: 4, kind: 'rule', schema: 'example', table: 'orders', column: 'status_code', text: 'Second on the column.', status: 'active' },
+  { id: 5, kind: 'inference', schema: null, table: null, column: null, text: 'Database-wide guess.', status: 'active' },
+  { id: 6, kind: 'rule', schema: 'example', table: 'orders', column: 'status_code', text: 'Old.', status: 'archived' },
+];
+
+test('groups split by column, table-level notes first', () => {
+  const { filterRules, groupRules } = load();
+  const groups = groupRules(filterRules(notes, { status: 'all' }));
+  const orders = groups.find(g => g.key === 'example.orders');
+  assert.deepEqual(JSON.parse(JSON.stringify(orders.columns.map(c => [c.column, c.notes.map(n => n.id)]))),
+    [['', [3]], ['delivered_at', [2]], ['status_code', [1, 4, 6]]]);
+  assert.deepEqual(JSON.parse(JSON.stringify(groups[0].columns.map(c => [c.column, c.notes.map(n => n.id)]))), [['', [5]]]);
+});
+
+test('counts: active by kind, archived apart', () => {
+  assert.deepEqual({ ...load().ruleCounts(notes) }, { rule: 3, observation: 1, inference: 1, archived: 1 });
+  assert.deepEqual({ ...load().ruleCounts(null) }, { rule: 0, observation: 0, inference: 0, archived: 0 });
+});
+
+test('dates show the day without seconds, in English and Turkish', () => {
+  const { ruleDay } = load();
+  const ts = '2026-10-13T12:34:56Z';
+  assert.equal(ruleDay(ts, 'en-GB'), '13 Oct 2026');
+  assert.equal(ruleDay(ts, 'tr-TR'), '13 Eki 2026');
+  assert.doesNotMatch(ruleDay(ts, 'en-GB'), /:/);
+  assert.equal(ruleDay(null, 'en-GB'), '?');
+  assert.equal(ruleDay('nope', 'en-GB'), '?');
+});
+
+test('rows: archive button only on active notes, note text and reason stay plain text', () => {
+  const src = page.match(/function ruleCard\(n\) \{[\s\S]*?\r?\n\}\r?\n/)?.[0];
+  assert.ok(src, 'ruleCard found');
+  assert.doesNotMatch(src, /innerHTML/);
+  const h = (tag, attrs = {}, ...kids) => ({ tag, attrs: attrs || {}, kids: kids.flat(Infinity).filter(k => k !== null && k !== undefined && k !== false) });
+  const ctx = vm.createContext({
+    h, svg: h, state: {}, locale: 'en-GB', fmt: String, confirmArchiveNote() {},
+    t: (k, v = {}) => k.replace(/\{(\w+)\}/g, (_, x) => v[x]), ruleDay: ts => (ts ? 'D' : '?'),
+  });
+  vm.runInContext(`${src}\nthis.ruleCard = ruleCard;`, ctx);
+  const all = node => (typeof node === 'string' ? [node] : [node, ...node.kids.flatMap(all)]);
+  const buttons = node => all(node).filter(x => x.tag === 'button');
+  const active = ctx.ruleCard({ id: 1, kind: 'rule', text: '<b>x</b>', status: 'active', createdAt: 't' });
+  assert.equal(buttons(active).length, 1);
+  assert.equal(buttons(active)[0].attrs['aria-label'], 'Archive');
+  assert.equal(buttons(active)[0].attrs.title, 'Archive');
+  assert.ok(all(active).includes('<b>x</b>'), 'note text is a plain string child');
+  const gone = ctx.ruleCard({ id: 2, kind: 'rule', text: 'old', status: 'archived', archivedReason: '<i>why</i>', createdAt: 't', archivedAt: 't' });
+  assert.equal(buttons(gone).length, 0);
+  assert.ok(all(gone).includes('Archived: <i>why</i>'));
+  assert.match(gone.attrs.class, /archived/);
+});
+
+test('Turkish texts exist for the new labels', () => {
+  for (const key of ['(table)', 'Observations', '{n} rules', '{n} observations', '{n} archived']) {
+    assert.ok(page.includes(`'${key}': '`), `Turkish text for ${key}`);
+  }
+});

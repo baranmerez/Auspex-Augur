@@ -13,7 +13,7 @@ function load() {
   for (const name of ['report-filter', 'rules-list', 'stage-change', 'note-archive']) assert.ok(blockOf(name), `${name} block found`);
   const context = vm.createContext({ JSON });
   vm.runInContext(`${blockOf('report-filter')}\n${blockOf('rules-list')}\n${blockOf('stage-change')}\n${blockOf('note-archive')}
-this.filterRules = filterRules; this.groupRules = groupRules; this.archiveReasonProblem = archiveReasonProblem; this.archiveRequest = archiveRequest;
+this.filterRules = filterRules; this.groupRules = groupRules; this.ruleCounts = ruleCounts; this.ruleDay = ruleDay; this.archiveReasonProblem = archiveReasonProblem; this.archiveRequest = archiveRequest;
 this.postArchiveNote = postArchiveNote; this.invokeArchiveNote = invokeArchiveNote; this.archiveReasonMax = archiveReasonMax;`, context);
   return context;
 }
@@ -30,7 +30,7 @@ const ids = (f) => [...load().filterRules(notes, f)].map(n => n.id);
 test('status filter: active by default, archived or all on request', () => {
   assert.deepEqual(ids({}), [5, 3, 2, 1], 'database-wide first, then by table, kind and id');
   assert.deepEqual(ids({ status: 'archived' }), [4]);
-  assert.deepEqual(ids({ status: 'all' }), [5, 3, 2, 1, 4]);
+  assert.deepEqual(ids({ status: 'all' }), [5, 3, 2, 4, 1], 'table-level notes before column notes');
   assert.deepEqual(ids({ status: 'bogus' }), [5, 3, 2, 1], 'unknown status falls back to active');
 });
 
@@ -59,7 +59,7 @@ test('groups follow the sorted list, database-wide notes under an empty key', ()
   const { filterRules, groupRules } = load();
   const groups = groupRules(filterRules(notes, { status: 'all' }));
   assert.deepEqual(JSON.parse(JSON.stringify(groups.map(g => [g.key, g.notes.map(n => n.id)]))),
-    [['', [5, 3]], ['example.order_items', [2]], ['example.orders', [1, 4]]]);
+    [['', [5, 3]], ['example.order_items', [2]], ['example.orders', [4, 1]]]);
   assert.equal(filterRules(null, {}).length, 0);
 });
 
