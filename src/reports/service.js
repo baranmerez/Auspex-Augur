@@ -33,7 +33,7 @@ export function renderReport(meta) {
 
 // The SQL hash a rendered report HTML stands for: activeHash of the metadata
 // it was rendered from (embedded in its auspex-report script). Null for HTML
-// rendered before that field existed; re-running the report renders it again.
+// rendered before that field existed; run_report or render_reports adds it.
 const embeddedData = /<script id="auspex-report" type="application\/json">([\s\S]*?)<\/script>/;
 export function reportHtmlHash(html) {
   const m = embeddedData.exec(String(html));
@@ -262,12 +262,15 @@ export class ReportService {
   }
 
   // Re-renders every report's HTML from its JSON (after a template update). No database access.
+  // Reports saved before meta.activeHash existed get it first (Library.backfillActiveHash),
+  // so the viewer and desktop app can approve or revoke them.
   renderAll() {
     return this.library.locked(() => {
       const out = [];
       for (const item of this.library.list().filter(i => i.stage !== 'execute')) {
         const meta = this.library.readMeta(item.stage, item);
         if (!meta) continue;
+        if (this.library.backfillActiveHash(item.stage, item, meta)) this.library.writeMeta(item.stage, item, meta);
         this.library.writeHtml(item.stage, item, renderReport(meta));
         out.push(`${item.stage}:${refLabel(normalizeRef(item))}`);
       }

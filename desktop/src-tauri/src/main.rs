@@ -572,7 +572,7 @@ fn parse_cli_output(stdout: &str, stderr: &str, exit: Option<i32>) -> Result<Val
     }
 }
 
-const NO_HASH: &str = "This report has no SQL hash yet (saved by an older Auspex); run it again with run_report, then reload.";
+const NO_HASH: &str = "This report has no SQL hash yet (saved by an older Auspex). Run it with run_report or re-render the library with render_reports, then reload; if its SQL file was edited by hand, save it with save_report first.";
 
 fn run_stage_cli(action: &str, parts: &[String; 4], expected_hash: Option<&str>) -> Result<Value, Value> {
     if action != "approve" && action != "revoke" {

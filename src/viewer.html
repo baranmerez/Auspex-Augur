@@ -834,7 +834,7 @@ const TR = {
   'The change may or may not have been applied; reload the list.': 'İşlem uygulanmış olabilir; listeyi yenileyin.',
   'The report changed since you opened it; reload and review again.': 'Rapor siz açtıktan sonra değişti; yenileyip yeniden inceleyin.', ' (now version {v})': ' (şu an sürüm {v})',
   'This report changed since you opened it; reload it to review the new version.': 'Rapor siz açtıktan sonra değişti; yeni sürümü incelemek için yenileyin.', 'Reload': 'Yenile',
-  'This report has no SQL hash yet (saved by an older Auspex); run it again with run_report, then reload.': 'Bu raporun henüz SQL özeti yok (eski bir Auspex ile kaydedilmiş); run_report ile yeniden çalıştırıp sayfayı yenileyin.',
+  'This report has no SQL hash yet (saved by an older Auspex). Run it with run_report or re-render the library with render_reports, then reload; if its SQL file was edited by hand, save it with save_report first.': 'Bu raporun henüz SQL özeti yok (eski bir Auspex ile kaydedilmiş). run_report ile çalıştırın ya da render_reports ile kütüphaneyi yeniden oluşturun, sonra sayfayı yenileyin; SQL dosyası elle değiştirildiyse önce save_report ile kaydedin.',
 };
 let lang = 'en';
 try { lang = localStorage.getItem('auspex.viewer.lang') || ((navigator.language || '').toLowerCase().startsWith('tr') ? 'tr' : 'en'); } catch {}
@@ -1794,7 +1794,7 @@ function stageChangeFacts(r) {
   ];
 }
 const changedText = 'This report changed since you opened it; reload it to review the new version.';
-const noHashText = 'This report has no SQL hash yet (saved by an older Auspex); run it again with run_report, then reload.';
+const noHashText = 'This report has no SQL hash yet (saved by an older Auspex). Run it with run_report or re-render the library with render_reports, then reload; if its SQL file was edited by hand, save it with save_report first.';
 // Why the opened report cannot be approved or revoked now, or null: the list
 // (live refresh) stands for another SQL hash than the opened content, or the
 // content has no hash (rendered by an older Auspex).
