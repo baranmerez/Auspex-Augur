@@ -29,7 +29,7 @@ export const auspexRoot = path.resolve(path.dirname(fileURLToPath(import.meta.ur
 export const taskName = 'Auspex scheduled reports';
 export const retryMinutes = 30;
 
-const usage = 'Usage: scheduleCli.js run-due | run --id <id> | status | task-command';
+const usage = 'Usage: scheduleCli.js run-due | run --id <id> | status | task-command, each with optional --home <absolute AUSPEX_HOME folder>';
 
 // One scheduler at a time: the cross-process lock of src/fileLock.js (token,
 // takeover marker, dead-owner takeover), held for the whole run. A run may
@@ -68,12 +68,17 @@ function addMinutes(time, minutes) {
 // setting when the task cannot start, so a second daily trigger 30 minutes
 // later retries an unreachable database as well: run-due is a no-op for
 // slots that already succeeded.
-export function taskCommand({ time, nodePath = process.execPath, root = auspexRoot }) {
+// home: the AUSPEX_HOME of this shell, passed to the task as --home because a
+// scheduled task does not inherit it. notes: comment lines (never values).
+export function taskCommand({ time, nodePath = process.execPath, root = auspexRoot, home = null, notes = [] }) {
   const retry = addMinutes(time, retryMinutes);
   const script = path.join(root, 'src', 'scheduleCli.js');
+  const args = `"${script}" run-due${home ? ` --home "${home}"` : ''}`;
   return [
     `# Registers the Windows task "${taskName}" for the current user. Review it, then run it yourself in PowerShell.`,
-    `$action = New-ScheduledTaskAction -Execute ${psQuote(nodePath)} -Argument ${psQuote(`"${script}" run-due`)} -WorkingDirectory ${psQuote(root)}`,
+    `# Run task-command again and re-register the task after changing schedule times or taskTime (task time: ${time}).`,
+    ...notes.map(n => `# ${n}`),
+    `$action = New-ScheduledTaskAction -Execute ${psQuote(nodePath)} -Argument ${psQuote(args)} -WorkingDirectory ${psQuote(root)}`,
     `$triggers = @((New-ScheduledTaskTrigger -Daily -At ${psQuote(time)}), (New-ScheduledTaskTrigger -Daily -At ${psQuote(retry)}))`,
     `$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 1 -RestartInterval (New-TimeSpan -Minutes ${retryMinutes}) -ExecutionTimeLimit (New-TimeSpan -Hours 2) -MultipleInstances IgnoreNew`,
     `Register-ScheduledTask -TaskName ${psQuote(taskName)} -Description ${psQuote('Runs due Auspex report schedules (read-only).')} -Action $action -Trigger $triggers -Settings $settings`,
@@ -122,11 +127,20 @@ async function runSchedules(pick, loaded, config, env, deps) {
   }
 }
 
+// Enabled schedules due later in the day than the daily task: the task runs
+// them only the next day (or at its 30-minute retry).
+export function lateScheduleWarnings(loaded) {
+  const taskTime = taskTimeOf(loaded);
+  return loaded.schedules.filter(s => s.enabled && s.cadence.at > taskTime)
+    .map(s => `Schedule "${s.id}" is due at ${s.cadence.at}, later than the task time ${taskTime}: the daily task runs it only the next day. Set "taskTime" in schedules.json to ${s.cadence.at} or later, run task-command again and re-register the task.`);
+}
+
 function statusOut(loaded, config, env, now) {
   const state = readState(home(env).stateFile);
   const lib = new Library(config.libraryDir);
   return {
     ok: true, file: loaded.file, missing: loaded.missing, notify: loaded.notify, taskTime: taskTimeOf(loaded),
+    warnings: lateScheduleWarnings(loaded),
     schedules: loaded.schedules.map(s => {
       const own = scheduleState(state, s.id);
       const check = checkSchedule(lib, s, now);
@@ -142,14 +156,54 @@ function statusOut(loaded, config, env, now) {
 }
 
 // deps (tests): db, notifyFn, now for the runner; lockWaitMs for the run lock.
+// --home <dir> anywhere after the command: the AUSPEX_HOME for this run (the
+// printed task passes it, since a task does not inherit the shell's).
+function splitHome(args) {
+  const rest = [];
+  let home;
+  for (let i = 0; i < args.length; i++) {
+    const m = /^--home(?:=(.*))?$/.exec(args[i]);
+    if (!m) { rest.push(args[i]); continue; }
+    if (home !== undefined) throw new Error('--home given twice');
+    home = m[1] ?? args[++i];
+    if (typeof home !== 'string' || !path.isAbsolute(home) || /[\u0000-\u001f"]/.test(home)) throw new Error('--home needs an absolute folder path');
+    if (!fs.statSync(home, { throwIfNoEntry: false })?.isDirectory()) throw new Error(`--home folder ${home} does not exist`);
+  }
+  return { rest, home };
+}
+
+// Comment lines for the printed task: settings of this shell the task will
+// not see. Names only, never values (an AUSPEX_DB_* value is a connection string).
+function envNotes(loaded, env) {
+  const notes = [];
+  let config = null;
+  try { config = loadConfig(env); } catch { /* reported by status and run-due */ }
+  const fromEnv = [...new Set(loaded.schedules.filter(s => config?.profileInfo.get(s.profile)?.source === 'env').map(s => s.profile))];
+  if (fromEnv.length) {
+    notes.push(`Profile(s) ${fromEnv.join(', ')} come from AUSPEX_DB_* variables of this shell, which the task does not inherit: put them into profiles.json (passwords stay in pgpass) or set them as user environment variables.`);
+  }
+  const other = Object.keys(env).filter(k => /^AUSPEX_/i.test(k) && !/^AUSPEX_(HOME|DB_.*)$/i.test(k)).sort();
+  if (other.length) notes.push(`The task does not inherit ${other.join(', ')} from this shell; set them as user environment variables if the scheduler needs them.`);
+  return notes;
+}
+
 export async function main(argv, env = process.env, deps = {}) {
   const command = argv[0];
   if (!['run-due', 'run', 'status', 'task-command'].includes(command ?? '')) return { status: 2, out: { ok: false, code: 'INVALID_INPUT', message: usage } };
+  let args;
+  try {
+    const split = splitHome(argv.slice(1));
+    args = split.rest;
+    if (split.home) env = { ...env, AUSPEX_HOME: split.home };
+  } catch (err) {
+    return { status: 2, out: { ok: false, code: 'INVALID_INPUT', message: err.message } };
+  }
   let loaded, config;
   try {
     loaded = loadSchedules(schedulesFile(env));
     if (command === 'task-command') {
-      return { status: 0, text: taskCommand({ time: taskTimeOf(loaded), nodePath: deps.nodePath ?? process.execPath }) };
+      const home = env.AUSPEX_HOME ? path.resolve(env.AUSPEX_HOME) : null;
+      return { status: 0, text: taskCommand({ time: taskTimeOf(loaded), nodePath: deps.nodePath ?? process.execPath, home, notes: [...lateScheduleWarnings(loaded), ...envNotes(loaded, env)] }) };
     }
     config = loadConfig(env);
   } catch (err) {
@@ -162,7 +216,7 @@ export async function main(argv, env = process.env, deps = {}) {
   if (command === 'status') return { status: 0, out: statusOut(loaded, config, env, now()) };
   if (command === 'run-due') return runSchedules(runner => runner.due(loaded.schedules), loaded, config, env, { ...deps, now });
   let id;
-  try { id = parseIdArgs(argv.slice(1)); } catch (err) { return { status: 2, out: { ok: false, code: 'INVALID_INPUT', message: err.message } }; }
+  try { id = parseIdArgs(args); } catch (err) { return { status: 2, out: { ok: false, code: 'INVALID_INPUT', message: err.message } }; }
   const schedule = loaded.schedules.find(s => s.id === id);
   if (!schedule) return { status: 2, out: { ok: false, code: 'NOT_FOUND', message: `No schedule "${id}" in ${loaded.file}.` } };
   return runSchedules(() => [{ schedule, slot: null }], loaded, config, env, { ...deps, now });
