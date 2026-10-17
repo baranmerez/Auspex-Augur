@@ -49,7 +49,7 @@ export function validateStageInput(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new StageError(400, 'Body must be a JSON object');
   const { [expectedHashKey]: expectedHash, ...rest } = body;
   if (expectedHash === undefined || expectedHash === null) {
-    throw new StageError(400, `${expectedHashKey} is missing: this report has no SQL hash yet (saved by an older Auspex); run it again with run_report, then reload`);
+    throw new StageError(400, `${expectedHashKey} is missing. This report has no SQL hash yet (saved by an older Auspex). Run it with run_report or re-render the library with render_reports, then reload; if its SQL file was edited by hand, save it with save_report first.`);
   }
   if (typeof expectedHash !== 'string' || !sqlHashPattern.test(expectedHash)) {
     throw new StageError(400, `${expectedHashKey} must be the SQL hash of the reviewed version (12 lower-case hex characters)`);

@@ -760,8 +760,10 @@ a request only when all of these hold:
   report content the page opened (12 lower-case hex characters; 400
   otherwise). `/api/report` returns it as `sqlHash` with the content it
   served, taken from that HTML itself, so a live list refresh cannot change
-  it. A report rendered by an older Auspex has none; run it again with
-  `run_report`;
+  it. A report saved by an older Auspex has none until it is run with
+  `run_report` or the library is re-rendered with `render_reports` (both add
+  the hash when the SQL file is a saved version; a file edited by hand is
+  saved with `save_report` first);
 - the report exists (404) and is in the right stage (409);
 - the report still stands for that version: the current draft SQL (approve)
   or the approved SQL (revoke) has `expectedHash`. Otherwise the answer is
@@ -825,7 +827,7 @@ opened report content, the report must exist, be in the right stage and
 still stand for that version, else `STALE_VERSION`). The app reads that hash
 only from the report metadata and the served HTML and computes none itself;
 a report without one is refused with `INVALID_INPUT` and a request to run it
-again with `run_report`. The CLI also takes the same library lock, records `stageHistory`,
+with `run_report` or re-render the library with `render_reports`. The CLI also takes the same library lock, records `stageHistory`,
 regenerates the HTML and rebuilds the schema memory view. Every run is written
 to the audit log with `source` and `actor` `desktop`. The CLI prints one
 JSON line (`{"ok":true,"stage":..,"version":..}` or

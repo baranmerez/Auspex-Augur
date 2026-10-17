@@ -165,3 +165,58 @@ test('the hash of a rendered report is the active hash it was rendered from', ()
   assert.equal(reportHtmlHash('<html></html>'), null);
   assert.equal(reportHtmlHash('<script id="auspex-report" type="application/json">{"report":{"title":"older"}}</script>'), null);
 });
+
+test('a version saved but not run yet still answers a stale hash with STALE_VERSION', () => {
+  const lib = draftWithRun();
+  lib.saveDraft({ ref, sql: `${sql} where status_code = 'C'` });
+  assert.throws(() => approveInLibrary(lib, ref, { expectedHash: sqlHash(sql) }), err => err.errorCode === 'STALE_VERSION' && /now version 2/.test(err.message));
+  assert.equal(lib.exists('approved', ref), false);
+});
+
+// Reports saved before meta.activeHash existed: run_report (drafts) and
+// render_reports (any stage) add it when the SQL file is a saved version.
+function stripActiveHash(lib, stage) {
+  const meta = lib.readMeta(stage, ref);
+  delete meta.activeHash;
+  delete meta.activeVersion;
+  lib.writeMeta(stage, ref, meta);
+  lib.writeHtml(stage, ref, renderReport(meta));
+  assert.equal(reportHtmlHash(fs.readFileSync(lib.paths(stage, ref).html, 'utf8')), null, 'legacy HTML has no hash');
+}
+const fakeDb = {
+  source: 'test',
+  resolveProfile: name => name,
+  async runReport(profile) {
+    return { profile, plan: [{ Plan: { 'Node Type': 'Result', 'Total Cost': 0.01, 'Plan Rows': 1 } }], columns: [{ name: 'order_id', type: 'integer' }], rows: [[1]], explainMs: 1, previewMs: 1, previewExecuted: true, truncated: false, serverVersion: '16' };
+  },
+};
+
+test('a legacy draft without activeHash becomes approvable after run_report', async () => {
+  const lib = draftWithRun();
+  stripActiveHash(lib, 'draft');
+  await new ReportService(fakeDb, lib.root).run(ref, { analyze: false });
+  const served = reportHtmlHash(fs.readFileSync(lib.paths('draft', ref).html, 'utf8'));
+  assert.equal(served, sqlHash(sql));
+  assert.equal(lib.readMeta('draft', ref).activeVersion, 1);
+  assert.equal(approveInLibrary(lib, ref, { expectedHash: served }).meta.approvedVersion, 1);
+});
+
+test('a legacy approved report without activeHash becomes revokable after render_reports', () => {
+  const lib = draftWithRun();
+  approveInLibrary(lib, ref);
+  stripActiveHash(lib, 'approved');
+  const service = new ReportService(fakeDb, lib.root);
+  assert.equal(service.renderAll().rendered, 1);
+  const served = reportHtmlHash(fs.readFileSync(lib.paths('approved', ref).html, 'utf8'));
+  assert.equal(served, sqlHash(sql));
+  assert.equal(revokeInLibrary(lib, ref, { expectedHash: served }).version, 1);
+});
+
+test('a legacy draft whose SQL file was edited by hand gets no hash and keeps the save_report path', () => {
+  const lib = draftWithRun();
+  stripActiveHash(lib, 'draft');
+  fs.writeFileSync(lib.paths('draft', ref).sql, `${sql} -- edited by hand\n`);
+  new ReportService(fakeDb, lib.root).renderAll();
+  assert.equal(lib.readMeta('draft', ref).activeHash, undefined);
+  assert.throws(() => approveInLibrary(lib, ref), err => err.errorCode === 'PRECONDITION_FAILED' && /save it with save_report first/.test(err.message));
+});

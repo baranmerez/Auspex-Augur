@@ -207,8 +207,24 @@ export class Library {
     if (meta.runs.length > maxRuns) meta.runs = meta.runs.slice(-maxRuns);
     meta.last = last;
     meta.updatedAt = run.at;
+    this.backfillActiveHash(stage, ref, meta);
     this.writeMeta(stage, ref, meta);
     return meta;
+  }
+
+  // Reports saved before meta.activeHash existed get it from their SQL file,
+  // but only when the file is a saved version (a file edited by hand is left
+  // alone and must be saved with save_report). Changes meta in place; true
+  // when it set the hash. Callers hold the library lock and write meta.
+  backfillActiveHash(stage, ref, meta) {
+    if (meta.activeHash) return false;
+    let hash;
+    try { hash = sqlHash(this.readSql(stage, ref)); } catch { return false; }
+    const saved = (meta.sqlVersions || []).find(v => v.hash === hash);
+    if (!saved) return false;
+    meta.activeHash = hash;
+    if (!Number.isInteger(meta.activeVersion)) meta.activeVersion = saved.version;
+    return true;
   }
 
   // Moves a draft into SELECT/..., replacing an older approved version.
@@ -217,8 +233,9 @@ export class Library {
     return this.locked(() => this.approveUnlocked(ref, options));
   }
 
-  // expectedHash (optional): the SQL hash the approver reviewed; other
-  // current draft SQL is refused with STALE_VERSION and nothing moves.
+  // expectedHash (optional): the SQL hash the approver reviewed. Checked after
+  // the file is known to be the active saved version and before the run
+  // check: other current draft SQL is refused with STALE_VERSION, nothing moves.
   approveUnlocked(ref, { by = null, expectedHash } = {}) {
     const r = normalizeRef(ref);
     if (!this.exists('draft', r)) throw new LibraryError(`No draft "${refLabel(r)}" to approve.`, 'NOT_FOUND');
@@ -234,10 +251,10 @@ export class Library {
     if (meta.activeHash && meta.activeHash !== hash) {
       throw new LibraryError(`The draft SQL file of "${refLabel(r)}" was changed outside Auspex (it holds version ${version}, not the active version ${meta.activeVersion ?? '?'}); save it with save_report first.`, 'PRECONDITION_FAILED');
     }
+    // The person reviewed this version; a newer one (run or not) means reload first.
+    checkExpected(expectedHash, hash, version);
     // Only SQL that has run successfully (every entry in meta.runs is a success) can be approved.
     if (!(meta.runs || []).some(x => x.sqlHash === hash)) throw new LibraryError(`Version ${version} of "${refLabel(r)}" has no successful run; run it with run_report before approving.`, 'PRECONDITION_FAILED');
-    // Last: the person reviewed this version (the actionable errors above come first).
-    checkExpected(expectedHash, hash, version);
     meta.status = 'approved';
     meta.approvedAt = new Date().toISOString();
     meta.activeHash = hash;
