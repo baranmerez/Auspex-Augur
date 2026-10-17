@@ -239,7 +239,7 @@ test('task-command prints, never runs, one daily task with a retry 30 minutes la
   assert.match(r.text, /New-ScheduledTaskTrigger -Daily -At '08:05'/);
   assert.match(r.text, /New-ScheduledTaskTrigger -Daily -At '08:35'/);
   assert.match(r.text, /-RestartCount 1 -RestartInterval \(New-TimeSpan -Minutes 30\)/);
-  assert.match(r.text, /scheduleCli\.js" run-due'/);
+  assert.match(r.text, /scheduleCli\.js" run-due --home "[^"]+"'/);
   assert.match(r.text, /-Execute 'C:\\Program Files\\node''s\\node\.exe'/, 'single quotes are doubled');
   assert.match(r.text, /Register-ScheduledTask -TaskName 'Auspex scheduled reports'/);
   assert.ok(!fs.existsSync(path.join(home, 'schedule-state.json')));
@@ -332,4 +332,40 @@ test('run_report results do not carry the stored last result', async () => {
   const runner = new ScheduleRunner(config, { stateFile: path.join(home, 's.json'), trendsDir: path.join(home, 'trends'), db: makeDb(), audit: () => {} });
   const out = await runner.reports.run(ref, { preset: 'last_7_days' });
   assert.equal(out.last, undefined);
+});
+
+test('status warns about schedules due after the task time', async () => {
+  approveReport();
+  writeSchedules([schedule(), schedule({ id: 'late', cadence: { daily: true, at: '09:00' } })], { taskTime: '08:05' });
+  const r = await run(['status'], monday);
+  assert.equal(r.out.taskTime, '08:05');
+  assert.equal(r.out.warnings.length, 1);
+  assert.match(r.out.warnings[0], /"late" is due at 09:00, later than the task time 08:05/);
+  writeSchedules([schedule(), schedule({ id: 'late', cadence: { daily: true, at: '09:00' } })]);
+  assert.deepEqual((await run(['status'], monday)).out.warnings, [], 'the default task time is the latest schedule time');
+});
+
+test('task-command passes AUSPEX_HOME as --home and names, never prints, settings the task does not inherit', async () => {
+  writeSchedules([schedule()]);
+  const r = await main(['task-command'], { ...env, AUSPEX_LIBRARY_DIR: path.join(home, 'library') }, { nodePath: 'C:\node\node.exe' });
+  assert.equal(r.status, 0);
+  assert.ok(r.text.includes(`run-due --home "${path.resolve(home)}"'`), r.text);
+  assert.match(r.text, /# Profile\(s\) local come from AUSPEX_DB_\* variables/);
+  assert.match(r.text, /does not inherit AUSPEX_LIBRARY_DIR/);
+  assert.ok(!r.text.includes('postgresql://'), 'no connection string');
+  assert.match(r.text, /Run task-command again and re-register the task after changing schedule times/);
+  const plain = await main(['task-command'], {}, { nodePath: 'C:\node\node.exe' });
+  assert.ok(!plain.text.includes('--home'), 'no --home without AUSPEX_HOME');
+});
+
+test('--home selects the AUSPEX_HOME of a run and is validated', async () => {
+  approveReport();
+  writeSchedules([schedule()]);
+  const { AUSPEX_HOME, ...noHome } = env;
+  const r = await main(['status', '--home', home], noHome, { now: () => monday });
+  assert.equal(r.status, 0, JSON.stringify(r.out));
+  assert.equal(r.out.schedules[0].id, 'weekly-example');
+  assert.equal((await main(['status', '--home', 'relative/dir'], noHome)).status, 2);
+  assert.equal((await main(['status', '--home', path.join(home, 'missing')], noHome)).status, 2);
+  assert.equal((await main(['status', '--home', home, '--home', home], noHome)).status, 2);
 });
