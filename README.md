@@ -747,6 +747,8 @@ Opens a local page at http://127.0.0.1:4719 (port: `AUSPEX_VIEWER_PORT`):
   - *Graph* — a 3D graph (with a 2D fallback): click a table to focus it, and the focused table's Reference and Dependent tables are laid out in directed layers with always-visible labels; *+1 depth* adds the next ring and *Show all* shows everything. The focused table's FK edges are blue (Reference) or orange (Dependent), darkest at rank 1 and lightest at rank 10; edges beyond the top 10 are grey and dashed and can be hidden
   - *ER diagram* — Reference tables on the left, Dependent tables on the right, with a per-side top-N picker (5, 10, 25, 50 or All), every card with its rank, linked rows and explored state; the rest stay in the inspector's Relations list
   - *Flow* — Reference → Center → Dependent swimlanes around a center card, edge width by linked rows (log scale) and edges labelled with their join columns; the same top-N picker per side; a Dependent opens its own dependents as a further labelled lane (depth 2), clicking a table makes it the center and the trail leads back
+  - *Data dictionary* (TR *Veri sözlüğü*) — downloads a self-contained HTML or Markdown document of the database built from the schema memory only (no database access): the explored tables with their comment, key columns (primary key, foreign key, used, noted), relations (Reference/instance and Dependent), active rules and observations (observations with their aggregate figures), and the database-wide rules and observations, with the generation date. Unconfirmed inferences, archived notes and evidence SQL are left out; every name and text is escaped. The file is saved as `auspex-data-dictionary-<db>-<date>.html` or `.md` after a click (when loading the table files took too long, the next click downloads)
+- **Rules** (TR *Kurallar*) — every schema-memory note of the chosen database: rules, observations and inferences with table and column, text, status, confirmed or unconfirmed, created/confirmed/archived dates, and the evidence (figures and SQL) behind a collapsed *Evidence* toggle. Filters: status (active by default, archived, all), kind, table (part of `schema.table`) and text (case-insensitive, Turkish İ/I/ı/i match each other). An active note can be archived with a required reason (see below); adding or confirming notes stays an agent action (`remember`)
 - **Profiles** — configured databases with connection details (never passwords) and the latest role check; a `check_profile` that failed shows "unable to assess" with its code, never as a passed check
 
 The viewer uses the full window width with one page scroll, has an English
@@ -762,7 +764,7 @@ before template v2 keep their old layout until `render_reports` re-renders them.
 
 It binds to 127.0.0.1 only, rejects other Host headers, never connects to a
 database and never shows passwords. Every route is GET-only except the two
-approval routes below.
+approval routes and the note archive route below.
 
 #### Approving reports in the viewer
 
@@ -819,6 +821,25 @@ Approve and revoke also rebuild the schema memory view, since approved
 reports' joins are its "used" relations. The desktop app offers the same
 buttons (see below).
 
+#### Archiving notes in the viewer
+
+On the *Rules* tab an active note has an **Archive** (TR *Arşivle*) button. It
+opens a confirm dialog with the note and a required reason (one line, at most
+200 characters). Archiving runs the same store logic as `remember
+action=archive`, under the profile's memory lock, keeps the note with its
+reason, `archivedAt` and `status: archived` (notes are never deleted) and
+rebuilds the schema memory view. Restoring an archived note is not offered.
+
+`POST /api/memory/archive` has the same protections as the approval routes
+(loopback Host, exact `Origin`, per-process `X-Auspex-Token`, `application/json`
+of at most 4 KB) and accepts only `{ "profile", "id", "reason" }`: the profile
+name, a positive integer note id and the reason (400 otherwise). An unknown
+profile or note is answered with 404, a note that is already archived with
+409 (`PRECONDITION_FAILED`). Every request that passed the origin and token
+checks is audited like the `remember` tool (`tool` `remember`, `action`
+`archive`, `source` and `actor` `viewer`, profile and note id, never the note
+text or the reason).
+
 ### 🖥️ Desktop app (Tauri)
 
 `desktop/` wraps the same viewer in a small native app (about 3 MB) that reads
@@ -864,6 +885,17 @@ JSON line (`{"ok":true,"stage":..,"version":..}` or
 `AUSPEX_HOME` and the folder overrides like the server, and never touches a
 database or the network.
 
+The *Rules* tab's **Archive** button works the same way: the app's
+`archive_note` command checks the profile name, the note id and the reason in
+Rust and runs
+
+```bash
+node <auspexRoot>/src/stageCli.js archive-note --profile=<profile> --id=<id> --reason=<reason>
+```
+
+which applies the viewer's checks and store logic (404 unknown note, 409
+already archived) and audits with `source` and `actor` `desktop`.
+
 Requirements:
 
 - **Node 20+** on `PATH`, or `AUSPEX_NODE` set to the absolute path of
@@ -879,8 +911,8 @@ in Rust first, and stops the CLI after 30 seconds. When the CLI times out or
 gives no result, the change may or may not have been applied: the app says so,
 reloads the list and writes an audit line (actor `desktop`, error code
 `TIMEOUT` or `CLI_FAILED`) itself. Only `api`,
-`approve_report` and `revoke_report` are allowed in the window's capability;
-there is no shell plugin.
+`approve_report`, `revoke_report` and `archive_note` are allowed in the
+window's capability; there is no shell plugin.
 
 ## 🗂️ Profiles file
 

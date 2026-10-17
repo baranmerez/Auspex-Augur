@@ -93,7 +93,9 @@ Write note text in the `notesLanguage` from `list_profiles` (ask once if null).
 | Your interpretation ("looks like an audit copy") | `inference` | confidence in the text |
 
 Confirm an inference (`action=confirm`) only after the user agreed. Archive
-outdated notes with a reason; never re-add a duplicate.
+outdated notes with a reason; never re-add a duplicate. The user can also
+archive notes on the viewer's *Rules* tab; do not re-add a note the user
+archived unless they ask for it.
 
 ## Answer shape
 
