@@ -5,7 +5,9 @@
 // src/config.js stays the source of truth for validation.
 // The only writes: `approve_report` / `revoke_report` run the Node stage CLI
 // (src/stageCli.js of the Auspex checkout), which moves one report in the
-// local library exactly like the viewer's approval routes.
+// local library exactly like the viewer's approval routes, and `archive_note`
+// runs its archive-note command, which archives one schema-memory note like
+// the viewer's POST /api/memory/archive.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::collections::HashMap;
@@ -669,15 +671,23 @@ fn run_stage_cli(action: &str, parts: &[String; 4], expected_hash: Option<&str>)
     if !valid_hash(expected_hash) {
         return Err(stage_error("INVALID_INPUT", "Invalid expected SQL hash; reload the list."));
     }
+    // One argv entry per part, as --key=value so a value can never read as an option.
+    let mut args = vec![action.to_string()];
+    for (key, value) in REF_KEYS.iter().zip(parts.iter()) {
+        args.push(format!("--{key}={value}"));
+    }
+    args.push(format!("--expected-hash={expected_hash}"));
+    run_cli(&args, &stage_audit_base(action, parts))
+}
+
+// Runs `node <auspexRoot>/src/stageCli.js <args>` (already validated) and maps
+// its one-line JSON result; an unknown outcome (timeout, no result) is audited
+// with `audit` (tool, profile and target of the change) as the base entry.
+fn run_cli(args: &[String], audit: &Value) -> Result<Value, Value> {
     let node = node_program()?;
     let root = auspex_root()?;
     let mut cmd = Command::new(&node);
-    cmd.arg(root.join("src").join("stageCli.js")).arg(action);
-    // One argv entry per part, as --key=value so a value can never read as an option.
-    for (key, value) in REF_KEYS.iter().zip(parts.iter()) {
-        cmd.arg(format!("--{key}={value}"));
-    }
-    cmd.arg(format!("--expected-hash={expected_hash}"));
+    cmd.arg(root.join("src").join("stageCli.js")).args(args);
     cmd.current_dir(&root).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     #[cfg(windows)]
     {
@@ -698,7 +708,7 @@ fn run_stage_cli(action: &str, parts: &[String; 4], expected_hash: Option<&str>)
                     "TIMEOUT",
                     format!("src/stageCli.js did not finish within {} s and was stopped; the change may or may not have been applied. Reload the list.", STAGE_TIMEOUT.as_secs()),
                 );
-                audit_uncertain(action, parts, started.elapsed(), &e);
+                audit_uncertain(audit, started.elapsed(), &e);
                 return Err(e);
             }
             Ok(None) => std::thread::sleep(Duration::from_millis(50)),
@@ -710,7 +720,7 @@ fn run_stage_cli(action: &str, parts: &[String; 4], expected_hash: Option<&str>)
     let result = parse_cli_output(&stdout, &stderr, status.code());
     if let Err(e) = &result {
         if e["code"] == json!("CLI_FAILED") {
-            audit_uncertain(action, parts, started.elapsed(), e);
+            audit_uncertain(audit, started.elapsed(), e);
         }
     }
     result
@@ -741,14 +751,21 @@ fn iso_now() -> String {
 // When the CLI timed out or gave no result it may not have written its own
 // audit line, so the app writes one in the same format and place as
 // src/auditLog.js (<log dir>/<UTC day>.jsonl). Best effort, like the JS log.
-fn audit_uncertain(action: &str, parts: &[String; 4], elapsed: Duration, err: &Value) {
+// The audit fields of a stage change: tool, stages, profile and report.
+fn stage_audit_base(action: &str, parts: &[String; 4]) -> Value {
     let (tool, from, to) = if action == "approve" { ("approve_report", "draft", "approved") } else { ("revoke_report", "approved", "draft") };
+    json!({ "tool": tool, "fromStage": from, "toStage": to, "profile": parts[0], "report": parts.join("/") })
+}
+
+fn audit_uncertain(base: &Value, elapsed: Duration, err: &Value) {
     let ts = iso_now();
-    let entry = json!({
-        "ts": ts, "source": "desktop", "tool": tool, "actor": "desktop", "fromStage": from, "toStage": to,
-        "profile": parts[0], "report": parts.join("/"), "ms": elapsed.as_millis() as u64,
-        "error": err["message"], "errorCode": err["code"],
-    });
+    let mut entry = json!({ "ts": ts, "source": "desktop", "actor": "desktop" });
+    if let (Some(e), Some(b)) = (entry.as_object_mut(), base.as_object()) {
+        e.extend(b.clone());
+        e.insert("ms".into(), json!(elapsed.as_millis() as u64));
+        e.insert("error".into(), err["message"].clone());
+        e.insert("errorCode".into(), err["code"].clone());
+    }
     let dir = log_dir();
     let _ = fs::create_dir_all(&dir).and_then(|_| {
         use std::io::Write;
@@ -775,6 +792,39 @@ async fn revoke_report(db: String, schema: String, category: String, name: Strin
     stage_command("revoke", [db, schema, category, name], expected_hash).await
 }
 
+// ---------- schema-memory note archive ----------
+// Same rules as validateArchiveInput in src/memory/noteArchive.js; Node checks
+// again. The reason: trimmed like JavaScript, 1 to MAX_REASON UTF-16 units,
+// no control characters (one line).
+const MAX_REASON: usize = 200;
+const MAX_NOTE_ID: u64 = (1 << 53) - 1;
+
+fn valid_reason(s: &str) -> bool {
+    !s.trim_matches(is_js_space).is_empty() && js_trimmed(s) && s.encode_utf16().count() <= MAX_REASON && !s.chars().any(char::is_control)
+}
+
+fn run_archive_cli(profile: &str, id: u64, reason: &str) -> Result<Value, Value> {
+    if !valid_profile(profile) {
+        return Err(stage_error("PROFILE_INVALID", "Invalid profile name."));
+    }
+    if id == 0 || id > MAX_NOTE_ID {
+        return Err(stage_error("INVALID_INPUT", "Invalid note id."));
+    }
+    if !valid_reason(reason) {
+        return Err(stage_error("INVALID_INPUT", format!("The reason is required: one line of at most {MAX_REASON} characters.")));
+    }
+    let args = vec!["archive-note".to_string(), format!("--profile={profile}"), format!("--id={id}"), format!("--reason={reason}")];
+    run_cli(&args, &json!({ "tool": "remember", "action": "archive", "profile": profile, "noteId": id }))
+}
+
+// The page's archive request: { profile, id, reason } (src/viewer.html).
+#[tauri::command]
+async fn archive_note(profile: String, id: u64, reason: String) -> Result<Value, Value> {
+    tauri::async_runtime::spawn_blocking(move || run_archive_cli(&profile, id, &reason))
+        .await
+        .map_err(|e| stage_error("INTERNAL", e.to_string()))?
+}
+
 fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
@@ -787,7 +837,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![HIDDEN_ARG])))
-        .invoke_handler(tauri::generate_handler![api, approve_report, revoke_report])
+        .invoke_handler(tauri::generate_handler![api, approve_report, revoke_report, archive_note])
         .setup(|app| {
             let enabled = app.autolaunch().is_enabled().unwrap_or(false);
             let open = MenuItem::with_id(app, "open", "Open Auspex Augur", true, None::<&str>)?;
@@ -1044,7 +1094,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("auspex-audit-test-{}", std::process::id()));
         std::env::set_var("AUSPEX_LOG_DIR", &dir);
         let parts = ["exampledb".to_string(), "example".into(), "Example Reports".into(), "example-report".into()];
-        audit_uncertain("approve", &parts, Duration::from_millis(30_001), &stage_error("TIMEOUT", "may or may not have been applied"));
+        audit_uncertain(&stage_audit_base("approve", &parts), Duration::from_millis(30_001), &stage_error("TIMEOUT", "may or may not have been applied"));
         std::env::remove_var("AUSPEX_LOG_DIR");
         let file = fs::read_dir(&dir).unwrap().next().unwrap().unwrap().path();
         assert!(file.file_name().unwrap().to_string_lossy().ends_with(".jsonl"));
@@ -1054,6 +1104,25 @@ mod tests {
             (json!("desktop"), json!("desktop"), json!("approve_report"), json!("exampledb/example/Example Reports/example-report"), json!("TIMEOUT"), json!(30_001))
         );
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn archive_requests_are_checked_before_spawning() {
+        assert!(valid_reason("Outdated after the example.orders migration"));
+        assert!(valid_reason("Eski kural, artık geçerli değil"));
+        assert!(valid_reason(&"é".repeat(200)));
+        for bad in ["", " ", " leading", "trailing ", "\u{feff}x", "two\nlines", "tab\there", "c1\u{85}x", "del\u{7f}x"] {
+            assert!(!valid_reason(bad), "{bad:?}");
+        }
+        assert!(!valid_reason(&"a".repeat(201)));
+        assert!(!valid_reason(&"😀".repeat(101)), "UTF-16 units, like JavaScript");
+        // Refused before Node or the Auspex folder is looked up, so no process starts.
+        assert_eq!(run_archive_cli("Example", 1, "outdated").unwrap_err()["code"], json!("PROFILE_INVALID"));
+        assert_eq!(run_archive_cli("../x", 1, "outdated").unwrap_err()["code"], json!("PROFILE_INVALID"));
+        assert_eq!(run_archive_cli("exampledb", 0, "outdated").unwrap_err()["code"], json!("INVALID_INPUT"));
+        assert_eq!(run_archive_cli("exampledb", MAX_NOTE_ID + 1, "outdated").unwrap_err()["code"], json!("INVALID_INPUT"));
+        assert_eq!(run_archive_cli("exampledb", 1, "").unwrap_err()["code"], json!("INVALID_INPUT"));
+        assert_eq!(run_archive_cli("exampledb", 1, "a\nb").unwrap_err()["code"], json!("INVALID_INPUT"));
     }
 
     #[test]
