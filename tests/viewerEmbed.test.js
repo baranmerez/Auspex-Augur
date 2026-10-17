@@ -12,7 +12,7 @@ const block = page.match(/\/\/ embed:start[\s\S]*?\/\/ embed:end/)?.[0];
 function loadEmbed() {
   assert.ok(block, 'embed block found in viewer.html');
   const context = vm.createContext({});
-  vm.runInContext(`${block}\nthis.embedReport = embedReport; this.reportMessage = reportMessage; this.reportFrameOf = reportFrameOf; this.css = reportEmbedCss; this.js = reportEmbedJs; this.reportCopyMax = reportCopyMax;`, context);
+  vm.runInContext(`${block}\nthis.embedReport = embedReport; this.reportMessage = reportMessage; this.reportFrameOf = reportFrameOf; this.css = reportEmbedCss; this.js = reportEmbedJs; this.reportCopyMax = reportCopyMax; this.reportDownloadName = reportDownloadName; this.reportDownloadFile = reportDownloadFile;`, context);
   return context;
 }
 const count = (s, part) => s.split(part).length - 1;
@@ -124,7 +124,7 @@ test('download and performance-toggle messages are relayed; malformed ones are i
   const dl = reportMessage({ auspexReportDownload: { name: 'a b/../c.csv', text: 'x,y' } });
   assert.deepEqual({ ...dl.download }, { name: 'a_b_.._c.csv', text: 'x,y' });
   assert.deepEqual({ ...reportMessage({ auspexReportDownload: { name: '', text: '' } }).download }, { name: 'report.csv', text: '' });
-  assert.deepEqual({ ...reportMessage({ auspexReportDownload: { name: 'a.csv', text: 'x'.repeat(reportCopyMax + 1) } }) }, { copyTooLarge: true });
+  assert.deepEqual({ ...reportMessage({ auspexReportDownload: { name: 'a.csv', text: 'x'.repeat(reportCopyMax + 1) } }) }, { downloadTooLarge: true }, 'its own flag, not the copy one');
   for (const bad of [{ auspexReportDownload: 'x' }, { auspexReportDownload: { name: 1, text: 'x' } }, { auspexReportDownload: { name: 'a', text: 5 } }, { auspexReportPerf: 'yes' }]) {
     assert.equal(reportMessage(bad), null, JSON.stringify(bad));
   }
@@ -148,4 +148,31 @@ test('inside the viewer the report posts its CSV and toggle state to the parent'
   posted.length = 0;
   vm.runInContext("downloadCsv('a.csv', 'x,y'); rememberPerf(true)", context);
   assert.equal(JSON.stringify(posted), JSON.stringify([[{ auspexReportDownload: { name: 'a.csv', text: 'x,y' } }, '*'], [{ auspexReportPerf: true }, '*']]));
+});
+
+test('the viewer picks the download file name: always .csv, safe and short', () => {
+  const { reportDownloadName } = loadEmbed();
+  assert.equal(reportDownloadName('evil.bat'), 'evil.csv');
+  assert.equal(reportDownloadName('x.hta'), 'x.csv');
+  assert.equal(reportDownloadName('x.js'), 'x.csv');
+  assert.equal(reportDownloadName('.hidden.cmd'), 'hidden.csv');
+  assert.ok(!reportDownloadName('.bashrc').startsWith('.'));
+  assert.equal(reportDownloadName('a b/c.csv'), 'a_b_c.csv');
+  assert.equal(reportDownloadName(''), 'report.csv');
+  const long = reportDownloadName('a'.repeat(100));
+  assert.ok(long.endsWith('.csv') && long.length === 84, long.length);
+});
+
+test('a download needs a recent click; the viewer adds one UTF-8 BOM', () => {
+  const { reportDownloadFile } = loadEmbed();
+  assert.equal(reportDownloadFile({ name: 'a.csv', text: 'x' }, { isActive: false }), null, 'no activation: refused');
+  assert.equal(reportDownloadFile({ name: 'a.csv', text: 'x' }, { isActive: true }).text, '﻿x');
+  assert.equal(reportDownloadFile({ name: 'a.csv', text: 'x' }, undefined).text, '﻿x', 'browsers without userActivation keep working');
+  assert.equal(reportDownloadFile({ name: 'a.csv', text: '﻿x' }, { isActive: true }).text, '﻿x', 'never doubled');
+  assert.equal(reportDownloadFile({ name: 'evil.bat', text: 'x' }, { isActive: true }).name, 'evil.csv');
+});
+
+test('the viewer has texts for a refused or oversized download', () => {
+  assert.match(page, /'Download too large': '/);
+  assert.match(page, /'Download failed': '/);
 });
