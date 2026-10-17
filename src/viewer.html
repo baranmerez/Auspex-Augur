@@ -296,6 +296,8 @@
   .th-io summary { cursor: pointer; color: var(--text-2); }
   .th-io textarea { width: 100%; margin-top: 6px; font: 11px/1.4 var(--mono); border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-2); color: var(--text); padding: 6px; resize: vertical; }
   .icon-btn.primary { background: var(--accent-ink); border-color: var(--accent-ink); color: var(--surface); }
+  .icon-btn.secondary-danger { color: var(--critical); border-color: color-mix(in srgb, var(--critical) 45%, var(--line)); background: var(--surface); }
+  .icon-btn.secondary-danger:hover { background: var(--critical-soft); color: var(--critical); border-color: var(--critical); }
   .icon-btn.primary:hover { background: var(--text); border-color: var(--text); color: var(--surface); }
 
   /* Toolbar */
@@ -357,6 +359,8 @@
      with it and never scrolls on its own; until then it fills the window. */
   .rep-view .bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 10px 14px; border-bottom: 1px solid var(--line); }
   .rep-view .bar .grow { flex: 1; }
+  .rep-view .rep-title { display: flex; gap: 8px 10px; align-items: center; flex-wrap: wrap; font-weight: 650; margin-top: 3px; }
+  .rep-view .rep-title .t { overflow-wrap: anywhere; }
   .rep-view .crumbs { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--text-3); }
   .rep-view .crumb { border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; color: var(--text-2); }
   .rep-view iframe { width: 100%; height: calc(100vh - 230px); min-height: 520px; border: 0; background: var(--bg); display: block; }
@@ -992,7 +996,7 @@ const state = {
   memSchema: '', memErAll: false, memPos: new Map(), schemaKey: null,
 };
 try { Object.assign(state, JSON.parse(localStorage.getItem('auspex.viewer') || '{}'), { all: [], seen: new Set(), firstLoad: true, open: null, reports: null, reportDoc: null, memory: null, memView: null, memPos: new Map() }); } catch {}
-const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy, memHideFaint: state.memHideFaint, memGraph3d: state.memGraph3d, memGraphSoft: state.memGraphSoft, memExpand: state.memExpand, repListCollapsed: state.repListCollapsed, repTreeOpen: state.repTreeOpen, sqlWrap: state.sqlWrap })); } catch {} };
+const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy, memHideFaint: state.memHideFaint, memGraph3d: state.memGraph3d, memGraphSoft: state.memGraphSoft, memExpand: state.memExpand, repListCollapsed: state.repListCollapsed, repTreeOpen: state.repTreeOpen, sqlWrap: state.sqlWrap, perfOpen: state.perfOpen })); } catch {} };
 
 // In the Tauri desktop app the same routes are served by the Rust `api` command.
 const tauriCore = window.__TAURI__?.core;
@@ -1496,6 +1500,7 @@ const reportEmbedCss = `<style id="auspex-viewer-embed">
   .tbl-wrap th, .tbl-wrap td { padding: 8px 14px; white-space: nowrap; }
   .tbl-wrap td.long { white-space: normal; min-width: 32ch; max-width: 70ch; overflow-wrap: anywhere; }
   #toast { display: none !important; }
+  .head h1, .head .crumbs .loc, #lang, #theme { display: none !important; }
 </style>`;
 const reportEmbedJs = `<script id="auspex-viewer-embed-js">(() => {
   const mark = () => {
@@ -1527,6 +1532,12 @@ const reportEmbedJs = `<script id="auspex-viewer-embed-js">(() => {
   if (typeof window.copy === 'function') {
     window.copy = (text, what) => parent.postMessage({ auspexReportCopy: String(text ?? ''), auspexReportCopyWhat: String(what ?? '') }, '*');
   }
+  if (typeof window.downloadCsv === 'function') {
+    window.downloadCsv = (name, text) => parent.postMessage({ auspexReportDownload: { name: String(name ?? ''), text: String(text ?? '') } }, '*');
+  }
+  if (typeof window.rememberPerf === 'function') {
+    window.rememberPerf = open => parent.postMessage({ auspexReportPerf: !!open }, '*');
+  }
   tick();
 })();<\/script>`;
 // Injects the embed CSS before the real </head> and the script before the
@@ -1537,8 +1548,9 @@ function embedReport(html) {
   if (head < 0 || body < head) return html;
   return html.slice(0, head) + reportEmbedCss + html.slice(head, body) + reportEmbedJs + html.slice(body);
 }
-// A message from an embedded report: a clamped frame height, a toast text or
-// a text to copy (longer than reportCopyMax characters: copyTooLarge, so the
+// A message from an embedded report: a clamped frame height, a toast text, a
+// CSV to download (the sandboxed frame cannot download itself), the state of its
+// performance details toggle or a text to copy (longer than reportCopyMax characters: copyTooLarge, so the
 // viewer reports the failure). Anything else is null.
 const reportCopyMax = 1_000_000;
 function reportMessage(data) {
@@ -1551,6 +1563,12 @@ function reportMessage(data) {
     const what = data.auspexReportCopyWhat;
     return { copy: text, what: typeof what === 'string' ? what.slice(0, 40) : '' };
   }
+  const dl = data.auspexReportDownload;
+  if (dl && typeof dl === 'object' && typeof dl.text === 'string' && typeof dl.name === 'string') {
+    if (dl.text.length > reportCopyMax) return { copyTooLarge: true };
+    return { download: { name: dl.name.replace(/[^\w.-]+/g, '_').slice(0, 80) || 'report.csv', text: dl.text } };
+  }
+  if (typeof data.auspexReportPerf === 'boolean') return { perf: data.auspexReportPerf };
   const msg = data.auspexReportToast;
   if (typeof msg === 'string' && msg.trim()) return { toast: msg.slice(0, 200) };
   return null;
@@ -1563,13 +1581,15 @@ function themedReport(html) {
   const res = themeNow();
   const th = res ? res.base : state.theme === 'light' || state.theme === 'dark' ? state.theme : null;
   const style = res ? ` style="${Object.entries(res.tokens).map(([k, v]) => `${k}: ${v}`).join('; ')}"` : '';
-  return embedReport(html.replace('<html lang="en">', `<html lang="${lang}" data-lang="${lang}"${th ? ` data-theme="${th}"` : ''}${style}>`));
+  return embedReport(html.replace('<html lang="en">', `<html lang="${lang}" data-lang="${lang}"${state.perfOpen ? ' data-perf="1"' : ''}${th ? ` data-theme="${th}"` : ''}${style}>`));
 }
 window.addEventListener('message', ev => {
   const frame = reportFrameOf(document.querySelectorAll('.rep-view iframe'), ev.source);
   const m = frame && reportMessage(ev.data);
   if (!m) return;
   if (m.height) frame.style.height = `${m.height}px`;
+  else if (m.perf !== undefined) { state.perfOpen = m.perf; persist(); }
+  else if (m.download) download(m.download.name, m.download.text, 'text/csv;charset=utf-8');
   // Copy only right after a click in the report (activation reaches this
   // frame too); browsers without userActivation keep copying.
   else if (m.copyTooLarge || (m.copy !== undefined && navigator.userActivation && !navigator.userActivation.isActive)) toast(t('Copy failed'));
@@ -1759,11 +1779,11 @@ function reportView(r) {
     actions.push(h('button', { class: 'icon-btn', onclick: () => copy(doc.content, 'SQL') }, t('Copy SQL')));
   }
   if (doc && doc.kind === 'html' && !tauriCore) actions.push(h('button', { class: 'icon-btn', onclick: () => window.open(URL.createObjectURL(new Blob([doc.content], { type: 'text/html' })), '_blank') }, t('Open in new tab')));
-  actions.push(stageButton(r, doc));
-  // HTML reports carry their own header; the bar only adds actions then.
-  const heading = doc && doc.kind === 'html' ? h('span', { class: 'muted', style: 'font-size:12px' }, `${r.db} › ${r.schema} › ${r.category} › ${r.name}`) : h('div', {},
+  // Title, stage badge and the approve/revoke button sit together; the report
+  // frame hides its own title, location chips, language and theme controls.
+  const heading = h('div', {},
     h('div', { class: 'crumbs' }, h('span', { class: 'crumb' }, r.db), '›', h('span', { class: 'crumb' }, r.schema), '›', h('span', { class: 'crumb' }, r.category)),
-    h('div', { style: 'font-weight:650;margin-top:3px' }, r.title, ' ', h('span', { class: 'badge ' + r.stage }, r.stage === 'approved' ? t('approved v{v}', { v: r.approvedVersion ?? '?' }) : t(r.stage))));
+    h('div', { class: 'rep-title' }, h('span', { class: 't' }, r.title || r.name), h('span', { class: 'badge ' + r.stage }, r.stage === 'approved' ? t('approved v{v}', { v: r.approvedVersion ?? '?' }) : t(r.stage)), stageButton(r, doc)));
   // The list moved on (live refresh) while this content stayed open.
   const changed = doc && stageBlocked(r, doc) === changedText
     ? h('div', { class: 'error-box', role: 'status', style: 'margin:0 12px 8px;display:flex;gap:10px;align-items:center' }, t(changedText),
@@ -1864,7 +1884,7 @@ function stageButton(r, doc) {
   const pending = state.stagePending === repKey(r);
   const blocked = stageBlocked(r, doc);
   const hash = doc?.sqlHash;
-  return h('button', { class: 'icon-btn' + (sc.kind === 'approve' ? ' primary' : ''), disabled: !!state.stagePending || !!blocked, 'aria-busy': pending ? 'true' : null,
+  return h('button', { class: 'icon-btn sm' + (sc.kind === 'approve' ? ' primary' : ' secondary-danger'), disabled: !!state.stagePending || !!blocked, 'aria-busy': pending ? 'true' : null,
     title: blocked && blocked !== 'loading' ? t(blocked) : null,
     onclick: () => confirmStageChange(r, sc, hash) }, pending ? t('Working…') : t(sc.label));
 }
