@@ -8,7 +8,8 @@ import { classifyError } from '../errors.js';
 // Files only: no database, no network.
 
 export const refKeys = ['db', 'schema', 'category', 'name'];
-export const maxRefFieldLength = 200;
+// A category may be 3 levels of up to 80 characters joined by "/".
+export const maxRefFieldLength = 260;
 // The SQL hash of the version the person reviewed (the confirm dialog).
 export const expectedHashKey = 'expectedHash';
 

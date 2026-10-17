@@ -77,3 +77,21 @@ test('without expectedHash the current draft SQL is approved as before', async (
   assert.ok(!ok.isError, ok.content[0].text);
   assert.equal(result(ok).version, 1);
 });
+
+test('save_report, list_reports and approve_report accept a nested category', async () => {
+  const nested = { ...ref, category: 'Orders/Delivery', name: 'late-deliveries' };
+  const { tools } = await client.listTools();
+  assert.match(tools.find(t => t.name === 'save_report').inputSchema.properties.category.description, /nested with "\/" up to 3 levels/);
+  const hash = await saveAndRun(nested, 'select order_id from example.orders');
+  assert.ok(fs.existsSync(path.join(home, 'library', '_drafts', 'example', 'example', 'Orders', 'Delivery', 'late-deliveries.sql')));
+  const listed = result(await call('list_reports', { stage: 'draft' })).reports.find(r => r.name === 'late-deliveries');
+  assert.equal(listed.category, 'Orders/Delivery');
+  assert.deepEqual(listed.categoryPath, ['Orders', 'Delivery']);
+  const ok = await call('approve_report', { ...nested, expectedHash: hash });
+  assert.ok(!ok.isError, ok.content[0].text);
+  assert.equal(lib.exists('approved', nested), true);
+  const deep = await call('save_report', { ...nested, category: 'Orders/Delivery/Weekly/Extra', sql: 'select 1' });
+  assert.ok(deep.isError, 'four levels are refused');
+  const traversal = await call('save_report', { ...nested, category: 'Orders/../Invoices', sql: 'select 1' });
+  assert.ok(traversal.isError, 'a parent reference is refused');
+});

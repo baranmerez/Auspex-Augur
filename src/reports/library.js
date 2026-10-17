@@ -2,6 +2,8 @@
 //   <library>/_drafts/<db>/<schema>/<category>/<name>.sql|.report.json|.html   work in progress
 //   <library>/SELECT/<db>/<schema>/<category>/<name>.sql|.report.json|.html    approved read-only reports
 //   <library>/EXECUTE/<db>/<schema>/<category>/<name>.sql                      change scripts for a human
+// <category> is one folder or a nested path of up to maxCategoryLevels folders
+// (topic/subtopic, e.g. Orders/Delivery); its canonical form joins them with "/".
 // <db> is the Auspex profile name. The library is user-specific and lives
 // outside any repository by default.
 import fs from 'node:fs';
@@ -44,12 +46,36 @@ export function validateSegment(value, label) {
   return v;
 }
 
+// A category: one to maxCategoryLevels folder names joined by "/", for example
+// Orders or Orders/Delivery. Each segment follows the validateSegment rules and
+// may not have leading or trailing spaces; empty segments ("a//b", "/a") are refused.
+export const maxCategoryLevels = 3;
+
+export function categorySegments(value) {
+  const v = String(value || '').normalize('NFC').trim();
+  if (!v) throw new LibraryError('Category is required.');
+  const parts = v.split('/');
+  if (parts.length > maxCategoryLevels) throw new LibraryError(`Invalid category "${v}": at most ${maxCategoryLevels} levels joined by "/".`);
+  return parts.map(part => {
+    if (!part) throw new LibraryError(`Invalid category "${v}": empty level (no leading, trailing or double "/").`);
+    if (part !== part.trim()) throw new LibraryError(`Invalid category "${v}": no spaces at the start or end of a level.`);
+    return validateSegment(part, 'Category');
+  });
+}
+
+// A folder name the library could have written as one category level.
+function isCategoryFolder(name) {
+  try { return validateSegment(name, 'Category') === name; } catch { return false; }
+}
+
+export const validateCategory = value => categorySegments(value).join('/');
+
 // Normalizes a report location { db, schema, category, name }.
 export function normalizeRef(ref) {
   return {
     db: validateSegment(ref.db, 'Database (profile)').toLowerCase(),
     schema: validateSegment(ref.schema, 'Schema'),
-    category: validateSegment(ref.category, 'Category'),
+    category: validateCategory(ref.category),
     name: slugify(ref.name),
   };
 }
@@ -100,7 +126,7 @@ export class Library {
   base(stage, ref) {
     if (!stages[stage]) throw new LibraryError(`Unknown stage "${stage}".`);
     const r = normalizeRef(ref);
-    const file = path.join(this.root, stages[stage], r.db, r.schema, r.category, r.name);
+    const file = path.join(this.root, stages[stage], r.db, r.schema, ...r.category.split('/'), r.name);
     if (!file.startsWith(this.root + path.sep)) throw new LibraryError('Path escapes the library.');
     return file;
   }
@@ -310,6 +336,8 @@ export class Library {
     return meta?.activeHash ?? sqlHash(this.readSql(stage, ref));
   }
 
+  // Removes dir and its empty parents (nested category, schema, db folders),
+  // never stopAt itself or anything outside it.
   pruneEmpty(dir, stopAt) {
     let d = dir;
     while (d.startsWith(stopAt + path.sep)) {
@@ -322,29 +350,41 @@ export class Library {
   }
 
   // Every report and script: stage, db, schema, category, name, last run.
+  // Below <db>/<schema> each folder is a category level, up to
+  // maxCategoryLevels deep; at every level its <name>.sql files are reports
+  // (with <name>.report.json for drafts and SELECT) and its subfolders are
+  // nested categories. category is the "/"-joined path, categoryPath the array.
+  // Folders whose name is not a valid category level (e.g. ".git") are skipped.
   list() {
     const out = [];
+    const sub = p => (fs.existsSync(p) ? fs.readdirSync(p, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name) : []);
     for (const [stage, dir] of Object.entries(stages)) {
       const base = path.join(this.root, dir);
-      const sub = p => (fs.existsSync(p) ? fs.readdirSync(p, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name) : []);
-      for (const db of sub(base)) for (const schema of sub(path.join(base, db))) for (const category of sub(path.join(base, db, schema))) {
-        for (const f of fs.readdirSync(path.join(base, db, schema, category)).filter(x => x.endsWith('.sql'))) {
-          const ref = { db, schema, category, name: f.slice(0, -4) };
-          const meta = stage === 'execute' ? null : this.readMeta(stage, ref);
-          const externalFile = stage === 'execute' ? this.executeInfo(ref)?.externalFile : null;
-          const lastRun = meta?.runs?.at(-1);
-          const file = path.join(base, db, schema, category, f);
-          out.push({
-            stage, ...ref, ...(externalFile ? { externalFile } : {}), title: meta?.title ?? ref.name, description: meta?.description || null,
-            versions: meta?.sqlVersions?.length ?? null, approvedVersion: meta?.approvedVersion ?? null,
-            updatedAt: meta?.updatedAt ?? fs.statSync(file).mtime.toISOString(),
-            runs: meta?.runs?.length ?? 0,
-            lastRun: lastRun ? { at: lastRun.at, durationMs: lastRun.durationMs, rows: lastRun.rows, analyzed: lastRun.analyzed, warnings: lastRun.warnings?.length ?? 0 } : null,
-          });
-        }
+      for (const db of sub(base)) for (const schema of sub(path.join(base, db))) {
+        const walk = segments => {
+          const folder = path.join(base, db, schema, ...segments);
+          for (const f of fs.readdirSync(folder, { withFileTypes: true }).filter(x => x.isFile() && x.name.endsWith('.sql')).map(x => x.name)) {
+            out.push(this.listEntry(stage, { db, schema, category: segments.join('/'), name: f.slice(0, -4) }, segments, path.join(folder, f)));
+          }
+          if (segments.length < maxCategoryLevels) for (const child of sub(folder).filter(isCategoryFolder)) walk([...segments, child]);
+        };
+        for (const category of sub(path.join(base, db, schema)).filter(isCategoryFolder)) walk([category]);
       }
     }
     return out;
+  }
+
+  listEntry(stage, ref, segments, file) {
+    const meta = stage === 'execute' ? null : this.readMeta(stage, ref);
+    const externalFile = stage === 'execute' ? this.executeInfo(ref)?.externalFile : null;
+    const lastRun = meta?.runs?.at(-1);
+    return {
+      stage, ...ref, categoryPath: segments, ...(externalFile ? { externalFile } : {}), title: meta?.title ?? ref.name, description: meta?.description || null,
+      versions: meta?.sqlVersions?.length ?? null, approvedVersion: meta?.approvedVersion ?? null,
+      updatedAt: meta?.updatedAt ?? fs.statSync(file).mtime.toISOString(),
+      runs: meta?.runs?.length ?? 0,
+      lastRun: lastRun ? { at: lastRun.at, durationMs: lastRun.durationMs, rows: lastRun.rows, analyzed: lastRun.analyzed, warnings: lastRun.warnings?.length ?? 0 } : null,
+    };
   }
 
   // Writes a change script for a human to run. Never executed by Auspex.

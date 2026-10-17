@@ -325,3 +325,20 @@ test('the page sends the token, the report location and the opened content hash,
   const refused = async () => ({ ok: false, status: 403, statusText: '', json: async () => ({ error: 'Missing or invalid token', code: 'TOKEN_INVALID' }) });
   await assert.rejects(postStageChange(refused, 'old-token', '/api/reports/approve', r, hash), err => err.viewerRestarted === true);
 });
+
+test('a report in a nested category is listed, opened and approved with its category path', async () => {
+  const nested = { ...ref, category: 'Orders/Delivery', name: 'late-deliveries' };
+  seedDraft(nested);
+  const listed = (await request({ path: '/api/reports' })).json.reports.find(r => r.name === 'late-deliveries');
+  assert.deepEqual([listed.category, listed.categoryPath], ['Orders/Delivery', ['Orders', 'Delivery']]);
+  const q = new URLSearchParams({ stage: 'draft', db: nested.db, schema: nested.schema, category: nested.category, name: nested.name });
+  const opened = await request({ path: '/api/report?' + q });
+  assert.equal(opened.status, 200, opened.text);
+  assert.equal(opened.json.sqlHash, hash);
+  const bad = await post('/api/reports/approve', stageBody({ ...nested, category: 'Orders//Delivery' }));
+  assert.equal(bad.status, 400, 'a non-canonical category is refused');
+  const ok = await post('/api/reports/approve', stageBody(nested));
+  assert.equal(ok.status, 200, ok.text);
+  assert.equal(ok.json.report, 'exampledb/example/Orders/Delivery/late-deliveries');
+  assert.equal(lib.exists('approved', nested), true);
+});
