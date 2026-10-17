@@ -8,6 +8,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SchemaMemory } from '../src/memory/store.js';
+import { Library, sqlHash } from '../src/reports/library.js';
+import { approveInLibrary, approvedJoinPairs } from '../src/reports/service.js';
 
 // Starts src/viewer.js on a free loopback port with a temporary schema memory
 // and checks POST /api/memory/archive: host, origin, token, content type,
@@ -165,4 +167,22 @@ test('archive answers 200 once, then 409; unknown notes and profiles 404; audit 
   assert.equal(third.errorCode, 'NOT_FOUND');
   const raw = JSON.stringify(entries);
   assert.ok(!raw.includes('Superseded') && !raw.includes('created_at is always'), 'no reason or note text in the audit log');
+});
+
+test('archiving keeps the "used" relations of approved reports in the rebuilt view', async () => {
+  const lib = new Library(path.join(home, 'library'));
+  const ref = { db: profile, schema: 'example', category: 'Example Reports', name: 'example-report' };
+  const joinSql = 'select o.order_id from example.orders o join example.customers c on c.customer_id = o.customer_id';
+  lib.saveDraft({ ref, sql: joinSql });
+  const last = { sqlHash: sqlHash(joinSql), summary: { joins: [{ columnPairs: [{ left: 'example.orders.customer_id', right: 'example.customers.customer_id' }] }] } };
+  lib.appendRun('draft', ref, { at: '2026-10-01T08:00:00.000Z', sqlHash: sqlHash(joinSql), durationMs: 5, rows: 1, warnings: [] }, last);
+  const note = memory.addNote(profile, { kind: 'rule', schema: 'example', table: 'customers', text: 'customer_id is the key.' });
+  approveInLibrary(lib, ref, { by: 'viewer', memory: new SchemaMemory(path.join(home, 'memory'), { approvedJoins: p => approvedJoinPairs(lib, p) }) });
+  const usedEdges = () => JSON.parse(fs.readFileSync(path.join(home, 'memory', profile, 'graph.json'), 'utf8')).edges
+    .filter(e => e.level === 'used').map(e => [e.from, e.to, e.columns.join(',')]);
+  assert.deepEqual(usedEdges(), [['example.orders', 'example.customers', 'customer_id']], 'seeded');
+  const res = await post({ profile, id: note.id, reason: 'Outdated' });
+  assert.equal(res.status, 200, res.text);
+  assert.equal(graphNote(note.id).status, 'archived');
+  assert.deepEqual(usedEdges(), [['example.orders', 'example.customers', 'customer_id']], 'still there after the archive');
 });
