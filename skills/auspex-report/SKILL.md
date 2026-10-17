@@ -110,6 +110,13 @@ proposal as below: `<root>/<folder>/<file>.sql` in the user's own convention)
 and pass `root`, `folder` and `fileName` to `save_report` after the yes.
 It writes a new file each time, never overwriting one.
 
+## Scheduled runs (only when the user asks)
+
+Only an approved report can be scheduled; built-in presets only with
+`dateRange: true`. Propose the `schedules.json` entry and let the user edit
+the file and register the task with the printed command; never do either
+yourself. Details: [scheduling.md](references/scheduling.md).
+
 ## Change scripts (only when the user asks for a fix)
 
 A report never changes data. When the user asks for a data fix from its
