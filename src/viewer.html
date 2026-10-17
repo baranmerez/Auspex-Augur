@@ -323,6 +323,15 @@
   @media (max-width: 900px) { .rep.collapsed { grid-template-columns: 1fr; } .rep-rail { position: static; flex-direction: row; justify-content: flex-start; } .rep-rail .rail-label { writing-mode: horizontal-tb; } }
   .rep-group { padding: 8px 12px 2px; font-size: 11px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--text-3); }
   .rep-group .path { text-transform: none; letter-spacing: 0; font-weight: 600; color: var(--text-2); }
+  .rep-node { display: flex; width: 100%; align-items: center; gap: 6px; border: 0; background: none; text-align: left; padding: 7px 12px; font-size: 13px; font-weight: 600; color: var(--text-2); cursor: pointer; }
+  .rep-node:hover { background: var(--surface-2); }
+  .rep-node:focus-visible, .rep-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .rep-node .tw { flex: none; width: 12px; color: var(--text-3); transition: transform .15s; }
+  .rep-node[aria-expanded="true"] .tw { transform: rotate(90deg); }
+  .rep-node .lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rep-node .n { margin-left: auto; flex: none; font-size: 11px; font-weight: 500; color: var(--text-3); }
+  .rep-node.has-sel .lbl { color: var(--accent); }
+  @media (prefers-reduced-motion: reduce) { .rep-node .tw { transition: none; } }
   .rep-item { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 8px 12px 8px 14px; border-left: 3px solid transparent;
     transition: background .15s, border-color .15s; }
   .rep-item:hover { background: var(--surface-2); }
@@ -978,12 +987,12 @@ const state = {
   all: [], days: [], profiles: null,
   tab: 'overview', sort: { key: 'ts', dir: 'desc' }, page: 0, pageSize: 50,
   open: null, live: false, seen: new Set(), firstLoad: true, systemTables: false,
-  db: '', reports: null, reportSel: null, stageFilter: 'all', reportDoc: null,
+  db: '', reports: null, reportSel: null, stageFilter: 'all', reportDoc: null, repTreeOpen: {}, repTreeRevealed: null,
   memory: null, memView: null, memMode: 'graph', memSelBy: {}, memFocusBy: {}, memShowAll: false, memTimeline: false,
   memSchema: '', memErAll: false, memPos: new Map(), schemaKey: null,
 };
 try { Object.assign(state, JSON.parse(localStorage.getItem('auspex.viewer') || '{}'), { all: [], seen: new Set(), firstLoad: true, open: null, reports: null, reportDoc: null, memory: null, memView: null, memPos: new Map() }); } catch {}
-const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy, memHideFaint: state.memHideFaint, memGraph3d: state.memGraph3d, memGraphSoft: state.memGraphSoft, memExpand: state.memExpand, repListCollapsed: state.repListCollapsed, sqlWrap: state.sqlWrap })); } catch {} };
+const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy, memHideFaint: state.memHideFaint, memGraph3d: state.memGraph3d, memGraphSoft: state.memGraphSoft, memExpand: state.memExpand, repListCollapsed: state.repListCollapsed, repTreeOpen: state.repTreeOpen, sqlWrap: state.sqlWrap })); } catch {} };
 
 // In the Tauri desktop app the same routes are served by the Rust `api` command.
 const tauriCore = window.__TAURI__?.core;
@@ -1915,6 +1924,43 @@ function reportMatches(r, query, stageLabel = '') {
   return words.every(w => hay.includes(w));
 }
 // report-filter:end
+// report-tree:start (tests/viewerReportTree.test.js runs this block in isolation)
+// The Reports list as a tree of categories: topic -> subtopic(s) -> reports.
+// A category is up to 3 levels joined by "/" (categoryPath from the library
+// listing, else category split on "/"). db and schema are not tree levels.
+// Every node: { label, path, key, count (reports in its subtree), children, reports };
+// nodes and reports sorted by label/title (Turkish collation, then name).
+function categoryLevels(r) {
+  if (Array.isArray(r.categoryPath) && r.categoryPath.length) return r.categoryPath.map(String);
+  return String(r.category ?? '').split('/').filter(Boolean);
+}
+function buildReportTree(reports) {
+  const make = path => ({ label: path.at(-1) ?? '', path, key: path.join('/'), children: new Map(), reports: [], count: 0 });
+  const root = make([]);
+  for (const r of reports) {
+    let node = root;
+    node.count++;
+    for (const level of categoryLevels(r)) {
+      if (!node.children.has(level)) node.children.set(level, make([...node.path, level]));
+      node = node.children.get(level);
+      node.count++;
+    }
+    node.reports.push(r);
+  }
+  const cmp = (a, b) => String(a ?? '').localeCompare(String(b ?? ''), 'tr');
+  const finish = n => ({
+    label: n.label, path: n.path, key: n.key, count: n.count,
+    children: [...n.children.values()].sort((a, b) => cmp(a.label, b.label)).map(finish),
+    reports: n.reports.slice().sort((a, b) => cmp(a.title, b.title) || cmp(a.name, b.name)),
+  });
+  return finish(root);
+}
+// Open nodes: every node while a filter is active (the tree then only holds
+// matches), otherwise the remembered state (open: { [node key]: true }).
+const isNodeOpen = (node, open, filtering) => filtering || !!open?.[node.key];
+// Node keys of every level of a category, outermost first: a/b -> ['a', 'a/b'].
+const ancestorKeys = levels => levels.map((_, i) => levels.slice(0, i + 1).join('/'));
+// report-tree:end
 // focus-keep:start (tests/viewerFocusKeep.test.js runs this block in isolation)
 // Re-rendering the report list replaces its filter input (live refresh every
 // 5 s, a report finishing loading); these keep its focus and caret, so the
@@ -1957,8 +2003,10 @@ function drawReports() {
   const rq = state.repFilter || '';
   const found = all.filter(r => (!q || [r.title, r.name, r.category, r.schema, r.db, r.description].join(' ').toLowerCase().includes(q))
     && reportMatches(r, rq, t(r.stage)));
-  const list = found.filter(r => state.stageFilter === 'all' || r.stage === state.stageFilter);
-  const count = st => found.filter(r => st === 'all' || r.stage === st).length;
+  // Change scripts are only in their own tab, never in "All".
+  const inTab = (r, st) => (st === 'all' ? r.stage !== 'execute' : r.stage === st);
+  const list = found.filter(r => inTab(r, state.stageFilter));
+  const count = st => found.filter(r => inTab(r, st)).length;
   const toggleList = () => { state.repListCollapsed = !state.repListCollapsed; state.reportViewNode = null; persist(); renderReports(); };
   if (state.repListCollapsed) {
     const selectedRep = all.find(r => repKey(r) === state.reportSel);
@@ -1975,28 +2023,57 @@ function drawReports() {
     h('button', { class: 'icon-btn sm', 'aria-expanded': 'true', title: t('Hide the report list'), onclick: toggleList }, '«'),
     h('input', { id: 'repFilter', class: 'rep-filter', type: 'search', value: rq, placeholder: t('Filter by name, category or stage'), 'aria-label': t('Filter reports'),
       oninput: ev => { state.repFilter = ev.target.value; renderReports(); } }));
-  const groups = new Map();
-  for (const r of list) {
-    const key = (state.db ? '' : r.db + ' › ') + r.schema + ' › ' + r.category;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(r);
+  const selectedRep = all.find(r => repKey(r) === state.reportSel);
+  // A newly selected report is revealed once: its category levels open.
+  if (selectedRep && state.repTreeRevealed !== state.reportSel) {
+    state.repTreeOpen = { ...(state.repTreeOpen || {}) };
+    for (const k of ancestorKeys(categoryLevels(selectedRep))) state.repTreeOpen[k] = true;
+    state.repTreeRevealed = state.reportSel;
+    persist();
   }
+  const filtering = !!(q || rq.trim());
+  const selLevels = selectedRep ? ancestorKeys(categoryLevels(selectedRep)) : [];
+  const toggleNode = (node, open) => {
+    state.repTreeOpen = { ...(state.repTreeOpen || {}), [node.key]: open };
+    if (!open) delete state.repTreeOpen[node.key];
+    persist();
+    renderReports();
+    const el = document.querySelector(`.rep-node[data-node="${CSS.escape(node.key)}"]`);
+    if (el) el.focus({ preventScroll: true });
+  };
+  const reportItem = (r, depth) => {
+    const lr = r.lastRun;
+    const on = state.reportSel === repKey(r);
+    return h('button', { class: 'rep-item' + (on ? ' on' : ''), style: `padding-left:${14 + depth * 14}px`, onclick: () => loadReport(r), title: r.description || r.title,
+      'aria-current': on ? 'true' : null },
+      h('div', { class: 't' }, r.title, h('span', { class: 'badge ' + r.stage }, t(r.stage))),
+      h('div', { class: 's' },
+        h('span', {}, (state.db ? '' : r.db + ' › ') + r.schema),
+        r.versions ? h('span', {}, `v${r.versions}`) : null,
+        lr ? h('span', {}, `${lr.analyzed === false ? t('estimated plan') : fmtMs(lr.durationMs)} · ${t('{n} rows', { n: fmt(lr.rows) })}`) : (r.stage === 'execute' ? h('span', {}, t('not run by Auspex')) : h('span', {}, t('not run yet'))),
+        lr?.warnings ? h('span', { style: 'color:var(--warn-ink)' }, `⚠ ${lr.warnings}`) : null,
+        h('span', {}, ago(lr?.at || r.updatedAt))));
+  };
+  const nodeView = (node, depth) => {
+    const open = isNodeOpen(node, state.repTreeOpen, filtering);
+    const groupId = 'repNode-' + encodeURIComponent(node.key).replace(/[^A-Za-z0-9_-]/g, '_');
+    const head = h('button', { class: 'rep-node' + (selLevels.includes(node.key) ? ' has-sel' : ''), style: `padding-left:${12 + depth * 14}px`,
+      'aria-expanded': open ? 'true' : 'false', 'aria-controls': open ? groupId : null, 'data-node': node.key, title: node.path.join(' › '),
+      onclick: () => { if (!filtering) toggleNode(node, !open); },
+      onkeydown: ev => {
+        if (filtering) return;
+        if (ev.key === 'ArrowRight' && !open) { ev.preventDefault(); toggleNode(node, true); }
+        else if (ev.key === 'ArrowLeft' && open) { ev.preventDefault(); toggleNode(node, false); }
+      } },
+      h('span', { class: 'tw', 'aria-hidden': 'true' }, '▸'), h('span', { class: 'lbl' }, node.label), h('span', { class: 'n' }, fmt(node.count)));
+    return [head, open ? h('div', { id: groupId, role: 'group', 'aria-label': node.path.join(' › ') },
+      node.children.map(c => nodeView(c, depth + 1)), node.reports.map(r => reportItem(r, depth + 1))) : null];
+  };
+  const tree = buildReportTree(list);
   const left = h('div', { class: 'panel rep-list' }, stagebar,
-    list.length ? [...groups.keys()].sort((a, b) => a.localeCompare(b, 'tr')).map(key => [
-      h('div', { class: 'rep-group' }, h('span', { class: 'path' }, key)),
-      groups.get(key).sort((a, b) => String(a.title).localeCompare(String(b.title), 'tr')).map(r => {
-        const lr = r.lastRun;
-        return h('button', { class: 'rep-item' + (state.reportSel === repKey(r) ? ' on' : ''), onclick: () => loadReport(r), title: r.description || r.title },
-          h('div', { class: 't' }, r.title, h('span', { class: 'badge ' + r.stage }, t(r.stage))),
-          h('div', { class: 's' },
-            r.versions ? h('span', {}, `v${r.versions}`) : null,
-            lr ? h('span', {}, `${lr.analyzed === false ? t('estimated plan') : fmtMs(lr.durationMs)} · ${t('{n} rows', { n: fmt(lr.rows) })}`) : (r.stage === 'execute' ? h('span', {}, t('not run by Auspex')) : h('span', {}, t('not run yet'))),
-            lr?.warnings ? h('span', { style: 'color:var(--warn-ink)' }, `⚠ ${lr.warnings}`) : null,
-            h('span', {}, ago(lr?.at || r.updatedAt))));
-      })]) : h('div', { class: 'rep-empty' }, t('No reports match.')));
-  const selected = all.find(r => repKey(r) === state.reportSel);
-  if (selected && (!state.reportDoc || state.reportDoc.key !== state.reportSel)) { loadReport(selected); return; }
-  put($('v-reports'), h('div', { class: 'rep' }, left, reportView(selected)));
+    list.length ? [tree.children.map(c => nodeView(c, 0)), tree.reports.map(r => reportItem(r, 0))] : h('div', { class: 'rep-empty' }, t('No reports match.')));
+  if (selectedRep && (!state.reportDoc || state.reportDoc.key !== state.reportSel)) { loadReport(selectedRep); return; }
+  put($('v-reports'), h('div', { class: 'rep' }, left, reportView(selectedRep)));
 }
 
 // ---------- schema memory ----------
