@@ -1960,6 +1960,13 @@ function buildReportTree(reports) {
 const isNodeOpen = (node, open, filtering) => filtering || !!open?.[node.key];
 // Node keys of every level of a category, outermost first: a/b -> ['a', 'a/b'].
 const ancestorKeys = levels => levels.map((_, i) => levels.slice(0, i + 1).join('/'));
+// Stage tabs: change scripts are only in their own tab, never in "All"; the
+// Reports tab badge counts what "All" shows.
+const inStageTab = (r, st) => (st === 'all' ? r.stage !== 'execute' : r.stage === st);
+const stageTabCount = (reports, st) => reports.filter(r => inStageTab(r, st)).length;
+// The tab that shows the selected report: a change script selected while
+// "All" is on switches to the change-script tab; otherwise the tab stays.
+const stageTabFor = (selected, st) => (st === 'all' && selected?.stage === 'execute' ? 'execute' : st);
 // report-tree:end
 // focus-keep:start (tests/viewerFocusKeep.test.js runs this block in isolation)
 // Re-rendering the report list replaces its filter input (live refresh every
@@ -1989,7 +1996,8 @@ function renderReports() {
 function drawReports() {
   const data = state.reports;
   const all = (data?.reports || []).filter(r => !state.db || r.db === state.db);
-  $('cReports').textContent = all.length ? fmt(all.length) : '';
+  const badge = stageTabCount(all, 'all');
+  $('cReports').textContent = badge ? fmt(badge) : '';
   if (state.tab !== 'reports') return;
   if (data?.error) { put($('v-reports'), h('div', { class: 'panel' }, h('div', { class: 'error-box', style: 'margin:16px' }, t('Could not read the report library: ') + data.error))); return; }
   if (!all.length) {
@@ -2003,10 +2011,10 @@ function drawReports() {
   const rq = state.repFilter || '';
   const found = all.filter(r => (!q || [r.title, r.name, r.category, r.schema, r.db, r.description].join(' ').toLowerCase().includes(q))
     && reportMatches(r, rq, t(r.stage)));
-  // Change scripts are only in their own tab, never in "All".
-  const inTab = (r, st) => (st === 'all' ? r.stage !== 'execute' : r.stage === st);
-  const list = found.filter(r => inTab(r, state.stageFilter));
-  const count = st => found.filter(r => inTab(r, st)).length;
+  const selectedTab = stageTabFor(all.find(r => repKey(r) === state.reportSel), state.stageFilter);
+  if (selectedTab !== state.stageFilter) { state.stageFilter = selectedTab; persist(); }
+  const list = found.filter(r => inStageTab(r, state.stageFilter));
+  const count = st => found.filter(r => inStageTab(r, st)).length;
   const toggleList = () => { state.repListCollapsed = !state.repListCollapsed; state.reportViewNode = null; persist(); renderReports(); };
   if (state.repListCollapsed) {
     const selectedRep = all.find(r => repKey(r) === state.reportSel);
