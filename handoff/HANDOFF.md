@@ -303,7 +303,11 @@ outside the repository. The current setup is described in
   cannot start, not on a non-zero exit code; the printed task therefore has
   a second daily trigger 30 minutes later, and `run-due` is a no-op for
   slots that already succeeded. Only the most recent due slot of a schedule
-  is caught up, not every missed one. Totals in trend points come from the
+  is caught up, not every missed one. The task's time is fixed at
+  registration: re-run `task-command` after changing times; it passes
+  `AUSPEX_HOME` as `--home`, and profiles must be in `profiles.json` or
+  user-level `AUSPEX_DB_*` variables. The run lock (`scheduler.lock`) uses
+  `src/fileLock.js` with a 3 h hold limit. Totals in trend points come from the
   stored preview (kept only when it holds every row). No threshold alerts
   yet.
 

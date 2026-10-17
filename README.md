@@ -617,12 +617,19 @@ cadence rejects the whole file, so a typo never silently drops a schedule.
 |---|---|
 | `run-due` | Runs every enabled schedule whose most recent due slot has passed and has no successful run yet (catch-up: a PC that was off on Monday runs Monday's slot on Tuesday). |
 | `run --id <id>` | Runs one schedule now (manual). Adds no trend point and leaves the due slot open. |
-| `status` | Lists the schedules with problems (not approved, preset not usable), last result and next slot. No database access. |
+| `status` | Lists the schedules with problems (not approved, preset not usable), last result and next slot, and warns about an enabled schedule due later than the task time (the daily task would run it only the next day). No database access. |
 | `task-command` | Prints the PowerShell commands that register the daily task. It does not run them. |
+
+Each command takes `--home <absolute folder>` to use that folder as
+`AUSPEX_HOME`.
 
 Exit codes: `0` every run succeeded or nothing was due, `1` at least one run
 was skipped or failed, `2` usage or schedule-file error, `3` another scheduler
-run is in progress.
+run is in progress. One scheduler runs at a time, under the same lock rules
+as the library (`<home>/scheduler.lock`; a lock left by a dead process is
+taken over). A lock held longer than the task's 2 h limit is reported with a
+notification, and one older than 3 h is taken over even when its process id
+looks alive (a process id reused after a reboot).
 
 **Period of a catch-up run:** the preset is resolved against the date of the
 due slot, not the time the run happens. A catch-up on Tuesday for Monday's
@@ -653,7 +660,7 @@ prints commands like these (paths and time from your setup); review them and
 run them yourself in PowerShell:
 
 ```powershell
-$action = New-ScheduledTaskAction -Execute 'C:\Program Files\nodejs\node.exe' -Argument '"C:\example\auspex\src\scheduleCli.js" run-due' -WorkingDirectory 'C:\example\auspex'
+$action = New-ScheduledTaskAction -Execute 'C:\Program Files\nodejs\node.exe' -Argument '"C:\example\auspex\src\scheduleCli.js" run-due --home "C:\example\auspex-home"' -WorkingDirectory 'C:\example\auspex'
 $triggers = @((New-ScheduledTaskTrigger -Daily -At '08:00'), (New-ScheduledTaskTrigger -Daily -At '08:30'))
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 1 -RestartInterval (New-TimeSpan -Minutes 30) -ExecutionTimeLimit (New-TimeSpan -Hours 2) -MultipleInstances IgnoreNew
 Register-ScheduledTask -TaskName 'Auspex scheduled reports' -Description 'Runs due Auspex report schedules (read-only).' -Action $action -Trigger $triggers -Settings $settings
@@ -667,6 +674,20 @@ failed. `-StartWhenAvailable` runs a missed task after the PC wakes up. The
 task runs as the current user and only while that user is signed in, which
 the notifications need. On other systems, use your own scheduler (for
 example cron) to run `run-due` once a day.
+
+**Re-register after changing times.** The task time is fixed when you
+register it: `taskTime`, or by default the latest `at` of the enabled
+schedules. After adding a schedule or changing a time, run `task-command`
+again and register the task again (`status` warns about a schedule due later
+than `taskTime`).
+
+**Environment of the task:** a scheduled task does not inherit settings made
+only in your MCP client's configuration or in your shell. When `AUSPEX_HOME`
+is set, the printed action passes it as `--home`. Every profile a schedule
+uses must be readable by the task: put it into `profiles.json` (passwords
+stay in pgpass), or set its `AUSPEX_DB_<NAME>` variable as a user environment
+variable. `task-command` names, never prints, the `AUSPEX_DB_*` and other
+`AUSPEX_*` variables of the current shell that the task will not see.
 
 **Notifications:** on Windows a toast with the report title and the status
 (`ok`, skipped because the database was unreachable, or failed with its error
