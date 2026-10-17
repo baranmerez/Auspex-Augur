@@ -21,6 +21,10 @@ schedule file or registers a task for the user. Propose; the user does it.
   to run `node src/scheduleCli.js status` to check the entry and
   `node src/scheduleCli.js task-command`, which prints the Task Scheduler
   commands for them to review and run. Never run those commands yourself.
+  After a new schedule or a changed time, remind them to run `task-command`
+  again and re-register the task. Profiles a schedule uses must be in
+  `profiles.json` (or user-level `AUSPEX_DB_*` variables): the task does not
+  see settings that exist only in the MCP client configuration.
 - Results land in the report's run history, a trend file of aggregates and
   a notification with the title and status; the viewer shows the last
   scheduled result and the trend.
