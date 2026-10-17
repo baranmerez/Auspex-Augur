@@ -373,6 +373,10 @@ Merged work:
   error suggests a number only when the folder already numbers its files.
 - 2026-10-17: the stale-by-age lock takeover test got a longer waitMs so slow
   Windows runners cannot exhaust it (PR #55).
+- 2026-10-17 (external review): approve/revoke are bound to the reviewed SQL
+  hash (`expectedHash`, required in viewer/desktop/stage CLI, optional in
+  `approve_report`; mismatch is `STALE_VERSION`), and a malformed viewer
+  request target is answered with 400 instead of stopping the viewer.
 
 Working agreements:
 

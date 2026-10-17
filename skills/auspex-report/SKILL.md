@@ -78,8 +78,10 @@ late one.
 9. **Hand over.** Summary: row count, totals, timings, warnings, the HTML
    path, rules and codes applied, assumptions. Ask for approval; iterate
    with new SQL versions via `save_report`.
-10. **After approval:** `approve_report`. Mention `unexploredNeighbors` and
-    ask before exploring them.
+10. **After approval:** `approve_report` with `expectedHash` set to the
+    `sqlHash` of the version you showed the user (from `save_report` or
+    `run_report`); on `STALE_VERSION` show the new version and ask again.
+    Mention `unexploredNeighbors` and ask before exploring them.
 
 ## Reconcile before handing over
 
