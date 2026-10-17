@@ -12,7 +12,7 @@ const block = page.match(/\/\/ data-dictionary:start[\s\S]*?\/\/ data-dictionary
 function load() {
   assert.ok(block, 'data-dictionary block found in viewer.html');
   const context = vm.createContext({ JSON, Map });
-  vm.runInContext(`${block}\nthis.dictionaryModel = dictionaryModel; this.dictionaryHtml = dictionaryHtml; this.dictionaryMarkdown = dictionaryMarkdown; this.dictionaryFileName = dictionaryFileName;`, context);
+  vm.runInContext(`${block}\nthis.dictionaryModel = dictionaryModel; this.dictionaryHtml = dictionaryHtml; this.dictionaryMarkdown = dictionaryMarkdown; this.dictionaryFileName = dictionaryFileName; this.dictionaryMissing = dictionaryMissing;`, context);
   return context;
 }
 
@@ -121,4 +121,17 @@ test('an empty memory still gives a valid document, and the file name is fixed a
   const tr = (s, v = {}) => `TR:${s.replace(/\{(\w+)\}/g, (_, k) => v[k] ?? '')}`;
   assert.ok(dictionaryHtml(empty, tr, 'tr').startsWith('<!doctype html>\n<html lang="tr">'));
   assert.ok(dictionaryHtml(empty, tr, 'tr').includes('TR:Data dictionary: exampledb'));
+});
+
+test('tables whose structure did not load are counted and marked, never silently left incomplete', () => {
+  const { dictionaryModel, dictionaryHtml, dictionaryMarkdown, dictionaryMissing } = load();
+  const m = model();
+  assert.equal(dictionaryMissing(m), 1, 'the table file that failed to load (null)');
+  assert.deepEqual(JSON.parse(JSON.stringify(m.tables.filter(t => t.structureMissing).map(t => t.id))), [`example.${evil}`]);
+  const html = dictionaryHtml(m);
+  assert.equal(html.split('Structure not loaded: comment and key columns are missing.').length - 1, 1);
+  assert.equal(dictionaryMarkdown(m).split('Structure not loaded: comment and key columns are missing.').length - 1, 1);
+  const all = dictionaryModel(graph, new Map(), 'x');
+  assert.equal(dictionaryMissing(all), 3);
+  assert.equal(dictionaryMissing(dictionaryModel({ ...graph, nodes: graph.nodes.filter(n => n.id === 'example.orders') }, tables, 'x')), 0);
 });
