@@ -41,6 +41,8 @@ auspex/
 │   ├── fileLock.js     Cross-process lock for the library and the schema memory
 │   ├── roleCheck.js    Read-only role check on the first call to each profile
 │   ├── viewer.js       Local viewer server (127.0.0.1:4719)
+│   ├── scheduleCli.js  Scheduled report runs: run-due, run, status, task-command
+│   ├── schedule/       schedules.json validation and slots, runner, state/trend files, notifications
 │   ├── viewer.html     Viewer UI (shared by browser and desktop app)
 │   ├── reports/        Report library: library, plan summary, masking, HTML template
 │   └── memory/         Schema memory: store (tables, notes, relations, view) and plan usage
@@ -127,6 +129,10 @@ If `profiles.json` contains a password, Auspex refuses to start.
 ├── exports\        CSV exports
 ├── library\        Report library: _drafts\, SELECT\, EXECUTE\ by db\schema\category
 ├── memory\         Schema memory per profile: tables\, notes.json, changelog.jsonl, graph.json
+├── schedules.json  Report schedules, edited by the user (optional)
+├── schedule-state.json  Last scheduled result per schedule (written by scheduleCli.js)
+├── scheduler.lock  Held while scheduleCli.js runs schedules (one run at a time)
+├── trends\         Trend points per scheduled report: <profile>\<schema>\<category>\<name>.jsonl
 └── analyses\       Optional: analysis output written by agents
 ```
 
@@ -176,17 +182,23 @@ has a hole in that schema.
   Quit. Closing the window minimizes to the tray.
 - Header: database switcher (applies to every tab), EN/TR, theme, and a badge
   for unseen schema changes.
-- Tabs: Overview (stat tiles, activity chart, by profile/tool/table, slowest
-  operations, recent errors), Operations (sort, paging, details, copy,
+- Tabs (seven): Overview (stat tiles, activity chart, by profile/tool/table,
+  slowest operations, recent errors), Operations (sort, paging, details, copy,
   CSV/JSON download with error codes), Tables (accesses extracted from SQL),
   Reports (collapsible topic/subtopic tree with a filter box; report with question
   line, compact metrics strip, warnings badge with a remembered Performance
   details toggle, Approve/Revoke buttons beside the title, sticky tabs,
   Preview first; the preview table sorts, filters, shows a totals row and
   exports CSV;
-  SQL highlighting; copy relayed to the viewer clipboard), Schema (Graph,
-  ER diagram and Flow views, schema picker, notes inspector, change
-  timeline), Profiles. Full window width with one page scroll.
+  SQL highlighting; copy relayed to the viewer clipboard; the report header
+  shows the last run's preset and the presets the report offers, read-only;
+  star-pinned Favorites and the last 8 Recent reports above the tree, kept in
+  browser storage only; Ask Claude copies a prompt about the report without
+  preview values), Schema (Graph, ER diagram and Flow views, schema picker,
+  notes inspector, change timeline; Data dictionary download as HTML or
+  Markdown, built from the schema memory only), Rules (every note of the
+  database with status, kind, table and text filters; Archive with a
+  required reason), Profiles. Full window width with one page scroll.
 - Schema roles: for the selected table, Reference/Instance tables (it points
   at them) and Dependent/Beslenen tables (they point at it), ranked by
   `linkedRows` then estimated rows, with a per-side top-N picker (5, 10, 25,
@@ -201,6 +213,10 @@ has a hole in that schema.
   `render_reports` so library HTML uses the current template.
 - The Schema tab reads `graph.json`, which the memory module rebuilds after
   every change, so the viewer and the Rust app contain no relation logic.
+- Scheduled reports: badge with the last scheduled result in the list,
+  schedule lines in the header and a trend chart (row count, up to four
+  column totals) above the report, from `/api/reports` and the GET route
+  `/api/reports/trend` (no parameter values). Not in the desktop app yet.
 - Binds to 127.0.0.1 only, GET only except the two approval routes and
   `POST /api/memory/archive` (same Host, Origin, per-process token, JSON and
   4 KB checks, audited), foreign Host headers get 403; never connects to a
@@ -209,7 +225,9 @@ has a hole in that schema.
   *Onayı geri al*) with a confirm dialog. The browser viewer POSTs to its
   routes; the desktop app's `approve_report` / `revoke_report` Tauri commands
   run `node <auspexRoot>/src/stageCli.js` (no shell, 30 s timeout), audited
-  with actor `desktop`. Shared logic: `src/reports/stageChange.js`. The
+  with actor `desktop`. Note archiving works the same way: the Rules tab
+  POSTs to `/api/memory/archive` in the browser, and the desktop app's
+  `archive_note` command runs `stageCli.js archive-note`. Shared logic: `src/reports/stageChange.js`. The
   desktop needs Node (PATH or `AUSPEX_NODE`) and `AUSPEX_ROOT` or
   `"auspexRoot"` in profiles.json.
 
@@ -221,8 +239,8 @@ Desktop build: Rust (MSVC toolchain), VS 2022 C++ Build Tools, WebView2;
 
 | Command | Scope | Last result |
 |---|---|---|
-| `npm test` | SQL guard, profiles, config, timeouts, explain, audit and errors (incl. MCP server end to end), reports, change-script lint, CSV export, file lock with child processes, schema memory, catalog batch tools, prompts, skills install, viewer roles (no database) | 547 pass, 1 skipped (2026-10-17, Windows, Node 24) |
-| `npm run test:local` | Local PG16 + `auspex_test` schema: writes rejected by the database, unprivileged table, CTE, stacked statements, timeout, connection drop, EXPLAIN ANALYZE, CSV budget cancellation, search, reports, memory, DDL catalog | 39 pass, 4 skipped (2026-10-17; DDL fixture not applied locally, CI runs them) |
+| `npm test` | SQL guard, profiles, config, timeouts, explain, audit and errors (incl. MCP server end to end), reports, change-script lint, CSV export, file lock with child processes, schema memory, catalog batch tools, prompts, skills install, viewer roles, scheduled runs (no database) | 615 pass, 1 skipped (2026-10-18, Windows, Node 24) |
+| `npm run test:local` | Local PG16 + `auspex_test` schema: writes rejected by the database, unprivileged table, CTE, stacked statements, timeout, connection drop, EXPLAIN ANALYZE, CSV budget cancellation, search, reports, memory, DDL catalog | 39 pass, 4 skipped (2026-10-18; DDL fixture not applied locally, CI runs them) |
 | `cargo test` (in `desktop/src-tauri`) | Path validation and profile rules of the desktop API, report-stage argument validation, CLI result mapping, auspexRoot check, audit line for unknown outcomes | 12/12 (2026-10-17; needs an existing `desktop/dist` folder) |
 
 Local test setup: `scripts/local-test-setup.sql`, then
@@ -280,6 +298,14 @@ outside the repository. The current setup is described in
   during the first exploration, then revoke them or move them behind masked
   views. Report previews are masked by column name; the built-in name lists
   cover English and Turkish, other names go into a report's mask list.
+- **Scheduled runs:** the desktop app (Rust API) does not show schedules
+  or trends yet. Task Scheduler's restart-on-failure applies when a task
+  cannot start, not on a non-zero exit code; the printed task therefore has
+  a second daily trigger 30 minutes later, and `run-due` is a no-op for
+  slots that already succeeded. Only the most recent due slot of a schedule
+  is caught up, not every missed one. Totals in trend points come from the
+  stored preview (kept only when it holds every row). No threshold alerts
+  yet.
 
 ## 12. Next steps
 
@@ -289,6 +315,8 @@ outside the repository. The current setup is described in
    DDL (study a table family, deliver a BEGIN…ROLLBACK script).
 2. Remaining roadmap items are tracked in issue #31.
 3. pgpass deprecation fix; optional desktop file saving and installer.
+4. Scheduled runs: threshold alerts on the trend points after about two
+   weeks of data; schedules and trends in the desktop app.
 
 ## 13. History
 

@@ -561,6 +561,135 @@ moved.
 > anonymization: its preview rows are exactly what the masking left, so check
 > them before sending.
 
+## ⏰ Scheduled runs
+
+An approved report can run on a schedule, for example every Monday at 08:00
+for the last seven days. Auspex itself never registers or changes a
+scheduled task: you edit the schedule file and register one daily task
+yourself with the command Auspex prints.
+
+**Schedule file:** `<AUSPEX_HOME or ~/.auspex>/schedules.json`, edited by you:
+
+```json
+{
+  "schedules": [
+    {
+      "id": "weekly-example",
+      "profile": "exampledb",
+      "report": { "db": "exampledb", "schema": "example", "category": "Orders/Delivery", "name": "example-report" },
+      "preset": "last_7_days",
+      "cadence": { "weekly": "monday", "at": "08:00" }
+    },
+    {
+      "id": "daily-example",
+      "profile": "exampledb",
+      "report": { "db": "exampledb", "schema": "example", "category": "Orders", "name": "example-daily" },
+      "preset": "yesterday",
+      "cadence": { "daily": true, "at": "07:30" }
+    }
+  ]
+}
+```
+
+- `id`: 1-60 characters `a-z`, `0-9`, `-`, `_`; unique.
+- `profile`: required, there is no default; it must be the report's `db`.
+- `report`: the location exactly as `list_reports` shows it. Only
+  **approved** reports run; a draft (or a report that is not found) is
+  recorded as `failed` without a database call. A newer draft of an approved
+  report does not change what runs: the scheduler always runs the approved
+  SQL.
+- `preset`: a built-in date preset (`today`, `yesterday`, `last_7_days`,
+  `this_month`, `last_month`, `this_year`, `last_year`; only for reports saved
+  with `dateRange: true`) or one of the report's custom presets. Leave it out
+  only for SQL without parameters.
+- `cadence`: `{ "weekly": "<weekday in English>", "at": "HH:MM" }` or
+  `{ "daily": true, "at": "HH:MM" }`, local time of the machine.
+- Optional: `"enabled": false` on a schedule; top-level `"taskTime": "HH:MM"`
+  (time of the daily task, default the latest `at` of the enabled schedules)
+  and `"notify": "all" | "failures" | "none"` (default `all`).
+
+Validation is strict: an unknown key, a missing profile or a malformed
+cadence rejects the whole file, so a typo never silently drops a schedule.
+
+**Commands** (`node src/scheduleCli.js ...`, no shell, prints JSON):
+
+| Command | What it does |
+|---|---|
+| `run-due` | Runs every enabled schedule whose most recent due slot has passed and has no successful run yet (catch-up: a PC that was off on Monday runs Monday's slot on Tuesday). |
+| `run --id <id>` | Runs one schedule now (manual). Adds no trend point and leaves the due slot open. |
+| `status` | Lists the schedules with problems (not approved, preset not usable), last result and next slot. No database access. |
+| `task-command` | Prints the PowerShell commands that register the daily task. It does not run them. |
+
+Exit codes: `0` every run succeeded or nothing was due, `1` at least one run
+was skipped or failed, `2` usage or schedule-file error, `3` another scheduler
+run is in progress.
+
+**Period of a catch-up run:** the preset is resolved against the date of the
+due slot, not the time the run happens. A catch-up on Tuesday for Monday's
+08:00 slot gets the same `last_7_days` as a run on Monday would have.
+Slots are local wall-clock times computed with calendar arithmetic, so a
+daylight saving change does not move a slot to another day or hour.
+
+**Same path as `run_report`:** every scheduled run goes through the report
+service and `ReadOnlyDatabase` (SQL guard, `READ ONLY` transaction, role
+check, query budget, statement timeout), appends to the report's run history
+and regenerates its HTML. Its audit entries carry source and actor
+`scheduler`, plus one `schedule_run` entry per schedule with its status.
+
+**Unreachable database and retries:** when the database cannot be reached
+(connection refused or timed out, DNS failure, for example a VPN that is
+down) the slot is recorded as `skipped-unreachable`; other errors as `failed`
+with their error code. Both send a notification and end with exit code 1.
+The task retries 30 minutes later, and the next daily `run-due` catches up a
+slot that is still open.
+
+**Registering the task (Windows):**
+
+```bash
+node src/scheduleCli.js task-command
+```
+
+prints commands like these (paths and time from your setup); review them and
+run them yourself in PowerShell:
+
+```powershell
+$action = New-ScheduledTaskAction -Execute 'C:\Program Files\nodejs\node.exe' -Argument '"C:\example\auspex\src\scheduleCli.js" run-due' -WorkingDirectory 'C:\example\auspex'
+$triggers = @((New-ScheduledTaskTrigger -Daily -At '08:00'), (New-ScheduledTaskTrigger -Daily -At '08:30'))
+$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 1 -RestartInterval (New-TimeSpan -Minutes 30) -ExecutionTimeLimit (New-TimeSpan -Hours 2) -MultipleInstances IgnoreNew
+Register-ScheduledTask -TaskName 'Auspex scheduled reports' -Description 'Runs due Auspex report schedules (read-only).' -Action $action -Trigger $triggers -Settings $settings
+```
+
+The task restarts once after 30 minutes when it fails. Task Scheduler applies
+that setting when the task cannot start, not on a non-zero exit code, so the
+command adds a second daily trigger 30 minutes later: `run-due` is a no-op
+for slots that already succeeded and retries the ones that were skipped or
+failed. `-StartWhenAvailable` runs a missed task after the PC wakes up. The
+task runs as the current user and only while that user is signed in, which
+the notifications need. On other systems, use your own scheduler (for
+example cron) to run `run-due` once a day.
+
+**Notifications:** on Windows a toast with the report title and the status
+(`ok`, skipped because the database was unreachable, or failed with its error
+code). Never data values, SQL, parameters or error messages. The text is
+passed to PowerShell through environment variables and inserted as XML text
+nodes, never as script. Elsewhere, or when the toast fails, one line on
+stderr. A notification never fails a run.
+
+**Trend history:** after each successful scheduled run Auspex appends one
+point to `<home>/trends/<profile>/<schema>/<category>/<name>.jsonl`: slot,
+run time, preset, resolved parameters, SQL version, the row count (exact
+from `EXPLAIN ANALYZE` or a complete preview, otherwise `estimatedRows`) and
+the column totals the report page shows under its preview (identifier, code
+and masked columns excluded; kept only when the preview holds every row).
+Aggregates only, never row values. The newest 520 points are kept. There are
+no threshold alerts yet; the point format (one number per series, totals
+keyed by column) is ready for them.
+
+**State:** the last result per schedule is in
+`<home>/schedule-state.json` (status, slot, time, error code; no messages),
+which the viewer reads. The full error message is in the command output and
+the audit log.
+
 ## 🧠 Schema memory
 
 Auspex remembers what it learned about each database in local JSON files
@@ -750,6 +879,18 @@ Opens a local page at http://127.0.0.1:4719 (port: `AUSPEX_VIEWER_PORT`):
   - *Data dictionary* (TR *Veri sözlüğü*) — downloads a self-contained HTML or Markdown document of the database built from the schema memory only (no database access): the explored tables with their comment, key columns (primary key, foreign key, used, noted), relations (Reference/instance and Dependent), active rules and observations (observations with their aggregate figures), and the database-wide rules and observations, with the generation date. Unconfirmed inferences, archived notes and evidence SQL are left out; every name and text is escaped. The file is saved as `auspex-data-dictionary-<db>-<date>.html` or `.md` after a click (when loading the table files took too long, the next click downloads)
 - **Rules** (TR *Kurallar*) — every schema-memory note of the chosen database: rules, observations and inferences with table and column, text, status, confirmed or unconfirmed, created/confirmed/archived dates, and the evidence (figures and SQL) behind a collapsed *Evidence* toggle. Filters: status (active by default, archived, all), kind, table (part of `schema.table`) and text (case-insensitive, Turkish İ/I/ı/i match each other). An active note can be archived with a required reason (see below); adding or confirming notes stays an agent action (`remember`)
 - **Profiles** — configured databases with connection details (never passwords) and the latest role check; a `check_profile` that failed shows "unable to assess" with its code, never as a passed check
+
+Scheduled reports (see Scheduled runs): an approved report with a schedule
+carries a badge in the Reports list with its last scheduled result
+(*scheduled: ok*, *unreachable* or *failed*; the worst one when it has several
+schedules). Its header lists each schedule (cadence, preset, last result with
+its error code, next slot), and above the report a small trend chart shows the
+row count and up to four column totals per scheduled run (one line each with
+its own scale; hover a point for its slot and value). The viewer reads
+`schedules.json`, `schedule-state.json` and the trend files through GET routes
+only (`/api/reports` and `/api/reports/trend`, which leaves out parameter
+values); a broken schedule file is shown above the list. The desktop app does
+not show schedules or trends yet.
 
 The viewer uses the full window width with one page scroll, has an English
 and Turkish interface, and offers ready themes plus a theme generator that
