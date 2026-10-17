@@ -112,3 +112,40 @@ test('inside the viewer the report copy() posts its text to the parent instead o
   vm.runInContext("copy('select 1', 'SQL')", context);
   assert.equal(JSON.stringify(posted), JSON.stringify([[{ auspexReportCopy: 'select 1', auspexReportCopyWhat: 'SQL' }, '*']]));
 });
+
+test('the embed hides the report title, location chips and language/theme controls only inside the viewer', () => {
+  const { css } = loadEmbed();
+  assert.match(css, /\.head h1, \.head \.crumbs \.loc, #lang, #theme \{ display: none !important; \}/);
+  assert.ok(!template.includes('#lang, #theme { display: none'), 'the saved file keeps them');
+});
+
+test('download and performance-toggle messages are relayed; malformed ones are ignored', () => {
+  const { reportMessage, reportCopyMax } = loadEmbed();
+  const dl = reportMessage({ auspexReportDownload: { name: 'a b/../c.csv', text: 'x,y' } });
+  assert.deepEqual({ ...dl.download }, { name: 'a_b_.._c.csv', text: 'x,y' });
+  assert.deepEqual({ ...reportMessage({ auspexReportDownload: { name: '', text: '' } }).download }, { name: 'report.csv', text: '' });
+  assert.deepEqual({ ...reportMessage({ auspexReportDownload: { name: 'a.csv', text: 'x'.repeat(reportCopyMax + 1) } }) }, { copyTooLarge: true });
+  for (const bad of [{ auspexReportDownload: 'x' }, { auspexReportDownload: { name: 1, text: 'x' } }, { auspexReportDownload: { name: 'a', text: 5 } }, { auspexReportPerf: 'yes' }]) {
+    assert.equal(reportMessage(bad), null, JSON.stringify(bad));
+  }
+  assert.deepEqual({ ...reportMessage({ auspexReportPerf: true }) }, { perf: true });
+  assert.deepEqual({ ...reportMessage({ auspexReportPerf: false }) }, { perf: false });
+});
+
+test('inside the viewer the report posts its CSV and toggle state to the parent', () => {
+  const { js } = loadEmbed();
+  const code = js.replace(/^<script[^>]*>/, '').replace(/<\/script>$/, '');
+  const posted = [];
+  const win = {
+    downloadCsv: () => { throw new Error('the frame cannot download'); }, rememberPerf: () => {},
+    parent: { postMessage: (m, o) => posted.push([m, o]) },
+    document: { querySelectorAll: () => [], getElementById: () => null, body: { getBoundingClientRect: () => ({ height: 300 }) } },
+    MutationObserver: class { observe() {} }, ResizeObserver: class { observe() {} }, addEventListener() {},
+  };
+  win.window = win;
+  const context = vm.createContext(win);
+  vm.runInContext(code, context);
+  posted.length = 0;
+  vm.runInContext("downloadCsv('a.csv', 'x,y'); rememberPerf(true)", context);
+  assert.equal(JSON.stringify(posted), JSON.stringify([[{ auspexReportDownload: { name: 'a.csv', text: 'x,y' } }, '*'], [{ auspexReportPerf: true }, '*']]));
+});
