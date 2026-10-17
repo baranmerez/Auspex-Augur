@@ -41,7 +41,7 @@ test('counts: active by kind, archived apart', () => {
 
 test('dates show the day without seconds, in English and Turkish', () => {
   const { ruleDay } = load();
-  const ts = '2026-10-13T12:34:56Z';
+  const ts = '2026-10-13T12:34:56';
   assert.equal(ruleDay(ts, 'en-GB'), '13 Oct 2026');
   assert.equal(ruleDay(ts, 'tr-TR'), '13 Eki 2026');
   assert.doesNotMatch(ruleDay(ts, 'en-GB'), /:/);
@@ -76,4 +76,18 @@ test('Turkish texts exist for the new labels', () => {
   for (const key of ['(table)', 'Observations', '{n} rules', '{n} observations', '{n} archived']) {
     assert.ok(page.includes(`'${key}': '`), `Turkish text for ${key}`);
   }
+});
+
+test('evidence styles also apply to the dense rows, and long SQL stays inside its box', () => {
+  assert.match(page, /\.note \.fig, \.rl-row \.fig \{/);
+  const pre = page.match(/\.note pre, \.rl-row pre \{[^}]*\}/)?.[0];
+  assert.ok(pre, 'pre rule covers .rl-row');
+  assert.match(pre, /var\(--mono\)/);
+  assert.match(pre, /pre-wrap/);
+  assert.match(pre, /max-width: 100%/);
+});
+
+test('the pending archive button spins and the dialog confirm button is the only red one', () => {
+  assert.match(page, /class: 'icon-btn sm' \+ \(pending \? ' spin' : ''\)/);
+  assert.match(page, /'icon-btn secondary-danger', value: 'ok', disabled: true \}, t\('Archive'\)/);
 });
