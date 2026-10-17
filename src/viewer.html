@@ -621,9 +621,31 @@
   .rules-bar .grow { flex: 1; }
   .rules-bar .field { background: var(--bg); }
   .rules-bar .field input[type=search] { width: 200px; max-width: 100%; }
+  .rules-bar .sums { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--text-2); }
+  .rules-bar .sums b { color: var(--text); font-variant-numeric: tabular-nums; }
   .rules-list { padding: 12px 16px 16px; display: grid; gap: 0; }
-  .rules-list h4 { margin: 14px 0 8px; font: 600 12px var(--mono); color: var(--text-2); }
-  .rules-list h4:first-child { margin-top: 0; }
+  .rl-table { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; margin: 18px 0 4px; padding: 8px 12px; background: var(--surface-2); border-radius: 8px; }
+  .rl-table:first-child { margin-top: 0; }
+  .rl-table h4 { margin: 0; font: 600 15px var(--mono); color: var(--text); word-break: break-all; }
+  .rl-table .cnt { font-size: 12px; color: var(--text-2); }
+  .rl-col { margin: 12px 0 2px 12px; font: 600 13px var(--mono); color: var(--text-2); word-break: break-all; }
+  .rl-row { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 4px 12px; align-items: start; padding: 8px 12px; border-top: 1px solid var(--line); }
+  .rl-col + .rl-row, .rl-table + .rl-row { border-top: 0; }
+  .rl-row .badge { justify-content: center; margin-top: 3px; }
+  .rl-row .badge.inference { border: 1px dashed var(--warn-ink); }
+  .rl-text { font-size: 15px; line-height: 1.55; max-width: 70ch; overflow-wrap: anywhere; }
+  .rl-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; margin-top: 2px; font-size: 12px; color: var(--text-2); }
+  .rl-meta > * + *::before { content: "·"; margin-right: 6px; }
+  .rl-meta details { display: inline-block; }
+  .rl-meta summary { cursor: pointer; color: var(--accent-ink); display: inline; }
+  .rl-meta details[open] { display: block; flex-basis: 100%; }
+  .rl-meta details[open]::before { content: none; }
+  .rl-row.archived .rl-text { color: var(--text-2); }
+  .rl-row.archived .badge { opacity: .7; }
+  .rl-act .icon-btn { padding: 4px; width: 28px; height: 28px; justify-content: center; color: var(--text-2); }
+  .rl-act .icon-btn:hover { color: var(--text); background: var(--surface-2); }
+  .rl-act svg { width: 15px; height: 15px; }
+  @media (max-width: 560px) { .rl-row { grid-template-columns: 80px minmax(0, 1fr) auto; gap: 4px 8px; padding: 8px 4px; } .rl-col { margin-left: 4px; } }
   .note .nh .tgt { font: 11px var(--mono); color: var(--accent-ink); }
   .note .na { display: flex; justify-content: flex-end; margin-top: 6px; }
   .note details > summary { font-size: 12px; cursor: pointer; margin-top: 4px; color: var(--text-3); }
@@ -785,6 +807,8 @@ const put = (node, ...kids) => node.replaceChildren(...kids.flat(Infinity).filte
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 // ---------- i18n (English is the key; Turkish is the translation) ----------
 const TR = {
+  '(table)': '(tablo)', 'Observations': 'Gözlemler', '{n} rule': '{n} kural', '{n} rules': '{n} kural', '{n} observation': '{n} gözlem', '{n} observations': '{n} gözlem',
+  '{n} inference': '{n} çıkarım', '{n} inferences': '{n} çıkarım', '{n} archived': '{n} arşivli', 'Counts follow the filters, except the status switch.': 'Sayılar durum seçimi dışındaki filtreleri izler.',
   'Rules': 'Kurallar', 'Kind': 'Tür', 'Table': 'Tablo', 'Active': 'Aktif', 'Archived': 'Arşivlenmiş',
   'Filter by table': 'Tabloya göre süz', 'Search note text': 'Not metninde ara', 'No notes match the filters.': 'Filtrelere uyan not yok.',
   'No notes for {db} yet': '{db} için henüz not yok', 'Notes are added by your agent (remember): rules you state, observations from data and its own inferences.': 'Notları ajanınız ekler (remember): sizin söylediğiniz kurallar, veriden gözlemler ve kendi çıkarımları.',
@@ -3934,6 +3958,7 @@ function ruleMatches(n, f = {}) {
 const ruleKindOrder = { rule: 0, observation: 1, inference: 2 };
 // Database-wide notes first, then by table, kind and id.
 const ruleSort = (a, b) => (a.table ? 1 : 0) - (b.table ? 1 : 0) || ruleTarget(a).localeCompare(ruleTarget(b))
+  || (a.column ? 1 : 0) - (b.column ? 1 : 0) || String(a.column || '').localeCompare(String(b.column || ''))
   || (ruleKindOrder[a.kind] ?? 3) - (ruleKindOrder[b.kind] ?? 3) || a.id - b.id;
 const filterRules = (notes, f) => (Array.isArray(notes) ? notes : []).filter(n => ruleMatches(n, f)).sort(ruleSort);
 // Groups of the filtered list, one per target ('' = database-wide), in order.
@@ -3944,8 +3969,28 @@ function groupRules(list) {
     if (!groups.length || groups[groups.length - 1].key !== key) groups.push({ key, notes: [] });
     groups[groups.length - 1].notes.push(n);
   }
+  // Within a group: sub-groups per column ('' = table-level notes, first).
+  for (const g of groups) {
+    g.columns = [];
+    for (const n of g.notes) {
+      const col = n.column || '';
+      if (!g.columns.length || g.columns[g.columns.length - 1].column !== col) g.columns.push({ column: col, notes: [] });
+      g.columns[g.columns.length - 1].notes.push(n);
+    }
+  }
   return groups;
 }
+// Counts by kind of active notes, plus archived ones.
+function ruleCounts(list) {
+  const c = { rule: 0, observation: 0, inference: 0, archived: 0 };
+  for (const n of Array.isArray(list) ? list : []) { if (n.status === 'active') c[n.kind] = (c[n.kind] || 0) + 1; else c.archived++; }
+  return c;
+}
+// "13 Oct 2026" / "13 Eki 2026": a day without time of day.
+const ruleDay = (ts, loc) => {
+  const d = ts ? new Date(ts) : null;
+  return d && !Number.isNaN(d.getTime()) ? d.toLocaleDateString(loc, { day: 'numeric', month: 'short', year: 'numeric' }) : '?';
+};
 // rules-list:end
 
 // note-archive:start (tests/viewerRules.test.js runs this block with stage-change)
@@ -3988,26 +4033,37 @@ async function invokeArchiveNote(invoke, req) {
 function ruleCard(n) {
   const fig = n.evidence?.figures;
   const sql = n.evidence?.sql;
-  const day = ts => (ts ? dateTimeOf(ts) : '?');
+  const day = ts => ruleDay(ts, locale);
   const pending = state.archivePending === n.id;
-  return h('div', { class: `note ${n.kind}${n.status !== 'active' ? ' archived' : ''}` },
-    h('div', { class: 'nh' },
-      h('span', { class: 'badge ' + n.kind }, t(n.kind)),
-      n.table ? h('span', { class: 'tgt' }, ruleTarget(n)) : null,
-      n.column ? h('code', {}, n.column) : null,
-      h('span', {}, '#' + n.id),
-      n.kind === 'inference' ? h('span', {}, t('unconfirmed')) : null,
-      n.confirmedAt ? h('span', {}, t('confirmed {d}', { d: day(n.confirmedAt) })) : null,
-      n.asOf ? h('span', {}, t('as of {d}', { d: n.asOf })) : null,
-      h('span', {}, t('created {d}', { d: day(n.createdAt) })),
-      n.status !== 'active' ? h('span', {}, t('archived {d}', { d: day(n.archivedAt) })) : null),
-    h('div', {}, n.text),
-    n.archivedReason ? h('div', { class: 'muted', style: 'font-size:12px;margin-top:4px' }, t('Archived: ') + n.archivedReason) : null,
-    fig || sql ? h('details', {}, h('summary', {}, t('Evidence')),
-      fig ? h('div', { class: 'fig' }, Object.entries(fig).map(([k, v]) => h('span', {}, `${k}: ${typeof v === 'number' ? fmt(v) : v}`))) : null,
-      sql ? h('pre', {}, sql) : null) : null,
-    n.status === 'active' ? h('div', { class: 'na' }, h('button', { class: 'icon-btn sm secondary-danger', disabled: !!state.archivePending, 'aria-busy': pending ? 'true' : null,
-      onclick: () => confirmArchiveNote(n) }, pending ? t('Working…') : t('Archive'))) : null);
+  const active = n.status === 'active';
+  const evidence = fig || sql ? h('details', {}, h('summary', {}, t('Evidence')),
+    fig ? h('div', { class: 'fig' }, Object.entries(fig).map(([k, v]) => h('span', {}, `${k}: ${typeof v === 'number' ? fmt(v) : v}`))) : null,
+    sql ? h('pre', {}, sql) : null) : null;
+  const icon = svg('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.8', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' },
+    svg('rect', { x: 3, y: 4, width: 18, height: 4, rx: 1 }), svg('path', { d: 'M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4' }));
+  return h('div', { class: `rl-row ${n.kind}${active ? '' : ' archived'}` },
+    h('span', { class: 'badge ' + n.kind }, t(n.kind)),
+    h('div', {},
+      h('div', { class: 'rl-text' }, n.text),
+      h('div', { class: 'rl-meta' },
+        h('span', {}, '#' + n.id),
+        h('span', {}, day(n.createdAt)),
+        n.kind === 'inference' ? h('span', {}, t('unconfirmed')) : null,
+        n.confirmedAt ? h('span', {}, t('confirmed {d}', { d: day(n.confirmedAt) })) : null,
+        n.asOf ? h('span', {}, t('as of {d}', { d: n.asOf })) : null,
+        active ? null : h('span', {}, t('archived {d}', { d: day(n.archivedAt) })),
+        n.archivedReason ? h('span', {}, t('Archived: ') + n.archivedReason) : null,
+        evidence)),
+    h('div', { class: 'rl-act' }, active
+      ? h('button', { class: 'icon-btn sm', disabled: !!state.archivePending, 'aria-busy': pending ? 'true' : null,
+        'aria-label': t('Archive'), title: t('Archive'), onclick: () => confirmArchiveNote(n) }, icon)
+      : null));
+}
+const ruleCountText = c => [['rule', '{n} rule', '{n} rules'], ['observation', '{n} observation', '{n} observations'], ['inference', '{n} inference', '{n} inferences'], ['archived', '{n} archived', '{n} archived']]
+  .filter(([k]) => c[k]).map(([k, one, many]) => t(c[k] === 1 ? one : many, { n: fmt(c[k]) })).join(' · ');
+function ruleGroup(g) {
+  return [h('div', { class: 'rl-table' }, h('h4', {}, g.key || t('Database-wide')), h('span', { class: 'cnt' }, ruleCountText(ruleCounts(g.notes)))),
+    g.columns.map(c => [c.column || g.key ? h('div', { class: 'rl-col' }, c.column || t('(table)')) : null, c.notes.map(ruleCard)])];
 }
 
 function renderRules() {
@@ -4038,6 +4094,8 @@ function renderRules() {
   const focus = ['rulesText', 'rulesTable'].map(id => [id, captureFocus(document, id)]);
   const notes = mv.data.notes || [];
   const list = filterRules(notes, f);
+  // Counters: the current filters apply except the status switch.
+  const sums = ruleCounts(filterRules(notes, { ...f, status: 'all' }));
   const set = (k, v) => { state.rulesFilter = { ...state.rulesFilter, [k]: v }; renderRules(); };
   const kindSel = h('select', { onchange: ev => set('kind', ev.target.value), 'aria-label': t('Kind') },
     h('option', { value: '' }, t('All')), ruleKinds.map(k => h('option', { value: k }, t(k))));
@@ -4051,12 +4109,14 @@ function renderRules() {
     h('div', { class: 'field' }, h('label', { for: 'rulesText' }, t('Search')),
       h('input', { id: 'rulesText', type: 'search', value: f.q, placeholder: t('Search note text'), oninput: ev => set('q', ev.target.value) })),
     h('span', { class: 'grow' }),
-    h('span', { class: 'muted', style: 'font-size:12px' }, t('{n} notes', { n: fmt(list.length) }))));
+    h('div', { class: 'sums', title: t('Counts follow the filters, except the status switch.') },
+      [['Rules', sums.rule], ['Observations', sums.observation], ['Archived', sums.archived]].map(([k, v]) => h('span', {}, t(k) + ' ', h('b', {}, fmt(v)))),
+      sums.inference ? h('span', {}, t('inference') + ' ', h('b', {}, fmt(sums.inference))) : null)));
   const body = !notes.length
     ? h('div', { class: 'rep-empty' }, h('b', {}, t('No notes for {db} yet', { db: state.db })),
       h('p', {}, t('Notes are added by your agent (remember): rules you state, observations from data and its own inferences.')))
     : list.length
-      ? h('div', { class: 'rules-list' }, groupRules(list).map(g => [h('h4', {}, g.key || t('Database-wide')), g.notes.map(ruleCard)]),
+      ? h('div', { class: 'rules-list' }, groupRules(list).map(ruleGroup),
         h('div', { class: 'muted', style: 'font-size:12px;margin-top:8px' }, t('Adding or confirming notes stays with your agent.')))
       : emptyState(t('No notes match the filters.'));
   put(view, h('div', { class: 'stack' }, bar, h('div', { class: 'panel' }, body)));
