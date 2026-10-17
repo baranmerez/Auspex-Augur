@@ -103,13 +103,14 @@ export class ScheduleRunner {
       title = check.title;
       if (check.problem) throw new ToolError(check.code, check.problem);
       const result = await this.db.withCorrelation(correlationId, () => this.reports.run(schedule.report, {
-        stage: 'approved', presetDate: slot ? slot.at : this.now(), ...(schedule.preset !== null ? { preset: schedule.preset } : {}),
+        stage: 'approved', includeLast: true, presetDate: slot ? slot.at : this.now(), ...(schedule.preset !== null ? { preset: schedule.preset } : {}),
       }));
       status = 'ok';
       if (!manual) {
         try {
-          const meta = this.reports.library.readMeta(result.stage, schedule.report);
-          const last = meta?.last?.sqlHash === result.sqlHash ? meta.last : null;
+          // The result this run stored, not meta.last re-read from disk: a
+          // concurrent run_report may have replaced that meanwhile.
+          const last = result.last ?? null;
           const complete = last?.previewExecuted === true && last?.previewTruncated === false;
           const totals = complete ? columnTotals(last.columns || [], last.preview || [], last.maskedColumns || []) : null;
           appendTrend(this.trendsDir, schedule.report, trendPoint({

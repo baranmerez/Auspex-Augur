@@ -5,7 +5,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Library } from '../src/reports/library.js';
-import { schedulerDatabase, isUnreachable } from '../src/schedule/runner.js';
+import { schedulerDatabase, isUnreachable, ScheduleRunner } from '../src/schedule/runner.js';
+import { validateSchedules } from '../src/schedule/config.js';
 import { readState, readTrend, trendFile } from '../src/schedule/store.js';
 import { main } from '../src/scheduleCli.js';
 import { ToolError } from '../src/errors.js';
@@ -301,4 +302,34 @@ test('an empty lock file (a taker between create and write) is not removed while
   assert.ok(fs.existsSync(lockFile()), 'the fresh empty lock is kept');
   writeLock('', 60 * 1000);
   assert.equal((await runLocked(['run-due'], monday)).status, 0, 'an empty lock older than 30 s is stale');
+});
+
+test('the trend point uses the result this run stored, not meta.last re-read after a concurrent run', async () => {
+  const lib = approveReport();
+  writeSchedules([schedule()]);
+  const config = { profiles: new Map([['local', 'x']]), profileInfo: new Map(), scriptRoots: new Map(), libraryDir: path.join(home, 'library'), memoryDir: path.join(home, 'memory'), logDir: path.join(home, 'logs') };
+  const runner = new ScheduleRunner(config, { stateFile: path.join(home, 'schedule-state.json'), trendsDir: path.join(home, 'trends'), db: makeDb(), notifyFn: async () => 'log', audit: () => {}, now: () => monday });
+  // Another process's run_report lands right after this run stored its result.
+  const original = runner.reports.library.appendRun.bind(runner.reports.library);
+  runner.reports.library.appendRun = (stage, r, run, last) => {
+    const meta = original(stage, r, run, last);
+    const other = { ...meta, last: { ...meta.last, summary: { ...meta.last.summary, rows: 999 }, preview: [['Z', '900', '900']] } };
+    lib.writeMeta(stage, r, other);
+    return meta;
+  };
+  const slot = { key: '2026-10-12T08:00', at: new Date(2026, 9, 12, 8, 0) };
+  const res = await runner.run(validateSchedules({ schedules: [schedule()] }).schedules[0], slot);
+  assert.equal(res.status, 'ok', JSON.stringify(res));
+  const [p] = readTrend(trendFile(path.join(home, 'trends'), ref));
+  assert.equal(p.rows, 2);
+  assert.deepEqual(p.totals, [{ column: 'orders', total: 7 }, { column: 'amount', total: 12.5 }]);
+  assert.equal(lib.readMeta('approved', ref).last.summary.rows, 999, 'the concurrent result is on disk');
+});
+
+test('run_report results do not carry the stored last result', async () => {
+  approveReport();
+  const config = { profiles: new Map([['local', 'x']]), profileInfo: new Map(), scriptRoots: new Map(), libraryDir: path.join(home, 'library'), memoryDir: path.join(home, 'memory'), logDir: path.join(home, 'logs') };
+  const runner = new ScheduleRunner(config, { stateFile: path.join(home, 's.json'), trendsDir: path.join(home, 'trends'), db: makeDb(), audit: () => {} });
+  const out = await runner.reports.run(ref, { preset: 'last_7_days' });
+  assert.equal(out.last, undefined);
 });
