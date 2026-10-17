@@ -179,7 +179,7 @@ has a hole in that schema.
 - Tabs: Overview (stat tiles, activity chart, by profile/tool/table, slowest
   operations, recent errors), Operations (sort, paging, details, copy,
   CSV/JSON download with error codes), Tables (accesses extracted from SQL),
-  Reports (collapsible library list with a filter box; report with question
+  Reports (collapsible topic/subtopic tree with a filter box; report with question
   line, compact metrics strip, warnings badge, sticky tabs, Preview first;
   SQL highlighting; copy relayed to the viewer clipboard), Schema (Graph,
   ER diagram and Flow views, schema picker, notes inspector, change
@@ -377,6 +377,11 @@ Merged work:
   hash (`expectedHash`, required in viewer/desktop/stage CLI, optional in
   `approve_report`; mismatch is `STALE_VERSION`), and a malformed viewer
   request target is answered with 400 instead of stopping the viewer.
+- 2026-10-17: nested report categories: a category may be up to three
+  levels joined by "/" (e.g. Orders/Delivery), stored as nested folders and
+  listed with `category` (joined) and `categoryPath`; the viewer and desktop
+  show the Reports list as a topic/subtopic tree, change scripts only in
+  their own tab. Existing single-level categories are unchanged.
 
 Working agreements:
 
