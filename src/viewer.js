@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Local viewer for the Auspex audit log, profiles, report library and schema
-// memory. Read-only except for three POST routes that approve a draft report,
+// memory, with report schedules and trends. Read-only except for three POST routes that approve a draft report,
 // revoke an approval in the local library (stage moves) or archive one
 // schema-memory note; all three are audited.
 // Listens on 127.0.0.1 only, never connects to a database, never shows
@@ -18,6 +18,8 @@ import { SchemaMemory } from './memory/store.js';
 import { validateArchiveInput, archiveNoteFor } from './memory/noteArchive.js';
 import { createAuditLog } from './auditLog.js';
 import { classifyError } from './errors.js';
+import { loadSchedules, schedulesFile, nextSlot, cadenceText } from './schedule/config.js';
+import { stateFile, trendsDir, readState, scheduleState, trendFile, readTrend } from './schedule/store.js';
 
 const port = Number.parseInt(process.env.AUSPEX_VIEWER_PORT || '4719', 10);
 const host = '127.0.0.1';
@@ -166,6 +168,44 @@ function reportContent(params) {
   }
   const content = fs.readFileSync(p.html, 'utf8');
   return { kind: 'html', content, sqlHash: reportHtmlHash(content) };
+}
+
+// Schedules of approved reports (schedules.json) with their last result and
+// next slot, keyed like the report list: db|schema|category|name. Read-only;
+// a broken schedules file is reported, not fatal.
+const scheduleKey = r => [r.db, r.schema, r.category, r.name].join('|');
+function scheduleIndex() {
+  let loaded;
+  try {
+    loaded = loadSchedules(schedulesFile());
+  } catch (err) {
+    return { error: err.message, byReport: new Map() };
+  }
+  const state = readState(stateFile());
+  const now = new Date();
+  const byReport = new Map();
+  for (const s of loaded.schedules) {
+    const own = scheduleState(state, s.id);
+    const last = own?.last;
+    const item = {
+      id: s.id, enabled: s.enabled, cadence: cadenceText(s.cadence), preset: s.preset,
+      next: s.enabled ? nextSlot(s.cadence, now)?.key ?? null : null,
+      last: last ? { status: last.status, slot: last.slot ?? null, at: last.at ?? null, ...(last.errorCode ? { errorCode: last.errorCode } : {}), ...(last.manual ? { manual: true } : {}) } : null,
+    };
+    const key = scheduleKey(s.report);
+    byReport.set(key, [...(byReport.get(key) || []), item]);
+  }
+  return { error: null, byReport };
+}
+
+// Trend points of one report (aggregates only: slot, run time, preset, row
+// count and column totals; parameter values are left out). The db segment is
+// the profile; trendFile validates every segment.
+const trendFields = ['slot', 'ranAt', 'preset', 'rows', 'estimatedRows', 'previewComplete', 'totals', 'version'];
+function reportTrend(params) {
+  const ref = { db: params.get('db'), schema: params.get('schema'), category: params.get('category'), name: params.get('name') };
+  const points = readTrend(trendFile(trendsDir(), ref)).map(p => Object.fromEntries(trendFields.filter(k => Object.hasOwn(p, k)).map(k => [k, p[k]])));
+  return { points };
 }
 
 function send(res, status, body, type = 'application/json; charset=utf-8', extra = {}) {
@@ -335,13 +375,25 @@ function handle(req, res) {
       // Drafts also carry the SQL version an approval would approve, and drafts
       // and approved reports the SQL hash they stand for now (metadata only,
       // like the desktop app); the page compares it with the opened content.
+      // Approved reports also carry their schedules (schedules.json) and the
+      // last scheduled result.
+      const sched = scheduleIndex();
       const reports = lib.list().map(r => {
         if (r.stage !== 'draft' && r.stage !== 'approved') return r;
         const meta = lib.readMeta(r.stage, r);
         const activeHash = meta?.activeHash ?? null;
-        return r.stage === 'draft' ? { ...r, activeVersion: meta?.activeVersion ?? null, activeHash } : { ...r, activeHash };
+        if (r.stage === 'draft') return { ...r, activeVersion: meta?.activeVersion ?? null, activeHash };
+        const schedules = sched.byReport.get(scheduleKey(r));
+        return { ...r, activeHash, ...(schedules ? { schedules } : {}) };
       });
-      return send(res, 200, { libraryDir: lib.root, reports });
+      return send(res, 200, { libraryDir: lib.root, reports, ...(sched.error ? { schedulesError: sched.error } : {}) });
+    }
+    if (url.pathname === '/api/reports/trend') {
+      try {
+        return send(res, 200, reportTrend(url.searchParams));
+      } catch (err) {
+        return send(res, 400, { error: err instanceof LibraryError ? err.message : 'Invalid report' });
+      }
     }
     if (url.pathname === '/api/report') return send(res, 200, reportContent(url.searchParams));
     if (url.pathname === '/api/memory') return send(res, 200, memorySummary());

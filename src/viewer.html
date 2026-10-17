@@ -360,6 +360,18 @@
   .badge.draft { background: var(--warn-soft); color: var(--warn-ink); }
   .badge.approved { background: var(--good-soft); color: var(--good-ink); }
   .badge.execute { background: var(--critical-soft); color: var(--critical); }
+  .badge.sched-ok { background: var(--good-soft); color: var(--good-ink); }
+  .badge.sched-skipped { background: var(--warn-soft); color: var(--warn-ink); }
+  .badge.sched-failed { background: var(--critical-soft); color: var(--critical); }
+  .badge.sched-none { background: var(--surface-2); color: var(--text-3); }
+  .rep-trend { padding: 4px 12px 10px; border-bottom: 1px solid var(--line); }
+  .rep-trend .tr-h { font-size: 11px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--text-3); margin: 4px 0; }
+  .rep-trend .tr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px 16px; }
+  .rep-trend .tr-name { font-size: 12px; color: var(--text-2); overflow-wrap: anywhere; display: flex; justify-content: space-between; gap: 8px; }
+  .rep-trend .tr-name b { font-variant-numeric: tabular-nums; }
+  .rep-trend .tr-line { fill: none; stroke: var(--series-1); stroke-width: 2; }
+  .rep-trend .tr-dot { fill: var(--series-1); }
+  .rep-trend .tr-note { font-size: 12px; color: var(--text-3); }
   .badge.viewer { background: var(--good-soft); color: var(--good-ink); }
   .icon-btn:disabled { opacity: .55; cursor: default; pointer-events: none; }
   .dlg { border: 1px solid var(--line-strong); border-radius: 12px; background: var(--surface); color: var(--text); box-shadow: var(--shadow-lg);
@@ -909,6 +921,11 @@ const TR = {
   'The report changed since you opened it; reload and review again.': 'Rapor siz açtıktan sonra değişti; yenileyip yeniden inceleyin.', ' (now version {v})': ' (şu an sürüm {v})',
   'This report changed since you opened it; reload it to review the new version.': 'Rapor siz açtıktan sonra değişti; yeni sürümü incelemek için yenileyin.', 'Reload': 'Yenile',
   'This report has no SQL hash yet (saved by an older Auspex). Run it with run_report or re-render the library with render_reports, then reload; if its SQL file was edited by hand, save it with save_report first.': 'Bu raporun henüz SQL özeti yok (eski bir Auspex ile kaydedilmiş). run_report ile çalıştırın ya da render_reports ile kütüphaneyi yeniden oluşturun, sonra sayfayı yenileyin; SQL dosyası elle değiştirildiyse önce save_report ile kaydedin.',
+  'scheduled': 'zamanlanmış', 'scheduled: ok': 'zamanlanmış: başarılı', 'scheduled: unreachable': 'zamanlanmış: erişilemedi', 'scheduled: failed': 'zamanlanmış: hata',
+  'Last scheduled result': 'Son zamanlanmış çalıştırma sonucu', 'manual run': 'elle çalıştırma', 'no scheduled run yet': 'henüz zamanlanmış çalıştırma yok',
+  'Schedule:': 'Zamanlama:', 'disabled': 'kapalı', 'next: {s}': 'sonraki: {s}', 'Trend of scheduled runs': 'Zamanlanmış çalıştırmaların eğilimi',
+  'The trend could not be loaded.': 'Eğilim yüklenemedi.', 'No trend points yet: they are added after each successful scheduled run.': 'Henüz eğilim noktası yok: her başarılı zamanlanmış çalıştırmadan sonra eklenir.',
+  'schedules.json could not be read: ': 'schedules.json okunamadı: ',
 };
 let lang = 'en';
 try { lang = localStorage.getItem('auspex.viewer.lang') || ((navigator.language || '').toLowerCase().startsWith('tr') ? 'tr' : 'en'); } catch {}
@@ -1538,7 +1555,13 @@ async function loadReport(r) {
   try {
     const q = new URLSearchParams({ stage: r.stage, db: r.db, schema: r.schema, category: r.category, name: r.name });
     const doc = await getJson('/api/report?' + q);
-    if (state.reportSel === key) state.reportDoc = { key, ...doc };
+    // Scheduled reports also load their trend points (aggregates only); a
+    // failure leaves the report readable.
+    let trend;
+    if (r.schedules?.length) {
+      try { trend = (await getJson('/api/reports/trend?' + new URLSearchParams({ db: r.db, schema: r.schema, category: r.category, name: r.name }))).points ?? []; } catch { trend = null; }
+    }
+    if (state.reportSel === key) state.reportDoc = { key, ...doc, trend };
   } catch (err) {
     if (state.reportSel === key) state.reportDoc = { key, error: err.message };
   }
@@ -1843,7 +1866,7 @@ function sqlLineNodes(sql) {
 // sql-highlight:end
 function reportView(r) {
   if (!r) return h('div', { class: 'panel rep-view' }, h('div', { class: 'rep-empty' }, h('b', {}, t('Select a report')), h('div', {}, t('Its plan, joins, timings, preview and history open here.'))));
-  const viewKey = `${repKey(r)}|${r.activeHash ?? ''}`;
+  const viewKey = `${repKey(r)}|${r.activeHash ?? ''}|${r.schedules ? JSON.stringify(r.schedules) : ''}`;
   if (state.reportViewNode && state.reportViewKey === viewKey && state.reportViewTheme === themeKey() + lang) return state.reportViewNode;
   const doc = state.reportDoc && state.reportDoc.key === repKey(r) ? state.reportDoc : null;
   const body = !doc || doc.loading ? h('div', { class: 'rep-empty' }, t('Loading…'))
@@ -1865,13 +1888,13 @@ function reportView(r) {
   const heading = h('div', {},
     h('div', { class: 'crumbs' }, h('span', { class: 'crumb' }, r.db), '›', h('span', { class: 'crumb' }, r.schema), '›', h('span', { class: 'crumb' }, r.category)),
     h('div', { class: 'rep-title' }, h('span', { class: 't' }, r.title || r.name), h('span', { class: 'badge ' + r.stage }, r.stage === 'approved' ? t('approved v{v}', { v: r.approvedVersion ?? '?' }) : t(r.stage)), starButton(r, 'head'), stageButton(r, doc)),
-    presetMeta(data));
+    presetMeta(data), scheduleMeta(r));
   // The list moved on (live refresh) while this content stayed open.
   const changed = doc && stageBlocked(r, doc) === changedText
     ? h('div', { class: 'error-box', role: 'status', style: 'margin:0 12px 8px;display:flex;gap:10px;align-items:center' }, t(changedText),
       h('button', { class: 'icon-btn', onclick: () => loadReport(r) }, t('Reload')))
     : null;
-  const node = h('div', { class: 'panel rep-view' }, h('div', { class: 'bar' }, heading, h('span', { class: 'grow' }), actions), changed, body);
+  const node = h('div', { class: 'panel rep-view' }, h('div', { class: 'bar' }, heading, h('span', { class: 'grow' }), actions), changed, trendView(r, doc), body);
   if (doc && !doc.loading) { state.reportViewNode = node; state.reportViewKey = viewKey; state.reportViewTheme = themeKey() + lang; }
   return node;
 }
@@ -1893,6 +1916,88 @@ function presetMeta(data) {
       offered.map(o => h('span', { class: 'chip' + (o.stale ? ' stale' : ''), title: o.title, 'aria-disabled': o.stale ? 'true' : null }, o.label)))
     : null;
   return [run, list];
+}
+// schedule-view:start (tests/viewerSchedule.test.js runs this block in isolation)
+// Schedules come from schedules.json (read-only here: the user edits the file
+// and src/scheduleCli.js runs them). The list badge shows the worst last
+// result of a report's schedules; the report screen shows each schedule and
+// a small trend chart (row count and column totals per scheduled run).
+const scheduleRank = { failed: 3, 'skipped-unreachable': 2, ok: 1 };
+function scheduleBadge(schedules) {
+  const list = Array.isArray(schedules) ? schedules : [];
+  if (!list.length) return null;
+  const known = list.map(s => s?.last?.status).filter(st => typeof st === 'string' && Object.hasOwn(scheduleRank, st));
+  const worst = known.sort((a, b) => scheduleRank[b] - scheduleRank[a])[0] ?? null;
+  const cls = { ok: 'sched-ok', 'skipped-unreachable': 'sched-skipped', failed: 'sched-failed' }[worst] ?? 'sched-none';
+  const label = { ok: t('scheduled: ok'), 'skipped-unreachable': t('scheduled: unreachable'), failed: t('scheduled: failed') }[worst] ?? t('scheduled');
+  return { status: worst, cls, label };
+}
+// One line per schedule: cadence, preset, last result and next slot.
+function scheduleLines(schedules) {
+  return (Array.isArray(schedules) ? schedules : []).map(s => {
+    const b = scheduleBadge([s]);
+    const last = s.last ? `${b.label}${s.last.errorCode ? ` (${s.last.errorCode})` : ''} · ${s.last.slot ?? t('manual run')}` : t('no scheduled run yet');
+    return { id: String(s.id ?? ''), cadence: String(s.cadence ?? ''), preset: s.preset ?? null, enabled: s.enabled !== false, cls: b.cls, last, next: s.next ?? null };
+  });
+}
+const maxTrendSeries = 5;
+// Series of the trend chart: the row count, then the column totals in the
+// order they first appear (at most maxTrendSeries in all). Missing values are
+// null; an estimated row count is not plotted.
+function trendSeries(points) {
+  const list = (Array.isArray(points) ? points : []).filter(p => p && typeof p === 'object');
+  const num = v => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  const series = [{ name: t('Rows'), values: list.map(p => num(p.rows)) }];
+  const columns = [];
+  for (const p of list) for (const x of Array.isArray(p.totals) ? p.totals : []) {
+    const c = typeof x?.column === 'string' ? x.column : null;
+    if (c !== null && !columns.includes(c)) columns.push(c);
+  }
+  for (const c of columns.slice(0, maxTrendSeries - 1)) {
+    series.push({ name: c, values: list.map(p => num((Array.isArray(p.totals) ? p.totals : []).find(x => x?.column === c)?.total)) });
+  }
+  return { labels: list.map(p => String(p.slot ?? p.ranAt ?? '')), series: series.filter(s => s.values.some(v => v !== null)) };
+}
+// Small multiples: one line per series with its own scale. Text goes in as
+// text nodes (h, textContent), never as markup.
+function trendChart(points) {
+  const { labels, series } = trendSeries(points);
+  if (!series.length) return h('div', { class: 'tr-note' }, t('No trend points yet: they are added after each successful scheduled run.'));
+  const W = 240, H = 56, P = 4;
+  return h('div', { class: 'tr-grid' }, series.map(s => {
+    const vals = s.values.filter(v => v !== null);
+    const min = Math.min(...vals), max = Math.max(...vals), span = max - min || 1;
+    const x = i => (labels.length < 2 ? W / 2 : P + (W - 2 * P) * i / (labels.length - 1));
+    const y = v => (max === min ? H / 2 : P + (H - 2 * P) * (1 - (v - min) / span));
+    const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': `${s.name}: ${vals.length}` });
+    const d = s.values.map((v, i) => (v === null ? null : `${x(i).toFixed(1)},${y(v).toFixed(1)}`)).filter(Boolean);
+    if (d.length > 1) root.append(svg('polyline', { class: 'tr-line', points: d.join(' ') }));
+    s.values.forEach((v, i) => {
+      if (v === null) return;
+      const dot = svg('circle', { class: 'tr-dot', cx: x(i).toFixed(1), cy: y(v).toFixed(1), r: 2.5 });
+      const tip = svg('title');
+      tip.textContent = `${labels[i]}: ${fmt(v)}`;
+      dot.append(tip);
+      root.append(dot);
+    });
+    return h('div', {}, h('div', { class: 'tr-name' }, h('span', {}, s.name), h('b', {}, fmt(vals.at(-1)))), h('div', { class: 'chart' }, root));
+  }));
+}
+// schedule-view:end
+// Schedule lines under the report title (approved reports with a schedule).
+function scheduleMeta(r) {
+  const lines = scheduleLines(r?.schedules);
+  if (!lines.length) return null;
+  return lines.map(l => h('div', { class: 'rep-meta' }, h('span', {}, t('Schedule:')),
+    h('span', { class: 'chip', title: l.id }, l.cadence + (l.enabled ? '' : ` (${t('disabled')})`)),
+    l.preset ? h('span', { class: 'chip' }, presetLabel(l.preset, lang)) : null,
+    h('span', { class: 'badge ' + l.cls }, l.last),
+    l.next ? h('span', {}, t('next: {s}', { s: l.next })) : null));
+}
+function trendView(r, doc) {
+  if (!r?.schedules?.length || !doc || doc.loading || doc.trend === undefined) return null;
+  return h('div', { class: 'rep-trend' }, h('div', { class: 'tr-h' }, t('Trend of scheduled runs')),
+    doc.trend === null ? h('div', { class: 'tr-note' }, t('The trend could not be loaded.')) : trendChart(doc.trend));
 }
 // stage-change:start (tests/viewerApprove.test.js runs this block in isolation)
 // The stage change the Reports view offers: approve a draft or revoke an
@@ -2287,7 +2392,8 @@ function drawReports() {
     const on = state.reportSel === repKey(r);
     return h('div', { class: 'rep-row' }, h('button', { class: 'rep-item' + (on ? ' on' : ''), style: `padding-left:${14 + depth * 14}px`, onclick: () => loadReport(r), title: r.description || r.title,
       'aria-current': on ? 'true' : null },
-      h('div', { class: 't' }, r.title, h('span', { class: 'badge ' + r.stage }, t(r.stage))),
+      h('div', { class: 't' }, r.title, h('span', { class: 'badge ' + r.stage }, t(r.stage)),
+        (b => (b ? h('span', { class: 'badge ' + b.cls, title: t('Last scheduled result') }, b.label) : null))(scheduleBadge(r.schedules))),
       h('div', { class: 's' },
         h('span', {}, (state.db ? '' : r.db + ' › ') + r.schema),
         r.versions ? h('span', {}, `v${r.versions}`) : null,
@@ -2326,7 +2432,8 @@ function drawReports() {
     favSection(t('Favorites'), favs.pins, 'repFavOpen', t('Star a report to pin it here.'), 'fav'),
     favs.recent.some(k => favResolve(k, all)) ? favSection(t('Recent'), favs.recent, 'repRecentOpen', '', 'recent') : null,
   ];
-  const left = h('div', { class: 'panel rep-list' }, stagebar, sections,
+  const schedErr = data?.schedulesError ? h('div', { class: 'error-box', role: 'status', style: 'margin:8px 12px' }, t('schedules.json could not be read: ') + data.schedulesError) : null;
+  const left = h('div', { class: 'panel rep-list' }, stagebar, schedErr, sections,
     list.length ? [tree.children.map(c => nodeView(c, 0)), tree.reports.map(r => reportItem(r, 0))] : h('div', { class: 'rep-empty' }, t('No reports match.')));
   if (selectedRep && (!state.reportDoc || state.reportDoc.key !== state.reportSel)) { loadReport(selectedRep); return; }
   put($('v-reports'), h('div', { class: 'rep' }, left, reportView(selectedRep)));
