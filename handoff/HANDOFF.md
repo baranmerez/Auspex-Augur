@@ -6,7 +6,7 @@ Environment-specific details (servers, databases, schema lists, privilege
 exceptions) are **not** in this file. They live in
 `handoff/environment.local.md`, which is git-ignored.
 
-Latest work: see [Report engine and exploration](#15-report-engine-and-exploration-2026-10-1516)
+Latest work: see [Report engine and exploration](#15-report-engine-and-exploration-2026-10-1517)
 for the batch exploration tools, table roles, skills and viewer views.
 
 ---
@@ -69,7 +69,7 @@ auspex/
 | `query` | One SELECT/WITH/VALUES/TABLE statement; max 500 rows; `$1..$n` params; `timeoutSeconds` |
 | `explain` | Estimated plan; `analyze: true` for real timings and buffers |
 | `export_csv` | Writes the result to CSV under `~/.auspex/exports`, returns only path and row count |
-| `save_report`, `run_report`, `approve_report`, `list_reports`, `render_reports` | Report library: versioned drafts, read-only runs with plan summary and masked preview, approval after explicit user consent |
+| `save_report`, `run_report`, `approve_report`, `list_reports`, `render_reports` | Report library: versioned drafts, read-only runs with plan summary and masked preview, approval after explicit user consent (`approve_report` takes an optional `expectedHash`; a changed draft is refused with `STALE_VERSION`) |
 | `save_execute_script` | Writes a change script into `EXECUTE/`; never executed by Auspex |
 | `table_knowledge` | Answers from the schema memory without database access |
 | `remember` | Adds, confirms or archives a note (rule, observation, inference) |
@@ -180,7 +180,10 @@ has a hole in that schema.
   operations, recent errors), Operations (sort, paging, details, copy,
   CSV/JSON download with error codes), Tables (accesses extracted from SQL),
   Reports (collapsible topic/subtopic tree with a filter box; report with question
-  line, compact metrics strip, warnings badge, sticky tabs, Preview first;
+  line, compact metrics strip, warnings badge with a remembered Performance
+  details toggle, Approve/Revoke buttons beside the title, sticky tabs,
+  Preview first; the preview table sorts, filters, shows a totals row and
+  exports CSV;
   SQL highlighting; copy relayed to the viewer clipboard), Schema (Graph,
   ER diagram and Flow views, schema picker, notes inspector, change
   timeline), Profiles. Full window width with one page scroll.
@@ -217,9 +220,9 @@ Desktop build: Rust (MSVC toolchain), VS 2022 C++ Build Tools, WebView2;
 
 | Command | Scope | Last result |
 |---|---|---|
-| `npm test` | SQL guard, profiles, config, timeouts, explain, audit and errors (incl. MCP server end to end), reports, change-script lint, CSV export, file lock with child processes, schema memory, catalog batch tools, prompts, skills install, viewer roles (no database) | 495 pass, 1 skipped (2026-10-16, Windows, Node 24) |
-| `npm run test:local` | Local PG16 + `auspex_test` schema: writes rejected by the database, unprivileged table, CTE, stacked statements, timeout, connection drop, EXPLAIN ANALYZE, CSV budget cancellation, search, reports, memory, DDL catalog | 39 pass, 4 skipped (DDL fixture not applied locally; CI runs them) |
-| `cargo test` (in `desktop/src-tauri`) | Path validation and profile rules of the desktop API, report-stage argument validation, CLI result mapping, auspexRoot check, audit line for unknown outcomes | 7/7 |
+| `npm test` | SQL guard, profiles, config, timeouts, explain, audit and errors (incl. MCP server end to end), reports, change-script lint, CSV export, file lock with child processes, schema memory, catalog batch tools, prompts, skills install, viewer roles (no database) | 547 pass, 1 skipped (2026-10-17, Windows, Node 24) |
+| `npm run test:local` | Local PG16 + `auspex_test` schema: writes rejected by the database, unprivileged table, CTE, stacked statements, timeout, connection drop, EXPLAIN ANALYZE, CSV budget cancellation, search, reports, memory, DDL catalog | 39 pass, 4 skipped (2026-10-17; DDL fixture not applied locally, CI runs them) |
+| `cargo test` (in `desktop/src-tauri`) | Path validation and profile rules of the desktop API, report-stage argument validation, CLI result mapping, auspexRoot check, audit line for unknown outcomes | 12/12 (2026-10-17; needs an existing `desktop/dist` folder) |
 
 Local test setup: `scripts/local-test-setup.sql`, then
 `scripts/local-test-ddl.sql` (triggers, functions, checks for the DDL catalog
@@ -336,7 +339,7 @@ pass.
 
 Keep each remediation scoped to its finding and regression evidence.
 
-## 15. Report engine and exploration (2026-10-15/16)
+## 15. Report engine and exploration (2026-10-15/17)
 
 Goal: make Auspex a fast exploration, combined-report (S1) and integration-DDL
 (S2) tool with low query and token use.
@@ -375,13 +378,20 @@ Merged work:
   Windows runners cannot exhaust it (PR #55).
 - 2026-10-17 (external review): approve/revoke are bound to the reviewed SQL
   hash (`expectedHash`, required in viewer/desktop/stage CLI, optional in
-  `approve_report`; mismatch is `STALE_VERSION`), and a malformed viewer
+  `approve_report`; mismatch is `STALE_VERSION`; `save_report` and
+  `run_report` return the `sqlHash`), and a malformed viewer
   request target is answered with 400 instead of stopping the viewer.
 - 2026-10-17: nested report categories: a category may be up to three
   levels joined by "/" (e.g. Orders/Delivery), stored as nested folders and
   listed with `category` (joined) and `categoryPath`; the viewer and desktop
   show the Reports list as a topic/subtopic tree, change scripts only in
   their own tab. Existing single-level categories are unchanged.
+- 2026-10-17: report detail screen (PR #59): the preview table sorts, filters
+  and has a totals row and CSV export; Approve/Revoke sit next to the title;
+  the Performance details toggle is remembered. The CSV download is
+  click-gated, saved under a forced `.csv` name with a UTF-8 BOM, uses a
+  decimal comma in Turkish exports, and identifier/code columns are skipped
+  in the totals row.
 
 Working agreements:
 
