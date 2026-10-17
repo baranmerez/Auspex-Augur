@@ -1,4 +1,5 @@
 import { test, beforeEach, afterEach } from 'node:test';
+import { spawnSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -243,4 +244,61 @@ test('task-command prints, never runs, one daily task with a retry 30 minutes la
   assert.ok(!fs.existsSync(path.join(home, 'schedule-state.json')));
   writeSchedules([schedule({ cadence: { daily: true, at: '23:45' } })]);
   assert.match((await main(['task-command'], env, {})).text, /-At '00:15'/, 'the retry wraps past midnight');
+});
+
+// The run lock (src/fileLock.js rules, held for the whole run).
+const lockFile = () => path.join(home, 'scheduler.lock');
+const writeLock = (body, ageMs = 0) => {
+  fs.writeFileSync(lockFile(), body);
+  if (ageMs) { const t = new Date(Date.now() - ageMs); fs.utimesSync(lockFile(), t, t); }
+};
+const liveLock = () => JSON.stringify({ pid: process.pid, host: os.hostname(), token: '0123456789abcdef', at: new Date().toISOString() });
+const runLocked = (argv, now) => main(argv, env, { db: makeDb(), notifyFn: async m => { notes.push(m); return 'log'; }, now: () => now, lockWaitMs: 50 });
+
+test('exit 3 while another run holds the lock; nothing runs and the lock stays', async () => {
+  approveReport();
+  writeSchedules([schedule()]);
+  writeLock(liveLock());
+  const r = await runLocked(['run-due'], monday);
+  assert.equal(r.status, 3);
+  assert.equal(r.out.code, 'BUSY');
+  assert.equal(sent.length, 0);
+  assert.deepEqual(notes, [], 'a normal overlap does not notify');
+  assert.ok(fs.existsSync(lockFile()));
+  assert.equal((await runLocked(['run', '--id', 'weekly-example'], monday)).status, 3);
+});
+
+test('a lock held past the task limit is reported with a notification, and taken over past the hold limit', async () => {
+  approveReport();
+  writeSchedules([schedule()]);
+  writeLock(liveLock(), 2.5 * 3600 * 1000);
+  const r = await runLocked(['run-due'], monday);
+  assert.equal(r.status, 3);
+  assert.match(r.out.message, /longer than the task limit/);
+  assert.deepEqual(notes, [{ reportTitle: 'scheduler lock', status: 'failed', errorCode: 'LOCK_BUSY' }]);
+  // Past 3 h a live-looking pid (reused after a reboot) no longer keeps it.
+  writeLock(liveLock(), 3.5 * 3600 * 1000);
+  const taken = await runLocked(['run-due'], monday);
+  assert.equal(taken.status, 0, JSON.stringify(taken.out));
+  assert.ok(!fs.existsSync(lockFile()), 'released after the run');
+});
+
+test('a lock left by a dead process is taken over', async () => {
+  approveReport();
+  writeSchedules([schedule()]);
+  const dead = spawnSync(process.execPath, ['-e', '']).pid;
+  writeLock(JSON.stringify({ pid: dead, host: os.hostname(), token: 'fedcba9876543210', at: new Date().toISOString() }));
+  const r = await runLocked(['run-due'], monday);
+  assert.equal(r.status, 0, JSON.stringify(r.out));
+  assert.ok(!fs.existsSync(lockFile()));
+});
+
+test('an empty lock file (a taker between create and write) is not removed while fresh', async () => {
+  approveReport();
+  writeSchedules([schedule()]);
+  writeLock('');
+  assert.equal((await runLocked(['run-due'], monday)).status, 3);
+  assert.ok(fs.existsSync(lockFile()), 'the fresh empty lock is kept');
+  writeLock('', 60 * 1000);
+  assert.equal((await runLocked(['run-due'], monday)).status, 0, 'an empty lock older than 30 s is stale');
 });

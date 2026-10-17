@@ -1,7 +1,8 @@
 // Cross-process lock for the report library and the schema memory, so two
 // Auspex processes (two MCP clients, a script, the viewer's neighbour) never
 // lose each other's read-modify-write updates. Synchronous on purpose: every
-// guarded section is short file work.
+// guarded section is short file work. The one exception is the scheduler's
+// run lock (acquireFileLock), held across a whole run with its own maxHoldMs.
 //
 // The lock is a file created with 'wx' (atomic create-if-absent) holding the
 // owner's pid, host and a random token. An owner on this host whose pid is
@@ -152,6 +153,16 @@ export function renameRetrying(from, to, { waitMs = 2000 } = {}) {
     }
     sleep(Math.min(5 + i * 5, 50));
   }
+}
+
+// Takes the lock for a long asynchronous job (the scheduler) and returns a
+// release function; the same token, takeover-marker and liveness rules as
+// withFileLock. Pick maxHoldMs above the longest time the job can hold it:
+// past it the lock is reclaimable even when its pid looks alive (reused pid).
+// Throws LockBusyError when the lock is still held after waitMs.
+export function acquireFileLock(lockPath, { waitMs = 2000, staleMs = 30000, maxHoldMs = 600000 } = {}) {
+  const token = acquire(lockPath, { waitMs, staleMs, maxHoldMs });
+  return () => release(lockPath, token);
 }
 
 // Runs fn while holding the lock at lockPath. Nested calls for the same path
