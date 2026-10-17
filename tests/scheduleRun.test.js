@@ -1,0 +1,246 @@
+import { test, beforeEach, afterEach } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { Library } from '../src/reports/library.js';
+import { schedulerDatabase, isUnreachable } from '../src/schedule/runner.js';
+import { readState, readTrend, trendFile } from '../src/schedule/store.js';
+import { main } from '../src/scheduleCli.js';
+import { ToolError } from '../src/errors.js';
+
+// scheduleCli.main end to end on a temporary AUSPEX_HOME: a real library and
+// state files, the real run_report path (ReportService -> ReadOnlyDatabase
+// .runReport, audited) with a fake pg client in place of the network.
+const ref = { db: 'local', schema: 'example', category: 'Orders/Delivery', name: 'example-report' };
+const sql = 'select status_code, count(*) as orders, sum(amount) as amount from example.orders where created_at >= $1::date and created_at < $2::date group by status_code';
+let home, env, audit, sent, connect, notes;
+
+function fakeClient() {
+  const fields = [{ name: 'status_code', dataTypeID: 25 }, { name: 'orders', dataTypeID: 20 }, { name: 'amount', dataTypeID: 1700 }];
+  return {
+    async query(q) {
+      const text = typeof q === 'string' ? q : q.text;
+      sent.push({ text, values: q.values });
+      if (text.startsWith('EXPLAIN')) return { rows: [{ 'QUERY PLAN': [{ Plan: { 'Node Type': 'Result', 'Total Cost': 1, 'Plan Rows': 2, 'Actual Rows': 2, 'Actual Loops': 1, 'Actual Total Time': 0.5 }, 'Planning Time': 0.1, 'Execution Time': 0.6 }] }] };
+      if (text.startsWith('FETCH')) return { rows: [['A', '3', '10.5'], ['B', '4', '2']], fields };
+      if (text.includes('pg_type')) return { rows: [{ oid: 25, name: 'text' }, { oid: 20, name: 'bigint' }, { oid: 1700, name: 'numeric' }] };
+      if (text.includes('server_version')) return { rows: [{ v: '16.0' }] };
+      return { rows: [] };
+    },
+    release() {},
+  };
+}
+
+function makeDb() {
+  const db = schedulerDatabase({ profiles: new Map([['local', 'postgresql://u@127.0.0.1:1/a']]), statementTimeoutMs: 30000, maxStatementTimeoutMs: 300000, maxRows: 500 },
+    { audit: e => audit.push(e) });
+  db.pool = () => ({ connect, end: async () => {} });
+  db.roleChecks.set('local', { status: 'ok', blocking: [], warnings: [] });
+  return db;
+}
+
+function writeSchedules(schedules, extra = {}) {
+  fs.writeFileSync(path.join(home, 'schedules.json'), JSON.stringify({ schedules, ...extra }));
+}
+const schedule = (over = {}) => ({ id: 'weekly-example', profile: 'local', report: ref, preset: 'last_7_days', cadence: { weekly: 'monday', at: '08:00' }, ...over });
+
+function approveReport({ dateRange = true, presets } = {}) {
+  const lib = new Library(path.join(home, 'library'));
+  const saved = lib.saveDraft({ ref, title: 'Example report <b>', sql, dateRange, presets });
+  lib.appendRun('draft', ref, { at: new Date().toISOString(), sqlHash: saved.hash, version: saved.version }, null);
+  lib.approve(ref);
+  return lib;
+}
+
+const run = (argv, now) => main(argv, env, { db: makeDb(), notifyFn: async m => { notes.push(m); return 'log'; }, now: () => now });
+const monday = new Date(2026, 9, 12, 9, 0);
+const tuesday = new Date(2026, 9, 13, 10, 0);
+
+beforeEach(() => {
+  home = fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-schedule-'));
+  env = { AUSPEX_HOME: home, AUSPEX_DB_LOCAL: 'postgresql://u@127.0.0.1:1/a' };
+  audit = []; sent = []; notes = [];
+  connect = async () => fakeClient();
+});
+afterEach(() => fs.rmSync(home, { recursive: true, force: true }));
+
+test('run-due runs an approved report for its slot, records state, trend and audit with actor scheduler', async () => {
+  approveReport();
+  writeSchedules([schedule()]);
+  const r = await run(['run-due'], tuesday);
+  assert.equal(r.status, 0, JSON.stringify(r.out));
+  assert.deepEqual(r.out.results.map(x => [x.status, x.slot]), [['ok', '2026-10-12T08:00']]);
+  // The preset is resolved against Monday's slot, not Tuesday's run time.
+  const explain = sent.find(s => s.text.startsWith('EXPLAIN'));
+  assert.deepEqual(explain.values, ['2026-10-06', '2026-10-13']);
+  const state = readState(path.join(home, 'schedule-state.json'));
+  assert.equal(state.schedules['weekly-example'].lastSuccessSlot, '2026-10-12T08:00');
+  assert.equal(state.schedules['weekly-example'].last.status, 'ok');
+  const points = readTrend(trendFile(path.join(home, 'trends'), ref));
+  assert.equal(points.length, 1);
+  const p = points[0];
+  assert.equal(p.slot, '2026-10-12T08:00');
+  assert.equal(p.preset, 'last_7_days');
+  assert.deepEqual(p.params, ['2026-10-06', '2026-10-13']);
+  assert.equal(p.rows, 2);
+  assert.equal(p.previewComplete, true);
+  assert.deepEqual(p.totals, [{ column: 'orders', total: 7 }, { column: 'amount', total: 12.5 }], 'status_code is a code column and stays out');
+  assert.ok(!JSON.stringify(p).includes('"A"') && !JSON.stringify(p).includes('"B"'), 'no row values in the trend point');
+  // Every audit entry of the run carries source and actor "scheduler".
+  const dbEntry = audit.find(e => e.tool === 'run_report');
+  assert.equal(dbEntry.source, 'scheduler');
+  assert.equal(dbEntry.actor, 'scheduler');
+  // The scheduler's own entry goes to the audit log of the configured home.
+  const logs = path.join(home, 'logs');
+  const logged = fs.readdirSync(logs).flatMap(f => fs.readFileSync(path.join(logs, f), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)));
+  const runEntry = logged.find(e => e.tool === 'schedule_run');
+  assert.equal(runEntry.actor, 'scheduler');
+  assert.equal(runEntry.status, 'ok');
+  assert.equal(runEntry.correlationId, dbEntry.correlationId);
+  assert.deepEqual(notes, [{ reportTitle: 'Example report <b>', status: 'ok', errorCode: null }]);
+  // The run is in the approved report's history like a run_report run.
+  const meta = new Library(path.join(home, 'library')).readMeta('approved', ref);
+  assert.equal(meta.runs.at(-1).preset, 'last_7_days');
+
+  // The slot is done: the next run-due on the same week does nothing.
+  const again = await run(['run-due'], new Date(2026, 9, 14, 10, 0));
+  assert.equal(again.status, 0);
+  assert.equal(again.out.ran, 0);
+});
+
+test('an unreachable database is skipped-unreachable, exits 1 and is retried by the next run-due', async () => {
+  approveReport();
+  writeSchedules([schedule()]);
+  connect = async () => { throw Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:1'), { code: 'ECONNREFUSED' }); };
+  const r = await run(['run-due'], monday);
+  assert.equal(r.status, 1);
+  assert.equal(r.out.results[0].status, 'skipped-unreachable');
+  assert.equal(r.out.results[0].errorCode, 'CONNECTION_FAILED');
+  assert.equal(notes[0].status, 'skipped-unreachable');
+  assert.equal(readTrend(trendFile(path.join(home, 'trends'), ref)).length, 0);
+  const state = readState(path.join(home, 'schedule-state.json')).schedules['weekly-example'];
+  assert.equal(state.last.status, 'skipped-unreachable');
+  assert.equal(state.lastSuccessSlot, undefined);
+  assert.equal(audit.find(e => e.tool === 'run_report').actor, 'scheduler', 'the failed connection is audited too');
+  // 30 minutes later the database is back: the same slot runs.
+  connect = async () => fakeClient();
+  const retry = await run(['run-due'], new Date(2026, 9, 12, 9, 30));
+  assert.equal(retry.status, 0);
+  assert.deepEqual(retry.out.results.map(x => [x.status, x.slot]), [['ok', '2026-10-12T08:00']]);
+});
+
+test('unreachable means a network failure; server errors and authentication are failures', () => {
+  for (const code of ['ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH']) {
+    assert.equal(isUnreachable(Object.assign(new Error('x'), { code })), true, code);
+  }
+  assert.equal(isUnreachable(new ToolError('CONNECTION_FAILED', 'Could not connect', { retryable: true })), true);
+  assert.equal(isUnreachable(new ToolError('CONNECTION_FAILED', 'password authentication failed')), false);
+  assert.equal(isUnreachable(Object.assign(new Error('auth'), { code: '28P01', severity: 'FATAL' })), false);
+  assert.equal(isUnreachable(Object.assign(new Error('starting up'), { code: '57P03', severity: 'FATAL' })), false);
+  assert.equal(isUnreachable(Object.assign(new Error('syntax'), { code: '42601', severity: 'ERROR' })), false);
+  assert.equal(isUnreachable(new ToolError('TIMEOUT', 'statement timeout')), false);
+});
+
+test('other failures are failed with the error code, exit 1, and notify without the message', async () => {
+  approveReport();
+  writeSchedules([schedule()]);
+  connect = async () => ({ ...fakeClient(), async query(q) { const text = typeof q === 'string' ? q : q.text; if (text.startsWith('EXPLAIN')) throw Object.assign(new Error('relation "example.orders" does not exist'), { code: '42P01', severity: 'ERROR' }); return { rows: [] }; } });
+  const r = await run(['run-due'], monday);
+  assert.equal(r.status, 1);
+  assert.equal(r.out.results[0].status, 'failed');
+  assert.equal(r.out.results[0].errorCode, 'DATABASE_ERROR');
+  assert.deepEqual(notes, [{ reportTitle: 'Example report <b>', status: 'failed', errorCode: 'DATABASE_ERROR' }]);
+  const state = readState(path.join(home, 'schedule-state.json')).schedules['weekly-example'];
+  assert.deepEqual(Object.keys(state.last).sort(), ['at', 'errorCode', 'slot', 'status'], 'no message in the state the viewer reads');
+});
+
+test('only approved reports run, and only from their approved SQL', async () => {
+  const lib = new Library(path.join(home, 'library'));
+  lib.saveDraft({ ref, title: 'Example report', sql, dateRange: true });
+  writeSchedules([schedule()]);
+  const r = await run(['run-due'], monday);
+  assert.equal(r.status, 1);
+  assert.equal(r.out.results[0].status, 'failed');
+  assert.equal(r.out.results[0].errorCode, 'PRECONDITION_FAILED');
+  assert.equal(sent.length, 0, 'no database call for a draft');
+
+  // Approved, then a new draft is saved: the schedule still runs the approved SQL.
+  fs.rmSync(path.join(home, 'schedule-state.json'), { force: true });
+  const hash = lib.readMeta('draft', ref).activeHash;
+  lib.appendRun('draft', ref, { at: new Date().toISOString(), sqlHash: hash }, null);
+  lib.approve(ref);
+  lib.saveDraft({ ref, sql: 'select 1 as x where $1::date < $2::date', dateRange: true });
+  const ok = await run(['run-due'], monday);
+  assert.equal(ok.status, 0, JSON.stringify(ok.out));
+  assert.ok(sent.find(s => s.text.startsWith('EXPLAIN')).text.includes('example.orders'));
+});
+
+test('built-in presets need a dateRange report; reports with parameters need a preset', async () => {
+  approveReport({ dateRange: false, presets: [{ name: 'Example set', params: ['2026-01-01', '2026-02-01'] }] });
+  writeSchedules([schedule(), schedule({ id: 'custom', preset: 'Example set' }), schedule({ id: 'none', preset: undefined })]);
+  const r = await run(['run-due'], monday);
+  assert.equal(r.status, 1);
+  assert.deepEqual(r.out.results.map(x => [x.id, x.status]), [['weekly-example', 'failed'], ['custom', 'ok'], ['none', 'failed']]);
+  assert.match(r.out.results[0].message, /not available/);
+  assert.match(r.out.results[2].message, /set "preset"/);
+});
+
+test('a manual run resolves against now, adds no trend point and keeps the slot open', async () => {
+  approveReport();
+  writeSchedules([schedule()]);
+  const r = await run(['run', '--id', 'weekly-example'], tuesday);
+  assert.equal(r.status, 0, JSON.stringify(r.out));
+  assert.deepEqual(sent.find(s => s.text.startsWith('EXPLAIN')).values, ['2026-10-07', '2026-10-14']);
+  assert.equal(readTrend(trendFile(path.join(home, 'trends'), ref)).length, 0);
+  const state = readState(path.join(home, 'schedule-state.json')).schedules['weekly-example'];
+  assert.equal(state.last.manual, true);
+  assert.equal(state.lastSuccessSlot, undefined);
+  assert.equal((await run(['run', '--id', 'missing'], tuesday)).status, 2);
+  assert.equal((await run(['run'], tuesday)).status, 2);
+});
+
+test('disabled schedules and slots not yet due are not run; a broken file exits 2 and notifies', async () => {
+  approveReport();
+  writeSchedules([schedule({ enabled: false })]);
+  assert.equal((await run(['run-due'], monday)).out.ran, 0);
+  writeSchedules([schedule({ profile: undefined })]);
+  const bad = await run(['run-due'], monday);
+  assert.equal(bad.status, 2);
+  assert.match(bad.out.message, /no default profile/);
+  assert.deepEqual(notes, [{ reportTitle: 'schedules.json', status: 'failed', errorCode: 'INVALID_INPUT' }]);
+  assert.equal(sent.length, 0);
+  assert.equal((await run(['unknown'], monday)).status, 2);
+});
+
+test('status lists schedules, problems, the last result and the next slot without a database', async () => {
+  approveReport();
+  writeSchedules([schedule(), schedule({ id: 'daily-example', cadence: { daily: true, at: '07:30' }, report: { ...ref, name: 'missing-report' } })]);
+  await run(['run-due'], monday);
+  sent = [];
+  const r = await run(['status'], monday);
+  assert.equal(r.status, 0);
+  assert.equal(sent.length, 0);
+  const [a, b] = r.out.schedules;
+  assert.equal(a.last.status, 'ok');
+  assert.equal(a.next, '2026-10-19T08:00');
+  assert.equal(a.problem, null);
+  assert.equal(a.title, 'Example report <b>');
+  assert.match(b.problem, /not found/);
+  assert.equal(b.next, '2026-10-13T07:30');
+});
+
+test('task-command prints, never runs, one daily task with a retry 30 minutes later', async () => {
+  writeSchedules([schedule()], { taskTime: '08:05' });
+  const r = await main(['task-command'], env, { nodePath: "C:\\Program Files\\node's\\node.exe" });
+  assert.equal(r.status, 0);
+  assert.match(r.text, /New-ScheduledTaskTrigger -Daily -At '08:05'/);
+  assert.match(r.text, /New-ScheduledTaskTrigger -Daily -At '08:35'/);
+  assert.match(r.text, /-RestartCount 1 -RestartInterval \(New-TimeSpan -Minutes 30\)/);
+  assert.match(r.text, /scheduleCli\.js" run-due'/);
+  assert.match(r.text, /-Execute 'C:\\Program Files\\node''s\\node\.exe'/, 'single quotes are doubled');
+  assert.match(r.text, /Register-ScheduledTask -TaskName 'Auspex scheduled reports'/);
+  assert.ok(!fs.existsSync(path.join(home, 'schedule-state.json')));
+  writeSchedules([schedule({ cadence: { daily: true, at: '23:45' } })]);
+  assert.match((await main(['task-command'], env, {})).text, /-At '00:15'/, 'the retry wraps past midnight');
+});

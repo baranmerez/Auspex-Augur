@@ -182,16 +182,23 @@ export class ReportService {
 
   // preset (optional): a built-in date-range key or a custom preset name of
   // the report, resolved to the parameter values; not together with params.
-  async run(input, { analyze = 'auto', previewRows = 50, returnRows = 20, timeoutSeconds, params, preset } = {}) {
+  // presetDate (optional): the moment a built-in preset is resolved against
+  // (default: now); the scheduler passes the due slot so a catch-up run gets
+  // the period of its slot. stage (optional): run exactly this stage instead
+  // of the draft-first lookup; the scheduler runs only approved reports.
+  async run(input, { analyze = 'auto', previewRows = 50, returnRows = 20, timeoutSeconds, params, preset, presetDate, stage: onlyStage } = {}) {
     const ref = this.ref(input);
     if (preset !== undefined && params !== undefined) throw new ToolError('INVALID_INPUT', 'Pass either preset or params, not both.');
-    const stage = this.library.locate(ref);
+    if (onlyStage !== undefined && !this.library.exists(onlyStage, ref)) {
+      throw new ToolError(onlyStage === 'approved' ? 'PRECONDITION_FAILED' : 'NOT_FOUND', `Report ${refLabel(ref)} is not in stage ${onlyStage}.`);
+    }
+    const stage = onlyStage ?? this.library.locate(ref);
     const sql = this.library.readSql(stage, ref);
     const meta = this.library.readMeta(stage, ref);
     if (!meta) throw new ToolError('NOT_FOUND', `Report metadata missing for ${refLabel(ref)}; save the report first.`);
     let usedPreset = null;
     if (preset !== undefined) {
-      const resolved = resolvePreset(preset, meta.presets, sqlParamCount(sql), msg => new ToolError('INVALID_INPUT', msg), new Date(), meta.dateRange);
+      const resolved = resolvePreset(preset, meta.presets, sqlParamCount(sql), msg => new ToolError('INVALID_INPUT', msg), presetDate ?? new Date(), meta.dateRange);
       usedPreset = resolved.preset;
       params = resolved.params;
     }
