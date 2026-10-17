@@ -789,6 +789,8 @@ const TR = {
   'Explored tables: {n}. Only active rules and observations are listed; unconfirmed inferences and archived notes are left out.': 'Keşfedilen tablo: {n}. Yalnızca aktif kurallar ve gözlemler listelenir; onaylanmamış çıkarımlar ve arşivlenmiş notlar dahil değildir.',
   'Contents': 'İçindekiler', 'Database-wide rules and observations': 'Veritabanı geneli kurallar ve gözlemler', 'Rules and observations': 'Kurallar ve gözlemler',
   'Key columns': 'Anahtar kolonlar', 'References (instance)': 'Başvurduğu tablolar (instance)', 'Referenced by (dependent)': 'Başvuran tablolar (dependent)',
+  'Structure not loaded: comment and key columns are missing.': 'Yapı yüklenemedi: açıklama ve anahtar kolonlar eksik.',
+  'Structure not loaded for {n} tables; they are marked in the data dictionary': '{n} tablonun yapısı yüklenemedi; veri sözlüğünde işaretlendi',
   'Comment': 'Açıklama', 'Column': 'Kolon', 'Type': 'Tip', 'Tags': 'Etiketler',
   'No explored tables yet.': 'Henüz keşfedilen tablo yok.', 'est. rows': 'tahmini satır', 'columns': 'kolon',
   'Database': 'Veritabanı', 'All databases': 'Tüm veritabanları', 'Every profile together': 'Tüm profiller birlikte',
@@ -4037,7 +4039,7 @@ function dictionaryModel(data, tables, generatedAt) {
     const mine = edges.filter(e => e.level === 'fk' || e.level === 'used');
     return {
       id: node.id, schema: node.schema, table: node.table, kind: rec?.kind ?? node.kind ?? null, comment: rec?.comment || null,
-      estimatedRows: node.estimatedRows ?? null, columnCount: rec?.columns?.length ?? node.columnCount ?? 0, keyColumns, notes,
+      estimatedRows: node.estimatedRows ?? null, columnCount: rec?.columns?.length ?? node.columnCount ?? 0, keyColumns, notes, structureMissing: !rec,
       references: mine.filter(e => e.from === node.id).map(e => rel(e, e.to)),
       referencedBy: mine.filter(e => e.to === node.id).map(e => rel(e, e.from)),
     };
@@ -4055,6 +4057,7 @@ function dictionaryHtml(model, tr = dictTr, lang = 'en') {
   const tableHtml = (tb, i) => [
     `<section id="t${i + 1}"><h2>${dictEsc(tb.id)}</h2>`,
     `<p class="m">${[tb.kind, tb.estimatedRows !== null ? `${tb.estimatedRows} ${tr('est. rows')}` : null, `${tb.columnCount} ${tr('columns')}`].filter(Boolean).map(dictEsc).join(' · ')}</p>`,
+    tb.structureMissing ? `<p class="warn">${dictEsc(tr('Structure not loaded: comment and key columns are missing.'))}</p>` : '',
     tb.comment ? `<p><b>${dictEsc(tr('Comment'))}:</b> ${dictEsc(tb.comment)}</p>` : '',
     section(tr('Rules and observations'), tb.notes.map(noteLi)),
     tb.keyColumns.length ? `<h3>${dictEsc(tr('Key columns'))}</h3><table><thead><tr><th>${dictEsc(tr('Column'))}</th><th>${dictEsc(tr('Type'))}</th><th>${dictEsc(tr('Tags'))}</th><th>${dictEsc(tr('Comment'))}</th></tr></thead><tbody>`
@@ -4073,7 +4076,7 @@ h1{font-size:22px;margin:0 0 6px}h2{font-size:17px;margin:28px 0 4px;padding-top
 .m{color:#5c6773;font-size:12px}code{font:12px ui-monospace,Consolas,monospace;background:#f1f3f6;padding:0 4px;border-radius:4px}
 table{border-collapse:collapse;width:100%;font-size:13px}th,td{border:1px solid #d8dde4;padding:4px 8px;text-align:left;vertical-align:top}th{background:#f1f3f6}
 ul{padding-left:20px;margin:4px 0}li{margin:3px 0}.k{display:inline-block;font-size:11px;font-weight:600;border-radius:999px;padding:0 8px;margin-right:4px;background:#e4edfb;color:#1f4f99}
-.k.observation{background:#e3f4e8;color:#1d6b35}.fig{font:12px ui-monospace,Consolas,monospace;color:#4a5562}
+.k.observation{background:#e3f4e8;color:#1d6b35}.warn{color:#9a3412;font-weight:600}.fig{font:12px ui-monospace,Consolas,monospace;color:#4a5562}
 @media print{h2{break-after:avoid}section{break-inside:avoid-page}}
 </style></head><body>
 <h1>${dictEsc(tr('Data dictionary: {db}', { db: model.profile }))}</h1>
@@ -4097,6 +4100,7 @@ function dictionaryMarkdown(model, tr = dictTr) {
   for (const tb of model.tables) {
     out.push(`## ${dictMd(tb.id)}`, '',
       [tb.kind, tb.estimatedRows !== null ? `${tb.estimatedRows} ${tr('est. rows')}` : null, `${tb.columnCount} ${tr('columns')}`].filter(Boolean).map(dictMd).join(' · '), '');
+    if (tb.structureMissing) out.push(`**${dictMd(tr('Structure not loaded: comment and key columns are missing.'))}**`, '');
     if (tb.comment) out.push(`**${dictMd(tr('Comment'))}:** ${dictMd(tb.comment)}`, '');
     out.push(...section(tr('Rules and observations'), tb.notes.map(noteLine)));
     if (tb.keyColumns.length) {
@@ -4108,6 +4112,8 @@ function dictionaryMarkdown(model, tr = dictTr) {
   }
   return out.join('\n') + '\n';
 }
+// Explored tables whose table file could not be loaded (shown as such).
+const dictionaryMissing = model => model.tables.filter(tb => tb.structureMissing).length;
 // The file name: fixed prefix and extension, the profile in its own safe characters.
 const dictionaryFileName = (profile, day, kind) => `auspex-data-dictionary-${String(profile ?? '').replace(/[^a-z0-9_-]/gi, '_').slice(0, 40) || 'db'}-${String(day).replace(/[^0-9-]/g, '').slice(0, 10)}.${kind === 'md' ? 'md' : 'html'}`;
 // data-dictionary:end
@@ -4126,6 +4132,8 @@ async function downloadDictionary(kind) {
     const model = dictionaryModel(data, tables, now);
     const text = kind === 'md' ? dictionaryMarkdown(model, t) : dictionaryHtml(model, t, lang);
     download(dictionaryFileName(db, now.slice(0, 10), kind), text, kind === 'md' ? 'text/markdown;charset=utf-8' : 'text/html;charset=utf-8');
+    const missing = dictionaryMissing(model);
+    if (missing) toast(t('Structure not loaded for {n} tables; they are marked in the data dictionary', { n: missing }));
   } catch (err) {
     toast(t('Could not build the data dictionary: ') + (err?.message || String(err)));
   }
