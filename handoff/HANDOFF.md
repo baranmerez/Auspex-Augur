@@ -397,6 +397,7 @@ Merged work:
   `run_report` `preset`, recorded per run, listed by `list_reports`); the
   viewer header shows them read-only, Favorites/Recent sit above the report
   tree (local browser storage), and *Ask Claude* copies a prompt without row values.
+- 2026-10-18: Rules tab lists all schema-memory notes with filters and archives an active note with a required reason (`POST /api/memory/archive`, desktop `archive_note` -> `stageCli.js archive-note`, same store logic and lock as `remember`); Schema tab downloads a data dictionary (HTML/Markdown) built from memory only.
 
 Working agreements:
 
