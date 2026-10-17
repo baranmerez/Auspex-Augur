@@ -201,9 +201,10 @@ has a hole in that schema.
   `render_reports` so library HTML uses the current template.
 - The Schema tab reads `graph.json`, which the memory module rebuilds after
   every change, so the viewer and the Rust app contain no relation logic.
-- Binds to 127.0.0.1 only, GET only except the two approval routes (origin,
-  per-process token, audited), foreign Host headers get 403; never connects
-  to a database.
+- Binds to 127.0.0.1 only, GET only except the two approval routes and
+  `POST /api/memory/archive` (same Host, Origin, per-process token, JSON and
+  4 KB checks, audited), foreign Host headers get 403; never connects to a
+  database.
 - Report approval: Reports tab *Approve* / *Revoke approval* (TR *Onayla* /
   *Onayı geri al*) with a confirm dialog. The browser viewer POSTs to its
   routes; the desktop app's `approve_report` / `revoke_report` Tauri commands
