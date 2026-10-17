@@ -72,10 +72,19 @@ test('totals sum numeric columns only; masked, text and empty columns have none'
 });
 
 test('identifier and code columns are not summed', () => {
-  for (const n of ['id', 'order_id', 'customerid', 'status_code', 'teslim_durum_kodu', 'invoice_no', 'ORDER_ID']) assert.ok(api.isIdentifierColumn(n), n);
-  for (const n of ['amount', 'quantity', 'total_price']) assert.ok(!api.isIdentifierColumn(n), n);
+  for (const n of ['id', 'order_id', 'customerId', 'status_code', 'statusCode', 'teslim_durum_kodu', 'invoice_no', 'invoiceNo', 'ORDER_ID']) assert.ok(api.isIdentifierColumn(n), n);
+  for (const n of ['amount', 'quantity', 'total_price', 'amount_paid', 'prepaid', 'total_paid', 'casino', 'decode_count']) assert.ok(!api.isIdentifierColumn(n), n);
   const c = [{ name: 'order_id', type: 'int4' }, { name: 'status_code', type: 'int4' }, { name: 'invoice_no', type: 'int8' }, { name: 'amount', type: 'numeric' }];
   assert.deepEqual(Array.from(api.previewTotals(c, [[1, 2, 3, '4.5'], [5, 6, 7, 1]])), [null, null, null, 5.5]);
+});
+
+test('with ";" numeric columns get a decimal comma; the comma export is unchanged', () => {
+  const rows = [[1, 'a.b', '-3.5'], [2, '1.5', 4.25]];
+  assert.equal(api.previewCsv(cols, rows, ';').split('\r\n')[1], '1;a.b;-3,5', 'text keeps its dot');
+  assert.equal(api.previewCsv(cols, rows, ';').split('\r\n')[2], '2;1.5;4,25');
+  assert.equal(api.previewCsv(cols, rows, ',').split('\r\n')[1], '1,a.b,-3.5');
+  assert.equal(api.previewCsv(cols, rows, ',').split('\r\n')[2], '2,1.5,4.25');
+  assert.equal(api.previewCsv(cols, [[1, 'a', '=1.5']], ';').split('\r\n')[1], "1;a;'=1.5", 'a formula stays neutralized');
 });
 
 test('CSV cells follow the spreadsheet rule of src/db.js', () => {

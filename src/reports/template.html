@@ -621,9 +621,13 @@ function filterPreviewRows(rows, query) {
   return q ? rows.filter(row => row.some(v => v !== null && v !== undefined && String(v).toLowerCase().includes(q))) : rows.slice();
 }
 // Identifier and code columns are never summed: the name is id, ends with id
-// or no, or contains code or kod (order_id, customerid, invoice_no, status_code,
-// teslim_durum_kodu).
-const isIdentifierColumn = name => /^id$|id$|no$|code|kod/i.test(String(name ?? '').trim());
+// or no as a word (order_id, customerId, invoice_no), has code as a word
+// (status_code) or contains kod (teslim_durum_kodu); amount_paid or prepaid
+// are not identifiers.
+const isIdentifierColumn = name => {
+  const n = String(name ?? '').trim();
+  return /(^|_)(id|no)$/i.test(n) || /[a-z](Id|No|Codes?)$/.test(n) || /(^|_)codes?(_|$)/i.test(n) || /kod/i.test(n);
+};
 // Sum of each numeric column over the given rows; null for a non-numeric,
 // masked, identifier or all-empty column. Only the rows given are summed (the preview).
 function previewTotals(columns, rows, masked = new Set()) {
@@ -648,7 +652,12 @@ function csvSafeCell(value, numericColumn) {
 function previewCsv(columns, rows, delimiter = ',') {
   const quote = text => text.includes(delimiter) || /["\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
   const head = columns.map(c => quote(csvSafeCell(c.name, false)));
-  const body = rows.map(row => columns.map((c, i) => quote(csvSafeCell(row[i], isNumericType(c.type)))).join(delimiter));
+  // With ";" (Turkish spreadsheets) numeric cells use a decimal comma.
+  const cell = (c, v) => {
+    const out = csvSafeCell(v, isNumericType(c.type));
+    return delimiter === ';' && isNumericType(c.type) && numericText(v) ? out.replace('.', ',') : out;
+  };
+  const body = rows.map(row => columns.map((c, i) => quote(cell(c, row[i]))).join(delimiter));
   return [head.join(delimiter), ...body].join('\r\n');
 }
 // The description's first paragraph (or first sentence of a single paragraph),

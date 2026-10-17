@@ -750,7 +750,7 @@ const TR = {
   'Query': 'Sorgu', 'Plan': 'Plan', 'CSV export': 'CSV dışa aktarma', 'Schemas': 'Şemalar', 'Table structure': 'Tablo yapısı',
   'Remove': 'Kaldır', 'Remove filter': 'Filtreyi kaldır', 'Source: {v}': 'Kaynak: {v}', 'Tool: {v}': 'Araç: {v}', 'Database: {v}': 'Veritabanı: {v}',
   'Errors only': 'Sadece hatalar', 'Succeeded only': 'Sadece başarılı', 'Clear filters': 'Filtreleri temizle', 'operations': 'işlem',
-  '{n} new operations': '{n} yeni işlem', 'Could not load data: ': 'Veri yüklenemedi: ', '{w} copied': '{w} kopyalandı', 'Copy failed': 'Kopyalanamadı',
+  '{n} new operations': '{n} yeni işlem', 'Could not load data: ': 'Veri yüklenemedi: ', '{w} copied': '{w} kopyalandı', 'Copy failed': 'Kopyalanamadı', 'Download too large': 'İndirme çok büyük', 'Download failed': 'İndirilemedi',
   'Operations over time': 'Zaman içinde işlemler', 'by hour': 'saat bazında', 'by day · click a column to drill into that day': 'gün bazında · güne inmek için sütuna tıklayın',
   'By database': 'Veritabanına göre', 'click to switch': 'değiştirmek için tıklayın', 'By tool': 'Araca göre', 'click to filter': 'filtrelemek için tıklayın',
   'Most accessed tables': 'En çok erişilen tablolar', 'click to search': 'aramak için tıklayın', 'Slowest operations': 'En yavaş işlemler', 'click for details': 'ayrıntı için tıklayın',
@@ -1548,6 +1548,19 @@ function embedReport(html) {
   if (head < 0 || body < head) return html;
   return html.slice(0, head) + reportEmbedCss + html.slice(head, body) + reportEmbedJs + html.slice(body);
 }
+// The viewer chooses the file name of a report download: safe characters, no
+// leading dots, no extension of the report's choosing (evil.bat -> evil.csv),
+// at most 80 characters before the fixed ".csv".
+function reportDownloadName(name) {
+  const base = String(name ?? '').replace(/[^\w.-]+/g, '_').replace(/^\.+/, '').replace(/\.[^.]*$/, '').replace(/^\.+/, '').slice(0, 80);
+  return (base || 'report') + '.csv';
+}
+// The file the viewer saves for a download message, or null when there was no
+// recent click in the report (same gate as copying). A UTF-8 BOM is added once.
+function reportDownloadFile(dl, userActivation) {
+  if (userActivation && !userActivation.isActive) return null;
+  return { name: reportDownloadName(dl.name), text: dl.text.startsWith('\ufeff') ? dl.text : '\ufeff' + dl.text };
+}
 // A message from an embedded report: a clamped frame height, a toast text, a
 // CSV to download (the sandboxed frame cannot download itself), the state of its
 // performance details toggle or a text to copy (longer than reportCopyMax characters: copyTooLarge, so the
@@ -1565,8 +1578,8 @@ function reportMessage(data) {
   }
   const dl = data.auspexReportDownload;
   if (dl && typeof dl === 'object' && typeof dl.text === 'string' && typeof dl.name === 'string') {
-    if (dl.text.length > reportCopyMax) return { copyTooLarge: true };
-    return { download: { name: dl.name.replace(/[^\w.-]+/g, '_').slice(0, 80) || 'report.csv', text: dl.text } };
+    if (dl.text.length > reportCopyMax) return { downloadTooLarge: true };
+    return { download: { name: reportDownloadName(dl.name), text: dl.text } };
   }
   if (typeof data.auspexReportPerf === 'boolean') return { perf: data.auspexReportPerf };
   const msg = data.auspexReportToast;
@@ -1589,7 +1602,11 @@ window.addEventListener('message', ev => {
   if (!m) return;
   if (m.height) frame.style.height = `${m.height}px`;
   else if (m.perf !== undefined) { state.perfOpen = m.perf; persist(); }
-  else if (m.download) download(m.download.name, m.download.text, 'text/csv;charset=utf-8');
+  else if (m.downloadTooLarge) toast(t('Download too large'));
+  else if (m.download) {
+    const file = reportDownloadFile(m.download, navigator.userActivation);
+    if (file) download(file.name, file.text, 'text/csv;charset=utf-8'); else toast(t('Download failed'));
+  }
   // Copy only right after a click in the report (activation reaches this
   // frame too); browsers without userActivation keep copying.
   else if (m.copyTooLarge || (m.copy !== undefined && navigator.userActivation && !navigator.userActivation.isActive)) toast(t('Copy failed'));
