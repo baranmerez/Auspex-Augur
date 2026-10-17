@@ -10,6 +10,7 @@ import { summarizePlan, planDigest } from './planSummary.js';
 import { maskRows } from './mask.js';
 import { ToolError } from '../errors.js';
 import { relationsFromJsonPlan } from '../memory/planUsage.js';
+import { sqlParamCount, resolvePreset, builtInPresetsFor } from './presets.js';
 
 export const autoAnalyzeLimitMs = 30000;
 const templatePath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'template.html');
@@ -23,12 +24,25 @@ export function renderReport(meta) {
   if (meta.last?.plan) {
     try { meta = { ...meta, last: { ...meta.last, summary: summarizePlan(meta.last.plan) } }; } catch { /* keep stored summary */ }
   }
-  const json = JSON.stringify({ templateVersion, generatedAt: new Date().toISOString(), report: meta })
+  const json = JSON.stringify({ templateVersion, generatedAt: new Date().toISOString(), report: meta, ...(meta.shareable ? {} : { presets: presetInfo(meta) }) })
     .replace(/</g, '\\u003c')
     .split(String.fromCharCode(0x2028)).join('\\u2028')
     .split(String.fromCharCode(0x2029)).join('\\u2029');
   const title = String(meta.title || meta.name).replace(/[<>&"]/g, ch => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[ch]));
   return template.replace('__AUSPEX_TITLE__', () => title).replace('"__AUSPEX_DATA__"', () => json);
+}
+
+// Presets the viewer lists for a report (read-only): the built-in keys when
+// its active SQL takes exactly two parameters, and its custom presets. Never
+// part of a shared copy.
+export function presetInfo(meta) {
+  const active = (meta.sqlVersions || []).find(v => v.hash === meta.activeHash) ?? meta.sqlVersions?.at(-1);
+  const paramCount = active ? sqlParamCount(active.sql) : null;
+  return {
+    paramCount,
+    builtIn: paramCount === null ? [] : builtInPresetsFor(paramCount),
+    custom: (meta.presets || []).map(p => ({ name: p.name, params: p.params })),
+  };
 }
 
 // The SQL hash a rendered report HTML stands for: activeHash of the metadata
@@ -160,15 +174,25 @@ export class ReportService {
     return {
       report: refLabel(ref), stage: 'draft', version: saved.version, sqlHash: saved.hash, sqlFile: saved.paths.sql, htmlFile: saved.paths.html,
       ...(saved.externalFile ? { externalFile: saved.externalFile } : {}),
+      ...(saved.presetMismatch?.length ? { presetMismatch: saved.presetMismatch, presetNote: 'These presets no longer have one value per SQL parameter; run_report refuses them until you save updated presets.' } : {}),
     };
   }
 
-  async run(input, { analyze = 'auto', previewRows = 50, returnRows = 20, timeoutSeconds, params } = {}) {
+  // preset (optional): a built-in date-range key or a custom preset name of
+  // the report, resolved to the parameter values; not together with params.
+  async run(input, { analyze = 'auto', previewRows = 50, returnRows = 20, timeoutSeconds, params, preset } = {}) {
     const ref = this.ref(input);
+    if (preset !== undefined && params !== undefined) throw new ToolError('INVALID_INPUT', 'Pass either preset or params, not both.');
     const stage = this.library.locate(ref);
     const sql = this.library.readSql(stage, ref);
     const meta = this.library.readMeta(stage, ref);
     if (!meta) throw new ToolError('NOT_FOUND', `Report metadata missing for ${refLabel(ref)}; save the report first.`);
+    let usedPreset = null;
+    if (preset !== undefined) {
+      const resolved = resolvePreset(preset, meta.presets, sqlParamCount(sql), msg => new ToolError('INVALID_INPUT', msg));
+      usedPreset = resolved.preset;
+      params = resolved.params;
+    }
 
     let doAnalyze = analyze === true || analyze === 'always';
     let note = null;
@@ -195,7 +219,7 @@ export class ReportService {
       durationMs, planningMs: summary.planningMs, executionMs: summary.executionMs,
       explainMs: Math.round(result.explainMs), previewMs: Math.round(result.previewMs), previewExecuted: result.previewExecuted,
       totalCost: summary.totalCost, rows: summary.rows, buffers: summary.buffers,
-      warnings: summary.warnings.map(w => w.text), params: params || null,
+      warnings: summary.warnings.map(w => w.text), params: params || null, preset: usedPreset,
     };
     const last = {
       at, profile: result.profile, serverVersion: result.serverVersion, sqlHash: hash, version,
@@ -218,6 +242,7 @@ export class ReportService {
 
     return {
       report: refLabel(ref), stage: savedStage, version, sqlHash: hash, htmlFile: html, note,
+      ...(usedPreset ? { preset: usedPreset, params } : {}),
       durationMs, explainMs: run.explainMs, previewMs: run.previewMs,
       ...planDigest(summary),
       columns: columns.map(c => `${c.name} ${c.type}`),

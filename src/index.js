@@ -15,6 +15,7 @@ import {
 } from './catalog.js';
 import { ReportService } from './reports/service.js';
 import { sqlHash, sqlHashPattern } from './reports/library.js';
+import { builtInPresetKeys, maxPresetName, maxPresets } from './reports/presets.js';
 import { SchemaMemory, noteKinds } from './memory/store.js';
 import { relationsFromTextPlan } from './memory/planUsage.js';
 import { loadPromptSkills, promptText } from './skills.js';
@@ -71,6 +72,12 @@ const server = new McpServer({ name: 'auspex', version: '0.9.0' }, { instruction
 const profileArg = z.string().min(1).describe('Required profile name (see list_profiles). Use only a profile the user named in this conversation; otherwise ask the user first.');
 const paramsArg = z.array(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional()
   .describe('Values for $1, $2, ... placeholders. Prefer these over inlining literals.');
+const paramValueArg = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+const presetsArg = z.array(z.object({
+  name: z.string().min(1).max(maxPresetName).describe('Preset name shown to the user, e.g. "April 2023 trial"; unique per report, not a built-in key.'),
+  params: z.array(paramValueArg).describe('One value per SQL parameter ($1, $2, ...).'),
+})).max(maxPresets).optional()
+  .describe(`Named parameter sets of this report. When given, replaces all its custom presets ([] removes them); each needs exactly one value per SQL parameter. Names 1-${maxPresetName} characters, unique (case-insensitive), not a built-in key (${builtInPresetKeys.join(', ')}). Write names in the notesLanguage from list_profiles.`);
 const timeoutArg = z.number().min(1).optional()
   .describe(`Statement timeout in seconds for this call. Default ${defaultTimeoutS}; maximum ${maxTimeoutS} unless the profile has a lower limit (see list_profiles). Tell the user before using more than the default.`);
 
@@ -378,23 +385,25 @@ tool('save_report', {
     note: z.string().optional().describe('What changed in this SQL version. Write it in the notesLanguage from list_profiles (ask once if null).'),
     mask: z.array(z.string()).optional().describe('Extra result columns to mask in previews.'),
     unmask: z.array(z.string()).optional().describe('Columns to exempt from automatic masking (only when the user agreed).'),
+    presets: presetsArg,
   },
-}, async args => db.audited('save_report', { ...reportDetails(args), sqlHash: sqlHash(args.sql), ...scriptRootDetails(args) }, () => reports.save(args),
+}, async args => db.audited('save_report', { ...reportDetails(args), sqlHash: sqlHash(args.sql), ...scriptRootDetails(args), ...(args.presets ? { presets: args.presets.length } : {}) }, () => reports.save(args),
   r => ({ version: r.version, stage: r.stage, ...(r.externalFile ? { file: r.externalFile } : {}) })));
 
 tool('run_report', {
   title: 'Run report',
-  description: 'Runs a library report read-only: EXPLAIN (FORMAT JSON, with ANALYZE unless skipped) plus a masked preview, appends the run to its history and regenerates its HTML. Returns a compact summary (timings, hotspots, joins, warnings, first preview rows) and the HTML path.',
+  description: 'Runs a library report read-only: EXPLAIN (FORMAT JSON, with ANALYZE unless skipped) plus a masked preview, appends the run to its history and regenerates its HTML. Returns a compact summary (timings, hotspots, joins, warnings, first preview rows) and the HTML path. Parameters come from params or from preset (not both); the run records the preset name and the resolved values.',
   inputSchema: {
     ...refArgs,
     analyze: z.enum(['auto', 'always', 'never']).optional().describe('auto (default): ANALYZE unless the previous run took more than 30 s. always: ask the user first for slow reports. never: estimated plan without EXPLAIN ANALYZE; the query itself still runs once for the preview unless previewRows is 0.'),
     previewRows: z.number().int().min(0).max(config.maxRows).optional().describe('Rows stored in the HTML preview. Default 50. With 0 the query is not executed for a preview; only its column names are read (LIMIT 0).'),
     returnRows: z.number().int().min(0).max(100).optional().describe('Preview rows returned to you. Default 20.'),
     params: paramsArg,
+    preset: z.string().min(1).optional().describe(`Instead of params: a built-in date-range preset (${builtInPresetKeys.join(', ')}; only for SQL with exactly two parameters, $1 start inclusive and $2 end exclusive, resolved at run time to ISO dates in the local time zone of the Auspex machine; last_7_days includes today) or the name of one of the report's custom presets (list_reports).`),
     timeoutSeconds: timeoutArg,
   },
-}, async ({ analyze, previewRows, returnRows, params, timeoutSeconds, ...ref }) =>
-  reports.run(ref, { analyze: analyze === 'never' ? false : analyze === 'always' ? 'always' : 'auto', previewRows, returnRows, params, timeoutSeconds }));
+}, async ({ analyze, previewRows, returnRows, params, preset, timeoutSeconds, ...ref }) =>
+  reports.run(ref, { analyze: analyze === 'never' ? false : analyze === 'always' ? 'always' : 'auto', previewRows, returnRows, params, preset, timeoutSeconds }));
 
 tool('approve_report', {
   title: 'Approve report',
@@ -407,7 +416,7 @@ tool('approve_report', {
 
 tool('list_reports', {
   title: 'List reports',
-  description: 'Lists library reports and change scripts with stage (draft, approved, execute), db, schema, category (nested levels joined with "/", also as the categoryPath array), versions and last run.',
+  description: 'Lists library reports and change scripts with stage (draft, approved, execute), db, schema, category (nested levels joined with "/", also as the categoryPath array), versions, last run (with the preset it used) and presets (builtIn: the date-range keys run_report accepts when the SQL takes exactly two parameters; custom: the named parameter sets of the report).',
   inputSchema: {
     db: z.string().optional().describe('Only this database (profile).'),
     stage: z.enum(['draft', 'approved', 'execute']).optional(),

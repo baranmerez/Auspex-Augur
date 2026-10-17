@@ -11,6 +11,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { assertReadOnlyQuery, stripLiteralsAndComments } from '../sqlGuard.js';
 import { withFileLock, renameRetrying } from '../fileLock.js';
+import { sqlParamCount, validatePresets, builtInPresetsFor, mismatchedPresets } from './presets.js';
 
 export const stages = { draft: '_drafts', approved: 'SELECT', execute: 'EXECUTE' };
 const maxRuns = 100;
@@ -175,8 +176,12 @@ export class Library {
   // With target ({ root, dir, folder, fileName }) the read-only query is also
   // written as a new file into that script root (never overwriting one), for
   // the user to run in their own tool; the draft records the path.
-  saveDraftUnlocked({ ref, title, description, sql, note, mask, unmask, target = null }) {
+  // presets (optional): replaces the report's custom parameter presets; each
+  // must have one value per parameter of the saved SQL (see presets.js).
+  saveDraftUnlocked({ ref, title, description, sql, note, mask, unmask, presets, target = null }) {
     assertReadOnlyQuery(sql);
+    const paramCount = sqlParamCount(sql);
+    const checkedPresets = presets === undefined ? undefined : validatePresets(presets, paramCount, msg => new LibraryError(msg));
     this.ensure();
     const r = normalizeRef(ref);
     const now = new Date().toISOString();
@@ -206,6 +211,7 @@ export class Library {
     if (description !== undefined) meta.description = description;
     if (mask) meta.mask = mask;
     if (unmask) meta.unmask = unmask;
+    if (checkedPresets !== undefined) meta.presets = checkedPresets;
     const text = normalizeSql(sql);
     const hash = sqlHash(text);
     if (!meta.sqlVersions.some(v => v.hash === hash)) {
@@ -222,7 +228,9 @@ export class Library {
     const p = this.paths('draft', r);
     writeAtomic(p.sql, text + '\n');
     this.writeMeta('draft', r, meta);
-    return { ref: r, stage: 'draft', version, hash, paths: p, externalFile };
+    // Stored presets that no longer fit the saved SQL (run_report refuses them).
+    const presetMismatch = mismatchedPresets(meta.presets, paramCount);
+    return { ref: r, stage: 'draft', version, hash, paths: p, externalFile, presetMismatch };
   }
 
   appendRun(stage, ref, run, last) {
@@ -381,12 +389,17 @@ export class Library {
     const meta = stage === 'execute' ? null : this.readMeta(stage, ref);
     const externalFile = stage === 'execute' ? this.executeInfo(ref)?.externalFile : null;
     const lastRun = meta?.runs?.at(-1);
+    // Presets: built-in date-range keys when the SQL takes exactly two
+    // parameters, and the report's custom preset names.
+    let paramCount = null;
+    if (meta) { try { paramCount = sqlParamCount(fs.readFileSync(file, 'utf8')); } catch { /* listed without presets */ } }
     return {
       stage, ...ref, categoryPath: segments, ...(externalFile ? { externalFile } : {}), title: meta?.title ?? ref.name, description: meta?.description || null,
       versions: meta?.sqlVersions?.length ?? null, approvedVersion: meta?.approvedVersion ?? null,
       updatedAt: meta?.updatedAt ?? fs.statSync(file).mtime.toISOString(),
       runs: meta?.runs?.length ?? 0,
-      lastRun: lastRun ? { at: lastRun.at, durationMs: lastRun.durationMs, rows: lastRun.rows, analyzed: lastRun.analyzed, warnings: lastRun.warnings?.length ?? 0 } : null,
+      lastRun: lastRun ? { at: lastRun.at, durationMs: lastRun.durationMs, rows: lastRun.rows, analyzed: lastRun.analyzed, warnings: lastRun.warnings?.length ?? 0, ...(lastRun.preset ? { preset: lastRun.preset } : {}) } : null,
+      ...(meta ? { paramCount, presets: { builtIn: paramCount === null ? [] : builtInPresetsFor(paramCount), custom: (meta.presets || []).map(x => x.name) } } : {}),
     };
   }
 
