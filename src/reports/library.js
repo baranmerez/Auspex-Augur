@@ -57,6 +57,16 @@ export function normalizeRef(ref) {
 export const refLabel = r => `${r.db}/${r.schema}/${r.category}/${r.name}`;
 export const sqlHash = sql => crypto.createHash('sha256').update(normalizeSql(sql)).digest('hex').slice(0, 12);
 const normalizeSql = sql => String(sql).replace(/\r\n/g, '\n').trim();
+// The format of sqlHash: 12 lower-case hex characters.
+export const sqlHashPattern = /^[0-9a-f]{12}$/;
+
+// A stage change bound to the version the person reviewed: expectedHash is
+// the SQL hash they were shown. Refused when the report now stands for other SQL.
+function checkExpected(expectedHash, currentHash, version) {
+  if (expectedHash === undefined || expectedHash === null || expectedHash === currentHash) return;
+  const now = Number.isInteger(version) ? ` (now version ${version})` : '';
+  throw new LibraryError(`The report changed since you opened it${now}; reload and review again.`, 'STALE_VERSION');
+}
 
 function writeAtomic(file, text) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -183,7 +193,7 @@ export class Library {
     const p = this.paths('draft', r);
     writeAtomic(p.sql, text + '\n');
     this.writeMeta('draft', r, meta);
-    return { ref: r, stage: 'draft', version, paths: p, externalFile };
+    return { ref: r, stage: 'draft', version, hash, paths: p, externalFile };
   }
 
   appendRun(stage, ref, run, last) {
@@ -207,7 +217,9 @@ export class Library {
     return this.locked(() => this.approveUnlocked(ref, options));
   }
 
-  approveUnlocked(ref, { by = null } = {}) {
+  // expectedHash (optional): the SQL hash the approver reviewed; other
+  // current draft SQL is refused with STALE_VERSION and nothing moves.
+  approveUnlocked(ref, { by = null, expectedHash } = {}) {
     const r = normalizeRef(ref);
     if (!this.exists('draft', r)) throw new LibraryError(`No draft "${refLabel(r)}" to approve.`, 'NOT_FOUND');
     const from = this.paths('draft', r);
@@ -216,6 +228,7 @@ export class Library {
     // Approve exactly the SQL in the draft file, found by its hash.
     const hash = sqlHash(fs.readFileSync(from.sql, 'utf8'));
     const version = meta.sqlVersions.find(v => v.hash === hash)?.version;
+    checkExpected(expectedHash, hash, version);
     if (version === undefined) throw new LibraryError(`The draft SQL of "${refLabel(r)}" matches no saved version; save it with save_report first.`, 'PRECONDITION_FAILED');
     // Only SQL that has run successfully (every entry in meta.runs is a success) can be approved.
     if (!(meta.runs || []).some(x => x.sqlHash === hash)) throw new LibraryError(`Version ${version} of "${refLabel(r)}" has no successful run; run it with run_report before approving.`, 'PRECONDITION_FAILED');
@@ -240,7 +253,9 @@ export class Library {
     return this.locked(() => this.revokeUnlocked(ref, options));
   }
 
-  revokeUnlocked(ref, { by = null } = {}) {
+  // expectedHash (optional): the SQL hash of the approved version the person
+  // reviewed; refused with STALE_VERSION when the approval now stands for other SQL.
+  revokeUnlocked(ref, { by = null, expectedHash } = {}) {
     const r = normalizeRef(ref);
     if (!this.exists('approved', r)) throw new LibraryError(`No approved report "${refLabel(r)}" to revoke.`, 'NOT_FOUND');
     if (this.exists('draft', r)) throw new LibraryError(`"${refLabel(r)}" has an open draft; approve or remove that draft before revoking the approval.`, 'PRECONDITION_FAILED');
@@ -250,6 +265,7 @@ export class Library {
     if (!meta) throw new LibraryError(`Report metadata of "${refLabel(r)}" is missing.`, 'NOT_FOUND');
     const now = new Date().toISOString();
     const version = meta.approvedVersion ?? meta.activeVersion ?? null;
+    checkExpected(expectedHash, this.activeHash('approved', r, meta), version);
     meta.status = 'draft';
     meta.updatedAt = now;
     meta.revokedAt = now;

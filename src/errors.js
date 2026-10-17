@@ -14,6 +14,7 @@
 //   PROFILE_INVALID        missing or unknown profile
 //   NOT_FOUND              report, note, table or column not found
 //   PRECONDITION_FAILED    the operation needs an earlier step (save, run)
+//   STALE_VERSION          the report changed since the version the caller reviewed
 //   PERMISSION_DENIED      no privilege on the object
 //   CONNECTION_FAILED      could not connect or authenticate, or the connection dropped
 //   DISK_ERROR             a local file could not be written or read
@@ -21,7 +22,7 @@
 //   INTERNAL               anything else
 export const errorCodes = [
   'QUERY_BUDGET_EXCEEDED', 'LOCK_BUSY', 'ROLE_REJECTED', 'SQL_REJECTED', 'TIMEOUT', 'INVALID_INPUT',
-  'PROFILE_INVALID', 'NOT_FOUND', 'PRECONDITION_FAILED', 'PERMISSION_DENIED', 'CONNECTION_FAILED',
+  'PROFILE_INVALID', 'NOT_FOUND', 'PRECONDITION_FAILED', 'STALE_VERSION', 'PERMISSION_DENIED', 'CONNECTION_FAILED',
   'DISK_ERROR', 'DATABASE_ERROR', 'INTERNAL',
 ];
 

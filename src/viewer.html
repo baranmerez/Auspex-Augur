@@ -1759,6 +1759,9 @@ function reportView(r) {
 // The stage change the Reports view offers: approve a draft or revoke an
 // approval. The browser viewer POSTs to path; the desktop app calls the Tauri
 // command, which runs src/stageCli.js (same checks, lock and audit).
+// Both send expectedHash, the SQL hash of the version the dialog showed
+// (r.activeHash from the same list entry), so a version saved meanwhile is
+// refused with STALE_VERSION instead of being approved or revoked unseen.
 function stageChangeFor(r) {
   if (!r || (r.stage !== 'draft' && r.stage !== 'approved')) return null;
   return r.stage === 'draft'
@@ -1780,21 +1783,23 @@ function stageChangeFacts(r) {
     ['Warnings', lr ? lr.warnings ?? 0 : null],
   ];
 }
+// The request: the report location and the reviewed version's SQL hash.
+const stageRequest = r => ({ db: r.db, schema: r.schema, category: r.category, name: r.name, expectedHash: r.activeHash ?? null });
 // POST with the page's token; the server also checks the Origin header.
 async function postStageChange(fetchFn, token, path, r) {
   const res = await fetchFn(path, {
     method: 'POST', cache: 'no-store', credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json', 'X-Auspex-Token': token },
-    body: JSON.stringify({ db: r.db, schema: r.schema, category: r.category, name: r.name }),
+    body: JSON.stringify(stageRequest(r)),
   });
   let data = null;
   try { data = await res.json(); } catch {}
   // A token refusal means the viewer restarted (new token) since the page loaded.
   if (res.status === 403 && data?.code === 'TOKEN_INVALID') throw Object.assign(new Error(data.error), { viewerRestarted: true });
-  if (!res.ok) throw new Error(data?.error || res.statusText || `HTTP ${res.status}`);
+  if (!res.ok) throw Object.assign(new Error(data?.error || res.statusText || `HTTP ${res.status}`), { code: data?.code });
   return data;
 }
-// Desktop: the Tauri command with only the report location. Setup problems
+// Desktop: the Tauri command with the same request. Setup problems
 // (no or a wrong Auspex folder, no Node) and an unknown outcome (the CLI timed
 // out or gave no result) come back as a fixed text the page translates.
 const stageSetupTexts = {
@@ -1806,7 +1811,7 @@ const stageSetupTexts = {
 };
 async function invokeStageChange(invoke, command, r) {
   try {
-    return await invoke(command, { db: r.db, schema: r.schema, category: r.category, name: r.name });
+    return await invoke(command, stageRequest(r));
   } catch (err) {
     const code = typeof err === 'object' && err ? err.code : undefined;
     const message = typeof err === 'string' ? err : err?.message || String(err);
@@ -1852,8 +1857,12 @@ async function runStageChange(r, sc) {
     try { state.reports = await getJson('/api/reports'); } catch (err) { state.reports = { error: err.message, reports: [] }; }
   } catch (err) {
     toast(err.viewerRestarted ? t('The viewer was restarted; reload the page') : err.setupText ? t(err.setupText) : err.message);
-    // Outcome unknown (desktop CLI timed out or gave no result): show the library as it is now.
-    if (err.code === 'TIMEOUT' || err.code === 'CLI_FAILED') { try { state.reports = await getJson('/api/reports'); } catch {} }
+    // Outcome unknown (desktop CLI timed out or gave no result), or the report
+    // changed since the dialog opened (STALE_VERSION): show the library as it is now.
+    if (err.code === 'TIMEOUT' || err.code === 'CLI_FAILED' || err.code === 'STALE_VERSION') {
+      if (err.code === 'STALE_VERSION') state.reportDoc = null;
+      try { state.reports = await getJson('/api/reports'); } catch {}
+    }
   } finally {
     state.stagePending = null;
     state.reportViewNode = null;

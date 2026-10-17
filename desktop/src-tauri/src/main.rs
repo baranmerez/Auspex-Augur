@@ -150,6 +150,8 @@ fn list_reports() -> Value {
                         let updated = meta.get("updatedAt").cloned().unwrap_or(Value::Null);
                         // Drafts carry the SQL version an approval would approve (confirm dialog).
                         let active = if stage == "draft" { meta.get("activeVersion").cloned().unwrap_or(Value::Null) } else { Value::Null };
+                        // Drafts and approved reports carry the SQL hash the dialog sends back.
+                        let active_hash = if stage == "execute" { Value::Null } else { active_hash(&meta, &folder.join(&f)) };
                         out.push(json!({
                             "stage": stage, "db": db, "schema": schema, "category": category, "name": name,
                             "title": meta.get("title").cloned().unwrap_or(json!(name)),
@@ -157,6 +159,7 @@ fn list_reports() -> Value {
                             "versions": meta.get("sqlVersions").and_then(Value::as_array).map(|a| a.len()),
                             "approvedVersion": meta.get("approvedVersion").cloned().unwrap_or(Value::Null),
                             "activeVersion": active,
+                            "activeHash": active_hash,
                             "updatedAt": updated,
                             "runs": meta.get("runs").and_then(Value::as_array).map(|a| a.len()).unwrap_or(0),
                             "lastRun": last.map(|r| json!({
@@ -170,6 +173,25 @@ fn list_reports() -> Value {
         }
     }
     json!({ "libraryDir": root.to_string_lossy(), "reports": out })
+}
+
+// The SQL hash a report stands for, as Library.activeHash in src/reports
+// reads it: meta.activeHash, or for reports saved before that field, the
+// saved version whose text equals the SQL file (normalized like sqlHash:
+// CRLF -> LF, trimmed). Null when neither is found; Node checks again.
+fn active_hash(meta: &Value, sql_file: &std::path::Path) -> Value {
+    if let Some(h) = meta.get("activeHash").and_then(Value::as_str).filter(|h| valid_hash(h)) {
+        return json!(h);
+    }
+    let Ok(text) = fs::read_to_string(sql_file) else { return Value::Null };
+    let text = text.replace("\r\n", "\n");
+    let text = text.trim();
+    meta.get("sqlVersions")
+        .and_then(Value::as_array)
+        .and_then(|vs| vs.iter().find(|v| v.get("sql").and_then(Value::as_str) == Some(text)))
+        .and_then(|v| v.get("hash").and_then(Value::as_str))
+        .filter(|h| valid_hash(h))
+        .map_or(Value::Null, |h| json!(h))
 }
 
 fn report_content(query: &HashMap<String, String>) -> Result<Value, String> {
@@ -428,7 +450,7 @@ fn api(path: String, query: HashMap<String, String>) -> Result<Value, String> {
 
 // ---------- report stage changes (approve / revoke) ----------
 // The library logic stays in Node: these commands run
-// `node <auspexRoot>/src/stageCli.js approve|revoke --db=.. --schema=.. --category=.. --name=..`
+// `node <auspexRoot>/src/stageCli.js approve|revoke --db=.. --schema=.. --category=.. --name=.. --expected-hash=..`
 // without a shell, with a fixed program and script, and read its one-line JSON
 // result. This is the app's only process execution besides opening Explorer.
 
@@ -459,6 +481,12 @@ fn valid_ref_part(key: &str, s: &str) -> bool {
         }
         _ => true,
     }
+}
+
+// The SQL hash of the version the person reviewed, in the format of sqlHash
+// in src/reports/library.js: 12 lower-case hex characters.
+fn valid_hash(s: &str) -> bool {
+    s.len() == 12 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 // Node: AUSPEX_NODE (absolute path of the executable), else `node` found in
@@ -540,7 +568,7 @@ fn parse_cli_output(stdout: &str, stderr: &str, exit: Option<i32>) -> Result<Val
     }
 }
 
-fn run_stage_cli(action: &str, parts: &[String; 4]) -> Result<Value, Value> {
+fn run_stage_cli(action: &str, parts: &[String; 4], expected_hash: &str) -> Result<Value, Value> {
     if action != "approve" && action != "revoke" {
         return Err(stage_error("INVALID_INPUT", "Unknown stage action."));
     }
@@ -548,6 +576,9 @@ fn run_stage_cli(action: &str, parts: &[String; 4]) -> Result<Value, Value> {
         if !valid_ref_part(key, value) {
             return Err(stage_error("INVALID_INPUT", format!("Invalid report {key}.")));
         }
+    }
+    if !valid_hash(expected_hash) {
+        return Err(stage_error("INVALID_INPUT", "Invalid expected SQL hash; reload the list."));
     }
     let node = node_program()?;
     let root = auspex_root()?;
@@ -557,6 +588,7 @@ fn run_stage_cli(action: &str, parts: &[String; 4]) -> Result<Value, Value> {
     for (key, value) in REF_KEYS.iter().zip(parts.iter()) {
         cmd.arg(format!("--{key}={value}"));
     }
+    cmd.arg(format!("--expected-hash={expected_hash}"));
     cmd.current_dir(&root).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     #[cfg(windows)]
     {
@@ -636,20 +668,22 @@ fn audit_uncertain(action: &str, parts: &[String; 4], elapsed: Duration, err: &V
     });
 }
 
-async fn stage_command(action: &'static str, parts: [String; 4]) -> Result<Value, Value> {
-    tauri::async_runtime::spawn_blocking(move || run_stage_cli(action, &parts))
+async fn stage_command(action: &'static str, parts: [String; 4], expected_hash: String) -> Result<Value, Value> {
+    tauri::async_runtime::spawn_blocking(move || run_stage_cli(action, &parts, &expected_hash))
         .await
         .map_err(|e| stage_error("INTERNAL", e.to_string()))?
 }
 
+// expected_hash (expectedHash from the page): the SQL hash of the version the
+// confirm dialog showed; required.
 #[tauri::command]
-async fn approve_report(db: String, schema: String, category: String, name: String) -> Result<Value, Value> {
-    stage_command("approve", [db, schema, category, name]).await
+async fn approve_report(db: String, schema: String, category: String, name: String, expected_hash: String) -> Result<Value, Value> {
+    stage_command("approve", [db, schema, category, name], expected_hash).await
 }
 
 #[tauri::command]
-async fn revoke_report(db: String, schema: String, category: String, name: String) -> Result<Value, Value> {
-    stage_command("revoke", [db, schema, category, name]).await
+async fn revoke_report(db: String, schema: String, category: String, name: String, expected_hash: String) -> Result<Value, Value> {
+    stage_command("revoke", [db, schema, category, name], expected_hash).await
 }
 
 fn show_main(app: &AppHandle) {
@@ -767,9 +801,41 @@ mod tests {
         }
         assert!(!valid_ref_part("category", &"a".repeat(81)));
         let bad_name = ["exampledb".to_string(), "example".into(), "Example Reports".into(), "Bad Name".into()];
-        assert_eq!(run_stage_cli("approve", &bad_name).unwrap_err()["code"], json!("INVALID_INPUT"));
+        assert_eq!(run_stage_cli("approve", &bad_name, "0123456789ab").unwrap_err()["code"], json!("INVALID_INPUT"));
         let ok = ["exampledb".to_string(), "example".into(), "Example Reports".into(), "example-report".into()];
-        assert_eq!(run_stage_cli("delete", &ok).unwrap_err()["code"], json!("INVALID_INPUT"));
+        assert_eq!(run_stage_cli("delete", &ok, "0123456789ab").unwrap_err()["code"], json!("INVALID_INPUT"));
+    }
+
+    #[test]
+    fn expected_hash_has_the_sql_hash_format_and_is_checked_before_spawning() {
+        assert!(valid_hash("0123456789ab"));
+        assert!(valid_hash("abcdef012345"));
+        for bad in ["", "0123456789a", "0123456789abc", "0123456789AB", "0123456789ag", "--name=x1234", "01234 56789a", "０１２３４５６７８９ab"] {
+            assert!(!valid_hash(bad), "{bad}");
+        }
+        // Refused before Node or the Auspex folder is looked up, so no process starts.
+        let ok = ["exampledb".to_string(), "example".into(), "Example Reports".into(), "example-report".into()];
+        for bad in ["", "0123456789AB", "--db=other"] {
+            let e = run_stage_cli("approve", &ok, bad).unwrap_err();
+            assert_eq!((e["code"].clone(), e["message"].clone()), (json!("INVALID_INPUT"), json!("Invalid expected SQL hash; reload the list.")), "{bad}");
+        }
+    }
+
+    #[test]
+    fn listed_reports_carry_the_hash_the_dialog_sends() {
+        let dir = std::env::temp_dir().join(format!("auspex-active-hash-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let sql = dir.join("example-report.sql");
+        fs::write(&sql, "select order_id\r\nfrom example.orders\n").unwrap();
+        assert_eq!(active_hash(&json!({ "activeHash": "0123456789ab" }), &sql), json!("0123456789ab"));
+        let versions = json!({ "sqlVersions": [
+            { "version": 1, "hash": "aaaaaaaaaaaa", "sql": "select 1" },
+            { "version": 2, "hash": "bbbbbbbbbbbb", "sql": "select order_id\nfrom example.orders" },
+        ] });
+        assert_eq!(active_hash(&versions, &sql), json!("bbbbbbbbbbbb"), "older reports: the saved version equal to the SQL file");
+        assert_eq!(active_hash(&json!({ "activeHash": "not-a-hash" }), &sql), Value::Null);
+        assert_eq!(active_hash(&Value::Null, &dir.join("missing.sql")), Value::Null);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

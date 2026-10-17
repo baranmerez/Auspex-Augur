@@ -20,6 +20,9 @@ let child, port, home, token, lib;
 const ref = { db: 'exampledb', schema: 'example', category: 'Example Reports', name: 'example-report' };
 const other = { ...ref, name: 'example-report-2' };
 const sql = 'select order_id, status_code from example.orders';
+const hash = sqlHash(sql);
+// A stage-change body: the location plus the SQL hash the dialog showed.
+const stageBody = (r = ref, h = hash) => ({ ...r, expectedHash: h });
 
 const freePort = () => new Promise((resolve, reject) => {
   const s = net.createServer();
@@ -95,7 +98,7 @@ test('the page carries a per-process token and may not be framed', async () => {
 });
 
 test('requests without the right origin, token or host are refused and change nothing', async () => {
-  const body = JSON.stringify(ref);
+  const body = JSON.stringify(stageBody());
   const cases = [
     { origin: undefined },
     { origin: 'http://example.test' },
@@ -123,33 +126,45 @@ test('requests without the right origin, token or host are refused and change no
 test('methods, content type, body shape, size and traversal are checked', async () => {
   assert.equal((await request({ path: '/api/reports/approve' })).status, 405);
   assert.equal((await request({ method: 'POST', path: '/api/reports' })).status, 405);
-  assert.equal((await post('/api/reports/approve', ref, { 'content-type': 'text/plain' })).status, 415);
+  assert.equal((await post('/api/reports/approve', stageBody(), { 'content-type': 'text/plain' })).status, 415);
   for (const body of [
     'not json', '[]', 'null', '"x"',
-    { ...ref, extra: 1 },
-    { ...ref, name: 42 },
-    { db: ref.db, schema: ref.schema, category: ref.category },
-    { ...ref, category: '..' },
-    { ...ref, schema: '../../SELECT' },
-    { ...ref, category: 'Example Reports/../..' },
-    { ...ref, name: '../example-report' },
-    { ...ref, name: 'Example Report' },
-    { ...ref, db: 'ExampleDB' },
+    { ...stageBody(), extra: 1 },
+    { ...stageBody(), name: 42 },
+    { db: ref.db, schema: ref.schema, category: ref.category, expectedHash: hash },
+    stageBody({ ...ref, category: '..' }),
+    stageBody({ ...ref, schema: '../../SELECT' }),
+    stageBody({ ...ref, category: 'Example Reports/../..' }),
+    stageBody({ ...ref, name: '../example-report' }),
+    stageBody({ ...ref, name: 'Example Report' }),
+    stageBody({ ...ref, db: 'ExampleDB' }),
+    // The reviewed SQL hash is required and must have the sqlHash format.
+    ref,
+    stageBody(ref, null),
+    stageBody(ref, 1),
+    stageBody(ref, ''),
+    stageBody(ref, hash.toUpperCase()),
+    stageBody(ref, `${hash}0`),
+    stageBody(ref, hash.slice(1)),
   ]) {
     const res = await post('/api/reports/approve', body);
     assert.equal(res.status, 400, `${JSON.stringify(body)} -> ${res.status} ${res.text}`);
   }
-  const big = await post('/api/reports/approve', JSON.stringify({ ...ref, name: 'a'.repeat(5000) }));
+  const big = await post('/api/reports/approve', JSON.stringify(stageBody({ ...ref, name: 'a'.repeat(5000) })));
   assert.equal(big.status, 413);
   assert.equal(lib.exists('draft', ref), true);
 });
 
 test('approve and revoke move the report, answer 404/409 otherwise, and are audited', async () => {
   const before = auditEntries().length;
-  assert.equal((await post('/api/reports/approve', { ...ref, name: 'missing-report' })).status, 404);
-  assert.equal((await post('/api/reports/revoke', ref)).status, 409, 'a draft cannot be revoked');
+  assert.equal((await post('/api/reports/approve', stageBody({ ...ref, name: 'missing-report' }))).status, 404);
+  assert.equal((await post('/api/reports/revoke', stageBody())).status, 409, 'a draft cannot be revoked');
+  const stale = await post('/api/reports/approve', stageBody(ref, 'abcdef012345'));
+  assert.deepEqual([stale.status, stale.json.code], [409, 'STALE_VERSION'], 'another reviewed version is refused');
+  assert.match(stale.json.error, /changed since you opened it \(now version 1\); reload and review again/);
+  assert.equal(lib.exists('draft', ref), true, 'nothing moved');
 
-  const ok = await post('/api/reports/approve', ref);
+  const ok = await post('/api/reports/approve', stageBody());
   assert.equal(ok.status, 200, ok.text);
   assert.deepEqual([ok.json.stage, ok.json.version], ['approved', 1]);
   assert.equal(lib.exists('approved', ref), true);
@@ -157,18 +172,22 @@ test('approve and revoke move the report, answer 404/409 otherwise, and are audi
   const graph = path.join(home, 'memory', 'exampledb', 'graph.json');
   assert.ok(fs.existsSync(graph), 'the schema memory view is rebuilt');
   fs.rmSync(graph);
-  assert.equal((await post('/api/reports/approve', ref)).status, 409, 'already approved');
+  assert.equal((await post('/api/reports/approve', stageBody())).status, 409, 'already approved');
 
   const listed = (await request({ path: '/api/reports' })).json.reports;
   assert.deepEqual(listed.map(r => [r.name, r.stage]).sort(), [['example-report', 'approved'], ['example-report-2', 'draft']]);
   assert.equal(listed.find(r => r.stage === 'draft').activeVersion, 1);
+  assert.deepEqual(listed.map(r => r.activeHash), [hash, hash], 'drafts and approved reports carry the hash the dialog sends');
+  const staleRevoke = await post('/api/reports/revoke', stageBody(ref, 'abcdef012345'));
+  assert.deepEqual([staleRevoke.status, staleRevoke.json.code], [409, 'STALE_VERSION'], 'revoke is bound to the approved version');
+  assert.equal(lib.exists('approved', ref), true);
 
-  const back = await post('/api/reports/revoke', ref);
+  const back = await post('/api/reports/revoke', stageBody());
   assert.equal(back.status, 200, back.text);
   assert.deepEqual([back.json.stage, back.json.version], ['draft', 1]);
   assert.ok(fs.existsSync(graph), 'rebuilt again on revoke');
   assert.equal(lib.exists('draft', ref), true);
-  assert.equal((await post('/api/reports/revoke', ref)).status, 409, 'already a draft');
+  assert.equal((await post('/api/reports/revoke', stageBody())).status, 409, 'already a draft');
 
   const entries = auditEntries().slice(before);
   assert.ok(entries.every(e => e.source === 'viewer' && e.actor === 'viewer' && /^[0-9a-f-]{36}$/.test(e.correlationId)));
@@ -179,14 +198,15 @@ test('approve and revoke move the report, answer 404/409 otherwise, and are audi
   ]);
   assert.equal(done[0].correlationId, ok.json.correlationId);
   assert.deepEqual(entries.filter(e => e.error).map(e => [e.tool, e.errorCode]), [
-    ['approve_report', 'NOT_FOUND'], ['revoke_report', 'PRECONDITION_FAILED'], ['approve_report', 'PRECONDITION_FAILED'], ['revoke_report', 'PRECONDITION_FAILED'],
+    ['approve_report', 'NOT_FOUND'], ['revoke_report', 'PRECONDITION_FAILED'], ['approve_report', 'STALE_VERSION'],
+    ['approve_report', 'PRECONDITION_FAILED'], ['revoke_report', 'STALE_VERSION'], ['revoke_report', 'PRECONDITION_FAILED'],
   ]);
   assert.ok(!JSON.stringify(entries).includes('status_code from'), 'no SQL in the audit log');
 });
 
 test('a draft without a successful run of its SQL is refused with 409', async () => {
-  lib.saveDraft({ ref: other, sql: `${sql} where order_id > 0` });
-  const res = await post('/api/reports/approve', other);
+  const saved = lib.saveDraft({ ref: other, sql: `${sql} where order_id > 0` });
+  const res = await post('/api/reports/approve', stageBody(other, saved.hash));
   assert.equal(res.status, 409);
   assert.match(res.json.error, /no successful run/);
   assert.equal(lib.exists('draft', other), true);
@@ -212,13 +232,15 @@ test('the page offers approve on drafts and revoke on approved reports, with a r
   assert.match(stageChangeFor({ stage: 'draft' }).note, /schema memory view/);
 });
 
-test('the desktop page invokes the Tauri command with only the report location and maps setup errors', async () => {
+test('the desktop page invokes the Tauri command with the report location and the shown hash, and maps setup errors', async () => {
   const { invokeStageChange } = loadBlock();
   const calls = [];
-  const r = { ...ref, stage: 'draft', title: 'T', lastRun: null, extra: 'x' };
+  const r = { ...ref, stage: 'draft', title: 'T', lastRun: null, extra: 'x', activeHash: hash };
   const okInvoke = async (cmd, args) => { calls.push([cmd, args]); return { ok: true, stage: 'approved', version: 1 }; };
   assert.equal((await invokeStageChange(okInvoke, 'approve_report', r)).version, 1);
-  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [['approve_report', ref]]);
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [['approve_report', stageBody()]]);
+  await assert.rejects(invokeStageChange(async () => { throw { code: 'STALE_VERSION', message: 'The report changed since you opened it (now version 2); reload and review again.' }; }, 'approve_report', r),
+    err => err.code === 'STALE_VERSION' && /now version 2/.test(err.message) && err.setupText === null);
   const failing = e => async () => { throw e; };
   await assert.rejects(invokeStageChange(failing({ code: 'PRECONDITION_FAILED', message: 'Report is approved, not draft.' }), 'approve_report', r),
     err => err.message === 'Report is approved, not draft.' && err.code === 'PRECONDITION_FAILED' && err.setupText === null);
@@ -246,17 +268,19 @@ test('confirm facts show name, version, last run, rows and warnings', () => {
   assert.deepEqual(JSON.parse(JSON.stringify(stageChangeFacts({ ...r, lastRun: null, activeVersion: null }).map(f => f[1]).slice(2))), [null, null, null, null]);
 });
 
-test('the page sends the token and only the report location, and surfaces server errors', async () => {
+test('the page sends the token, the report location and the shown hash, and surfaces server errors', async () => {
   const { postStageChange } = loadBlock();
   const calls = [];
   const fakeFetch = status => async (url, init) => { calls.push({ url, init }); return { ok: status === 200, status, statusText: '', json: async () => (status === 200 ? { stage: 'approved' } : { error: 'Report is approved, not draft.' }) }; };
-  const r = { ...ref, stage: 'draft', title: 'T', lastRun: null };
+  const r = { ...ref, stage: 'draft', title: 'T', lastRun: null, activeHash: hash };
   assert.deepEqual(JSON.parse(JSON.stringify(await postStageChange(fakeFetch(200), 'tok', '/api/reports/approve', r))), { stage: 'approved' });
   assert.equal(calls[0].init.method, 'POST');
   assert.equal(calls[0].init.headers['X-Auspex-Token'], 'tok');
   assert.equal(calls[0].init.headers['Content-Type'], 'application/json');
-  assert.deepEqual(JSON.parse(calls[0].init.body), ref);
+  assert.deepEqual(JSON.parse(calls[0].init.body), stageBody());
   await assert.rejects(postStageChange(fakeFetch(409), 'tok', '/api/reports/approve', r), err => /approved, not draft/.test(err.message) && !err.viewerRestarted);
+  const stale = async () => ({ ok: false, status: 409, statusText: '', json: async () => ({ error: 'The report changed since you opened it (now version 2); reload and review again.', code: 'STALE_VERSION' }) });
+  await assert.rejects(postStageChange(stale, 'tok', '/api/reports/approve', r), err => err.code === 'STALE_VERSION' && /reload and review again/.test(err.message));
   const refused = async () => ({ ok: false, status: 403, statusText: '', json: async () => ({ error: 'Missing or invalid token', code: 'TOKEN_INVALID' }) });
   await assert.rejects(postStageChange(refused, 'old-token', '/api/reports/approve', r), err => err.viewerRestarted === true);
 });

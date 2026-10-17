@@ -81,9 +81,10 @@ export function approvedJoinPairs(library, profile) {
 // approved reports' joins are its "used" relations. This runs after this
 // helper's own library lock; a caller that already holds the lock (the
 // viewer) rebuilds while still holding it.
-function changeStage(library, ref, { by, memory }, move, stage) {
+// expectedHash (optional): the SQL hash the person reviewed (Library.approve).
+function changeStage(library, ref, { by, memory, expectedHash }, move, stage) {
   const r = library.locked(() => {
-    const moved = move(ref, { by });
+    const moved = move(ref, { by, expectedHash });
     library.writeHtml(stage, ref, renderReport(moved.meta));
     return moved;
   });
@@ -91,12 +92,12 @@ function changeStage(library, ref, { by, memory }, move, stage) {
   return r;
 }
 
-export function approveInLibrary(library, ref, { by = null, memory = null } = {}) {
-  return changeStage(library, ref, { by, memory }, (x, o) => library.approve(x, o), 'approved');
+export function approveInLibrary(library, ref, { by = null, memory = null, expectedHash } = {}) {
+  return changeStage(library, ref, { by, memory, expectedHash }, (x, o) => library.approve(x, o), 'approved');
 }
 
-export function revokeInLibrary(library, ref, { by = null, memory = null } = {}) {
-  return changeStage(library, ref, { by, memory }, (x, o) => library.revoke(x, o), 'draft');
+export function revokeInLibrary(library, ref, { by = null, memory = null, expectedHash } = {}) {
+  return changeStage(library, ref, { by, memory, expectedHash }, (x, o) => library.revoke(x, o), 'draft');
 }
 
 export class ReportService {
@@ -142,7 +143,7 @@ export class ReportService {
       return s;
     });
     return {
-      report: refLabel(ref), stage: 'draft', version: saved.version, sqlFile: saved.paths.sql, htmlFile: saved.paths.html,
+      report: refLabel(ref), stage: 'draft', version: saved.version, sqlHash: saved.hash, sqlFile: saved.paths.sql, htmlFile: saved.paths.html,
       ...(saved.externalFile ? { externalFile: saved.externalFile } : {}),
     };
   }
@@ -201,7 +202,7 @@ export class ReportService {
     const learned = this.learn(result.profile, result.plan, summary);
 
     return {
-      report: refLabel(ref), stage: savedStage, version, htmlFile: html, note,
+      report: refLabel(ref), stage: savedStage, version, sqlHash: hash, htmlFile: html, note,
       durationMs, explainMs: run.explainMs, previewMs: run.previewMs,
       ...planDigest(summary),
       columns: columns.map(c => `${c.name} ${c.type}`),
@@ -215,7 +216,8 @@ export class ReportService {
   approve(input) {
     const ref = this.ref(input);
     // Its joins now count as "used" relations in the schema memory view.
-    const res = approveInLibrary(this.library, ref, { by: this.db?.source ?? null, memory: this.memory });
+    // expectedHash (optional): the SQL hash shown to the user who approved.
+    const res = approveInLibrary(this.library, ref, { by: this.db?.source ?? null, memory: this.memory, expectedHash: input.expectedHash });
     return { report: refLabel(ref), stage: 'approved', version: res.meta.approvedVersion, sqlFile: res.paths.sql, htmlFile: res.paths.html };
   }
 

@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { normalizeRef, refLabel } from './library.js';
+import { normalizeRef, refLabel, sqlHashPattern } from './library.js';
 import { approveInLibrary, revokeInLibrary } from './service.js';
 import { classifyError } from '../errors.js';
 
@@ -9,6 +9,8 @@ import { classifyError } from '../errors.js';
 
 export const refKeys = ['db', 'schema', 'category', 'name'];
 export const maxRefFieldLength = 200;
+// The SQL hash of the version the person reviewed (the confirm dialog).
+export const expectedHashKey = 'expectedHash';
 
 // An error with an HTTP-like status (the viewer answers with it; the CLI only
 // prints the code).
@@ -41,9 +43,22 @@ export function validateRefInput(body) {
   return ref;
 }
 
+// A stage-change request: the report location plus expectedHash, the SQL hash
+// of the version the person reviewed (required). Returns { ref, expectedHash }.
+export function validateStageInput(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new StageError(400, 'Body must be a JSON object');
+  const { [expectedHashKey]: expectedHash, ...rest } = body;
+  if (typeof expectedHash !== 'string' || !sqlHashPattern.test(expectedHash)) {
+    throw new StageError(400, `${expectedHashKey} must be the SQL hash of the reviewed version (12 lower-case hex characters)`);
+  }
+  return { ref: validateRefInput(rest), expectedHash };
+}
+
 // Checks the stage and moves the report under the library lock; the memory
 // view is rebuilt while the lock is still held (see changeStage in service.js).
-export function applyStageChange(lib, action, ref, { by, memory }) {
+// expectedHash: the reviewed SQL hash; another current version is refused
+// with STALE_VERSION (409) and nothing moves.
+export function applyStageChange(lib, action, ref, { by, memory, expectedHash }) {
   const label = refLabel(ref);
   // Checked before the lock so a missing library folder is not created.
   if (!fs.existsSync(lib.root)) throw new StageError(404, `Report "${label}" not found.`, 'NOT_FOUND');
@@ -52,10 +67,10 @@ export function applyStageChange(lib, action, ref, { by, memory }) {
       if (lib.exists(action.to, ref)) throw new StageError(409, `Report "${label}" is ${action.to}, not ${action.from}.`, 'PRECONDITION_FAILED');
       throw new StageError(404, `Report "${label}" not found.`, 'NOT_FOUND');
     }
-    return action.run(lib, ref, { by, memory });
+    return action.run(lib, ref, { by, memory, expectedHash });
   });
   return { report: label, stage: action.to, version: action.version(result) ?? null };
 }
 
 export const statusOf = err => err instanceof StageError ? err.status
-  : ({ NOT_FOUND: 404, PRECONDITION_FAILED: 409, INVALID_INPUT: 400, LOCK_BUSY: 503 })[classifyError(err).code] ?? 500;
+  : ({ NOT_FOUND: 404, PRECONDITION_FAILED: 409, STALE_VERSION: 409, INVALID_INPUT: 400, LOCK_BUSY: 503 })[classifyError(err).code] ?? 500;
