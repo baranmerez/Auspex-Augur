@@ -186,7 +186,10 @@ export class ReportService {
   // (default: now); the scheduler passes the due slot so a catch-up run gets
   // the period of its slot. stage (optional): run exactly this stage instead
   // of the draft-first lookup; the scheduler runs only approved reports.
-  async run(input, { analyze = 'auto', previewRows = 50, returnRows = 20, timeoutSeconds, params, preset, presetDate, stage: onlyStage } = {}) {
+  // includeLast: also return the stored result (last) of this run, so a
+  // caller never re-reads it from disk, where a concurrent run may have
+  // replaced it. Not used by run_report (it would bloat the tool result).
+  async run(input, { analyze = 'auto', previewRows = 50, returnRows = 20, timeoutSeconds, params, preset, presetDate, stage: onlyStage, includeLast = false } = {}) {
     const ref = this.ref(input);
     if (preset !== undefined && params !== undefined) throw new ToolError('INVALID_INPUT', 'Pass either preset or params, not both.');
     if (onlyStage !== undefined && !this.library.exists(onlyStage, ref)) {
@@ -259,6 +262,7 @@ export class ReportService {
       preview: masked.rows.slice(0, returnRows),
       previewTruncated: result.truncated || masked.rows.length > returnRows,
       ...learned,
+      ...(includeLast ? { last } : {}),
     };
   }
 
