@@ -228,10 +228,16 @@ export class Library {
     // Approve exactly the SQL in the draft file, found by its hash.
     const hash = sqlHash(fs.readFileSync(from.sql, 'utf8'));
     const version = meta.sqlVersions.find(v => v.hash === hash)?.version;
-    checkExpected(expectedHash, hash, version);
     if (version === undefined) throw new LibraryError(`The draft SQL of "${refLabel(r)}" matches no saved version; save it with save_report first.`, 'PRECONDITION_FAILED');
+    // The file must be the active version the library lists and the viewer
+    // shows (meta.activeHash); a file reverted outside Auspex is saved first.
+    if (meta.activeHash && meta.activeHash !== hash) {
+      throw new LibraryError(`The draft SQL file of "${refLabel(r)}" was changed outside Auspex (it holds version ${version}, not the active version ${meta.activeVersion ?? '?'}); save it with save_report first.`, 'PRECONDITION_FAILED');
+    }
     // Only SQL that has run successfully (every entry in meta.runs is a success) can be approved.
     if (!(meta.runs || []).some(x => x.sqlHash === hash)) throw new LibraryError(`Version ${version} of "${refLabel(r)}" has no successful run; run it with run_report before approving.`, 'PRECONDITION_FAILED');
+    // Last: the person reviewed this version (the actionable errors above come first).
+    checkExpected(expectedHash, hash, version);
     meta.status = 'approved';
     meta.approvedAt = new Date().toISOString();
     meta.activeHash = hash;

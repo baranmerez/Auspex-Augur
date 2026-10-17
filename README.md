@@ -428,8 +428,10 @@ library/
   the server instructions restrict to an explicit user approval, or through
   the user's own click in the viewer (see *Approving reports in the viewer*). Approval also
   requires a successful run of the current SQL (`run_report`); an older
-  revision's run does not count. An approval is bound to the version that was
-  reviewed: the viewer and desktop app always send its SQL hash, and
+  revision's run does not count, and a draft file changed outside Auspex
+  must be saved with `save_report` first. An approval is bound to the version
+  that was reviewed: the viewer and desktop app always send the SQL hash of
+  the report content the person opened, and
   `approve_report` accepts it as the optional `expectedHash` (`save_report`
   and `run_report` return it as `sqlHash`). If the draft SQL changed since
   then, the request is refused with `STALE_VERSION` and nothing moves.
@@ -755,8 +757,11 @@ a request only when all of these hold:
 - the body is `application/json`, at most 4 KB, and holds only `db`,
   `schema`, `category` and `name` exactly as the library lists them (no
   path tricks: 400), plus the required `expectedHash`: the SQL hash of the
-  version the confirm dialog showed (12 lower-case hex characters; 400
-  otherwise);
+  report content the page opened (12 lower-case hex characters; 400
+  otherwise). `/api/report` returns it as `sqlHash` with the content it
+  served, taken from that HTML itself, so a live list refresh cannot change
+  it. A report rendered by an older Auspex has none; run it again with
+  `run_report`;
 - the report exists (404) and is in the right stage (409);
 - the report still stands for that version: the current draft SQL (approve)
   or the approved SQL (revoke) has `expectedHash`. Otherwise the answer is
@@ -764,8 +769,14 @@ a request only when all of these hold:
   version N); reload and review again."), nothing moves, and the page
   reloads the list and the report.
 
-A malformed request target (anything but a path starting with a single `/`)
-is answered with 400; no request can stop the viewer.
+When the list (live refresh) already stands for another version than the
+opened report, the page shows "This report changed since you opened it;
+reload it to review the new version." with a *Reload* button and disables
+Approve / Revoke until the report is reloaded.
+
+A malformed request target (anything but a path starting with a single `/`,
+including `/\host` forms that URL parsing reads as an authority) is answered
+with 400; no request can stop the viewer.
 
 There are no CORS headers, and the page cannot be framed by another site
 (`X-Frame-Options: DENY`). Every request that passed the origin and token
@@ -810,8 +821,11 @@ node <auspexRoot>/src/stageCli.js approve|revoke --db=<db> --schema=<schema> --c
 
 which applies the viewer's checks (the report location exactly as the library
 lists it, at most 200 characters per part, the required SQL hash of the
-version the dialog showed, the report must exist, be in the right stage and
-still stand for that version, else `STALE_VERSION`), takes the same library lock, records `stageHistory`,
+opened report content, the report must exist, be in the right stage and
+still stand for that version, else `STALE_VERSION`). The app reads that hash
+only from the report metadata and the served HTML and computes none itself;
+a report without one is refused with `INVALID_INPUT` and a request to run it
+again with `run_report`. The CLI also takes the same library lock, records `stageHistory`,
 regenerates the HTML and rebuilds the schema memory view. Every run is written
 to the audit log with `source` and `actor` `desktop`. The CLI prints one
 JSON line (`{"ok":true,"stage":..,"version":..}` or

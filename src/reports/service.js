@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { Library, normalizeRef, refLabel, sqlHash } from './library.js';
+import { Library, normalizeRef, refLabel, sqlHash, sqlHashPattern } from './library.js';
 import { summarizePlan, planDigest } from './planSummary.js';
 import { maskRows } from './mask.js';
 import { ToolError } from '../errors.js';
@@ -29,6 +29,21 @@ export function renderReport(meta) {
     .split(String.fromCharCode(0x2029)).join('\\u2029');
   const title = String(meta.title || meta.name).replace(/[<>&"]/g, ch => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[ch]));
   return template.replace('__AUSPEX_TITLE__', () => title).replace('"__AUSPEX_DATA__"', () => json);
+}
+
+// The SQL hash a rendered report HTML stands for: activeHash of the metadata
+// it was rendered from (embedded in its auspex-report script). Null for HTML
+// rendered before that field existed; re-running the report renders it again.
+const embeddedData = /<script id="auspex-report" type="application\/json">([\s\S]*?)<\/script>/;
+export function reportHtmlHash(html) {
+  const m = embeddedData.exec(String(html));
+  if (!m) return null;
+  try {
+    const h = JSON.parse(m[1])?.report?.activeHash;
+    return typeof h === 'string' && sqlHashPattern.test(h) ? h : null;
+  } catch {
+    return null;
+  }
 }
 
 // Data for a shared copy, built from an allowlist instead of the stored
