@@ -307,7 +307,7 @@
   .toolbar .field { background: var(--bg); }
   .toolbar[data-mode="reports"] .when, .toolbar[data-mode="reports"] .opsonly,
   .toolbar[data-mode="profiles"] .when, .toolbar[data-mode="profiles"] .opsonly { display: none; }
-  .toolbar[data-mode="profiles"] { display: none; }
+  .toolbar[data-mode="profiles"], .toolbar[data-mode="rules"] { display: none; }
   .field select { background: transparent; color: var(--text); cursor: pointer; }
   select option { background: var(--surface); color: var(--text); }
 
@@ -604,6 +604,21 @@
   .tl-item ul { margin: 3px 0 0; padding-left: 18px; color: var(--text-2); font-size: 12px; }
   .tl-item.new .when { color: var(--warn-ink); font-weight: 600; }
   .note pre { font: 11px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; margin: 4px 0 0; background: var(--surface-2); padding: 6px 8px; border-radius: 6px; }
+  /* Rules tab: schema-memory notes of one database */
+  .rules-bar { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; padding: 10px 12px; }
+  .rules-bar .grow { flex: 1; }
+  .rules-bar .field { background: var(--bg); }
+  .rules-bar .field input[type=search] { width: 200px; max-width: 100%; }
+  .rules-list { padding: 12px 16px 16px; display: grid; gap: 0; }
+  .rules-list h4 { margin: 14px 0 8px; font: 600 12px var(--mono); color: var(--text-2); }
+  .rules-list h4:first-child { margin-top: 0; }
+  .note .nh .tgt { font: 11px var(--mono); color: var(--accent-ink); }
+  .note .na { display: flex; justify-content: flex-end; margin-top: 6px; }
+  .note details > summary { font-size: 12px; cursor: pointer; margin-top: 4px; color: var(--text-3); }
+  .dlg .dlg-field { display: grid; gap: 4px; margin: 0 0 6px; font-size: 13px; }
+  .dlg .dlg-field input { height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 13px; outline: none; }
+  .dlg .dlg-field input:focus { border-color: var(--accent); }
+  .dlg .dlg-hint { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--text-3); margin: 0 0 14px; }
   .mem-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
   .mem-card { padding: 16px; cursor: pointer; text-align: left; border: 1px solid var(--line); transition: transform .2s var(--ease), box-shadow .2s; animation: rise .4s var(--ease) both; }
   .mem-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
@@ -688,6 +703,7 @@
       <button data-tab="tables"><span data-i18n="Tables">Tables</span><span class="count" id="cTables"></span></button>
       <button data-tab="reports"><span data-i18n="Reports">Reports</span><span class="count" id="cReports"></span></button>
       <button data-tab="schema"><span data-i18n="Schema">Schema</span><span class="count" id="cSchema"></span></button>
+      <button data-tab="rules"><span data-i18n="Rules">Rules</span><span class="count" id="cRules"></span></button>
       <button data-tab="profiles"><span data-i18n="Profiles">Profiles</span><span class="count" id="cProfiles"></span></button>
       <span class="tab-ink" id="tabInk"></span>
     </nav>
@@ -721,12 +737,14 @@
   <section id="v-tables" class="view" hidden></section>
   <section id="v-reports" class="view" hidden></section>
   <section id="v-schema" class="view" hidden></section>
+  <section id="v-rules" class="view" hidden></section>
   <section id="v-profiles" class="view" hidden></section>
 </main>
 
 <div class="tip" id="tip" role="status" aria-live="polite"></div>
 <div class="toast" id="toast"></div>
 <dialog class="dlg" id="stageDlg" aria-labelledby="stageDlgTitle"></dialog>
+<dialog class="dlg" id="archiveDlg" aria-labelledby="archiveDlgTitle"></dialog>
 
 <script>
 'use strict';
@@ -755,6 +773,24 @@ const put = (node, ...kids) => node.replaceChildren(...kids.flat(Infinity).filte
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 // ---------- i18n (English is the key; Turkish is the translation) ----------
 const TR = {
+  'Rules': 'Kurallar', 'Kind': 'Tür', 'Table': 'Tablo', 'Active': 'Aktif', 'Archived': 'Arşivlenmiş',
+  'Filter by table': 'Tabloya göre süz', 'Search note text': 'Not metninde ara', 'No notes match the filters.': 'Filtrelere uyan not yok.',
+  'No notes for {db} yet': '{db} için henüz not yok', 'Notes are added by your agent (remember): rules you state, observations from data and its own inferences.': 'Notları ajanınız ekler (remember): sizin söylediğiniz kurallar, veriden gözlemler ve kendi çıkarımları.',
+  'Database-wide': 'Veritabanı geneli', 'created {d}': 'oluşturma {d}', 'confirmed {d}': 'onay {d}', 'archived {d}': 'arşiv {d}', 'Evidence': 'Kanıt',
+  'Archive': 'Arşivle', 'Archive this note?': 'Bu not arşivlensin mi?',
+  'The note stays in the schema memory as archived, with your reason, and is no longer given to your agent. Only local Auspex files change; no database is touched.': 'Not, gerekçenizle birlikte arşivlenmiş olarak şema hafızasında kalır ve artık ajanınıza verilmez. Yalnızca yerel Auspex dosyaları değişir; veritabanına dokunulmaz.',
+  'Reason': 'Gerekçe', 'Why is this note no longer valid?': 'Bu not neden artık geçerli değil?', 'Give a reason.': 'Bir gerekçe yazın.',
+  'At most 200 characters.': 'En fazla 200 karakter.', 'One line without control characters.': 'Kontrol karakteri olmadan tek satır.',
+  'Note archived': 'Not arşivlendi', 'Note': 'Not', 'Text': 'Metin', 'Adding or confirming notes stays with your agent.': 'Not eklemek ya da onaylamak ajanınızda kalır.',
+  'Data dictionary': 'Veri sözlüğü', 'Data dictionary (HTML)': 'Veri sözlüğü (HTML)', 'Data dictionary (Markdown)': 'Veri sözlüğü (Markdown)',
+  'Download a data dictionary of this database built from the schema memory only (no database access)': 'Bu veritabanının yalnızca şema hafızasından (veritabanına erişmeden) üretilen veri sözlüğünü indir',
+  'The data dictionary is ready; click again to download': 'Veri sözlüğü hazır; indirmek için yeniden tıklayın', 'Could not build the data dictionary: ': 'Veri sözlüğü oluşturulamadı: ',
+  'Data dictionary: {db}': 'Veri sözlüğü: {db}', 'Generated {d} from the Auspex schema memory, without database access.': '{d} tarihinde Auspex şema hafızasından, veritabanına erişmeden üretildi.',
+  'Explored tables: {n}. Only active rules and observations are listed; unconfirmed inferences and archived notes are left out.': 'Keşfedilen tablo: {n}. Yalnızca aktif kurallar ve gözlemler listelenir; onaylanmamış çıkarımlar ve arşivlenmiş notlar dahil değildir.',
+  'Contents': 'İçindekiler', 'Database-wide rules and observations': 'Veritabanı geneli kurallar ve gözlemler', 'Rules and observations': 'Kurallar ve gözlemler',
+  'Key columns': 'Anahtar kolonlar', 'References (instance)': 'Başvurduğu tablolar (instance)', 'Referenced by (dependent)': 'Başvuran tablolar (dependent)',
+  'Comment': 'Açıklama', 'Column': 'Kolon', 'Type': 'Tip', 'Tags': 'Etiketler',
+  'No explored tables yet.': 'Henüz keşfedilen tablo yok.', 'est. rows': 'tahmini satır', 'columns': 'kolon',
   'Database': 'Veritabanı', 'All databases': 'Tüm veritabanları', 'Every profile together': 'Tüm profiller birlikte',
   'Choose the database for every tab (d)': 'Tüm sekmeler için veritabanını seçin (d)', 'not in the profiles file': 'profil dosyasında yok',
   '{o} ops · {r} reports': '{o} işlem · {r} rapor',
@@ -2343,7 +2379,9 @@ async function ensureMemView(db) {
   }
   state.memLoading = null;
   state.schemaKey = null;
+  state.rulesKey = null;
   renderSchema();
+  renderRules();
 }
 
 const memGraph = data => scopeGraph(data, state.memSchema);
@@ -3764,6 +3802,335 @@ async function buildFlow(wrap, data, centerId, key) {
       h('span', {}, t('PK, FK: keys · U: used in a plan · N: has a note · ←: referenced')), h('span', {}, t('Click a table to make it the center'))));
 }
 
+// ---------- rules tab ----------
+// rules-list:start (tests/viewerRules.test.js runs this block with report-filter)
+// The Rules tab lists every schema-memory note of one database (graph.json:
+// rules, observations and inferences, active and archived). Filters: kind,
+// table (part of schema.table), status (active by default) and text; text
+// and table match like the report filter (case-insensitive, Turkish İ/I/ı/i).
+const ruleKinds = ['rule', 'observation', 'inference'];
+const ruleStatuses = ['active', 'archived', 'all'];
+const ruleTarget = n => (n.table ? `${n.schema}.${n.table}` : '');
+function ruleMatches(n, f = {}) {
+  const status = ruleStatuses.includes(f.status) ? f.status : 'active';
+  if (status !== 'all' && (status === 'active') !== (n.status === 'active')) return false;
+  if (f.kind && n.kind !== f.kind) return false;
+  const tq = foldText(f.table).trim();
+  if (tq && !foldText(ruleTarget(n)).includes(tq)) return false;
+  const words = foldText(f.q).split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const hay = foldText([n.text, n.column, ruleTarget(n), n.archivedReason, `#${n.id}`].join(' '));
+  return words.every(w => hay.includes(w));
+}
+const ruleKindOrder = { rule: 0, observation: 1, inference: 2 };
+// Database-wide notes first, then by table, kind and id.
+const ruleSort = (a, b) => (a.table ? 1 : 0) - (b.table ? 1 : 0) || ruleTarget(a).localeCompare(ruleTarget(b))
+  || (ruleKindOrder[a.kind] ?? 3) - (ruleKindOrder[b.kind] ?? 3) || a.id - b.id;
+const filterRules = (notes, f) => (Array.isArray(notes) ? notes : []).filter(n => ruleMatches(n, f)).sort(ruleSort);
+// Groups of the filtered list, one per target ('' = database-wide), in order.
+function groupRules(list) {
+  const groups = [];
+  for (const n of list) {
+    const key = ruleTarget(n);
+    if (!groups.length || groups[groups.length - 1].key !== key) groups.push({ key, notes: [] });
+    groups[groups.length - 1].notes.push(n);
+  }
+  return groups;
+}
+// rules-list:end
+
+// note-archive:start (tests/viewerRules.test.js runs this block with stage-change)
+// Archiving a note from the Rules tab: the reason is required, one line of at
+// most archiveReasonMax characters (src/memory/noteArchive.js checks again).
+// The browser viewer POSTs to /api/memory/archive with the page token; the
+// desktop app calls the Tauri command archive_note (src/stageCli.js).
+const archiveReasonMax = 200;
+function archiveReasonProblem(text) {
+  const reason = String(text ?? '').trim();
+  if (!reason) return 'Give a reason.';
+  if (reason.length > archiveReasonMax) return 'At most 200 characters.';
+  if (/[\u0000-\u001f\u007f-\u009f]/.test(reason)) return 'One line without control characters.';
+  return null;
+}
+const archiveRequest = (profile, note, text) => ({ profile, id: note.id, reason: String(text ?? '').trim() });
+async function postArchiveNote(fetchFn, token, req) {
+  const res = await fetchFn('/api/memory/archive', {
+    method: 'POST', cache: 'no-store', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', 'X-Auspex-Token': token },
+    body: JSON.stringify(req),
+  });
+  let data = null;
+  try { data = await res.json(); } catch {}
+  if (res.status === 403 && data?.code === 'TOKEN_INVALID') throw Object.assign(new Error(data.error), { viewerRestarted: true });
+  if (!res.ok) throw stageError(data?.error || res.statusText || `HTTP ${res.status}`, data?.code);
+  return data;
+}
+async function invokeArchiveNote(invoke, req) {
+  try {
+    return await invoke('archive_note', req);
+  } catch (err) {
+    const code = typeof err === 'object' && err ? err.code : undefined;
+    const message = typeof err === 'string' ? err : err?.message || String(err);
+    throw stageError(message, code);
+  }
+}
+// note-archive:end
+
+function ruleCard(n) {
+  const fig = n.evidence?.figures;
+  const sql = n.evidence?.sql;
+  const day = ts => (ts ? dateTimeOf(ts) : '?');
+  const pending = state.archivePending === n.id;
+  return h('div', { class: `note ${n.kind}${n.status !== 'active' ? ' archived' : ''}` },
+    h('div', { class: 'nh' },
+      h('span', { class: 'badge ' + n.kind }, t(n.kind)),
+      n.table ? h('span', { class: 'tgt' }, ruleTarget(n)) : null,
+      n.column ? h('code', {}, n.column) : null,
+      h('span', {}, '#' + n.id),
+      n.kind === 'inference' ? h('span', {}, t('unconfirmed')) : null,
+      n.confirmedAt ? h('span', {}, t('confirmed {d}', { d: day(n.confirmedAt) })) : null,
+      n.asOf ? h('span', {}, t('as of {d}', { d: n.asOf })) : null,
+      h('span', {}, t('created {d}', { d: day(n.createdAt) })),
+      n.status !== 'active' ? h('span', {}, t('archived {d}', { d: day(n.archivedAt) })) : null),
+    h('div', {}, n.text),
+    n.archivedReason ? h('div', { class: 'muted', style: 'font-size:12px;margin-top:4px' }, t('Archived: ') + n.archivedReason) : null,
+    fig || sql ? h('details', {}, h('summary', {}, t('Evidence')),
+      fig ? h('div', { class: 'fig' }, Object.entries(fig).map(([k, v]) => h('span', {}, `${k}: ${typeof v === 'number' ? fmt(v) : v}`))) : null,
+      sql ? h('pre', {}, sql) : null) : null,
+    n.status === 'active' ? h('div', { class: 'na' }, h('button', { class: 'icon-btn sm secondary-danger', disabled: !!state.archivePending, 'aria-busy': pending ? 'true' : null,
+      onclick: () => confirmArchiveNote(n) }, pending ? t('Working…') : t('Archive'))) : null);
+}
+
+function renderRules() {
+  const profiles = memProfiles();
+  const sum = state.db ? memSummaryFor(state.db) : null;
+  const active = state.db ? (sum?.notes || 0) : profiles.reduce((a, p) => a + (p.notes || 0), 0);
+  $('cRules').textContent = active ? fmt(active) : '';
+  const view = $('v-rules');
+  if (state.tab !== 'rules') { state.rulesKey = null; return; }
+  const plain = (key, node) => { state.rulesKey = key; put(view, node); };
+  if (state.memory?.error) return plain(null, h('div', { class: 'panel' }, h('div', { class: 'error-box', style: 'margin:16px' }, state.memory.error)));
+  if (!state.db) return plain(null, memChooser(profiles));
+  if (!sum) {
+    return plain(null, h('div', { class: 'panel' }, h('div', { class: 'rep-empty' }, h('b', {}, t('No schema memory for {db} yet', { db: state.db })),
+      h('p', {}, t('It fills as your agent describes tables (describe_table) and runs reports.')))));
+  }
+  const mv = state.memView;
+  if (!mv || mv.profile !== state.db || (mv.data && mv.data.generatedAt !== sum.generatedAt)) {
+    ensureMemView(state.db);
+    if (!mv || mv.profile !== state.db) return plain(null, h('div', { class: 'panel' }, h('div', { class: 'rep-empty' }, t('Loading…'))));
+  }
+  if (mv.error) return plain(null, h('div', { class: 'panel' }, h('div', { class: 'error-box', style: 'margin:16px' }, mv.error)));
+
+  const f = state.rulesFilter ??= { kind: '', table: '', status: 'active', q: '' };
+  const key = JSON.stringify([state.db, mv.data.generatedAt, lang, f, state.archivePending ?? null]);
+  if (state.rulesKey === key && view.firstChild) return;
+  state.rulesKey = key;
+  const focus = ['rulesText', 'rulesTable'].map(id => [id, captureFocus(document, id)]);
+  const notes = mv.data.notes || [];
+  const list = filterRules(notes, f);
+  const set = (k, v) => { state.rulesFilter = { ...state.rulesFilter, [k]: v }; renderRules(); };
+  const kindSel = h('select', { onchange: ev => set('kind', ev.target.value), 'aria-label': t('Kind') },
+    h('option', { value: '' }, t('All')), ruleKinds.map(k => h('option', { value: k }, t(k))));
+  kindSel.value = f.kind;
+  const bar = h('div', { class: 'panel' }, h('div', { class: 'rules-bar' },
+    h('div', { class: 'seg', role: 'group', 'aria-label': t('Status') }, [['active', t('Active')], ['archived', t('Archived')], ['all', t('All')]].map(([k, label]) =>
+      h('button', { class: f.status === k ? 'on' : '', 'aria-pressed': String(f.status === k), onclick: () => set('status', k) }, label))),
+    h('div', { class: 'field' }, h('label', {}, t('Kind')), kindSel),
+    h('div', { class: 'field' }, h('label', { for: 'rulesTable' }, t('Table')),
+      h('input', { id: 'rulesTable', type: 'search', value: f.table, placeholder: t('Filter by table'), oninput: ev => set('table', ev.target.value) })),
+    h('div', { class: 'field' }, h('label', { for: 'rulesText' }, t('Search')),
+      h('input', { id: 'rulesText', type: 'search', value: f.q, placeholder: t('Search note text'), oninput: ev => set('q', ev.target.value) })),
+    h('span', { class: 'grow' }),
+    h('span', { class: 'muted', style: 'font-size:12px' }, t('{n} notes', { n: fmt(list.length) }))));
+  const body = !notes.length
+    ? h('div', { class: 'rep-empty' }, h('b', {}, t('No notes for {db} yet', { db: state.db })),
+      h('p', {}, t('Notes are added by your agent (remember): rules you state, observations from data and its own inferences.')))
+    : list.length
+      ? h('div', { class: 'rules-list' }, groupRules(list).map(g => [h('h4', {}, g.key || t('Database-wide')), g.notes.map(ruleCard)]),
+        h('div', { class: 'muted', style: 'font-size:12px;margin-top:8px' }, t('Adding or confirming notes stays with your agent.')))
+      : emptyState(t('No notes match the filters.'));
+  put(view, h('div', { class: 'stack' }, bar, h('div', { class: 'panel' }, body)));
+  for (const [id, saved] of focus) restoreFocus(document, id, saved);
+}
+
+function confirmArchiveNote(n) {
+  const dlg = $('archiveDlg');
+  const input = h('input', { id: 'archiveReason', type: 'text', maxlength: String(archiveReasonMax), autocomplete: 'off', placeholder: t('Why is this note no longer valid?') });
+  const hint = h('span', { role: 'status' });
+  const count = h('span', {}, `0 / ${archiveReasonMax}`);
+  const ok = h('button', { class: 'icon-btn primary', value: 'ok', disabled: true }, t('Archive'));
+  input.addEventListener('input', () => {
+    const problem = archiveReasonProblem(input.value);
+    ok.disabled = !!problem;
+    hint.textContent = problem && input.value ? t(problem) : '';
+    count.textContent = `${input.value.trim().length} / ${archiveReasonMax}`;
+  });
+  const facts = [['Note', `#${n.id} · ${t(n.kind)}`], ['Table', n.table ? ruleTarget(n) + (n.column ? `.${n.column}` : '') : t('Database-wide')], ['Text', n.text]];
+  put(dlg, h('form', { method: 'dialog' },
+    h('h3', { id: 'archiveDlgTitle' }, t('Archive this note?')),
+    h('p', {}, t('The note stays in the schema memory as archived, with your reason, and is no longer given to your agent. Only local Auspex files change; no database is touched.')),
+    h('dl', {}, facts.map(([label, v]) => [h('dt', {}, t(label)), h('dd', {}, v)])),
+    h('label', { class: 'dlg-field', for: 'archiveReason' }, h('span', {}, t('Reason')), input),
+    h('div', { class: 'dlg-hint' }, hint, count),
+    h('div', { class: 'dlg-actions' }, h('button', { type: 'button', class: 'icon-btn', onclick: () => dlg.close('cancel') }, t('Cancel')), ok)));
+  dlg.returnValue = '';
+  dlg.onclose = () => { if (dlg.returnValue === 'ok') runArchiveNote(state.db, n, input.value); };
+  dlg.showModal();
+  input.focus();
+}
+
+async function runArchiveNote(profile, n, text) {
+  if (state.archivePending || archiveReasonProblem(text)) return;
+  const req = archiveRequest(profile, n, text);
+  state.archivePending = n.id;
+  renderRules();
+  try {
+    if (tauriCore) await invokeArchiveNote(tauriCore.invoke, req);
+    else await postArchiveNote(fetch, pageToken, req);
+    toast(t('Note archived'));
+  } catch (err) {
+    toast(err.viewerRestarted ? t('The viewer was restarted; reload the page') : err.setupText ? t(err.setupText) : err.message);
+  } finally {
+    state.archivePending = null;
+    // Show the memory as it is now (also after an unknown outcome).
+    try { state.memory = await getJson('/api/memory'); } catch {}
+    state.memView = null;
+    state.rulesKey = null;
+    state.schemaKey = null;
+    renderRules();
+  }
+}
+
+// data-dictionary:start (tests/viewerDictionary.test.js runs this block in isolation)
+// A data dictionary of one database from the schema memory only (graph.json
+// plus the table files of explored tables): tables with comment, key columns,
+// relations and active rules and observations, and database-wide rules and
+// observations. Unconfirmed inferences, archived notes and evidence SQL are
+// left out; observations keep their aggregate figures. No row values exist in
+// the memory, so none can appear. Every name and text is escaped.
+const dictEsc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+// Markdown: one line, with the characters that could start markup or inline
+// HTML backslash-escaped.
+const dictMd = v => String(v ?? '').replace(/[\r\n\t]+/g, ' ').replace(/[\\`*_{}[\]()<>#|~&]/g, c => '\\' + c);
+// English texts with {name} placeholders, like t() of the page.
+const dictTr = (s, v = {}) => String(s).replace(/\{(\w+)\}/g, (_, k) => v[k] ?? '');
+function dictionaryModel(data, tables, generatedAt) {
+  const nodes = Array.isArray(data?.nodes) ? data.nodes : [];
+  const edges = Array.isArray(data?.edges) ? data.edges : [];
+  const kept = (Array.isArray(data?.notes) ? data.notes : []).filter(n => n.status === 'active' && (n.kind === 'rule' || n.kind === 'observation'))
+    .sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'rule' ? -1 : 1) || a.id - b.id)
+    .map(n => ({ id: n.id, kind: n.kind, schema: n.schema, table: n.table, column: n.column || null, text: n.text, asOf: n.asOf || null,
+      figures: n.kind === 'observation' && n.evidence?.figures ? n.evidence.figures : null }));
+  const rel = (e, other) => ({ table: other, level: e.level, columns: e.columns || [], refColumns: e.refColumns || [] });
+  const out = nodes.filter(n => n.state === 'explored').sort((a, b) => a.id.localeCompare(b.id)).map(node => {
+    const rec = (tables instanceof Map ? tables.get(node.id) : tables?.[node.id]) || null;
+    const cons = rec?.constraints || [];
+    const pk = cons.find(c => c.type === 'primary key')?.columns || [];
+    const fk = new Set(cons.filter(c => c.references).flatMap(c => c.columns || []));
+    const notes = kept.filter(n => n.schema === node.schema && n.table === node.table);
+    const noted = new Set(notes.map(n => n.column).filter(Boolean));
+    const used = rec?.usedColumns || {};
+    const keyColumns = (rec?.columns || []).map(c => ({ name: c.name, type: c.type, notNull: !!c.notNull, comment: c.comment || null,
+      tags: [pk.includes(c.name) && 'pk', fk.has(c.name) && 'fk', used[c.name] && 'used', noted.has(c.name) && 'note'].filter(Boolean) }))
+      .filter(c => c.tags.length);
+    const mine = edges.filter(e => e.level === 'fk' || e.level === 'used');
+    return {
+      id: node.id, schema: node.schema, table: node.table, kind: rec?.kind ?? node.kind ?? null, comment: rec?.comment || null,
+      estimatedRows: node.estimatedRows ?? null, columnCount: rec?.columns?.length ?? node.columnCount ?? 0, keyColumns, notes,
+      references: mine.filter(e => e.from === node.id).map(e => rel(e, e.to)),
+      referencedBy: mine.filter(e => e.to === node.id).map(e => rel(e, e.from)),
+    };
+  });
+  return { profile: String(data?.profile ?? ''), generatedAt, tables: out, databaseNotes: kept.filter(n => !n.table) };
+}
+const dictFigures = f => (f ? Object.entries(f).map(([k, v]) => `${k}: ${v === null ? 'null' : v}`).join(' · ') : '');
+const dictRelText = (r, tr) => `${r.columns.join(', ')} → ${r.table} (${r.refColumns.join(', ')})${r.level === 'used' ? ` · ${tr('used in an approved report')}` : ''}`;
+const dictBackText = (r, tr) => `${r.table} (${r.columns.join(', ')}) → ${r.refColumns.join(', ')}${r.level === 'used' ? ` · ${tr('used in an approved report')}` : ''}`;
+function dictionaryHtml(model, tr = dictTr, lang = 'en') {
+  const day = String(model.generatedAt || '').replace('T', ' ').slice(0, 16);
+  const noteLi = n => `<li><span class="k ${n.kind}">${dictEsc(tr(n.kind))}</span>${n.column ? ` <code>${dictEsc(n.column)}</code>` : ''} ${dictEsc(n.text)}`
+    + `${n.asOf ? ` <span class="m">(${dictEsc(tr('as of {d}', { d: n.asOf }))})</span>` : ''}${n.figures ? `<div class="fig">${dictEsc(dictFigures(n.figures))}</div>` : ''}</li>`;
+  const section = (title, items) => (items.length ? `<h3>${dictEsc(title)}</h3><ul>${items.join('')}</ul>` : '');
+  const tableHtml = (tb, i) => [
+    `<section id="t${i + 1}"><h2>${dictEsc(tb.id)}</h2>`,
+    `<p class="m">${[tb.kind, tb.estimatedRows !== null ? `${tb.estimatedRows} ${tr('est. rows')}` : null, `${tb.columnCount} ${tr('columns')}`].filter(Boolean).map(dictEsc).join(' · ')}</p>`,
+    tb.comment ? `<p><b>${dictEsc(tr('Comment'))}:</b> ${dictEsc(tb.comment)}</p>` : '',
+    section(tr('Rules and observations'), tb.notes.map(noteLi)),
+    tb.keyColumns.length ? `<h3>${dictEsc(tr('Key columns'))}</h3><table><thead><tr><th>${dictEsc(tr('Column'))}</th><th>${dictEsc(tr('Type'))}</th><th>${dictEsc(tr('Tags'))}</th><th>${dictEsc(tr('Comment'))}</th></tr></thead><tbody>`
+      + tb.keyColumns.map(c => `<tr><td><code>${dictEsc(c.name)}</code></td><td>${dictEsc(c.type)}${c.notNull ? ' NOT NULL' : ''}</td><td>${dictEsc(c.tags.join(', '))}</td><td>${dictEsc(c.comment ?? '')}</td></tr>`).join('')
+      + '</tbody></table>' : '',
+    section(tr('References (instance)'), tb.references.map(r => `<li>${dictEsc(dictRelText(r, tr))}</li>`)),
+    section(tr('Referenced by (dependent)'), tb.referencedBy.map(r => `<li>${dictEsc(dictBackText(r, tr))}</li>`)),
+    '</section>'].join('');
+  return `<!doctype html>
+<html lang="${lang === 'tr' ? 'tr' : 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+<title>${dictEsc(tr('Data dictionary: {db}', { db: model.profile }))}</title>
+<style>
+body{font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;color:#1d232b;background:#fff;max-width:980px;margin:0 auto;padding:24px}
+h1{font-size:22px;margin:0 0 6px}h2{font-size:17px;margin:28px 0 4px;padding-top:10px;border-top:1px solid #d8dde4}h3{font-size:13px;margin:14px 0 6px;color:#4a5562;text-transform:uppercase;letter-spacing:.04em}
+.m{color:#5c6773;font-size:12px}code{font:12px ui-monospace,Consolas,monospace;background:#f1f3f6;padding:0 4px;border-radius:4px}
+table{border-collapse:collapse;width:100%;font-size:13px}th,td{border:1px solid #d8dde4;padding:4px 8px;text-align:left;vertical-align:top}th{background:#f1f3f6}
+ul{padding-left:20px;margin:4px 0}li{margin:3px 0}.k{display:inline-block;font-size:11px;font-weight:600;border-radius:999px;padding:0 8px;margin-right:4px;background:#e4edfb;color:#1f4f99}
+.k.observation{background:#e3f4e8;color:#1d6b35}.fig{font:12px ui-monospace,Consolas,monospace;color:#4a5562}
+@media print{h2{break-after:avoid}section{break-inside:avoid-page}}
+</style></head><body>
+<h1>${dictEsc(tr('Data dictionary: {db}', { db: model.profile }))}</h1>
+<p class="m">${dictEsc(tr('Generated {d} from the Auspex schema memory, without database access.', { d: `${day} UTC` }))}<br>${dictEsc(tr('Explored tables: {n}. Only active rules and observations are listed; unconfirmed inferences and archived notes are left out.', { n: model.tables.length }))}</p>
+${section(tr('Database-wide rules and observations'), model.databaseNotes.map(noteLi))}
+${model.tables.length ? `<h3>${dictEsc(tr('Contents'))}</h3><ul>${model.tables.map((tb, i) => `<li><a href="#t${i + 1}">${dictEsc(tb.id)}</a></li>`).join('')}</ul>` : `<p>${dictEsc(tr('No explored tables yet.'))}</p>`}
+${model.tables.map(tableHtml).join('\n')}
+</body></html>
+`;
+}
+function dictionaryMarkdown(model, tr = dictTr) {
+  const day = String(model.generatedAt || '').replace('T', ' ').slice(0, 16);
+  const cell = v => dictMd(v);
+  const noteLine = n => `- **${dictMd(tr(n.kind))}**${n.column ? ` \`${String(n.column).replace(/`/g, "'")}\`` : ''}: ${dictMd(n.text)}${n.asOf ? ` (${dictMd(tr('as of {d}', { d: n.asOf }))})` : ''}${n.figures ? `  \n  ${dictMd(dictFigures(n.figures))}` : ''}`;
+  const section = (title, lines) => (lines.length ? [`### ${dictMd(title)}`, '', ...lines, ''] : []);
+  const out = [`# ${dictMd(tr('Data dictionary: {db}', { db: model.profile }))}`, '',
+    dictMd(tr('Generated {d} from the Auspex schema memory, without database access.', { d: `${day} UTC` })), '',
+    dictMd(tr('Explored tables: {n}. Only active rules and observations are listed; unconfirmed inferences and archived notes are left out.', { n: model.tables.length })), ''];
+  if (model.databaseNotes.length) out.push(`## ${dictMd(tr('Database-wide rules and observations'))}`, '', ...model.databaseNotes.map(noteLine), '');
+  if (!model.tables.length) out.push(dictMd(tr('No explored tables yet.')), '');
+  for (const tb of model.tables) {
+    out.push(`## ${dictMd(tb.id)}`, '',
+      [tb.kind, tb.estimatedRows !== null ? `${tb.estimatedRows} ${tr('est. rows')}` : null, `${tb.columnCount} ${tr('columns')}`].filter(Boolean).map(dictMd).join(' · '), '');
+    if (tb.comment) out.push(`**${dictMd(tr('Comment'))}:** ${dictMd(tb.comment)}`, '');
+    out.push(...section(tr('Rules and observations'), tb.notes.map(noteLine)));
+    if (tb.keyColumns.length) {
+      out.push(`### ${dictMd(tr('Key columns'))}`, '', `| ${[tr('Column'), tr('Type'), tr('Tags'), tr('Comment')].map(cell).join(' | ')} |`, '| --- | --- | --- | --- |',
+        ...tb.keyColumns.map(c => `| ${[c.name, `${c.type}${c.notNull ? ' NOT NULL' : ''}`, c.tags.join(', '), c.comment ?? ''].map(cell).join(' | ')} |`), '');
+    }
+    out.push(...section(tr('References (instance)'), tb.references.map(r => `- ${dictMd(dictRelText(r, tr))}`)));
+    out.push(...section(tr('Referenced by (dependent)'), tb.referencedBy.map(r => `- ${dictMd(dictBackText(r, tr))}`)));
+  }
+  return out.join('\n') + '\n';
+}
+// The file name: fixed prefix and extension, the profile in its own safe characters.
+const dictionaryFileName = (profile, day, kind) => `auspex-data-dictionary-${String(profile ?? '').replace(/[^a-z0-9_-]/gi, '_').slice(0, 40) || 'db'}-${String(day).replace(/[^0-9-]/g, '').slice(0, 10)}.${kind === 'md' ? 'md' : 'html'}`;
+// data-dictionary:end
+
+// Builds the dictionary of the chosen database and downloads it. The table
+// files load first (cached per memory version); when that took long enough
+// for the click's user activation to expire, the next click downloads.
+async function downloadDictionary(kind) {
+  const db = state.db, data = state.memView?.profile === db ? state.memView.data : null;
+  if (!db || !data) return;
+  try {
+    const explored = data.nodes.filter(n => n.state === 'explored' && n.file);
+    const tables = new Map(await Promise.all(explored.map(async n => [n.id, await memTable(db, n.file, data.generatedAt)])));
+    if (navigator.userActivation && !navigator.userActivation.isActive) { toast(t('The data dictionary is ready; click again to download')); return; }
+    const now = new Date().toISOString();
+    const model = dictionaryModel(data, tables, now);
+    const text = kind === 'md' ? dictionaryMarkdown(model, t) : dictionaryHtml(model, t, lang);
+    download(dictionaryFileName(db, now.slice(0, 10), kind), text, kind === 'md' ? 'text/markdown;charset=utf-8' : 'text/html;charset=utf-8');
+  } catch (err) {
+    toast(t('Could not build the data dictionary: ') + (err?.message || String(err)));
+  }
+}
+
 // ---------- schema tab ----------
 function memChooser(profiles) {
   if (!profiles.length) {
@@ -3870,6 +4237,9 @@ function renderSchema() {
           h('span', { title: tip('notes') }, h('b', {}, fmt(Z.notes)), t('notes')));
       })(),
       h('span', { class: 'grow' }),
+      h('div', { class: 'seg', role: 'group', 'aria-label': t('Data dictionary'), title: t('Download a data dictionary of this database built from the schema memory only (no database access)') },
+        h('button', { onclick: () => downloadDictionary('html'), 'aria-label': t('Data dictionary (HTML)') }, t('Data dictionary'), ' HTML'),
+        h('button', { onclick: () => downloadDictionary('md'), 'aria-label': t('Data dictionary (Markdown)') }, 'MD')),
       h('button', { class: 'icon-btn', onclick: () => { if (state.memTimeline) state.memTimeline = false; else openTimeline(state.db); renderSchema(); } },
         t('Timeline'), nNew ? h('span', { class: 'badge inference' }, fmt(nNew)) : null)),
     state.memTimeline ? timelinePanel(data, g.schema) : null);
@@ -3913,6 +4283,7 @@ function render() {
   renderProfiles(rows);
   renderReports();
   renderSchema();
+  renderRules();
   if (state.tab === 'overview') renderOverview(rows);
   if (state.tab === 'ops') renderOps(rows);
   if (state.open && state.tab === 'ops') requestAnimationFrame(() => document.querySelector('tr.r.open')?.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' }));
@@ -3925,8 +4296,8 @@ function moveInk() {
   const nav = b.parentElement;
   if (b.offsetLeft < nav.scrollLeft || b.offsetLeft + b.offsetWidth > nav.scrollLeft + nav.clientWidth) nav.scrollLeft = Math.max(0, b.offsetLeft - 8);
 }
-const tabNames = ['overview', 'ops', 'tables', 'reports', 'schema', 'profiles'];
-const ownToolbarTabs = ['reports', 'profiles', 'schema'];
+const tabNames = ['overview', 'ops', 'tables', 'reports', 'schema', 'rules', 'profiles'];
+const ownToolbarTabs = ['reports', 'profiles', 'schema', 'rules'];
 function switchTab(tab) {
   if (!tabNames.includes(tab)) tab = 'overview';
   state.tab = tab; persist();
@@ -4249,7 +4620,7 @@ document.addEventListener('keydown', ev => {
   else if (ev.key === 'Escape') { if (closeThemeMenu(true)) { ev.preventDefault(); return; } closeDbMenu(); if (typing) document.activeElement.blur(); else if (state.open) { state.open = null; render(); } else if (state.tab === 'schema' && graph3d) graph3d.showAll(); }
   else if (!typing && (ev.key === 'r' || ev.key === 'R') && !ev.ctrlKey && !ev.metaKey) load();
   else if (!typing && (ev.key === 'd' || ev.key === 'D') && !ev.ctrlKey && !ev.metaKey) { $('dbsel').classList.contains('open') ? closeDbMenu() : openDbMenu(); }
-  else if (!typing && ['1', '2', '3', '4', '5', '6'].includes(ev.key)) switchTab(tabNames[Number(ev.key) - 1]);
+  else if (!typing && ['1', '2', '3', '4', '5', '6', '7'].includes(ev.key)) switchTab(tabNames[Number(ev.key) - 1]);
 });
 addEventListener('resize', moveInk);
 addEventListener('scroll', hideTip, { passive: true });
