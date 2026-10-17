@@ -392,6 +392,11 @@ Merged work:
   click-gated, saved under a forced `.csv` name with a UTF-8 BOM, uses a
   decimal comma in Turkish exports, and identifier/code columns are skipped
   in the totals row.
+- 2026-10-17: report presets, favorites and Ask Claude: built-in relative
+  date-range presets and named custom presets (`save_report` `presets`,
+  `run_report` `preset`, recorded per run, listed by `list_reports`); the
+  viewer header shows them read-only, Favorites/Recent sit above the report
+  tree (local browser storage), and *Ask Claude* copies a prompt without row values.
 
 Working agreements:
 
