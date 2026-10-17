@@ -123,3 +123,19 @@ test('stage requests accept a nested category only in its canonical form', () =>
   const long = ['a'.repeat(80), 'b'.repeat(80), 'c'.repeat(80)].join('/');
   assert.equal(validateRefInput({ ...refs[1], category: long }).category, long);
 });
+
+test('Windows device names are refused on every category level and skipped when listing', () => {
+  for (const bad of ['CON', 'nul', 'Orders/PRN', 'Orders/Delivery/aux.txt', 'com1', 'LPT9/x', 'Orders/com¹']) {
+    assert.throws(() => validateCategory(bad), /reserved device name/, bad);
+  }
+  for (const ok of ['Console', 'Orders/Nullable', 'COM10', 'Orders/LPT', 'auxiliary']) assert.equal(validateCategory(ok), ok);
+  const lib = new Library(tempRoot());
+  const schemaDir = path.join(lib.root, 'SELECT', 'exampledb', 'example');
+  // Windows cannot create a device-name folder; elsewhere it exists and is skipped.
+  const rels = ['Orders/top.sql', 'Orders/con1/kept.sql', ...(process.platform === 'win32' ? [] : ['Orders/NUL/skipped.sql', 'aux/skipped.sql'])];
+  for (const rel of rels) {
+    fs.mkdirSync(path.dirname(path.join(schemaDir, rel)), { recursive: true });
+    fs.writeFileSync(path.join(schemaDir, rel), 'select 1');
+  }
+  assert.deepEqual(lib.list().map(r => `${r.category}|${r.name}`).sort(), ['Orders/con1|kept', 'Orders|top']);
+});

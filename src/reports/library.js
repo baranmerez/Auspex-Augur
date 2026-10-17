@@ -48,7 +48,8 @@ export function validateSegment(value, label) {
 
 // A category: one to maxCategoryLevels folder names joined by "/", for example
 // Orders or Orders/Delivery. Each segment follows the validateSegment rules and
-// may not have leading or trailing spaces; empty segments ("a//b", "/a") are refused.
+// may not have leading or trailing spaces or be a Windows device name (CON,
+// NUL, COM1...); empty segments ("a//b", "/a") are refused.
 export const maxCategoryLevels = 3;
 
 export function categorySegments(value) {
@@ -59,13 +60,15 @@ export function categorySegments(value) {
   return parts.map(part => {
     if (!part) throw new LibraryError(`Invalid category "${v}": empty level (no leading, trailing or double "/").`);
     if (part !== part.trim()) throw new LibraryError(`Invalid category "${v}": no spaces at the start or end of a level.`);
-    return validateSegment(part, 'Category');
+    const level = validateSegment(part, 'Category');
+    if (windowsReservedName.test(level)) throw new LibraryError(`Invalid category "${v}": "${level}" is a reserved device name on Windows.`);
+    return level;
   });
 }
 
 // A folder name the library could have written as one category level.
 function isCategoryFolder(name) {
-  try { return validateSegment(name, 'Category') === name; } catch { return false; }
+  try { return validateCategory(name) === name; } catch { return false; }
 }
 
 export const validateCategory = value => categorySegments(value).join('/');
