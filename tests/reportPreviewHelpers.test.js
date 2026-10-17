@@ -14,7 +14,7 @@ const block = template.match(/\/\/ preview-helpers:start[\s\S]*?\/\/ preview-hel
 function load() {
   assert.ok(block, 'preview-helpers block found in template.html');
   const context = vm.createContext({});
-  vm.runInContext(`${block}\nthis.api = { humanizeHeader, compareValues, sortPreviewRows, filterPreviewRows, previewTotals, csvSafeCell, previewCsv, splitDescription, paramsText, paramCountOf, isNumericType };`, context);
+  vm.runInContext(`${block}\nthis.api = { humanizeHeader, compareValues, sortPreviewRows, filterPreviewRows, previewTotals, csvSafeCell, previewCsv, splitDescription, paramsText, paramCountOf, isNumericType, isIdentifierColumn };`, context);
   return context.api;
 }
 const api = load();
@@ -62,12 +62,20 @@ test('the quick filter matches any cell, case-insensitively', () => {
 });
 
 test('totals sum numeric columns only; masked, text and empty columns have none', () => {
+  const tc = [{ name: 'quantity', type: 'int4' }, cols[1], cols[2]];
   const rows = [[1, 'a', '10.10'], [2, 'b', 20.2], [3, 'c', null]];
-  assert.deepEqual(Array.from(api.previewTotals(cols, rows)), [6, null, 30.3], 'no float noise');
-  assert.deepEqual(Array.from(api.previewTotals(cols, rows, new Set(['amount']))), [6, null, null], 'masked stays masked');
-  assert.deepEqual(Array.from(api.previewTotals(cols, [[null, 'a', null]])), [null, null, null]);
-  assert.deepEqual(Array.from(api.previewTotals(cols, [])), [null, null, null]);
-  assert.deepEqual(Array.from(api.previewTotals(cols, [[1, 'x', 'n/a']])), [1, null, null], 'non-numeric text is skipped');
+  assert.deepEqual(Array.from(api.previewTotals(tc, rows)), [6, null, 30.3], 'no float noise');
+  assert.deepEqual(Array.from(api.previewTotals(tc, rows, new Set(['amount']))), [6, null, null], 'masked stays masked');
+  assert.deepEqual(Array.from(api.previewTotals(tc, [[null, 'a', null]])), [null, null, null]);
+  assert.deepEqual(Array.from(api.previewTotals(tc, [])), [null, null, null]);
+  assert.deepEqual(Array.from(api.previewTotals(tc, [[1, 'x', 'n/a']])), [1, null, null], 'non-numeric text is skipped');
+});
+
+test('identifier and code columns are not summed', () => {
+  for (const n of ['id', 'order_id', 'customerid', 'status_code', 'teslim_durum_kodu', 'invoice_no', 'ORDER_ID']) assert.ok(api.isIdentifierColumn(n), n);
+  for (const n of ['amount', 'quantity', 'total_price']) assert.ok(!api.isIdentifierColumn(n), n);
+  const c = [{ name: 'order_id', type: 'int4' }, { name: 'status_code', type: 'int4' }, { name: 'invoice_no', type: 'int8' }, { name: 'amount', type: 'numeric' }];
+  assert.deepEqual(Array.from(api.previewTotals(c, [[1, 2, 3, '4.5'], [5, 6, 7, 1]])), [null, null, null, 5.5]);
 });
 
 test('CSV cells follow the spreadsheet rule of src/db.js', () => {

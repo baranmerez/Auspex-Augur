@@ -620,11 +620,15 @@ function filterPreviewRows(rows, query) {
   const q = String(query ?? '').trim().toLowerCase();
   return q ? rows.filter(row => row.some(v => v !== null && v !== undefined && String(v).toLowerCase().includes(q))) : rows.slice();
 }
+// Identifier and code columns are never summed: the name is id, ends with id
+// or no, or contains code or kod (order_id, customerid, invoice_no, status_code,
+// teslim_durum_kodu).
+const isIdentifierColumn = name => /^id$|id$|no$|code|kod/i.test(String(name ?? '').trim());
 // Sum of each numeric column over the given rows; null for a non-numeric,
-// masked or all-empty column. Only the rows given are summed (the preview).
+// masked, identifier or all-empty column. Only the rows given are summed (the preview).
 function previewTotals(columns, rows, masked = new Set()) {
   return columns.map((c, i) => {
-    if (!isNumericType(c.type) || masked.has(c.name)) return null;
+    if (!isNumericType(c.type) || masked.has(c.name) || isIdentifierColumn(c.name)) return null;
     let sum = 0, n = 0;
     for (const row of rows) if (numericText(row[i])) { sum += Number(row[i]); n++; }
     return n ? Number(sum.toPrecision(15)) : null;
