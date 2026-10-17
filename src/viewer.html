@@ -508,7 +508,7 @@
   .note.archived { opacity: .55; }
   .note .nh { display: flex; gap: 6px; align-items: center; font-size: 11px; color: var(--text-3); margin-bottom: 3px; flex-wrap: wrap; }
   .note .nh code { font: 11px var(--mono); color: var(--text-2); }
-  .note .fig { font: 11px/1.5 var(--mono); color: var(--text-2); margin-top: 5px; display: flex; flex-wrap: wrap; gap: 2px 10px; }
+  .note .fig, .rl-row .fig { font: 11px/1.5 var(--mono); color: var(--text-2); margin-top: 5px; display: flex; flex-wrap: wrap; gap: 2px 10px; }
   .badge.rule { background: var(--accent-soft); color: var(--accent-ink); }
   .badge.observation { background: var(--good-soft); color: var(--good-ink); }
   .badge.inference { background: var(--warn-soft); color: var(--warn-ink); }
@@ -615,7 +615,7 @@
   .tl-item b:hover { color: var(--accent-ink); }
   .tl-item ul { margin: 3px 0 0; padding-left: 18px; color: var(--text-2); font-size: 12px; }
   .tl-item.new .when { color: var(--warn-ink); font-weight: 600; }
-  .note pre { font: 11px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; margin: 4px 0 0; background: var(--surface-2); padding: 6px 8px; border-radius: 6px; }
+  .note pre, .rl-row pre { font: 11px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; overflow-x: auto; word-break: break-word; margin: 4px 0 0; background: var(--surface-2); padding: 6px 8px; border-radius: 6px; }
   /* Rules tab: schema-memory notes of one database */
   .rules-bar { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; padding: 10px 12px; }
   .rules-bar .grow { flex: 1; }
@@ -4055,7 +4055,7 @@ function ruleCard(n) {
         n.archivedReason ? h('span', {}, t('Archived: ') + n.archivedReason) : null,
         evidence)),
     h('div', { class: 'rl-act' }, active
-      ? h('button', { class: 'icon-btn sm', disabled: !!state.archivePending, 'aria-busy': pending ? 'true' : null,
+      ? h('button', { class: 'icon-btn sm' + (pending ? ' spin' : ''), disabled: !!state.archivePending, 'aria-busy': pending ? 'true' : null,
         'aria-label': t('Archive'), title: t('Archive'), onclick: () => confirmArchiveNote(n) }, icon)
       : null));
 }
@@ -4128,7 +4128,7 @@ function confirmArchiveNote(n) {
   const input = h('input', { id: 'archiveReason', type: 'text', maxlength: String(archiveReasonMax), autocomplete: 'off', placeholder: t('Why is this note no longer valid?') });
   const hint = h('span', { role: 'status' });
   const count = h('span', {}, `0 / ${archiveReasonMax}`);
-  const ok = h('button', { class: 'icon-btn primary', value: 'ok', disabled: true }, t('Archive'));
+  const ok = h('button', { class: 'icon-btn secondary-danger', value: 'ok', disabled: true }, t('Archive'));
   input.addEventListener('input', () => {
     const problem = archiveReasonProblem(input.value);
     ok.disabled = !!problem;
