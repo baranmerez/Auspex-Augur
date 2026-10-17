@@ -222,17 +222,47 @@ async function changeStage(req, res, action) {
   }
 }
 
-const server = http.createServer((req, res) => {
+// The request target as a URL, or null when it is not origin-form: exactly one
+// leading "/" (no "//authority", no absolute-form, no "*"), parsed against a
+// fixed base so the Host header never takes part.
+function parseTarget(target) {
+  if (typeof target !== 'string' || !target.startsWith('/') || target.startsWith('//')) return null;
+  try {
+    return new URL(target, `http://${host}:${port}`);
+  } catch {
+    return null;
+  }
+}
+
+// Last resort for an unexpected throw: answer 500 if nothing was sent yet,
+// otherwise drop the connection. Never lets the error reach the process.
+function failSafe(res, err) {
+  try {
+    process.stderr.write(`auspex viewer: ${err?.message ?? err}
+`);
+    if (!res.headersSent) send(res, 500, { error: 'Internal error' });
+    else res.destroy();
+  } catch {
+    res.destroy();
+  }
+}
+
+function handle(req, res) {
   // Only same-machine browsers addressing us by loopback name (blocks DNS rebinding).
   const allowedHosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
   if (!allowedHosts.has(req.headers.host)) return send(res, 403, { error: 'Forbidden host' });
 
-  const url = new URL(req.url, `http://${req.headers.host}`);
+  const url = parseTarget(req.url);
+  if (!url) return send(res, 400, { error: 'Bad request target' });
   const action = stageActions.get(url.pathname);
   if (action) {
     if (req.method !== 'POST') return send(res, 405, { error: 'Use POST' }, undefined, { Allow: 'POST' });
     return changeStage(req, res, action).catch(err => {
-      if (!res.headersSent) send(res, statusOf(err), { error: err.message, ...(err.errorCode ? { code: err.errorCode } : {}) });
+      try {
+        if (!res.headersSent) send(res, statusOf(err), { error: err.message, ...(err.errorCode ? { code: err.errorCode } : {}) });
+      } catch (e) {
+        failSafe(res, e);
+      }
     });
   }
   if (req.method !== 'GET') return send(res, 405, { error: 'Read-only route' }, undefined, { Allow: 'GET' });
@@ -269,6 +299,16 @@ const server = http.createServer((req, res) => {
     return send(res, 404, { error: 'Not found' });
   } catch (err) {
     return send(res, err instanceof LibraryError || err.code === 'ENOENT' ? 400 : 500, { error: err.code === 'ENOENT' ? 'File not found' : err.message });
+  }
+}
+
+// Every synchronous throw in the handler is caught here, so one malformed
+// request cannot stop the viewer.
+const server = http.createServer((req, res) => {
+  try {
+    handle(req, res);
+  } catch (err) {
+    failSafe(res, err);
   }
 });
 
