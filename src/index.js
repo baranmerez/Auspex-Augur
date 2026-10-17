@@ -386,8 +386,9 @@ tool('save_report', {
     mask: z.array(z.string()).optional().describe('Extra result columns to mask in previews.'),
     unmask: z.array(z.string()).optional().describe('Columns to exempt from automatic masking (only when the user agreed).'),
     presets: presetsArg,
+    dateRange: z.boolean().optional().describe('true when $1 and $2 are a date range ($1 start inclusive, $2 end exclusive; SQL with exactly two parameters): enables the built-in date presets of run_report. Compare with $1::date / $2::date or a date column. false turns them off; left out keeps the stored setting (reports saved without it have no built-in presets).'),
   },
-}, async args => db.audited('save_report', { ...reportDetails(args), sqlHash: sqlHash(args.sql), ...scriptRootDetails(args), ...(args.presets ? { presets: args.presets.length } : {}) }, () => reports.save(args),
+}, async args => db.audited('save_report', { ...reportDetails(args), sqlHash: sqlHash(args.sql), ...scriptRootDetails(args), ...(args.presets ? { presets: args.presets.length } : {}), ...(args.dateRange !== undefined ? { dateRange: args.dateRange } : {}) }, () => reports.save(args),
   r => ({ version: r.version, stage: r.stage, ...(r.externalFile ? { file: r.externalFile } : {}) })));
 
 tool('run_report', {
@@ -399,7 +400,7 @@ tool('run_report', {
     previewRows: z.number().int().min(0).max(config.maxRows).optional().describe('Rows stored in the HTML preview. Default 50. With 0 the query is not executed for a preview; only its column names are read (LIMIT 0).'),
     returnRows: z.number().int().min(0).max(100).optional().describe('Preview rows returned to you. Default 20.'),
     params: paramsArg,
-    preset: z.string().min(1).optional().describe(`Instead of params: a built-in date-range preset (${builtInPresetKeys.join(', ')}; only for SQL with exactly two parameters, $1 start inclusive and $2 end exclusive, resolved at run time to ISO dates in the local time zone of the Auspex machine; last_7_days includes today) or the name of one of the report's custom presets (list_reports).`),
+    preset: z.string().min(1).optional().describe(`Instead of params: a built-in date-range preset (${builtInPresetKeys.join(', ')}; only for reports saved with dateRange: true, $1 start inclusive and $2 end exclusive; resolved at run time to ISO dates whose day boundaries follow the local time zone of the Auspex machine, while a timestamptz comparison uses the database session time zone; last_7_days includes today) or the name of one of the report's custom presets (list_reports).`),
     timeoutSeconds: timeoutArg,
   },
 }, async ({ analyze, previewRows, returnRows, params, preset, timeoutSeconds, ...ref }) =>
@@ -416,7 +417,7 @@ tool('approve_report', {
 
 tool('list_reports', {
   title: 'List reports',
-  description: 'Lists library reports and change scripts with stage (draft, approved, execute), db, schema, category (nested levels joined with "/", also as the categoryPath array), versions, last run (with the preset it used) and presets (builtIn: the date-range keys run_report accepts when the SQL takes exactly two parameters; custom: the named parameter sets of the report).',
+  description: 'Lists library reports and change scripts with stage (draft, approved, execute), db, schema, category (nested levels joined with "/", also as the categoryPath array), versions, last run (with the preset it used) and dateRange and presets (builtIn: the date-range keys run_report accepts, only for reports saved with dateRange: true; custom: the named parameter sets of the report; mismatched: custom presets that no longer fit the SQL and are refused).',
   inputSchema: {
     db: z.string().optional().describe('Only this database (profile).'),
     stage: z.enum(['draft', 'approved', 'execute']).optional(),

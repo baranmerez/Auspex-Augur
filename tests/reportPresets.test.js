@@ -7,6 +7,7 @@ import {
   resolveBuiltInPreset, resolvePreset, validatePresets, sqlParamCount, builtInPresetKeys, builtInPresetsFor, mismatchedPresets,
 } from '../src/reports/presets.js';
 import { ReportService } from '../src/reports/service.js';
+import { ReadOnlyDatabase } from '../src/db.js';
 
 const fail = msg => new Error(msg);
 const at = (y, m, d, hh = 12) => new Date(y, m - 1, d, hh, 0, 0);
@@ -64,9 +65,11 @@ test('the SQL parameter count is the highest $n outside literals and comments', 
   assert.equal(sqlParamCount('select * from example.orders where created_at >= $1 and created_at < $2'), 2);
   assert.equal(sqlParamCount("select '$5', $1 -- $9\n, $$ $7 $$, \"a$3\", x$4"), 1);
   assert.equal(sqlParamCount('select $3::int'), 3);
-  assert.deepEqual(builtInPresetsFor(2), builtInPresetKeys);
-  assert.deepEqual(builtInPresetsFor(1), []);
-  assert.deepEqual(builtInPresetsFor(3), []);
+  assert.deepEqual(builtInPresetsFor(2, true), builtInPresetKeys);
+  assert.deepEqual(builtInPresetsFor(2, false), [], 'two parameters alone are not a date range');
+  assert.deepEqual(builtInPresetsFor(2), []);
+  assert.deepEqual(builtInPresetsFor(1, true), []);
+  assert.deepEqual(builtInPresetsFor(3, true), []);
 });
 
 test('custom presets are validated: names, uniqueness, built-in names, length and value types', () => {
@@ -91,14 +94,16 @@ test('custom presets are validated: names, uniqueness, built-in names, length an
   assert.deepEqual(mismatchedPresets([{ name: 'A', params: [1] }, { name: 'B', params: [1, 2] }], 2), ['A']);
 });
 
-test('resolvePreset: built-in needs two parameters, custom is found case-insensitively, unknown lists the names', () => {
+test('resolvePreset: built-in needs dateRange and two parameters, custom is found case-insensitively, unknown lists the names', () => {
   const now = at(2026, 5, 15);
-  assert.deepEqual(resolvePreset('this_month', [], 2, fail, now), { preset: 'this_month', params: ['2026-05-01', '2026-06-01'], builtIn: true });
-  assert.throws(() => resolvePreset('today', [], 3, fail, now), /exactly 2 parameters/);
+  assert.deepEqual(resolvePreset('this_month', [], 2, fail, now, true), { preset: 'this_month', params: ['2026-05-01', '2026-06-01'], builtIn: true });
+  assert.throws(() => resolvePreset('this_month', [], 2, fail, now), /no date-range parameters; save it with dateRange: true/);
+  assert.throws(() => resolvePreset('today', [], 3, fail, now, true), /exactly 2 parameters/);
   const presets = [{ name: 'April 2023 trial', params: ['2023-04-01', '2023-05-01'] }];
   assert.deepEqual(resolvePreset('april 2023 TRIAL', presets, 2, fail), { preset: 'April 2023 trial', params: ['2023-04-01', '2023-05-01'], builtIn: false });
   assert.throws(() => resolvePreset('April 2023 trial', presets, 1, fail), /current SQL uses 1/);
-  assert.throws(() => resolvePreset('missing', presets, 2, fail), /Available: today, .*April 2023 trial/);
+  assert.throws(() => resolvePreset('missing', presets, 2, fail, now, true), /Available: today, .*April 2023 trial/);
+  assert.throws(() => resolvePreset('missing', presets, 2, fail, now, false), /Available: April 2023 trial\./);
 });
 
 // ReportService over a temp library and a fake database that records params.
@@ -108,12 +113,13 @@ function tempService() {
     resolveProfile: name => String(name).toLowerCase(),
     async runReport(profile, sql, options) {
       calls.push(options.params);
+      fake.lastOptions = options;
       return { profile, serverVersion: '16.0', plan: [{ Plan: { 'Node Type': 'Result', 'Total Cost': 0.01, 'Plan Rows': 1 } }], explainMs: 1, previewMs: 1,
         columns: [{ name: 'order_id', type: 'integer' }], rows: [[1]], rowCount: 1, truncated: false, previewExecuted: true };
     },
   };
   const svc = new ReportService(fake, fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-preset-test-')));
-  return { svc, calls };
+  return { svc, calls, fake };
 }
 const ref = { db: 'exampledb', schema: 'example', category: 'Orders', name: 'Orders by day' };
 const rangeSql = 'select count(*) as orders from example.orders where created_at >= $1 and created_at < $2';
@@ -137,13 +143,62 @@ test('saving SQL with another parameter count reports presets that no longer fit
   assert.ok(!('presetMismatch' in svc.save({ ...ref, sql: rangeSql })));
 });
 
-test('run_report with a preset resolves the values and records the preset; params still work; both together are refused', async () => {
+test('dateRange is opt-in, needs exactly two parameters and is kept until changed', async () => {
   const { svc, calls } = tempService();
-  svc.save({ ...ref, sql: rangeSql, presets: [{ name: 'April 2023 trial', params: ['2023-04-01', '2023-05-01'] }] });
+  // Two parameters that are not a date range: no built-in presets.
+  const statusSql = 'select count(*) from example.orders where status_code = $1 and customer_id = $2';
+  svc.save({ ...ref, sql: statusSql });
+  assert.deepEqual(svc.list()[0].presets.builtIn, []);
+  assert.equal(svc.list()[0].dateRange, false);
+  await assert.rejects(svc.run(ref, { preset: 'today' }), /no date-range parameters; save it with dateRange: true/);
+  assert.equal(calls.length, 0);
+  assert.throws(() => svc.save({ ...ref, sql: 'select count(*) from example.orders where created_at >= $1', dateRange: true }), /exactly 2 parameters/);
+  svc.save({ ...ref, sql: rangeSql, dateRange: true });
+  assert.deepEqual(svc.list()[0].presets.builtIn, builtInPresetKeys);
+  svc.save({ ...ref, sql: rangeSql + ' -- v2' });
+  assert.equal(svc.list()[0].dateRange, true, 'kept when dateRange is not passed');
+  svc.save({ ...ref, sql: rangeSql, dateRange: false });
+  assert.deepEqual(svc.list()[0].presets.builtIn, []);
+});
+
+test('the audit entry of a preset run records the preset next to the resolved params', async () => {
+  const entries = [];
+  const client = {
+    async query(q) {
+      const text = typeof q === 'string' ? q : q.text;
+      if (text.startsWith('EXPLAIN')) return { rows: [{ 'QUERY PLAN': [{ Plan: { 'Node Type': 'Result', 'Total Cost': 0.01, 'Plan Rows': 1 } }] }] };
+      if (text.startsWith('FETCH')) return { rows: [[1]], fields: [{ name: 'order_id', dataTypeID: 23 }] };
+      if (text.includes('pg_type')) return { rows: [{ oid: 23, name: 'integer' }] };
+      if (text.includes('server_version')) return { rows: [{ v: '16.0' }] };
+      return { rows: [] };
+    },
+    release() {},
+  };
+  const db = new ReadOnlyDatabase({
+    profiles: new Map([['exampledb', 'postgresql://u@127.0.0.1:1/a']]),
+    statementTimeoutMs: 30000, maxStatementTimeoutMs: 300000, maxRows: 500,
+  }, { audit: e => entries.push(e) });
+  db.pool = () => ({ connect: async () => client });
+  db.roleChecks.set('exampledb', { status: 'ok', blocking: [], warnings: [] });
+  const svc = new ReportService(db, fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-preset-audit-')));
+  svc.save({ ...ref, sql: rangeSql, dateRange: true });
+  await svc.run(ref, { preset: 'last_year' });
+  await svc.run(ref, { params: ['2026-01-01', '2026-02-01'] });
+  const runs = entries.filter(e => e.tool === 'run_report');
+  assert.equal(runs.length, 2);
+  assert.equal(runs[0].preset, 'last_year');
+  assert.deepEqual(runs[0].params, resolveBuiltInPreset('last_year'));
+  assert.ok(!('preset' in runs[1]));
+});
+
+test('run_report with a preset resolves the values and records the preset; params still work; both together are refused', async () => {
+  const { svc, calls, fake } = tempService();
+  svc.save({ ...ref, sql: rangeSql, dateRange: true, presets: [{ name: 'April 2023 trial', params: ['2023-04-01', '2023-05-01'] }] });
   const a = await svc.run(ref, { preset: 'April 2023 trial' });
   assert.equal(a.preset, 'April 2023 trial');
   assert.deepEqual(a.params, ['2023-04-01', '2023-05-01']);
   assert.deepEqual(calls.at(-1), ['2023-04-01', '2023-05-01']);
+  assert.equal(fake.lastOptions.preset, 'April 2023 trial', 'the preset reaches the audited database call');
   const b = await svc.run(ref, { preset: 'today' });
   assert.equal(b.preset, 'today');
   assert.deepEqual(b.params, resolveBuiltInPreset('today'));
@@ -161,20 +216,30 @@ test('run_report with a preset resolves the values and records the preset; param
 
 test('list_reports shows the presets and the preset of the last run; the HTML embeds them, a shared copy does not', async () => {
   const { svc } = tempService();
-  svc.save({ ...ref, sql: rangeSql, presets: [{ name: 'April 2023 trial', params: ['2023-04-01', '2023-05-01'] }] });
+  svc.save({ ...ref, sql: rangeSql, dateRange: true, presets: [{ name: 'April 2023 trial', params: ['2023-04-01', '2023-05-01'] }] });
   await svc.run(ref, { preset: 'last_month' });
   const [item] = svc.list();
   assert.equal(item.paramCount, 2);
-  assert.deepEqual(item.presets, { builtIn: builtInPresetKeys, custom: ['April 2023 trial'] });
+  assert.deepEqual(item.presets, { builtIn: builtInPresetKeys, custom: ['April 2023 trial'], mismatched: [] });
   assert.equal(item.lastRun.preset, 'last_month');
   const html = fs.readFileSync(svc.library.paths('draft', ref).html, 'utf8');
   const data = JSON.parse(html.match(/<script id="auspex-report" type="application\/json">([\s\S]*?)<\/script>/)[1]);
-  assert.deepEqual(data.presets, { paramCount: 2, builtIn: builtInPresetKeys, custom: [{ name: 'April 2023 trial', params: ['2023-04-01', '2023-05-01'] }] });
+  assert.deepEqual(data.presets, { paramCount: 2, builtIn: builtInPresetKeys, custom: [{ name: 'April 2023 trial', params: ['2023-04-01', '2023-05-01'] }], mismatched: [] });
   const shared = svc.share(ref, fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-preset-share-')));
   const sharedHtml = fs.readFileSync(shared.file, 'utf8');
   assert.ok(!sharedHtml.includes('April 2023 trial') && !sharedHtml.includes('"presets"'), 'no presets in a shared copy');
   // Without parameters: no built-in presets.
   svc.save({ ...ref, name: 'All orders', sql: 'select count(*) from example.orders' });
   const plain = svc.list().find(i => i.name === 'all-orders');
-  assert.deepEqual(plain.presets, { builtIn: [], custom: [] });
+  assert.deepEqual(plain.presets, { builtIn: [], custom: [], mismatched: [] });
+});
+
+test('custom presets that no longer fit the SQL are listed as mismatched in list_reports and the embedded data', () => {
+  const { svc } = tempService();
+  svc.save({ ...ref, sql: rangeSql, presets: [{ name: 'Q1', params: ['2026-01-01', '2026-04-01'] }] });
+  svc.save({ ...ref, sql: 'select count(*) from example.orders where status_code = $1' });
+  assert.deepEqual(svc.list()[0].presets.mismatched, ['Q1']);
+  const html = fs.readFileSync(svc.library.paths('draft', ref).html, 'utf8');
+  const data = JSON.parse(html.match(/<script id="auspex-report" type="application\/json">([\s\S]*?)<\/script>/)[1]);
+  assert.deepEqual(data.presets.mismatched, ['Q1']);
 });

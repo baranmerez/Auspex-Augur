@@ -11,7 +11,7 @@ const block = page.match(/\/\/ ask-claude:start[\s\S]*?\/\/ ask-claude:end/)?.[0
 function load() {
   assert.ok(block, 'ask-claude block found in viewer.html');
   const context = vm.createContext({});
-  vm.runInContext(`${block}\nObject.assign(this, { buildAskPrompt, reportDataOf, presetLabel, lastRunInfo, paramText });`, context);
+  vm.runInContext(`${block}\nObject.assign(this, { buildAskPrompt, reportDataOf, presetLabel, lastRunInfo, paramText, offeredPresets });`, context);
   return context;
 }
 
@@ -65,4 +65,17 @@ test('embedded report data is read from the auspex-report script; anything else 
   assert.equal(presetLabel('this_year', 'tr'), 'Bu yıl');
   assert.equal(presetLabel('this_year', 'de'), 'This year');
   assert.equal(presetLabel('Custom name', 'en'), 'Custom name');
+});
+
+test('preset chips: built-in labels, custom values, and custom presets that no longer fit the SQL marked stale', () => {
+  const { offeredPresets } = load();
+  const plain = x => JSON.parse(JSON.stringify(x));
+  const chips = offeredPresets({ builtIn: ['last_month'], custom: [{ name: 'Q1', params: ['2026-01-01', '2026-04-01'] }, { name: 'Old', params: [1] }], mismatched: ['Old'] }, 'tr');
+  assert.deepEqual(plain(chips), [
+    { label: 'Geçen ay', title: 'last_month', stale: false },
+    { label: 'Q1', title: '2026-01-01, 2026-04-01', stale: false },
+    { label: 'Old', title: '1', stale: true },
+  ]);
+  assert.deepEqual(plain(offeredPresets(null, 'en')), []);
+  assert.equal(offeredPresets({ custom: [{ name: 'A', params: [] }] }, 'en')[0].stale, false, 'older HTML without mismatched');
 });
