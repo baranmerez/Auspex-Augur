@@ -109,13 +109,29 @@ fn memory_profile(query: &HashMap<String, String>) -> Result<PathBuf, String> {
 
 const STAGES: [(&str, &str); 3] = [("draft", "_drafts"), ("approved", "SELECT"), ("execute", "EXECUTE")];
 
-// One folder level (db, schema, category) or a report name; same rules as library.js.
+// One folder level (db, schema, one category level) or a report name; same rules as library.js.
 fn valid_segment(s: &str) -> bool {
     !s.is_empty()
         && s.chars().count() <= 80
         && !s.starts_with('.')
         && !s.ends_with('.')
         && !s.chars().any(|c| c.is_control() || "<>:\"/\\|?*".contains(c))
+}
+
+// Category levels below <db>/<schema>, as in library.js (maxCategoryLevels).
+const MAX_CATEGORY_LEVELS: usize = 3;
+
+// One category level as the library writes it: a valid segment without
+// surrounding spaces (categorySegments in library.js).
+fn valid_category_level(s: &str) -> bool {
+    valid_segment(s) && s.trim() == s
+}
+
+// A category: 1 to MAX_CATEGORY_LEVELS levels joined by "/", each level valid
+// on its own, so "a//b", "/a", "a/../b" and "a/ b" are refused.
+fn category_levels(s: &str) -> Option<Vec<&str>> {
+    let levels: Vec<&str> = s.split('/').collect();
+    (levels.len() <= MAX_CATEGORY_LEVELS && levels.iter().all(|l| valid_category_level(l))).then_some(levels)
 }
 
 fn sub_dirs(p: &std::path::Path) -> Vec<String> {
@@ -127,53 +143,72 @@ fn sub_dirs(p: &std::path::Path) -> Vec<String> {
 }
 
 fn list_reports() -> Value {
-    let root = library_dir();
+    list_reports_in(library_dir())
+}
+
+fn list_reports_in(root: PathBuf) -> Value {
     let mut out = Vec::new();
     for (stage, dir) in STAGES {
         let base = root.join(dir);
         for db in sub_dirs(&base) {
             for schema in sub_dirs(&base.join(&db)) {
-                for category in sub_dirs(&base.join(&db).join(&schema)) {
-                    let folder = base.join(&db).join(&schema).join(&category);
-                    let mut files: Vec<String> = fs::read_dir(&folder)
-                        .map(|it| it.filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().to_string()).filter(|n| n.ends_with(".sql")).collect())
-                        .unwrap_or_default();
-                    files.sort();
-                    for f in files {
-                        let name = f.trim_end_matches(".sql").to_string();
-                        let meta: Value = if stage == "execute" {
-                            Value::Null
-                        } else {
-                            fs::read_to_string(folder.join(format!("{name}.report.json"))).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or(Value::Null)
-                        };
-                        let last = meta.get("runs").and_then(Value::as_array).and_then(|r| r.last()).cloned();
-                        let updated = meta.get("updatedAt").cloned().unwrap_or(Value::Null);
-                        // Drafts carry the SQL version an approval would approve (confirm dialog).
-                        let active = if stage == "draft" { meta.get("activeVersion").cloned().unwrap_or(Value::Null) } else { Value::Null };
-                        // Drafts and approved reports carry the SQL hash they stand for now;
-                        // the page compares it with the opened content's hash.
-                        let active_hash = if stage == "execute" { Value::Null } else { meta_hash(&meta) };
-                        out.push(json!({
-                            "stage": stage, "db": db, "schema": schema, "category": category, "name": name,
-                            "title": meta.get("title").cloned().unwrap_or(json!(name)),
-                            "description": meta.get("description").cloned().unwrap_or(Value::Null),
-                            "versions": meta.get("sqlVersions").and_then(Value::as_array).map(|a| a.len()),
-                            "approvedVersion": meta.get("approvedVersion").cloned().unwrap_or(Value::Null),
-                            "activeVersion": active,
-                            "activeHash": active_hash,
-                            "updatedAt": updated,
-                            "runs": meta.get("runs").and_then(Value::as_array).map(|a| a.len()).unwrap_or(0),
-                            "lastRun": last.map(|r| json!({
-                                "at": r.get("at"), "durationMs": r.get("durationMs"), "rows": r.get("rows"),
-                                "analyzed": r.get("analyzed"), "warnings": r.get("warnings").and_then(Value::as_array).map(|a| a.len()).unwrap_or(0)
-                            })),
-                        }));
-                    }
+                let schema_dir = base.join(&db).join(&schema);
+                for category in sub_dirs(&schema_dir).into_iter().filter(|c| valid_category_level(c)) {
+                    list_category(stage, &db, &schema, &schema_dir, vec![category], &mut out);
                 }
             }
         }
     }
     json!({ "libraryDir": root.to_string_lossy(), "reports": out })
+}
+
+// The reports of one category folder, then its nested category folders (up to
+// MAX_CATEGORY_LEVELS levels, like list() in library.js). category is the
+// levels joined by "/", categoryPath the levels.
+fn list_category(stage: &str, db: &str, schema: &str, schema_dir: &std::path::Path, levels: Vec<String>, out: &mut Vec<Value>) {
+    let folder = levels.iter().fold(schema_dir.to_path_buf(), |p, l| p.join(l));
+    let category = levels.join("/");
+    let mut files: Vec<String> = fs::read_dir(&folder)
+        .map(|it| it.filter_map(|e| e.ok()).filter(|e| e.path().is_file()).map(|e| e.file_name().to_string_lossy().to_string()).filter(|n| n.ends_with(".sql")).collect())
+        .unwrap_or_default();
+    files.sort();
+    for f in files {
+        let name = f.trim_end_matches(".sql").to_string();
+        let meta: Value = if stage == "execute" {
+            Value::Null
+        } else {
+            fs::read_to_string(folder.join(format!("{name}.report.json"))).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or(Value::Null)
+        };
+        let last = meta.get("runs").and_then(Value::as_array).and_then(|r| r.last()).cloned();
+        let updated = meta.get("updatedAt").cloned().unwrap_or(Value::Null);
+        // Drafts carry the SQL version an approval would approve (confirm dialog).
+        let active = if stage == "draft" { meta.get("activeVersion").cloned().unwrap_or(Value::Null) } else { Value::Null };
+        // Drafts and approved reports carry the SQL hash they stand for now;
+        // the page compares it with the opened content's hash.
+        let active_hash = if stage == "execute" { Value::Null } else { meta_hash(&meta) };
+        out.push(json!({
+            "stage": stage, "db": db, "schema": schema, "category": category, "categoryPath": levels, "name": name,
+            "title": meta.get("title").cloned().unwrap_or(json!(name)),
+            "description": meta.get("description").cloned().unwrap_or(Value::Null),
+            "versions": meta.get("sqlVersions").and_then(Value::as_array).map(|a| a.len()),
+            "approvedVersion": meta.get("approvedVersion").cloned().unwrap_or(Value::Null),
+            "activeVersion": active,
+            "activeHash": active_hash,
+            "updatedAt": updated,
+            "runs": meta.get("runs").and_then(Value::as_array).map(|a| a.len()).unwrap_or(0),
+            "lastRun": last.map(|r| json!({
+                "at": r.get("at"), "durationMs": r.get("durationMs"), "rows": r.get("rows"),
+                "analyzed": r.get("analyzed"), "warnings": r.get("warnings").and_then(Value::as_array).map(|a| a.len()).unwrap_or(0)
+            })),
+        }));
+    }
+    if levels.len() < MAX_CATEGORY_LEVELS {
+        for child in sub_dirs(&folder).into_iter().filter(|c| valid_category_level(c)) {
+            let mut next = levels.clone();
+            next.push(child);
+            list_category(stage, db, schema, schema_dir, next, out);
+        }
+    }
 }
 
 // The SQL hash in a report's metadata (activeHash), or null for reports saved
@@ -193,16 +228,21 @@ fn html_hash(html: &str) -> Value {
 }
 
 fn report_content(query: &HashMap<String, String>) -> Result<Value, String> {
+    report_content_in(library_dir(), query)
+}
+
+fn report_content_in(root: PathBuf, query: &HashMap<String, String>) -> Result<Value, String> {
     let get = |k: &str| query.get(k).cloned().unwrap_or_default();
     let stage = get("stage");
     let dir = STAGES.iter().find(|(s, _)| *s == stage).map(|(_, d)| *d).ok_or("stage must be draft, approved or execute")?;
     let (db, schema, category, name) = (get("db").to_lowercase(), get("schema"), get("category"), get("name"));
-    for s in [&db, &schema, &category, &name] {
+    for s in [&db, &schema, &name] {
         if !valid_segment(s) {
             return Err(format!("Invalid path segment \"{s}\""));
         }
     }
-    let base = library_dir().join(dir).join(&db).join(&schema).join(&category);
+    let levels = category_levels(&category).ok_or_else(|| format!("Invalid category \"{category}\""))?;
+    let base = levels.iter().fold(root.join(dir).join(&db).join(&schema), |p, l| p.join(l));
     let html = base.join(format!("{name}.html"));
     // sqlHash: the version this content shows, sent back on approve/revoke.
     if stage != "execute" && html.exists() {
@@ -468,11 +508,20 @@ fn stage_error(code: &str, message: impl Into<String>) -> Value {
 }
 
 // One part of a report location as the library lists it (validateRefInput and
-// normalizeRef in src/reports): non-empty, at most 200 UTF-16 units, no
-// surrounding spaces, a folder segment; the database in lower case; the name
-// a slug (a-z, 0-9, single dashes inside). Node checks again (NFC, slugify).
+// normalizeRef in src/reports): non-empty, at most MAX_REF_PART UTF-16 units,
+// no surrounding spaces, a folder segment (the category 1 to 3 levels joined
+// by "/"); the database in lower case; the name a slug (a-z, 0-9, single
+// dashes inside). Node checks again (NFC, slugify).
+const MAX_REF_PART: usize = 260;
+
 fn valid_ref_part(key: &str, s: &str) -> bool {
-    if s.is_empty() || s.encode_utf16().count() > 200 || s.trim() != s || !valid_segment(s) {
+    if s.is_empty() || s.encode_utf16().count() > MAX_REF_PART || s.trim() != s {
+        return false;
+    }
+    if key == "category" {
+        return category_levels(s).is_some();
+    }
+    if !valid_segment(s) {
         return false;
     }
     match key {
@@ -808,10 +857,51 @@ mod tests {
             assert!(!valid_ref_part(key, bad), "{key}={bad}");
         }
         assert!(!valid_ref_part("category", &"a".repeat(81)));
+        assert!(valid_ref_part("category", "Orders/Delivery"));
+        assert!(valid_ref_part("category", "Orders/Delivery/Örnek Çalışma"));
+        assert!(valid_ref_part("category", &["a".repeat(80), "b".repeat(80), "c".repeat(80)].join("/")));
+        for bad in ["a/b/c/d", "a/../b", "/a", "a/", "a//b", "a/ b", "a /b", "a/.", r"a/b\c"] {
+            assert!(!valid_ref_part("category", bad), "category={bad}");
+        }
+        assert!(!valid_ref_part("schema", "a/b"));
+        assert!(!valid_ref_part("name", "a/b"));
         let bad_name = ["exampledb".to_string(), "example".into(), "Example Reports".into(), "Bad Name".into()];
         assert_eq!(run_stage_cli("approve", &bad_name, Some("0123456789ab")).unwrap_err()["code"], json!("INVALID_INPUT"));
         let ok = ["exampledb".to_string(), "example".into(), "Example Reports".into(), "example-report".into()];
         assert_eq!(run_stage_cli("delete", &ok, Some("0123456789ab")).unwrap_err()["code"], json!("INVALID_INPUT"));
+    }
+
+    #[test]
+    fn nested_categories_are_listed_and_opened() {
+        let root = std::env::temp_dir().join(format!("auspex-nested-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let schema = root.join("SELECT").join("exampledb").join("example");
+        let write = |rel: &str, text: &str| {
+            let f = schema.join(rel);
+            fs::create_dir_all(f.parent().unwrap()).unwrap();
+            fs::write(f, text).unwrap();
+        };
+        write("Orders/top.sql", "select 1");
+        write("Orders/Delivery/late.sql", "select 2");
+        write("Orders/Delivery/Weekly/week.sql", "select 3");
+        write("Orders/Delivery/Weekly/Deeper/ignored.sql", "select 4");
+        write(".hidden/skipped.sql", "select 5");
+        let listed = list_reports_in(root.clone());
+        let mut got: Vec<String> = listed["reports"].as_array().unwrap().iter()
+            .map(|r| format!("{}|{}|{}", r["category"].as_str().unwrap(), r["categoryPath"].as_array().unwrap().len(), r["name"].as_str().unwrap()))
+            .collect();
+        got.sort();
+        assert_eq!(got, vec!["Orders/Delivery/Weekly|3|week", "Orders/Delivery|2|late", "Orders|1|top"]);
+        let q = |category: &str, name: &str| HashMap::from([
+            ("stage".to_string(), "approved".to_string()), ("db".into(), "exampledb".into()),
+            ("schema".into(), "example".into()), ("category".into(), category.to_string()), ("name".into(), name.to_string()),
+        ]);
+        assert_eq!(report_content_in(root.clone(), &q("Orders/Delivery", "late")).unwrap()["content"], json!("select 2"));
+        assert_eq!(report_content_in(root.clone(), &q("Orders/Delivery/Weekly", "week")).unwrap()["content"], json!("select 3"));
+        for bad in ["Orders/../Orders", "Orders/Delivery/Weekly/Deeper", "/Orders", "Orders//Delivery"] {
+            assert!(report_content_in(root.clone(), &q(bad, "late")).is_err(), "{bad}");
+        }
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
