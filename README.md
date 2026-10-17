@@ -426,19 +426,27 @@ moved.
   plan warnings, a plan tree with time share and misestimates, joins read from
   the plan (with the column pairs they use), tables touched, the masked preview,
   run history with a duration chart, and a diff between SQL versions.
-- **Parameter presets:** a report whose SQL takes exactly two parameters,
-  `$1` start (inclusive) and `$2` end (exclusive), can run with a built-in
-  relative date range: `today`, `yesterday`, `last_7_days` (the last seven
-  days including today), `this_month`, `last_month`, `this_year`, `last_year`.
-  They resolve when the report runs, to ISO dates in the local time zone of
-  the machine Auspex runs on. Any report can also keep named parameter sets
+- **Parameter presets:** a report saved with `dateRange: true` (its SQL
+  takes exactly two parameters, `$1` start inclusive and `$2` end exclusive)
+  can run with a built-in relative date range: `today`, `yesterday`,
+  `last_7_days` (the last seven days including today), `this_month`,
+  `last_month`, `this_year`, `last_year`. Built-in presets are opt-in:
+  reports saved without the flag (including every report saved before it
+  existed) offer none until they are saved again with `dateRange: true`.
+  The presets resolve when the report runs to ISO dates; day boundaries are
+  computed in the local time zone of the machine Auspex runs on, while a
+  comparison with a `timestamptz` column reads the date in the database
+  session time zone, so compare with `$1::date` / `$2::date` or a date
+  column. Any report can also keep named parameter sets
   (`save_report` `presets`, e.g. `{ "name": "April 2023 trial", "params":
   ["2023-04-01", "2023-05-01"] }`; names 1–60 characters, unique, one value
   per SQL parameter; passing `presets` replaces the list). `run_report`
   takes `preset` (a built-in key or a custom name) instead of `params`; the
-  run history records the preset and the resolved values, and
-  `list_reports` shows the presets and the preset of the last run. A shared
-  copy never contains presets.
+  run history and the audit log record the preset and the resolved values,
+  and `list_reports` shows the presets, the preset of the last run and the
+  custom presets that no longer fit the SQL (`mismatched`; refused by
+  `run_report` and shown struck through in the viewer). A shared copy never
+  contains presets.
 - **Develop a query like a car:** every saved SQL change becomes a new version,
   every run is kept (last 100), so you can see what each change did to time,
   cost and plan.
