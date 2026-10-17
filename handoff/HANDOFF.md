@@ -182,17 +182,23 @@ has a hole in that schema.
   Quit. Closing the window minimizes to the tray.
 - Header: database switcher (applies to every tab), EN/TR, theme, and a badge
   for unseen schema changes.
-- Tabs: Overview (stat tiles, activity chart, by profile/tool/table, slowest
-  operations, recent errors), Operations (sort, paging, details, copy,
+- Tabs (seven): Overview (stat tiles, activity chart, by profile/tool/table,
+  slowest operations, recent errors), Operations (sort, paging, details, copy,
   CSV/JSON download with error codes), Tables (accesses extracted from SQL),
   Reports (collapsible topic/subtopic tree with a filter box; report with question
   line, compact metrics strip, warnings badge with a remembered Performance
   details toggle, Approve/Revoke buttons beside the title, sticky tabs,
   Preview first; the preview table sorts, filters, shows a totals row and
   exports CSV;
-  SQL highlighting; copy relayed to the viewer clipboard), Schema (Graph,
-  ER diagram and Flow views, schema picker, notes inspector, change
-  timeline), Profiles. Full window width with one page scroll.
+  SQL highlighting; copy relayed to the viewer clipboard; the report header
+  shows the last run's preset and the presets the report offers, read-only;
+  star-pinned Favorites and the last 8 Recent reports above the tree, kept in
+  browser storage only; Ask Claude copies a prompt about the report without
+  preview values), Schema (Graph, ER diagram and Flow views, schema picker,
+  notes inspector, change timeline; Data dictionary download as HTML or
+  Markdown, built from the schema memory only), Rules (every note of the
+  database with status, kind, table and text filters; Archive with a
+  required reason), Profiles. Full window width with one page scroll.
 - Schema roles: for the selected table, Reference/Instance tables (it points
   at them) and Dependent/Beslenen tables (they point at it), ranked by
   `linkedRows` then estimated rows, with a per-side top-N picker (5, 10, 25,
@@ -219,7 +225,9 @@ has a hole in that schema.
   *Onayı geri al*) with a confirm dialog. The browser viewer POSTs to its
   routes; the desktop app's `approve_report` / `revoke_report` Tauri commands
   run `node <auspexRoot>/src/stageCli.js` (no shell, 30 s timeout), audited
-  with actor `desktop`. Shared logic: `src/reports/stageChange.js`. The
+  with actor `desktop`. Note archiving works the same way: the Rules tab
+  POSTs to `/api/memory/archive` in the browser, and the desktop app's
+  `archive_note` command runs `stageCli.js archive-note`. Shared logic: `src/reports/stageChange.js`. The
   desktop needs Node (PATH or `AUSPEX_NODE`) and `AUSPEX_ROOT` or
   `"auspexRoot"` in profiles.json.
 
