@@ -340,6 +340,22 @@
   .rep-item.on { background: var(--accent-soft); border-left-color: var(--accent); }
   .rep-item .t { font-weight: 600; display: flex; gap: 6px; align-items: center; }
   .rep-item .s { font-size: 12px; color: var(--text-3); display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+  .rep-row { position: relative; }
+  .rep-row .rep-item { padding-right: 36px; }
+  .rep-star { position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; border: 0; border-radius: 6px; background: none; color: var(--text-3);
+    font-size: 15px; line-height: 1; cursor: pointer; opacity: .45; }
+  .rep-row:hover .rep-star, .rep-star:focus-visible, .rep-star.on { opacity: 1; }
+  .rep-star.on { color: var(--accent); }
+  .rep-star:hover { background: var(--surface-2); }
+  .rep-star:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .rep-sec { border-bottom: 1px solid var(--line); }
+  .rep-sec > summary { padding: 8px 12px 4px; font-size: 11px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--text-3); cursor: pointer; }
+  .rep-sec > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .rep-sec .rep-empty-line { padding: 2px 14px 8px; font-size: 12px; color: var(--text-3); }
+  .rep-view .rep-meta { display: flex; gap: 4px 8px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--text-3); margin-top: 4px; }
+  .rep-view .rep-meta .chip { border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; color: var(--text-2); overflow-wrap: anywhere; }
+  .rep-view .rep-meta .chip.on { border-color: var(--accent); color: var(--accent-ink); }
+  .rep-view .rep-title .rep-star { position: static; opacity: 1; }
   .badge.draft { background: var(--warn-soft); color: var(--warn-ink); }
   .badge.approved { background: var(--good-soft); color: var(--good-ink); }
   .badge.execute { background: var(--critical-soft); color: var(--critical); }
@@ -841,6 +857,11 @@ const TR = {
   'It moves back to Drafts; its SQL versions and runs stay. Only local Auspex files change (report library and schema memory view); no database is touched.': 'Rapor Taslaklar aşamasına döner; SQL sürümleri ve çalıştırmaları kalır. Yalnız yerel Auspex dosyaları değişir (rapor kütüphanesi ve şema hafızası görünümü); veritabanına dokunulmaz.',
   'Report': 'Rapor', 'Location': 'Konum', 'Version': 'Sürüm', 'Last run': 'Son çalıştırma', 'Warnings': 'Uyarılar',
   'Revoke report approval': 'Rapor onayını geri al',
+  'Favorites': 'Favoriler', 'Recent': 'Son açılanlar', 'Star a report to pin it here.': 'Buraya sabitlemek için bir raporu yıldızlayın.',
+  'Add to favorites': 'Favorilere ekle', 'Remove from favorites': 'Favorilerden çıkar',
+  'Ask Claude': "Claude'a sor", 'Copy a prompt about this report for Claude (no row values)': "Bu rapor için Claude'a hazır bir istem kopyala (satır değeri içermez)",
+  'Copied to clipboard': 'Panoya kopyalandı', 'Last run:': 'Son çalıştırma:', 'Presets:': 'Hazır ayarlar:', 'Parameter values': 'Parametre değerleri',
+  'Ask Claude to run the report with a preset': "Raporu bir hazır ayarla çalıştırmasını Claude'dan isteyin",
   'Auspex folder not found. Set "auspexRoot" in ~/.auspex/profiles.json (or the AUSPEX_ROOT environment variable) to the Auspex folder that holds src/stageCli.js.': 'Auspex klasörü bulunamadı. ~/.auspex/profiles.json içinde "auspexRoot" değerini (ya da AUSPEX_ROOT ortam değişkenini) src/stageCli.js dosyasını içeren Auspex klasörüne ayarlayın.',
   'Node was not found. Install Node 20+ so it is on PATH, or set AUSPEX_NODE to the path of node.exe.': 'Node bulunamadı. Node 20+ kurun (PATH üzerinde olsun) ya da AUSPEX_NODE değişkenini node.exe yoluna ayarlayın.',
   'The Auspex folder setting is invalid: AUSPEX_ROOT or "auspexRoot" in ~/.auspex/profiles.json must be the absolute path of the Auspex folder that holds src/stageCli.js.': 'Auspex klasörü ayarı geçersiz: AUSPEX_ROOT ya da ~/.auspex/profiles.json içindeki "auspexRoot", src/stageCli.js dosyasını içeren Auspex klasörünün mutlak yolu olmalı.',
@@ -996,7 +1017,7 @@ const state = {
   memSchema: '', memErAll: false, memPos: new Map(), schemaKey: null,
 };
 try { Object.assign(state, JSON.parse(localStorage.getItem('auspex.viewer') || '{}'), { all: [], seen: new Set(), firstLoad: true, open: null, reports: null, reportDoc: null, memory: null, memView: null, memPos: new Map() }); } catch {}
-const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy, memHideFaint: state.memHideFaint, memGraph3d: state.memGraph3d, memGraphSoft: state.memGraphSoft, memExpand: state.memExpand, repListCollapsed: state.repListCollapsed, repTreeOpen: state.repTreeOpen, sqlWrap: state.sqlWrap, perfOpen: state.perfOpen })); } catch {} };
+const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy, memHideFaint: state.memHideFaint, memGraph3d: state.memGraph3d, memGraphSoft: state.memGraphSoft, memExpand: state.memExpand, repListCollapsed: state.repListCollapsed, repTreeOpen: state.repTreeOpen, repFavOpen: state.repFavOpen, repRecentOpen: state.repRecentOpen, sqlWrap: state.sqlWrap, perfOpen: state.perfOpen })); } catch {} };
 
 // In the Tauri desktop app the same routes are served by the Rust `api` command.
 const tauriCore = window.__TAURI__?.core;
@@ -1470,6 +1491,7 @@ function ago(ts) {
 }
 async function loadReport(r) {
   const key = repKey(r);
+  saveFavs(favTouch(favs, favKey(r)));
   state.reportSel = key; state.reportDoc = { key, loading: true }; state.reportViewNode = null;
   persist();
   renderReports();
@@ -1795,12 +1817,15 @@ function reportView(r) {
       onclick: () => { state.sqlWrap = !wrap; persist(); state.reportViewNode = null; renderReports(); } }, t('Wrap lines')));
     actions.push(h('button', { class: 'icon-btn', onclick: () => copy(doc.content, 'SQL') }, t('Copy SQL')));
   }
+  const data = doc && doc.kind === 'html' ? (doc.data === undefined ? (doc.data = reportDataOf(doc.content)) : doc.data) : null;
+  if (data) actions.push(h('button', { class: 'icon-btn', title: t('Copy a prompt about this report for Claude (no row values)'), onclick: () => askClaude(r, data) }, t('Ask Claude')));
   if (doc && doc.kind === 'html' && !tauriCore) actions.push(h('button', { class: 'icon-btn', onclick: () => window.open(URL.createObjectURL(new Blob([doc.content], { type: 'text/html' })), '_blank') }, t('Open in new tab')));
   // Title, stage badge and the approve/revoke button sit together; the report
   // frame hides its own title, location chips, language and theme controls.
   const heading = h('div', {},
     h('div', { class: 'crumbs' }, h('span', { class: 'crumb' }, r.db), '›', h('span', { class: 'crumb' }, r.schema), '›', h('span', { class: 'crumb' }, r.category)),
-    h('div', { class: 'rep-title' }, h('span', { class: 't' }, r.title || r.name), h('span', { class: 'badge ' + r.stage }, r.stage === 'approved' ? t('approved v{v}', { v: r.approvedVersion ?? '?' }) : t(r.stage)), stageButton(r, doc)));
+    h('div', { class: 'rep-title' }, h('span', { class: 't' }, r.title || r.name), h('span', { class: 'badge ' + r.stage }, r.stage === 'approved' ? t('approved v{v}', { v: r.approvedVersion ?? '?' }) : t(r.stage)), starButton(r, 'head'), stageButton(r, doc)),
+    presetMeta(data));
   // The list moved on (live refresh) while this content stayed open.
   const changed = doc && stageBlocked(r, doc) === changedText
     ? h('div', { class: 'error-box', role: 'status', style: 'margin:0 12px 8px;display:flex;gap:10px;align-items:center' }, t(changedText),
@@ -1809,6 +1834,24 @@ function reportView(r) {
   const node = h('div', { class: 'panel rep-view' }, h('div', { class: 'bar' }, heading, h('span', { class: 'grow' }), actions), changed, body);
   if (doc && !doc.loading) { state.reportViewNode = node; state.reportViewKey = viewKey; state.reportViewTheme = themeKey() + lang; }
   return node;
+}
+// The last run's preset and parameter values, and the presets the report
+// offers (read-only: running stays a Claude action, the viewer never runs SQL).
+function presetMeta(data) {
+  if (!data) return null;
+  const info = lastRunInfo(data);
+  const p = data.presets;
+  const offered = p ? [...(p.builtIn || []).map(k => ({ label: presetLabel(k, lang), title: k })), ...(p.custom || []).map(c => ({ label: c.name, title: paramText(c.params) }))] : [];
+  const run = info && (info.preset || info.params?.length)
+    ? h('div', { class: 'rep-meta' }, h('span', {}, t('Last run:')),
+      info.preset ? h('span', { class: 'chip on', title: info.preset }, presetLabel(info.preset, lang)) : null,
+      info.params?.length ? h('span', { class: 'chip', title: t('Parameter values') }, paramText(info.params)) : null)
+    : null;
+  const list = offered.length
+    ? h('div', { class: 'rep-meta', title: t('Ask Claude to run the report with a preset') }, h('span', {}, t('Presets:')),
+      offered.map(o => h('span', { class: 'chip', title: o.title }, o.label)))
+    : null;
+  return [run, list];
 }
 // stage-change:start (tests/viewerApprove.test.js runs this block in isolation)
 // The stage change the Reports view offers: approve a draft or revoke an
@@ -2005,6 +2048,107 @@ const stageTabCount = (reports, st) => reports.filter(r => inStageTab(r, st)).le
 // "All" is on switches to the change-script tab; otherwise the tab stays.
 const stageTabFor = (selected, st) => (st === 'all' && selected?.stage === 'execute' ? 'execute' : st);
 // report-tree:end
+// favorites:start (tests/viewerFavorites.test.js runs this block in isolation)
+// Favorites (pinned reports) and recently opened reports: local UI state of
+// this viewer only (localStorage), never written to the library. An entry is
+// a report location without its stage, so a pin survives approve and revoke;
+// change scripts are their own kind. Entries whose report no longer exists
+// (moved, renamed or removed) are dropped.
+const maxRecent = 8, maxPins = 50;
+const favKey = r => [r.stage === 'execute' ? 'x' : 'r', r.db, r.schema, r.category, r.name].join('|');
+function favNormalize(raw) {
+  const list = (v, max) => [...new Set((Array.isArray(v) ? v : []).filter(k => typeof k === 'string' && k.length > 0 && k.length <= 600))].slice(0, max);
+  return { pins: list(raw?.pins, maxPins), recent: list(raw?.recent, maxRecent) };
+}
+const favIsPinned = (favs, key) => favs.pins.includes(key);
+const favToggle = (favs, key) => ({ ...favs, pins: favIsPinned(favs, key) ? favs.pins.filter(k => k !== key) : [...favs.pins, key].slice(-maxPins) });
+const favTouch = (favs, key) => ({ ...favs, recent: [key, ...favs.recent.filter(k => k !== key)].slice(0, maxRecent) });
+// The listed report for a key: the draft before the approved copy, like run_report.
+function favResolve(key, reports) {
+  const hits = reports.filter(r => favKey(r) === key);
+  return hits.find(r => r.stage === 'draft') || hits[0] || null;
+}
+function favPrune(favs, reports) {
+  const keys = new Set(reports.map(favKey));
+  const keep = list => list.filter(k => keys.has(k));
+  return { pins: keep(favs.pins), recent: keep(favs.recent) };
+}
+const favSame = (a, b) => a.pins.join('\n') === b.pins.join('\n') && a.recent.join('\n') === b.recent.join('\n');
+// favorites:end
+// ask-claude:start (tests/viewerAskClaude.test.js runs this block in isolation)
+// Report data embedded in a report HTML (auspex-report script), or null.
+function reportDataOf(html) {
+  const m = /<script id="auspex-report" type="application\/json">([\s\S]*?)<\/script>/.exec(String(html ?? ''));
+  if (!m) return null;
+  try { return JSON.parse(m[1]); } catch { return null; }
+}
+const presetLabels = {
+  en: { today: 'Today', yesterday: 'Yesterday', last_7_days: 'Last 7 days', this_month: 'This month', last_month: 'Last month', this_year: 'This year', last_year: 'Last year' },
+  tr: { today: 'Bugün', yesterday: 'Dün', last_7_days: 'Son 7 gün', this_month: 'Bu ay', last_month: 'Geçen ay', this_year: 'Bu yıl', last_year: 'Geçen yıl' },
+};
+// Built-in keys get a label in the UI language; custom names stay as saved.
+const presetLabel = (name, lng) => presetLabels[lng]?.[name] ?? presetLabels.en[name] ?? String(name ?? '');
+const paramText = params => (Array.isArray(params) ? params : []).map(v => (v === null ? 'null' : typeof v === 'string' ? v : JSON.stringify(v))).join(', ');
+const oneLine = v => String(v ?? '').replace(/\s+/g, ' ').trim();
+// Facts about the last run, from the embedded data: never preview row values.
+function lastRunInfo(data) {
+  const rep = data?.report;
+  const run = Array.isArray(rep?.runs) ? rep.runs.at(-1) : null;
+  if (!run) return null;
+  const columns = Array.isArray(rep.last?.columns) ? rep.last.columns.map(c => String(c?.name ?? '')).filter(Boolean) : [];
+  return { at: run.at ?? null, rows: Number.isFinite(run.rows) ? run.rows : null, preset: run.preset || null, params: Array.isArray(run.params) ? run.params : null, columns };
+}
+const askTexts = {
+  en: { intro: 'I have a question about this Auspex report.', report: 'Report', title: 'Title', lastRun: 'Last run', notRun: 'not run yet', preset: 'Preset', params: 'Parameters', none: 'none', rows: 'Rows', columns: 'First columns', more: '(+{n} more)',
+    ask: 'Use the Auspex tools (list_reports, run_report) on this report; do not ask me for row values. My question:' },
+  tr: { intro: 'Bu Auspex raporu hakkında bir sorum var.', report: 'Rapor', title: 'Başlık', lastRun: 'Son çalıştırma', notRun: 'henüz çalıştırılmadı', preset: 'Hazır ayar', params: 'Parametreler', none: 'yok', rows: 'Satır', columns: 'İlk kolonlar', more: '(+{n} kolon daha)',
+    ask: 'Bu rapor için Auspex araçlarını (list_reports, run_report) kullan; benden satır değeri isteme. Sorum:' },
+};
+// The prompt "Ask Claude" copies: report location, title, last run time,
+// preset and parameters, row count and the first column names. Built from
+// the list entry and the embedded data; preview rows are never read.
+function buildAskPrompt(r, data, lng, maxColumns = 6) {
+  const x = askTexts[lng] || askTexts.en;
+  const info = lastRunInfo(data);
+  const lines = [x.intro, `${x.report}: ${[r.db, r.schema, r.category, r.name].join('/')}`, `${x.title}: ${oneLine(r.title || r.name)}`];
+  if (!info) lines.push(`${x.lastRun}: ${x.notRun}`);
+  else {
+    lines.push(`${x.lastRun}: ${info.at ?? '-'}`);
+    if (info.preset) lines.push(`${x.preset}: ${oneLine(presetLabel(info.preset, lng))} (${info.preset})`);
+    lines.push(`${x.params}: ${info.params?.length ? oneLine(paramText(info.params)) : x.none}`);
+    if (info.rows !== null) lines.push(`${x.rows}: ${info.rows}`);
+    if (info.columns.length) {
+      const extra = info.columns.length - maxColumns;
+      lines.push(`${x.columns}: ${info.columns.slice(0, maxColumns).map(oneLine).join(', ')}${extra > 0 ? ' ' + x.more.replace('{n}', extra) : ''}`);
+    }
+  }
+  lines.push('', x.ask, '');
+  return lines.join('\n');
+}
+// ask-claude:end
+let favs = { pins: [], recent: [] };
+try { favs = favNormalize(JSON.parse(localStorage.getItem('auspex.viewer.favorites') || '{}')); } catch {}
+const saveFavs = next => { favs = next; try { localStorage.setItem('auspex.viewer.favorites', JSON.stringify(favs)); } catch {} };
+// Star toggle for a report (list rows and the report header); where tells
+// apart the copies of one report so keyboard focus returns to the pressed one.
+function starButton(r, where) {
+  const key = favKey(r), on = favIsPinned(favs, key);
+  const label = t(on ? 'Remove from favorites' : 'Add to favorites');
+  return h('button', { class: 'rep-star' + (on ? ' on' : ''), 'aria-pressed': String(on), 'aria-label': `${label}: ${r.title || r.name}`, title: label, 'data-star': `${where}|${key}`,
+    onclick: ev => {
+      ev.stopPropagation();
+      saveFavs(favToggle(favs, key));
+      state.reportViewNode = null;
+      renderReports();
+      const el = document.querySelector(`.rep-star[data-star="${CSS.escape(`${where}|${key}`)}"]`);
+      if (el) el.focus({ preventScroll: true });
+    } }, on ? '★' : '☆');
+}
+// Copies the "Ask Claude" prompt (user activation: called from the click).
+async function askClaude(r, data) {
+  try { await navigator.clipboard.writeText(buildAskPrompt(r, data, lang)); toast(t('Copied to clipboard')); }
+  catch { toast(t('Copy failed')); }
+}
 // focus-keep:start (tests/viewerFocusKeep.test.js runs this block in isolation)
 // Re-rendering the report list replaces its filter input (live refresh every
 // 5 s, a report finishing loading); these keep its focus and caret, so the
@@ -2086,10 +2230,10 @@ function drawReports() {
     const el = document.querySelector(`.rep-node[data-node="${CSS.escape(node.key)}"]`);
     if (el) el.focus({ preventScroll: true });
   };
-  const reportItem = (r, depth) => {
+  const reportItem = (r, depth, where = 'tree') => {
     const lr = r.lastRun;
     const on = state.reportSel === repKey(r);
-    return h('button', { class: 'rep-item' + (on ? ' on' : ''), style: `padding-left:${14 + depth * 14}px`, onclick: () => loadReport(r), title: r.description || r.title,
+    return h('div', { class: 'rep-row' }, h('button', { class: 'rep-item' + (on ? ' on' : ''), style: `padding-left:${14 + depth * 14}px`, onclick: () => loadReport(r), title: r.description || r.title,
       'aria-current': on ? 'true' : null },
       h('div', { class: 't' }, r.title, h('span', { class: 'badge ' + r.stage }, t(r.stage))),
       h('div', { class: 's' },
@@ -2097,7 +2241,7 @@ function drawReports() {
         r.versions ? h('span', {}, `v${r.versions}`) : null,
         lr ? h('span', {}, `${lr.analyzed === false ? t('estimated plan') : fmtMs(lr.durationMs)} · ${t('{n} rows', { n: fmt(lr.rows) })}`) : (r.stage === 'execute' ? h('span', {}, t('not run by Auspex')) : h('span', {}, t('not run yet'))),
         lr?.warnings ? h('span', { style: 'color:var(--warn-ink)' }, `⚠ ${lr.warnings}`) : null,
-        h('span', {}, ago(lr?.at || r.updatedAt))));
+        h('span', {}, ago(lr?.at || r.updatedAt)))), starButton(r, where));
   };
   const nodeView = (node, depth) => {
     const open = isNodeOpen(node, state.repTreeOpen, filtering);
@@ -2115,7 +2259,22 @@ function drawReports() {
       node.children.map(c => nodeView(c, depth + 1)), node.reports.map(r => reportItem(r, depth + 1))) : null];
   };
   const tree = buildReportTree(list);
-  const left = h('div', { class: 'panel rep-list' }, stagebar,
+  if (Array.isArray(data?.reports)) {
+    const pruned = favPrune(favs, data.reports);
+    if (!favSame(pruned, favs)) saveFavs(pruned);
+  }
+  // Favorites and recently opened reports of the chosen database, in every stage tab.
+  const favSection = (title, keys, openKey, emptyText, where) => {
+    const items = keys.map(k => favResolve(k, all)).filter(Boolean);
+    return h('details', { class: 'rep-sec', open: state[openKey] !== false, ontoggle: ev => { if (state[openKey] !== ev.target.open) { state[openKey] = ev.target.open; persist(); } } },
+      h('summary', {}, `${title} ${items.length ? fmt(items.length) : ''}`),
+      items.length ? items.map(r => reportItem(r, 0, where)) : h('div', { class: 'rep-empty-line' }, emptyText));
+  };
+  const sections = filtering ? null : [
+    favSection(t('Favorites'), favs.pins, 'repFavOpen', t('Star a report to pin it here.'), 'fav'),
+    favs.recent.some(k => favResolve(k, all)) ? favSection(t('Recent'), favs.recent, 'repRecentOpen', '', 'recent') : null,
+  ];
+  const left = h('div', { class: 'panel rep-list' }, stagebar, sections,
     list.length ? [tree.children.map(c => nodeView(c, 0)), tree.reports.map(r => reportItem(r, 0))] : h('div', { class: 'rep-empty' }, t('No reports match.')));
   if (selectedRep && (!state.reportDoc || state.reportDoc.key !== state.reportSel)) { loadReport(selectedRep); return; }
   put($('v-reports'), h('div', { class: 'rep' }, left, reportView(selectedRep)));
