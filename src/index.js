@@ -53,7 +53,7 @@ const instructions = [
   'Each profile has a query budget (maxQueriesPerMinute in list_profiles); when it is used up calls are refused for a while, so batch work into fewer, set-based queries instead of one query per item, and never retry a refused call in a loop.',
   'Some tables are very large. Use search to find tables and columns, use estimated_rows instead of count(*) on big tables, check plans with explain (without analyze) first, and narrow by indexed columns.',
   `Queries time out after ${defaultTimeoutS} s by default. Before running a query with a longer timeoutSeconds, or explain analyze on a large table, tell the user which table, the estimated rows and why it may take long.`,
-  'Report library: when an analysis query is worth keeping, save it with save_report (it becomes a draft under <db>/<schema>/<category>), run it with run_report and show the user the summary and the HTML file path; iterate by saving new SQL versions.',
+  'Report library: when an analysis query is worth keeping, save it with save_report (it becomes a draft under <db>/<schema>/<category>; category may be nested up to 3 levels with "/", e.g. Orders/Delivery), run it with run_report and show the user the summary and the HTML file path; iterate by saving new SQL versions.',
   'Call approve_report only after the user explicitly approved that report in this conversation.',
   'Change scripts (INSERT/UPDATE/DELETE/DDL) are never executed through Auspex: write them with save_execute_script for the user to run with a privileged role.',
   'run_report with analyze="auto" skips EXPLAIN ANALYZE when the previous run took longer than 30 s; ask the user before forcing analyze="always" on such reports.',
@@ -352,7 +352,7 @@ const reportDetails = args => ({ profile: args.db, report: [args.db, args.schema
 const refArgs = {
   db: z.string().min(1).describe('Database = the profile name the report runs on (first folder level).'),
   schema: z.string().min(1).describe('Main schema of the report (second folder level).'),
-  category: z.string().min(1).describe('Category folder, e.g. "Order reports" or "General".'),
+  category: z.string().min(1).describe('Category folder, optionally nested with "/" up to 3 levels (topic/subtopic), e.g. "Orders", "Orders/Delivery" or "General". Each level is its own folder.'),
   name: z.string().min(1).describe('Report name; stored as an ASCII kebab-case file name.'),
 };
 
@@ -407,7 +407,7 @@ tool('approve_report', {
 
 tool('list_reports', {
   title: 'List reports',
-  description: 'Lists library reports and change scripts with stage (draft, approved, execute), db, schema, category, versions and last run.',
+  description: 'Lists library reports and change scripts with stage (draft, approved, execute), db, schema, category (nested levels joined with "/", also as the categoryPath array), versions and last run.',
   inputSchema: {
     db: z.string().optional().describe('Only this database (profile).'),
     stage: z.enum(['draft', 'approved', 'execute']).optional(),
@@ -434,7 +434,7 @@ tool('save_execute_script', {
     sql: z.string().min(1).describe('The change script (BEGIN ... verification checks ... ROLLBACK).'),
     title: z.string().optional().describe('Write it in the notesLanguage from list_profiles (ask once if null).'),
     purpose: z.string().optional().describe('What the script changes and why. Write it in the notesLanguage from list_profiles (ask once if null).'),
-    relatedReport: z.string().optional().describe('Report that motivated the change, e.g. db/schema/category/name.'),
+    relatedReport: z.string().optional().describe('Report that motivated the change, e.g. db/schema/category/name (category may contain "/").'),
     expectedRows: z.union([z.number(), z.string()]).optional().describe('Expected affected rows.'),
     replace: z.boolean().optional().describe('Overwrite an existing library script with the same name (never the file in a script root).'),
     ...scriptRootArgs,
