@@ -15,7 +15,6 @@
 // was skipped (database unreachable) or failed, 2 usage or configuration
 // error, 3 another scheduler run is in progress.
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig, auspexHome } from './config.js';
@@ -24,6 +23,7 @@ import { loadSchedules, schedulesFile, nextSlot, cadenceText, taskTimeOf, parseT
 import { stateFile, trendsDir, readState, scheduleState } from './schedule/store.js';
 import { ScheduleRunner, checkSchedule } from './schedule/runner.js';
 import { notify } from './schedule/notify.js';
+import { acquireFileLock, LockBusyError } from './fileLock.js';
 
 export const auspexRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const taskName = 'Auspex scheduled reports';
@@ -31,28 +31,26 @@ export const retryMinutes = 30;
 
 const usage = 'Usage: scheduleCli.js run-due | run --id <id> | status | task-command';
 
-// One scheduler at a time: a lock file with the owner's pid, taken with 'wx'.
-// A lock whose owner is gone (or on another host) is taken over.
-function acquireRunLock(file) {
-  const body = JSON.stringify({ pid: process.pid, host: os.hostname(), at: new Date().toISOString() });
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file, body, { flag: 'wx' });
-      return () => { try { fs.rmSync(file, { force: true }); } catch { /* ignore */ } };
-    } catch (err) {
-      if (err.code !== 'EEXIST') throw err;
-      let owner = null;
-      try { owner = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* unreadable: treat as stale */ }
-      let alive = false;
-      if (owner?.host === os.hostname() && Number.isInteger(owner.pid) && owner.pid > 0) {
-        try { process.kill(owner.pid, 0); alive = true; } catch (e) { alive = e.code === 'EPERM'; }
-      }
-      if (alive) return null;
-      fs.rmSync(file, { force: true });
-    }
+// One scheduler at a time: the cross-process lock of src/fileLock.js (token,
+// takeover marker, dead-owner takeover), held for the whole run. A run may
+// last up to the task's 2 h execution limit, so a lock is reclaimable only
+// after runLockMaxHoldMs, even when its pid looks alive (a pid reused after a
+// reboot). A lock still held past the task limit is reported once per
+// attempt with a notification instead of failing silently.
+export const taskLimitMs = 2 * 60 * 60 * 1000;
+export const runLockMaxHoldMs = 3 * 60 * 60 * 1000;
+
+function lockAgeMs(file) {
+  try { return Date.now() - fs.statSync(file).mtimeMs; } catch { return null; }
+}
+
+function acquireRunLock(file, waitMs = 2000) {
+  try {
+    return acquireFileLock(file, { waitMs, maxHoldMs: runLockMaxHoldMs });
+  } catch (err) {
+    if (err instanceof LockBusyError) return null;
+    throw err;
   }
-  return null;
 }
 
 // PowerShell single-quoted string.
@@ -102,8 +100,16 @@ function home(env) {
 
 async function runSchedules(pick, loaded, config, env, deps) {
   const h = home(env);
-  const release = acquireRunLock(h.lockFile);
-  if (!release) return { status: 3, out: { ok: false, code: 'BUSY', message: 'Another scheduler run is in progress.' } };
+  const release = acquireRunLock(h.lockFile, deps.lockWaitMs);
+  if (!release) {
+    const age = lockAgeMs(h.lockFile);
+    const stuck = age !== null && age > taskLimitMs;
+    if (stuck) await (deps.notifyFn ?? notify)({ reportTitle: 'scheduler lock', status: 'failed', errorCode: 'LOCK_BUSY' });
+    const message = stuck
+      ? `The scheduler lock ${h.lockFile} has been held for ${Math.round(age / 60000)} minutes, longer than the task limit; it is taken over after ${runLockMaxHoldMs / 3600000} h. Check for a hung scheduler process.`
+      : 'Another scheduler run is in progress.';
+    return { status: 3, out: { ok: false, code: 'BUSY', message } };
+  }
   const runner = new ScheduleRunner(config, { stateFile: h.stateFile, trendsDir: h.trendsDir, notifyMode: loaded.notify, ...deps });
   try {
     const results = [];
@@ -135,7 +141,7 @@ function statusOut(loaded, config, env, now) {
   };
 }
 
-// deps (tests): db, notifyFn, now for the runner.
+// deps (tests): db, notifyFn, now for the runner; lockWaitMs for the run lock.
 export async function main(argv, env = process.env, deps = {}) {
   const command = argv[0];
   if (!['run-due', 'run', 'status', 'task-command'].includes(command ?? '')) return { status: 2, out: { ok: false, code: 'INVALID_INPUT', message: usage } };
