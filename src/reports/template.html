@@ -85,7 +85,23 @@
   .tile .v { font-size: 16px; font-weight: 650; letter-spacing: -.2px; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .tile .d { font-size: 11px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
   .tile.hero .v { color: var(--accent-ink); }
-  .strip:empty { display: none; }
+  .strip:empty, .strip[hidden] { display: none; }
+  .strip.perf { margin-top: -4px; animation: fade .2s var(--ease); }
+  .strip .pbox { display: flex; align-items: center; padding: 6px 12px; border-right: 1px solid var(--line); }
+  .ptoggle { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--surface-2); color: var(--text-2); border-radius: 999px; padding: 3px 11px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .ptoggle:hover { border-color: var(--accent); color: var(--accent-ink); }
+  .ptoggle .car { transition: transform .2s var(--ease); font-size: 10px; }
+  .ptoggle[aria-expanded="true"] .car { transform: rotate(180deg); }
+  .desc-more { border: 0; background: none; color: var(--accent-ink); font-size: 13px; padding: 0 0 0 6px; text-decoration: underline; text-underline-offset: 2px; }
+  .params-line { color: var(--text-3); font-size: 12px; margin-top: 2px; font-family: var(--mono); overflow-wrap: anywhere; }
+  .meta .runparams { font-family: var(--mono); overflow-wrap: anywhere; }
+  .pv-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-left: auto; }
+  .pv-tools input[type="search"] { font: inherit; font-size: 12px; background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; min-width: 0; width: 200px; max-width: 100%; }
+  th .sort-btn { all: unset; cursor: pointer; display: inline-flex; gap: 4px; align-items: center; color: inherit; font: inherit; }
+  th .sort-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+  th .sort-ind { font-size: 10px; color: var(--text-3); min-width: 8px; }
+  th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { color: var(--accent-ink); }
+  tfoot td { font-weight: 650; background: var(--surface-2); border-top: 1px solid var(--line-strong); white-space: nowrap; }
   .strip .wbox { display: flex; align-items: center; padding: 6px 12px; margin-left: auto; }
   .wbadge { display: inline-flex; align-items: center; gap: 6px; border: 1px solid transparent; border-radius: 999px; padding: 3px 11px; font-size: 12px; font-weight: 650; white-space: nowrap; }
   .wbadge.warn { background: var(--warn-soft); color: var(--warn-ink); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
@@ -186,6 +202,9 @@
     .wrap { padding: 14px 16px 40px; }
     .tile { flex-basis: 45%; border-bottom: 1px solid var(--line); }
     .strip .wbox { margin-left: 0; }
+    .strip .pbox { flex-basis: 100%; border-right: 0; }
+    .pv-tools { margin-left: 0; width: 100%; }
+    .pv-tools input[type="search"] { flex: 1 1 140px; width: auto; }
     .node, .tree-head { grid-template-columns: 1fr 70px 70px; }
     .node .bar, .tree-head .c-bar, .node .est-col, .tree-head .c-est { display: none; }
     .detail dl { grid-template-columns: 1fr; }
@@ -209,6 +228,7 @@
   </header>
   <section id="help"></section>
   <section class="strip" id="tiles"></section>
+  <section class="strip perf" id="perfDetails" hidden></section>
   <section id="warns"></section>
   <nav class="tabs" id="tabs"></nav>
   <main id="view"></main>
@@ -261,6 +281,9 @@ const I18N = {
     w_misHint: '; statistics may be stale, consider ANALYZE on the table', w_over: 'over', w_under: 'under',
     w_disk: 'Sort spilled to disk ({kb} kB){on}', w_filter: 'Filter discarded {rows} rows{on}; an index on the filtered columns may help',
     w_nested: 'Nested loop runs a sequential scan {loops} times', w_temp: 'Query wrote {blocks} temp blocks', on: ' on {r}',
+    more: 'More', less: 'Less', paramsLabel: 'Parameters', lastParams: 'parameters {v}', paramCount: '{n} parameters (values not stored)', runTime: 'run time {v}',
+    perfDetails: 'Performance details', filterRows: 'Filter rows…', filterLabel: 'Filter preview rows', exportCsv: 'Export CSV', exportTitle: 'Download the rows shown as CSV',
+    totalPreview: 'Total (preview)', totalPreviewFiltered: 'Total (preview, filtered)', shownOf: '{n} of {m} rows', noMatch: 'No rows match the filter.', sortBy: 'Sort by {c}',
   },
   tr: {
     auto: 'Oto', light: 'Açık', dark: 'Koyu', help: 'Bu rapor nasıl okunur',
@@ -298,6 +321,9 @@ const I18N = {
     w_misHint: '; istatistikler eski olabilir, tabloda ANALYZE çalıştırmayı düşünün', w_over: 'fazla tahmin', w_under: 'az tahmin',
     w_disk: 'Sıralama diske taştı ({kb} kB){on}', w_filter: 'Filtre {rows} satırı eledi{on}; filtrelenen sütunlara index faydalı olabilir',
     w_nested: 'Nested loop bir sıralı taramayı {loops} kez çalıştırıyor', w_temp: 'Sorgu {blocks} temp blok yazdı', on: ' ({r})',
+    more: 'Daha fazla', less: 'Daha az', paramsLabel: 'Parametreler', lastParams: 'parametreler {v}', paramCount: '{n} parametre (değerler saklanmadı)', runTime: 'süre {v}',
+    perfDetails: 'Performans ayrıntıları', filterRows: 'Satırları filtrele…', filterLabel: 'Önizleme satırlarını filtrele', exportCsv: 'CSV indir', exportTitle: 'Gösterilen satırları CSV olarak indir',
+    totalPreview: 'Toplam (önizleme)', totalPreviewFiltered: 'Toplam (önizleme, süzülmüş)', shownOf: '{m} satırdan {n} tanesi', noMatch: 'Filtreye uyan satır yok.', sortBy: '{c} sütununa göre sırala',
   },
 };
 const HELP = {
@@ -559,8 +585,114 @@ function diffLines(a, b) {
   return out;
 }
 
+// preview-helpers:start (tests/reportPreviewHelpers.test.js runs this block in isolation)
+// Pure helpers of the detail screen: no DOM, no globals.
+// "order_id" -> "Order id": underscores and dashes become spaces and the first
+// letter is capitalized; the raw name stays in the tooltip.
+function humanizeHeader(name) {
+  const text = String(name ?? '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : String(name ?? '');
+}
+const numericText = v => typeof v === 'number' ? Number.isFinite(v) : typeof v === 'string' && /^\s*[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?\s*$/i.test(v);
+const isNumericType = type => /int|numeric|double|real|decimal|float|money/i.test(String(type ?? ''));
+// Numeric-aware comparison: two numbers (or numeric text) compare by value,
+// anything else as text with digit runs in natural order. Empty values are not
+// handled here; sortPreviewRows puts them last.
+function compareValues(a, b) {
+  if (numericText(a) && numericText(b)) return Number(a) - Number(b);
+  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+}
+// A sorted copy of the rows by column index and direction ('asc' | 'desc');
+// empty values stay last in both directions and ties keep their order. Any
+// other direction returns the rows unchanged.
+function sortPreviewRows(rows, col, dir) {
+  if (col < 0 || (dir !== 'asc' && dir !== 'desc')) return rows.slice();
+  const sign = dir === 'desc' ? -1 : 1;
+  const empty = v => v === null || v === undefined;
+  return rows.map((row, i) => ({ row, i })).sort((x, y) => {
+    const a = x.row[col], b = y.row[col];
+    if (empty(a) || empty(b)) return empty(a) && empty(b) ? x.i - y.i : empty(a) ? 1 : -1;
+    return sign * compareValues(a, b) || x.i - y.i;
+  }).map(e => e.row);
+}
+// Rows with any cell containing the text (case-insensitive); empty text keeps all.
+function filterPreviewRows(rows, query) {
+  const q = String(query ?? '').trim().toLowerCase();
+  return q ? rows.filter(row => row.some(v => v !== null && v !== undefined && String(v).toLowerCase().includes(q))) : rows.slice();
+}
+// Sum of each numeric column over the given rows; null for a non-numeric,
+// masked or all-empty column. Only the rows given are summed (the preview).
+function previewTotals(columns, rows, masked = new Set()) {
+  return columns.map((c, i) => {
+    if (!isNumericType(c.type) || masked.has(c.name)) return null;
+    let sum = 0, n = 0;
+    for (const row of rows) if (numericText(row[i])) { sum += Number(row[i]); n++; }
+    return n ? Number(sum.toPrecision(15)) : null;
+  });
+}
+// Same rule as spreadsheetSafe in src/db.js: text starting with = + - @ or a
+// tab/carriage return gets a leading apostrophe. Real numbers in a numeric
+// column stay exact.
+function csvSafeCell(value, numericColumn) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'number' || (numericColumn && numericText(value))) return String(value);
+  const text = String(value);
+  return /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
+}
+// CSV text of the rows with the raw column names; masked values are already
+// masked in the rows. Fields with the delimiter, quotes or line breaks are quoted.
+function previewCsv(columns, rows, delimiter = ',') {
+  const quote = text => text.includes(delimiter) || /["\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  const head = columns.map(c => quote(csvSafeCell(c.name, false)));
+  const body = rows.map(row => columns.map((c, i) => quote(csvSafeCell(row[i], isNumericType(c.type)))).join(delimiter));
+  return [head.join(delimiter), ...body].join('\r\n');
+}
+// The description's first paragraph (or first sentence of a single paragraph),
+// the rest, and a "Parameters: ..." line pulled out as its own text.
+function splitDescription(text) {
+  const lines = String(text ?? '').split(/\r?\n/);
+  let params = null;
+  const kept = lines.map(line => {
+    const m = /(^|[.!?]\s+)(?:parameters?|params?|parametreler)\s*:\s*(.+)$/i.exec(line);
+    if (!m || params !== null) return line;
+    params = m[2].trim();
+    const before = line.slice(0, m.index + m[1].length).trimEnd();
+    return before ? before : null;
+  }).filter(line => line !== null);
+  const paras = kept.join('\n').trim().split(/\n\s*\n/).map(x => x.trim()).filter(Boolean);
+  let first = paras[0] ?? '', rest = paras.slice(1).join('\n\n');
+  if (!rest) {
+    const m = /^(.+?[.!?])\s+(\S[\s\S]*)$/.exec(first);
+    if (m) { first = m[1]; rest = m[2]; }
+  }
+  return { first, rest, params };
+}
+// Run parameters as "$1 = 'x', $2 = 5" (long values cut); null when none were stored.
+function paramsText(params) {
+  const list = Array.isArray(params) ? params : params && typeof params === 'object' ? Object.values(params) : null;
+  if (!list || !list.length) return null;
+  const one = v => { const s = v === null || v === undefined ? 'NULL' : typeof v === 'string' ? `'${v}'` : typeof v === 'object' ? JSON.stringify(v) : String(v); return s.length > 40 ? s.slice(0, 39) + '…' : s; };
+  const text = list.map((v, i) => `$${i + 1} = ${one(v)}`).join(', ');
+  return text.length > 240 ? text.slice(0, 239) + '…' : text;
+}
+// The highest $n in the SQL: how many parameters the query takes.
+const paramCountOf = sql => Math.max(0, ...[...String(sql ?? '').matchAll(/\$(\d+)/g)].map(m => Number(m[1])));
+// preview-helpers:end
+
 // Preview first: the answer the report gives; plan and history are one tab away.
-const state = { tab: 'preview', sel: null, diffA: null, diffB: null, help: false, warnOpen: false };
+// The performance details toggle is remembered: by the viewer (data-perf on <html>;
+// the sandboxed frame has no storage of its own) or by this file's localStorage.
+const perfStored = (() => { try { return localStorage.getItem('auspex.report.perf') === '1'; } catch { return false; } })();
+const state = { tab: 'preview', sel: null, diffA: null, diffB: null, help: false, warnOpen: false, descOpen: false,
+  perfOpen: document.documentElement.getAttribute('data-perf') === '1' || perfStored, pvSort: -1, pvDir: 'asc', pvFilter: '' };
+// Standalone: saved in this file's storage. In the viewer the embed script replaces it to post the state to the viewer.
+function rememberPerf(open) { try { localStorage.setItem('auspex.report.perf', open ? '1' : '0'); } catch {} }
+// Standalone: a normal download. In the viewer the embed script replaces it (the sandboxed frame cannot download).
+function downloadCsv(name, text) {
+  const a = h('a', { href: URL.createObjectURL(new Blob(['﻿' + text], { type: 'text/csv;charset=utf-8' })), download: name });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
 const TABS = ['plan', 'joins', 'tables', 'preview', 'history', 'sql'];
 
 function renderHelp() {
@@ -569,6 +701,27 @@ function renderHelp() {
   $('helpBtn').title = t('help');
   put($('help'), state.help ? h('div', { class: 'help' }, h('h2', {}, t('help')),
     h('div', { class: 'help-grid' }, HELP[lang].map(([title, text]) => h('div', {}, h('h3', {}, title), h('p', {}, text))))) : null);
+}
+
+// The first sentence or paragraph, with "More" for the rest; a "Parameters:" line stands apart.
+function descriptionBlock(text) {
+  if (!text) return null;
+  const d = splitDescription(text);
+  const rest = d.rest ? h('span', { id: 'descRest', hidden: state.descOpen ? null : true }, ' ', d.rest) : null;
+  const btn = d.rest ? h('button', { class: 'desc-more', type: 'button', 'aria-expanded': String(state.descOpen), 'aria-controls': 'descRest',
+    onclick: ev => { state.descOpen = !state.descOpen; ev.target.setAttribute('aria-expanded', String(state.descOpen)); ev.target.textContent = t(state.descOpen ? 'less' : 'more'); $('descRest').hidden = !state.descOpen; } }, t(state.descOpen ? 'less' : 'more')) : null;
+  return h('div', {}, h('p', { class: 'desc' }, d.first, rest, btn),
+    d.params ? h('div', { class: 'params-line' }, h('b', {}, t('paramsLabel') + ': '), d.params) : null);
+}
+// Run time and parameter values of the latest run (meta.runs), or the parameter count when no values were stored.
+function lastRunFacts(last, sql) {
+  const run = (R.runs || []).find(r => r.at === last.at) || (R.runs || []).at(-1);
+  const S = last.summary;
+  const ms = S && S.analyzed ? S.executionMs : last.previewExecuted === false ? null : last.previewMs;
+  const pv = paramsText(run && run.params);
+  const n = paramCountOf(sql);
+  return [Number.isFinite(ms) ? h('span', {}, t('runTime', { v: fmtMs(ms) })) : null,
+    pv ? h('span', { class: 'runparams' }, t('lastParams', { v: pv })) : n ? h('span', {}, t('paramCount', { n })) : null];
 }
 
 function render() {
@@ -592,22 +745,23 @@ function render() {
     put($('head'),
       h('div', { class: 'crumbs' }, h('span', { class: 'crumb' }, R.category), h('span', { class: 'badge b-plan' }, t('sharedBadge'))),
       h('h1', {}, R.title || R.name),
-      R.description ? h('p', { class: 'desc' }, R.description) : null,
+      descriptionBlock(R.description),
       h('div', { class: 'meta' }, last ? t('sharedMeta', { v: last.version ?? '?', at: fmtWhen(last.at) }) : t('notRun')),
       h('div', { class: 'stale' }, t('sharedNote')));
   } else put($('head'),
-    h('div', { class: 'crumbs' }, h('span', { class: 'crumb' }, R.db), '›', h('span', { class: 'crumb' }, R.schema), '›', h('span', { class: 'crumb' }, R.category),
-      h('span', { class: 'badge ' + (R.status === 'approved' ? 'b-approved' : 'b-draft') }, R.status === 'approved' ? t('approved', { v: R.approvedVersion ?? '?' }) : t('draft')),
+    h('div', { class: 'crumbs' }, h('span', { class: 'crumb loc' }, R.db), h('span', { class: 'loc' }, '›'), h('span', { class: 'crumb loc' }, R.schema), h('span', { class: 'loc' }, '›'), h('span', { class: 'crumb loc' }, R.category),
+      h('span', { class: 'badge loc ' + (R.status === 'approved' ? 'b-approved' : 'b-draft') }, R.status === 'approved' ? t('approved', { v: R.approvedVersion ?? '?' }) : t('draft')),
       current ? h('span', { class: 'badge b-plan' }, `SQL v${current.version}`) : null),
     h('h1', {}, R.title || R.name),
-    R.description ? h('p', { class: 'desc' }, R.description) : null,
+    descriptionBlock(R.description),
     h('div', { class: 'meta' },
       h('span', {}, last ? t('lastRun', { at: fmtWhen(last.at), p: last.profile, pg: last.serverVersion }) : t('notRun'), ' · ', t('runs', { n: R.runs?.length || 0 }), last ? ' · ' + t('lastRunVersion', { v: last.version ?? '?' }) : null),
+      last ? lastRunFacts(last, currentSql) : null,
       h('details', { class: 'private' }, h('summary', { title: t('privateNote') }, '🔒 ', t('privateShort')), h('p', {}, t('privateNote')))),
     stale ? h('div', { class: 'stale' }, '⚠ ', t('staleResult', { v: last.version ?? '?', c: current.version })) : null);
 
   if (!last) {
-    put($('tiles')); put($('warns')); put($('tabs'));
+    put($('tiles')); put($('perfDetails')); put($('warns')); put($('tabs'));
     put($('view'), h('div', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', {}, 'SQL')), h('pre', { class: 'sql' }, highlight(currentSql))), h('div', { class: 'empty' }, t('runFirst')));
     return;
   }
@@ -618,11 +772,16 @@ function render() {
   put($('tiles'),
     S.analyzed ? tile(t('execTime'), fmtMs(S.executionMs), t('planning', { v: fmtMs(S.planningMs) }), 'hero') : tile(t('planOnly'), last.previewExecuted === false ? '–' : fmtMs(last.previewMs), last.previewExecuted === false ? t('noExec') : t('firstRows'), 'hero'),
     tile(S.analyzed ? t('rowsReturned') : t('rowsEst'), fmt(S.rows), last.previewTruncated ? t('previewShows', { n: fmt(last.preview.length) }) : null),
+    h('div', { class: 'pbox' }, h('button', { class: 'ptoggle', id: 'perfBtn', type: 'button', 'aria-expanded': String(state.perfOpen), 'aria-controls': 'perfDetails',
+      onclick: () => { state.perfOpen = !state.perfOpen; $('perfBtn').setAttribute('aria-expanded', String(state.perfOpen)); $('perfDetails').hidden = !state.perfOpen; rememberPerf(state.perfOpen); } },
+      t('perfDetails'), h('span', { class: 'car', 'aria-hidden': 'true' }, '▾'))),
+    shared ? null : warnBadge(S));
+  put($('perfDetails'),
     tile(t('totalCost'), fmt(S.totalCost), t('plannerUnits')),
     tile(t('buffers'), S.analyzed ? blocks(hit + read) : '–', ratio !== null ? t('fromCache', { p: ratio.toLocaleString(locale()) }) : null),
     tile(t('tempWritten'), S.analyzed ? blocks(S.buffers?.tempWritten ?? 0) : '–', (S.buffers?.tempWritten ?? 0) > 0 ? t('spilled') : t('none')),
-    shared ? null : tile(t('joinsTables'), `${S.joins.length} / ${S.relations.length}`, S.joins.map(j => j.method.replace(' Join', '')).join(', ') || t('noJoins')),
-    shared ? null : warnBadge(S));
+    shared ? null : tile(t('joinsTables'), `${S.joins.length} / ${S.relations.length}`, S.joins.map(j => j.method.replace(' Join', '')).join(', ') || t('noJoins')));
+  $('perfDetails').hidden = !state.perfOpen;
   renderWarns(S, shared);
 
   const counts = { plan: S.nodes.length, joins: S.joins.length, tables: S.relations.length, preview: last.preview.length, history: R.runs.length, sql: R.sqlVersions.length };
@@ -700,11 +859,46 @@ function renderTab() {
           h('td', { class: 'mono' }, r.indexes.join(', ') || '–'), h('td', { class: 'num' }, fmt(r.estRows)), h('td', { class: 'num' }, S.analyzed ? fmt(r.actualRows) : '–'), h('td', { class: 'num' }, S.analyzed ? fmtMs(r.ms) : '–'))))))));
   } else if (state.tab === 'preview') {
     const masked = new Set(last.maskedColumns || []);
-    put(view, h('div', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', {}, t('preview')),
-      h('span', { class: 'hint' }, t('previewHint', { n: fmt(last.preview.length) }) + (last.previewTruncated ? t('firstOnly') : '') + (masked.size ? t('masked', { c: [...masked].join(', ') }) : ''))),
-      last.preview.length ? h('div', { class: 'tbl-wrap' }, h('table', {},
-        h('thead', {}, h('tr', {}, last.columns.map(c => h('th', { class: masked.has(c.name) ? 'masked-h' : '', title: c.type }, c.name, masked.has(c.name) ? ' 🔒' : '')))),
-        h('tbody', {}, last.preview.map(row => h('tr', {}, row.map((v, i) => h('td', { class: /int|numeric|double|real|decimal/.test(last.columns[i].type) ? 'num' : '' }, v === null ? h('span', { class: 'null' }, 'null') : String(v)))))))) : h('div', { class: 'empty' }, t('noRows'))));
+    const cols = last.columns;
+    const hint = h('span', { class: 'hint' }, t('previewHint', { n: fmt(last.preview.length) }) + (last.previewTruncated ? t('firstOnly') : '') + (masked.size ? t('masked', { c: [...masked].join(', ') }) : ''));
+    if (!last.preview.length) { put(view, h('div', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', {}, t('preview')), hint), h('div', { class: 'empty' }, t('noRows')))); return; }
+    const csvDelimiter = lang === 'tr' ? ';' : ',';
+    const stamp = new Date().toISOString().slice(0, 10);
+    const shownRows = () => sortPreviewRows(filterPreviewRows(last.preview, state.pvFilter), state.pvSort, state.pvDir);
+    const tbody = h('tbody'), tfoot = h('tfoot'), count = h('span', { class: 'hint', role: 'status' });
+    const ths = cols.map((c, i) => {
+      const ind = h('span', { class: 'sort-ind', 'aria-hidden': 'true' });
+      const btn = h('button', { class: 'sort-btn', type: 'button', title: `${c.name} (${c.type})`, 'aria-label': t('sortBy', { c: humanizeHeader(c.name) }),
+        onclick: () => {
+          if (state.pvSort !== i) { state.pvSort = i; state.pvDir = 'asc'; } else if (state.pvDir === 'asc') state.pvDir = 'desc'; else { state.pvSort = -1; state.pvDir = 'asc'; }
+          paint();
+        } }, humanizeHeader(c.name), masked.has(c.name) ? ' 🔒' : '', ind);
+      const th = h('th', { class: (masked.has(c.name) ? 'masked-h ' : '') + (isNumericType(c.type) ? 'num' : ''), title: c.name }, btn);
+      th._ind = ind;
+      return th;
+    });
+    const paint = () => {
+      const rows = shownRows();
+      ths.forEach((th, i) => {
+        const on = state.pvSort === i;
+        th.setAttribute('aria-sort', on ? (state.pvDir === 'asc' ? 'ascending' : 'descending') : 'none');
+        th._ind.textContent = on ? (state.pvDir === 'asc' ? '▲' : '▼') : '';
+      });
+      put(tbody, rows.length ? rows.map(row => h('tr', {}, row.map((v, i) => h('td', { class: isNumericType(cols[i].type) ? 'num' : '' }, v === null ? h('span', { class: 'null' }, 'null') : String(v)))))
+        : h('tr', {}, h('td', { colspan: cols.length }, h('span', { class: 'null' }, t('noMatch')))));
+      const totals = previewTotals(cols, rows, masked);
+      const label = t(state.pvFilter.trim() ? 'totalPreviewFiltered' : 'totalPreview');
+      put(tfoot, totals.some(v => v !== null) ? h('tr', {}, cols.map((c, i) => h('td', { class: isNumericType(c.type) ? 'num' : '' },
+        i === 0 ? h('span', { style: 'font-weight:600;margin-right:' + (totals[i] !== null ? '8px' : '0') }, label + (totals[i] !== null ? ':' : '')) : null,
+        totals[i] !== null ? fmt(totals[i]) : null))) : null);
+      put(count, t('shownOf', { n: fmt(rows.length), m: fmt(last.preview.length) }));
+    };
+    const filter = h('input', { type: 'search', value: state.pvFilter, placeholder: t('filterRows'), 'aria-label': t('filterLabel'),
+      oninput: ev => { state.pvFilter = ev.target.value; paint(); } });
+    const exp = h('button', { class: 'btn', type: 'button', title: t('exportTitle'), onclick: () => downloadCsv(`${String(R.name || 'report').replace(/[^\w.-]+/g, '_')}-preview-${stamp}.csv`, previewCsv(cols, shownRows(), csvDelimiter)) }, t('exportCsv'));
+    paint();
+    put(view, h('div', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', {}, t('preview')), hint, count, h('div', { class: 'pv-tools' }, filter, exp)),
+      h('div', { class: 'tbl-wrap' }, h('table', {}, h('thead', {}, h('tr', {}, ths)), tbody, tfoot))));
   } else if (state.tab === 'history') {
     const runs = R.runs;
     const max = Math.max(1, ...runs.map(r => r.durationMs).filter(Number.isFinite));
