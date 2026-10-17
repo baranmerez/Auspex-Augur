@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Library, sqlHash } from '../src/reports/library.js';
-import { approveInLibrary, revokeInLibrary, approvedJoinPairs, ReportService } from '../src/reports/service.js';
+import { approveInLibrary, revokeInLibrary, approvedJoinPairs, ReportService, renderReport, reportHtmlHash } from '../src/reports/service.js';
 import { SchemaMemory } from '../src/memory/store.js';
 
 // Approve and revoke in the library, as the viewer and approve_report use them.
@@ -142,4 +142,26 @@ test('approve and revoke are bound to the version the person reviewed', () => {
   assert.equal(revokeInLibrary(lib, ref, { by: 'viewer', expectedHash: v2 }).version, 2);
   // Without expectedHash (approve_report without the optional field) the current SQL is approved.
   assert.equal(approveInLibrary(lib, ref).meta.approvedVersion, 2);
+});
+
+test('a draft file edited outside Auspex gets the actionable message, not STALE_VERSION', () => {
+  const lib = draftWithRun();
+  const v1 = sqlHash(sql);
+  fs.writeFileSync(lib.paths('draft', ref).sql, `${sql} -- edited by hand\n`);
+  assert.throws(() => approveInLibrary(lib, ref, { expectedHash: v1 }), err => err.errorCode === 'PRECONDITION_FAILED' && /matches no saved version; save it with save_report first/.test(err.message));
+  // Reverted by hand to another saved version: also saved first, never a STALE_VERSION loop.
+  const sqlV2 = `${sql} where status_code = 'A'`;
+  lib.saveDraft({ ref, sql: sqlV2 });
+  lib.appendRun('draft', ref, { at: '2026-10-01T09:00:00.000Z', sqlHash: sqlHash(sqlV2), durationMs: 8, rows: 1, warnings: [] }, null);
+  fs.writeFileSync(lib.paths('draft', ref).sql, `${sql}\n`);
+  assert.throws(() => approveInLibrary(lib, ref, { expectedHash: sqlHash(sqlV2) }), err => err.errorCode === 'PRECONDITION_FAILED' && /changed outside Auspex \(it holds version 1, not the active version 2\)/.test(err.message));
+  assert.equal(lib.exists('approved', ref), false);
+});
+
+test('the hash of a rendered report is the active hash it was rendered from', () => {
+  const lib = draftWithRun();
+  lib.writeHtml('draft', ref, renderReport(lib.readMeta('draft', ref)));
+  assert.equal(reportHtmlHash(fs.readFileSync(lib.paths('draft', ref).html, 'utf8')), sqlHash(sql));
+  assert.equal(reportHtmlHash('<html></html>'), null);
+  assert.equal(reportHtmlHash('<script id="auspex-report" type="application/json">{"report":{"title":"older"}}</script>'), null);
 });

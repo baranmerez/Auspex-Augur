@@ -832,6 +832,9 @@ const TR = {
   'Node was not found. Install Node 20+ so it is on PATH, or set AUSPEX_NODE to the path of node.exe.': 'Node bulunamadı. Node 20+ kurun (PATH üzerinde olsun) ya da AUSPEX_NODE değişkenini node.exe yoluna ayarlayın.',
   'The Auspex folder setting is invalid: AUSPEX_ROOT or "auspexRoot" in ~/.auspex/profiles.json must be the absolute path of the Auspex folder that holds src/stageCli.js.': 'Auspex klasörü ayarı geçersiz: AUSPEX_ROOT ya da ~/.auspex/profiles.json içindeki "auspexRoot", src/stageCli.js dosyasını içeren Auspex klasörünün mutlak yolu olmalı.',
   'The change may or may not have been applied; reload the list.': 'İşlem uygulanmış olabilir; listeyi yenileyin.',
+  'The report changed since you opened it; reload and review again.': 'Rapor siz açtıktan sonra değişti; yenileyip yeniden inceleyin.', ' (now version {v})': ' (şu an sürüm {v})',
+  'This report changed since you opened it; reload it to review the new version.': 'Rapor siz açtıktan sonra değişti; yeni sürümü incelemek için yenileyin.', 'Reload': 'Yenile',
+  'This report has no SQL hash yet (saved by an older Auspex); run it again with run_report, then reload.': 'Bu raporun henüz SQL özeti yok (eski bir Auspex ile kaydedilmiş); run_report ile yeniden çalıştırıp sayfayı yenileyin.',
 };
 let lang = 'en';
 try { lang = localStorage.getItem('auspex.viewer.lang') || ((navigator.language || '').toLowerCase().startsWith('tr') ? 'tr' : 'en'); } catch {}
@@ -1732,7 +1735,8 @@ function sqlLineNodes(sql) {
 // sql-highlight:end
 function reportView(r) {
   if (!r) return h('div', { class: 'panel rep-view' }, h('div', { class: 'rep-empty' }, h('b', {}, t('Select a report')), h('div', {}, t('Its plan, joins, timings, preview and history open here.'))));
-  if (state.reportViewNode && state.reportViewKey === repKey(r) && state.reportViewTheme === themeKey() + lang) return state.reportViewNode;
+  const viewKey = `${repKey(r)}|${r.activeHash ?? ''}`;
+  if (state.reportViewNode && state.reportViewKey === viewKey && state.reportViewTheme === themeKey() + lang) return state.reportViewNode;
   const doc = state.reportDoc && state.reportDoc.key === repKey(r) ? state.reportDoc : null;
   const body = !doc || doc.loading ? h('div', { class: 'rep-empty' }, t('Loading…'))
     : doc.error ? h('div', { class: 'error-box', style: 'margin:16px' }, doc.error)
@@ -1746,22 +1750,28 @@ function reportView(r) {
     actions.push(h('button', { class: 'icon-btn', onclick: () => copy(doc.content, 'SQL') }, t('Copy SQL')));
   }
   if (doc && doc.kind === 'html' && !tauriCore) actions.push(h('button', { class: 'icon-btn', onclick: () => window.open(URL.createObjectURL(new Blob([doc.content], { type: 'text/html' })), '_blank') }, t('Open in new tab')));
-  actions.push(stageButton(r));
+  actions.push(stageButton(r, doc));
   // HTML reports carry their own header; the bar only adds actions then.
   const heading = doc && doc.kind === 'html' ? h('span', { class: 'muted', style: 'font-size:12px' }, `${r.db} › ${r.schema} › ${r.category} › ${r.name}`) : h('div', {},
     h('div', { class: 'crumbs' }, h('span', { class: 'crumb' }, r.db), '›', h('span', { class: 'crumb' }, r.schema), '›', h('span', { class: 'crumb' }, r.category)),
     h('div', { style: 'font-weight:650;margin-top:3px' }, r.title, ' ', h('span', { class: 'badge ' + r.stage }, r.stage === 'approved' ? t('approved v{v}', { v: r.approvedVersion ?? '?' }) : t(r.stage))));
-  const node = h('div', { class: 'panel rep-view' }, h('div', { class: 'bar' }, heading, h('span', { class: 'grow' }), actions), body);
-  if (doc && !doc.loading) { state.reportViewNode = node; state.reportViewKey = repKey(r); state.reportViewTheme = themeKey() + lang; }
+  // The list moved on (live refresh) while this content stayed open.
+  const changed = doc && stageBlocked(r, doc) === changedText
+    ? h('div', { class: 'error-box', role: 'status', style: 'margin:0 12px 8px;display:flex;gap:10px;align-items:center' }, t(changedText),
+      h('button', { class: 'icon-btn', onclick: () => loadReport(r) }, t('Reload')))
+    : null;
+  const node = h('div', { class: 'panel rep-view' }, h('div', { class: 'bar' }, heading, h('span', { class: 'grow' }), actions), changed, body);
+  if (doc && !doc.loading) { state.reportViewNode = node; state.reportViewKey = viewKey; state.reportViewTheme = themeKey() + lang; }
   return node;
 }
 // stage-change:start (tests/viewerApprove.test.js runs this block in isolation)
 // The stage change the Reports view offers: approve a draft or revoke an
 // approval. The browser viewer POSTs to path; the desktop app calls the Tauri
 // command, which runs src/stageCli.js (same checks, lock and audit).
-// Both send expectedHash, the SQL hash of the version the dialog showed
-// (r.activeHash from the same list entry), so a version saved meanwhile is
-// refused with STALE_VERSION instead of being approved or revoked unseen.
+// Both send expectedHash, the SQL hash of the content the person opened
+// (doc.sqlHash from /api/report, not the list entry, which live refresh
+// updates), so a version saved meanwhile is refused with STALE_VERSION
+// instead of being approved or revoked unseen.
 function stageChangeFor(r) {
   if (!r || (r.stage !== 'draft' && r.stage !== 'approved')) return null;
   return r.stage === 'draft'
@@ -1783,51 +1793,73 @@ function stageChangeFacts(r) {
     ['Warnings', lr ? lr.warnings ?? 0 : null],
   ];
 }
-// The request: the report location and the reviewed version's SQL hash.
-const stageRequest = r => ({ db: r.db, schema: r.schema, category: r.category, name: r.name, expectedHash: r.activeHash ?? null });
+const changedText = 'This report changed since you opened it; reload it to review the new version.';
+const noHashText = 'This report has no SQL hash yet (saved by an older Auspex); run it again with run_report, then reload.';
+// Why the opened report cannot be approved or revoked now, or null: the list
+// (live refresh) stands for another SQL hash than the opened content, or the
+// content has no hash (rendered by an older Auspex).
+function stageBlocked(r, doc) {
+  if (!doc || doc.loading || doc.error) return 'loading';
+  if (!doc.sqlHash) return noHashText;
+  if (r.activeHash && r.activeHash !== doc.sqlHash) return changedText;
+  return null;
+}
+// The request: the report location and the opened content's SQL hash.
+const stageRequest = (r, hash) => ({ db: r.db, schema: r.schema, category: r.category, name: r.name, expectedHash: hash });
+// A refusal with its code; known codes get a fixed text the page translates,
+// and STALE_VERSION also the current version from the message.
+function stageError(message, code) {
+  const version = code === 'STALE_VERSION' ? Number(/now version (\d+)/.exec(message)?.[1]) || null : null;
+  return Object.assign(new Error(message), { code, setupText: stageSetupTexts[code] ?? null, version });
+}
 // POST with the page's token; the server also checks the Origin header.
-async function postStageChange(fetchFn, token, path, r) {
+async function postStageChange(fetchFn, token, path, r, hash) {
   const res = await fetchFn(path, {
     method: 'POST', cache: 'no-store', credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json', 'X-Auspex-Token': token },
-    body: JSON.stringify(stageRequest(r)),
+    body: JSON.stringify(stageRequest(r, hash)),
   });
   let data = null;
   try { data = await res.json(); } catch {}
   // A token refusal means the viewer restarted (new token) since the page loaded.
   if (res.status === 403 && data?.code === 'TOKEN_INVALID') throw Object.assign(new Error(data.error), { viewerRestarted: true });
-  if (!res.ok) throw Object.assign(new Error(data?.error || res.statusText || `HTTP ${res.status}`), { code: data?.code });
+  if (!res.ok) throw stageError(data?.error || res.statusText || `HTTP ${res.status}`, data?.code);
   return data;
 }
 // Desktop: the Tauri command with the same request. Setup problems
-// (no or a wrong Auspex folder, no Node) and an unknown outcome (the CLI timed
-// out or gave no result) come back as a fixed text the page translates.
+// (no or a wrong Auspex folder, no Node), an unknown outcome (the CLI timed
+// out or gave no result) and a stale version come back as a fixed text the
+// page translates.
 const stageSetupTexts = {
   AUSPEX_ROOT_MISSING: 'Auspex folder not found. Set "auspexRoot" in ~/.auspex/profiles.json (or the AUSPEX_ROOT environment variable) to the Auspex folder that holds src/stageCli.js.',
   AUSPEX_ROOT_INVALID: 'The Auspex folder setting is invalid: AUSPEX_ROOT or "auspexRoot" in ~/.auspex/profiles.json must be the absolute path of the Auspex folder that holds src/stageCli.js.',
   NODE_NOT_FOUND: 'Node was not found. Install Node 20+ so it is on PATH, or set AUSPEX_NODE to the path of node.exe.',
   TIMEOUT: 'The change may or may not have been applied; reload the list.',
   CLI_FAILED: 'The change may or may not have been applied; reload the list.',
+  STALE_VERSION: 'The report changed since you opened it; reload and review again.',
 };
-async function invokeStageChange(invoke, command, r) {
+async function invokeStageChange(invoke, command, r, hash) {
   try {
-    return await invoke(command, stageRequest(r));
+    return await invoke(command, stageRequest(r, hash));
   } catch (err) {
     const code = typeof err === 'object' && err ? err.code : undefined;
     const message = typeof err === 'string' ? err : err?.message || String(err);
-    throw Object.assign(new Error(message), { code, setupText: stageSetupTexts[code] ?? null });
+    throw stageError(message, code);
   }
 }
 // stage-change:end
 const pageToken = document.querySelector('meta[name="auspex-token"]')?.content || '';
-function stageButton(r) {
+function stageButton(r, doc) {
   const sc = stageChangeFor(r);
   if (!sc) return null;
   const pending = state.stagePending === repKey(r);
-  return h('button', { class: 'icon-btn' + (sc.kind === 'approve' ? ' primary' : ''), disabled: !!state.stagePending, 'aria-busy': pending ? 'true' : null,
-    onclick: () => confirmStageChange(r, sc) }, pending ? t('Working…') : t(sc.label));
+  const blocked = stageBlocked(r, doc);
+  const hash = doc?.sqlHash;
+  return h('button', { class: 'icon-btn' + (sc.kind === 'approve' ? ' primary' : ''), disabled: !!state.stagePending || !!blocked, 'aria-busy': pending ? 'true' : null,
+    title: blocked && blocked !== 'loading' ? t(blocked) : null,
+    onclick: () => confirmStageChange(r, sc, hash) }, pending ? t('Working…') : t(sc.label));
 }
-function confirmStageChange(r, sc) {
+function confirmStageChange(r, sc, hash) {
   const dlg = $('stageDlg');
   const value = (label, v) => v === null || v === undefined ? '–' : label === 'Last run' ? `${dateTimeOf(v)} (${ago(v)})` : typeof v === 'number' ? fmt(v) : String(v);
   const cancel = h('button', { class: 'icon-btn', value: 'cancel' }, t('Cancel'));
@@ -1837,18 +1869,18 @@ function confirmStageChange(r, sc) {
     h('dl', {}, stageChangeFacts(r).map(([label, v]) => [h('dt', {}, t(label)), h('dd', {}, value(label, v))])),
     h('div', { class: 'dlg-actions' }, cancel, h('button', { class: 'icon-btn primary', value: 'ok' }, t(sc.label)))));
   dlg.returnValue = '';
-  dlg.onclose = () => { if (dlg.returnValue === 'ok') runStageChange(r, sc); };
+  dlg.onclose = () => { if (dlg.returnValue === 'ok') runStageChange(r, sc, hash); };
   dlg.showModal();
   cancel.focus();
 }
-async function runStageChange(r, sc) {
+async function runStageChange(r, sc, hash) {
   if (state.stagePending) return;
   state.stagePending = repKey(r);
   state.reportViewNode = null;
   renderReports();
   try {
-    if (tauriCore) await invokeStageChange(tauriCore.invoke, sc.command, r);
-    else await postStageChange(fetch, pageToken, sc.path, r);
+    if (tauriCore) await invokeStageChange(tauriCore.invoke, sc.command, r, hash);
+    else await postStageChange(fetch, pageToken, sc.path, r, hash);
     state.reportSel = repKey({ ...r, stage: sc.to });
     state.reportDoc = null;
     if (state.stageFilter !== 'all') state.stageFilter = sc.to;
@@ -1856,7 +1888,8 @@ async function runStageChange(r, sc) {
     toast(t(sc.done));
     try { state.reports = await getJson('/api/reports'); } catch (err) { state.reports = { error: err.message, reports: [] }; }
   } catch (err) {
-    toast(err.viewerRestarted ? t('The viewer was restarted; reload the page') : err.setupText ? t(err.setupText) : err.message);
+    toast(err.viewerRestarted ? t('The viewer was restarted; reload the page')
+      : err.setupText ? t(err.setupText) + (err.version ? t(' (now version {v})', { v: err.version }) : '') : err.message);
     // Outcome unknown (desktop CLI timed out or gave no result), or the report
     // changed since the dialog opened (STALE_VERSION): show the library as it is now.
     if (err.code === 'TIMEOUT' || err.code === 'CLI_FAILED' || err.code === 'STALE_VERSION') {

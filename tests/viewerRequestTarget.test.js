@@ -57,7 +57,7 @@ after(() => {
 });
 
 test('a malformed request target is refused and the viewer keeps serving', async () => {
-  for (const target of ['//[', '//example.test/api/health', 'http://127.0.0.1/api/health', '*', '//']) {
+  for (const target of ['//[', '//example.test/api/health', '/\\evil.test/api/reports', '/\\evil.test/api/health', 'http://127.0.0.1/api/health', '*', '//']) {
     const status = await raw(target);
     assert.ok(status === 400 || status === null, `${target} -> ${status}`);
     assert.equal(exited, false, `the viewer is still running after ${target}`);

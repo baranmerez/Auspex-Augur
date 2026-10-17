@@ -11,7 +11,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { loadConfig, describeConnection, auspexHome } from './config.js';
 import { Library, LibraryError, refLabel } from './reports/library.js';
-import { approvedJoinPairs } from './reports/service.js';
+import { approvedJoinPairs, reportHtmlHash } from './reports/service.js';
 import { StageError as HttpError, stageActions as actions, validateStageInput, applyStageChange, statusOf } from './reports/stageChange.js';
 import { SchemaMemory } from './memory/store.js';
 import { createAuditLog } from './auditLog.js';
@@ -143,7 +143,9 @@ function memoryTable(params) {
 
 // One report file: the generated HTML for SELECT/draft reports, the SQL text for
 // EXECUTE scripts. Library.paths validates every segment, so this cannot leave
-// the library folder.
+// the library folder. sqlHash: the SQL hash of the version this content shows
+// (from the served HTML itself, or the metadata when there is no HTML); the
+// page sends it back when the person approves or revokes.
 function reportContent(params) {
   const stage = params.get('stage');
   const ref = { db: params.get('db'), schema: params.get('schema'), category: params.get('category'), name: params.get('name') };
@@ -154,8 +156,13 @@ function reportContent(params) {
   }
   if (stage !== 'draft' && stage !== 'approved') throw new Error('stage must be draft, approved or execute');
   const p = lib.paths(stage, ref);
-  if (!fs.existsSync(p.html)) return { kind: 'sql', content: fs.readFileSync(p.sql, 'utf8') };
-  return { kind: 'html', content: fs.readFileSync(p.html, 'utf8') };
+  if (!fs.existsSync(p.html)) {
+    const meta = lib.readMeta(stage, ref);
+    const hash = meta?.activeHash ?? null;
+    return { kind: 'sql', content: fs.readFileSync(p.sql, 'utf8'), sqlHash: hash };
+  }
+  const content = fs.readFileSync(p.html, 'utf8');
+  return { kind: 'html', content, sqlHash: reportHtmlHash(content) };
 }
 
 function send(res, status, body, type = 'application/json; charset=utf-8', extra = {}) {
@@ -224,12 +231,15 @@ async function changeStage(req, res, action) {
 }
 
 // The request target as a URL, or null when it is not origin-form: exactly one
-// leading "/" (no "//authority", no absolute-form, no "*"), parsed against a
-// fixed base so the Host header never takes part.
+// leading "/" (no "//authority", no "/\authority" since URL parsing treats a
+// backslash as "/", no absolute-form, no "*"), parsed against a fixed base so the Host
+// header never takes part; a result with another host is refused as well.
 function parseTarget(target) {
-  if (typeof target !== 'string' || !target.startsWith('/') || target.startsWith('//')) return null;
+  if (typeof target !== 'string' || !target.startsWith('/') || target[1] === '/' || target[1] === '\\') return null;
+  const base = `${host}:${port}`;
   try {
-    return new URL(target, `http://${host}:${port}`);
+    const url = new URL(target, `http://${base}`);
+    return url.host === base ? url : null;
   } catch {
     return null;
   }
@@ -286,11 +296,12 @@ function handle(req, res) {
     if (url.pathname === '/api/reports') {
       const lib = library();
       // Drafts also carry the SQL version an approval would approve, and drafts
-      // and approved reports the SQL hash the confirm dialog sends back.
+      // and approved reports the SQL hash they stand for now (metadata only,
+      // like the desktop app); the page compares it with the opened content.
       const reports = lib.list().map(r => {
         if (r.stage !== 'draft' && r.stage !== 'approved') return r;
         const meta = lib.readMeta(r.stage, r);
-        const activeHash = meta ? lib.activeHash(r.stage, r, meta) : null;
+        const activeHash = meta?.activeHash ?? null;
         return r.stage === 'draft' ? { ...r, activeVersion: meta?.activeVersion ?? null, activeHash } : { ...r, activeHash };
       });
       return send(res, 200, { libraryDir: lib.root, reports });
