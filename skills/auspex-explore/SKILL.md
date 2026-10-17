@@ -94,8 +94,9 @@ Write note text in the `notesLanguage` from `list_profiles` (ask once if null).
 
 Confirm an inference (`action=confirm`) only after the user agreed. Archive
 outdated notes with a reason; never re-add a duplicate. The user can also
-archive notes on the viewer's *Rules* tab; do not re-add a note the user
-archived unless they ask for it.
+archive notes on the viewer's *Rules* tab, and archived notes are not shown
+to you: if the user says a note was archived, do not re-add it without
+asking, and before re-adding a measured fact the user may have archived, ask.
 
 ## Answer shape
 
