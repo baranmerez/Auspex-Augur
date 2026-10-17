@@ -258,7 +258,7 @@ export class ReadOnlyDatabase {
   }
 
   runReport(profile, sql, options = {}) {
-    return this.audited('run_report', { profile: profile ?? null, sql, params: options.params, analyze: options.analyze, report: options.label, timeoutSeconds: options.timeoutSeconds },
+    return this.audited('run_report', { profile: profile ?? null, sql, params: options.params, ...(options.preset ? { preset: options.preset } : {}), analyze: options.analyze, report: options.label, timeoutSeconds: options.timeoutSeconds },
       () => this._runReport(profile, sql, options));
   }
 

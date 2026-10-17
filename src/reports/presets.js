@@ -1,9 +1,12 @@
 // Parameter presets for library reports.
-// Built-in presets are relative date ranges for reports whose SQL takes
-// exactly two parameters, $1 = start (inclusive) and $2 = end (exclusive).
-// They resolve when the report runs, in the local time zone of the machine,
-// to ISO dates (YYYY-MM-DD). Calendar arithmetic only (no millisecond offsets),
-// so daylight saving changes cannot shift a day.
+// Built-in presets are relative date ranges for reports saved with
+// dateRange: true, whose SQL takes exactly two parameters, $1 = start
+// (inclusive) and $2 = end (exclusive). They resolve when the report runs to
+// ISO dates (YYYY-MM-DD); day boundaries are computed in the local time zone
+// of the machine Auspex runs on. Compared with a timestamptz column, such a
+// date is read in the database session time zone, so compare with $1::date /
+// $2::date or a date column. Calendar arithmetic only (no millisecond
+// offsets), so daylight saving changes cannot shift a day.
 // Custom presets are named parameter sets stored in the report metadata
 // (meta.presets: [{ name, params }]).
 import { stripLiteralsAndComments } from '../sqlGuard.js';
@@ -44,7 +47,19 @@ export function sqlParamCount(sql) {
   return max;
 }
 
-export const builtInPresetsFor = paramCount => (paramCount === builtInParamCount ? builtInPresetKeys : []);
+// Built-in keys a report offers: only when it was saved with dateRange: true
+// and its SQL takes exactly two parameters.
+export const builtInPresetsFor = (paramCount, dateRange) => (dateRange === true && paramCount === builtInParamCount ? builtInPresetKeys : []);
+
+// Checks the dateRange flag of save_report against the SQL; throws fail(message).
+export function checkDateRange(dateRange, paramCount, fail) {
+  if (dateRange === undefined) return undefined;
+  if (typeof dateRange !== 'boolean') throw fail('dateRange must be true or false.');
+  if (dateRange && paramCount !== builtInParamCount) {
+    throw fail(`dateRange: true needs SQL with exactly ${builtInParamCount} parameters ($1 start inclusive, $2 end exclusive); this SQL uses ${paramCount}.`);
+  }
+  return dateRange;
+}
 
 const isParamValue = v => v === null || typeof v === 'string' || typeof v === 'boolean' || (typeof v === 'number' && Number.isFinite(v));
 const nameKey = name => name.normalize('NFC').toLocaleLowerCase('en');
@@ -76,9 +91,12 @@ export const findCustomPreset = (presets, name) => (presets || []).find(p => nam
 
 // The parameter values for a run with preset (a built-in key or a custom name)
 // against SQL with paramCount parameters: { preset, params, builtIn }, or throws fail(message).
-export function resolvePreset(name, presets, paramCount, fail, now = new Date()) {
+export function resolvePreset(name, presets, paramCount, fail, now = new Date(), dateRange = false) {
   const key = String(name ?? '').trim();
   if (builtInPresetKeys.includes(key)) {
+    if (dateRange !== true) {
+      throw fail(`Built-in preset "${key}" is not available: this report has no date-range parameters; save it with dateRange: true when $1 and $2 are a [start, end) date range.`);
+    }
     if (paramCount !== builtInParamCount) {
       throw fail(`Built-in preset "${key}" needs SQL with exactly ${builtInParamCount} parameters ($1 start inclusive, $2 end exclusive); this report uses ${paramCount}. Pass params or a custom preset.`);
     }
@@ -86,7 +104,7 @@ export function resolvePreset(name, presets, paramCount, fail, now = new Date())
   }
   const custom = findCustomPreset(presets, key);
   if (!custom) {
-    const names = [...builtInPresetsFor(paramCount), ...(presets || []).map(p => p.name)];
+    const names = [...builtInPresetsFor(paramCount, dateRange), ...(presets || []).map(p => p.name)];
     throw fail(`Unknown preset "${key}". Available: ${names.length ? names.join(', ') : 'none'}.`);
   }
   if (custom.params.length !== paramCount) {

@@ -11,7 +11,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { assertReadOnlyQuery, stripLiteralsAndComments } from '../sqlGuard.js';
 import { withFileLock, renameRetrying } from '../fileLock.js';
-import { sqlParamCount, validatePresets, builtInPresetsFor, mismatchedPresets } from './presets.js';
+import { sqlParamCount, validatePresets, builtInPresetsFor, mismatchedPresets, checkDateRange } from './presets.js';
 
 export const stages = { draft: '_drafts', approved: 'SELECT', execute: 'EXECUTE' };
 const maxRuns = 100;
@@ -178,10 +178,13 @@ export class Library {
   // the user to run in their own tool; the draft records the path.
   // presets (optional): replaces the report's custom parameter presets; each
   // must have one value per parameter of the saved SQL (see presets.js).
-  saveDraftUnlocked({ ref, title, description, sql, note, mask, unmask, presets, target = null }) {
+  // dateRange (optional): true when $1 and $2 are a [start, end) date range,
+  // which enables the built-in date presets; false turns them off.
+  saveDraftUnlocked({ ref, title, description, sql, note, mask, unmask, presets, dateRange, target = null }) {
     assertReadOnlyQuery(sql);
     const paramCount = sqlParamCount(sql);
     const checkedPresets = presets === undefined ? undefined : validatePresets(presets, paramCount, msg => new LibraryError(msg));
+    const checkedDateRange = checkDateRange(dateRange, paramCount, msg => new LibraryError(msg));
     this.ensure();
     const r = normalizeRef(ref);
     const now = new Date().toISOString();
@@ -212,6 +215,7 @@ export class Library {
     if (mask) meta.mask = mask;
     if (unmask) meta.unmask = unmask;
     if (checkedPresets !== undefined) meta.presets = checkedPresets;
+    if (checkedDateRange !== undefined) meta.dateRange = checkedDateRange;
     const text = normalizeSql(sql);
     const hash = sqlHash(text);
     if (!meta.sqlVersions.some(v => v.hash === hash)) {
@@ -389,8 +393,9 @@ export class Library {
     const meta = stage === 'execute' ? null : this.readMeta(stage, ref);
     const externalFile = stage === 'execute' ? this.executeInfo(ref)?.externalFile : null;
     const lastRun = meta?.runs?.at(-1);
-    // Presets: built-in date-range keys when the SQL takes exactly two
-    // parameters, and the report's custom preset names.
+    // Presets: built-in date-range keys when the report was saved with
+    // dateRange: true and its SQL takes exactly two parameters, the report's
+    // custom preset names, and those that no longer fit the SQL (mismatched).
     let paramCount = null;
     if (meta) { try { paramCount = sqlParamCount(fs.readFileSync(file, 'utf8')); } catch { /* listed without presets */ } }
     return {
@@ -399,7 +404,14 @@ export class Library {
       updatedAt: meta?.updatedAt ?? fs.statSync(file).mtime.toISOString(),
       runs: meta?.runs?.length ?? 0,
       lastRun: lastRun ? { at: lastRun.at, durationMs: lastRun.durationMs, rows: lastRun.rows, analyzed: lastRun.analyzed, warnings: lastRun.warnings?.length ?? 0, ...(lastRun.preset ? { preset: lastRun.preset } : {}) } : null,
-      ...(meta ? { paramCount, presets: { builtIn: paramCount === null ? [] : builtInPresetsFor(paramCount), custom: (meta.presets || []).map(x => x.name) } } : {}),
+      ...(meta ? {
+        paramCount, dateRange: meta.dateRange === true,
+        presets: {
+          builtIn: paramCount === null ? [] : builtInPresetsFor(paramCount, meta.dateRange),
+          custom: (meta.presets || []).map(x => x.name),
+          mismatched: paramCount === null ? [] : mismatchedPresets(meta.presets, paramCount),
+        },
+      } : {}),
     };
   }
 

@@ -10,7 +10,7 @@ import { summarizePlan, planDigest } from './planSummary.js';
 import { maskRows } from './mask.js';
 import { ToolError } from '../errors.js';
 import { relationsFromJsonPlan } from '../memory/planUsage.js';
-import { sqlParamCount, resolvePreset, builtInPresetsFor } from './presets.js';
+import { sqlParamCount, resolvePreset, builtInPresetsFor, mismatchedPresets } from './presets.js';
 
 export const autoAnalyzeLimitMs = 30000;
 const templatePath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'template.html');
@@ -33,15 +33,17 @@ export function renderReport(meta) {
 }
 
 // Presets the viewer lists for a report (read-only): the built-in keys when
-// its active SQL takes exactly two parameters, and its custom presets. Never
-// part of a shared copy.
+// it was saved with dateRange: true and its active SQL takes exactly two
+// parameters, its custom presets, and the names of those that no longer fit
+// the SQL (mismatched). Never part of a shared copy.
 export function presetInfo(meta) {
   const active = (meta.sqlVersions || []).find(v => v.hash === meta.activeHash) ?? meta.sqlVersions?.at(-1);
   const paramCount = active ? sqlParamCount(active.sql) : null;
   return {
     paramCount,
-    builtIn: paramCount === null ? [] : builtInPresetsFor(paramCount),
+    builtIn: paramCount === null ? [] : builtInPresetsFor(paramCount, meta.dateRange),
     custom: (meta.presets || []).map(p => ({ name: p.name, params: p.params })),
+    mismatched: paramCount === null ? [] : mismatchedPresets(meta.presets, paramCount),
   };
 }
 
@@ -189,7 +191,7 @@ export class ReportService {
     if (!meta) throw new ToolError('NOT_FOUND', `Report metadata missing for ${refLabel(ref)}; save the report first.`);
     let usedPreset = null;
     if (preset !== undefined) {
-      const resolved = resolvePreset(preset, meta.presets, sqlParamCount(sql), msg => new ToolError('INVALID_INPUT', msg));
+      const resolved = resolvePreset(preset, meta.presets, sqlParamCount(sql), msg => new ToolError('INVALID_INPUT', msg), new Date(), meta.dateRange);
       usedPreset = resolved.preset;
       params = resolved.params;
     }
@@ -205,7 +207,7 @@ export class ReportService {
       }
     }
 
-    const result = await this.db.runReport(ref.db, sql, { params, analyze: doAnalyze, previewRows, timeoutSeconds, label: refLabel(ref) });
+    const result = await this.db.runReport(ref.db, sql, { params, preset: usedPreset, analyze: doAnalyze, previewRows, timeoutSeconds, label: refLabel(ref) });
     const summary = summarizePlan(result.plan);
     const columns = result.columns;
     const masked = maskRows(columns.map(c => c.name), result.rows, { mask: meta.mask || [], unmask: meta.unmask || [] });

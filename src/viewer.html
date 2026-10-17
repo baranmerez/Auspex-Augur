@@ -355,6 +355,7 @@
   .rep-view .rep-meta { display: flex; gap: 4px 8px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--text-3); margin-top: 4px; }
   .rep-view .rep-meta .chip { border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; color: var(--text-2); overflow-wrap: anywhere; }
   .rep-view .rep-meta .chip.on { border-color: var(--accent); color: var(--accent-ink); }
+  .rep-view .rep-meta .chip.stale { border-style: dashed; color: var(--text-3); text-decoration: line-through; }
   .rep-view .rep-title .rep-star { position: static; opacity: 1; }
   .badge.draft { background: var(--warn-soft); color: var(--warn-ink); }
   .badge.approved { background: var(--good-soft); color: var(--good-ink); }
@@ -862,6 +863,7 @@ const TR = {
   'Ask Claude': "Claude'a sor", 'Copy a prompt about this report for Claude (no row values)': "Bu rapor için Claude'a hazır bir istem kopyala (satır değeri içermez)",
   'Copied to clipboard': 'Panoya kopyalandı', 'Last run:': 'Son çalıştırma:', 'Presets:': 'Hazır ayarlar:', 'Parameter values': 'Parametre değerleri',
   'Ask Claude to run the report with a preset': "Raporu bir hazır ayarla çalıştırmasını Claude'dan isteyin",
+  'Not usable: its values no longer match the SQL parameters ({v})': 'Kullanılamaz: değerleri artık SQL parametreleriyle uyuşmuyor ({v})',
   'Auspex folder not found. Set "auspexRoot" in ~/.auspex/profiles.json (or the AUSPEX_ROOT environment variable) to the Auspex folder that holds src/stageCli.js.': 'Auspex klasörü bulunamadı. ~/.auspex/profiles.json içinde "auspexRoot" değerini (ya da AUSPEX_ROOT ortam değişkenini) src/stageCli.js dosyasını içeren Auspex klasörüne ayarlayın.',
   'Node was not found. Install Node 20+ so it is on PATH, or set AUSPEX_NODE to the path of node.exe.': 'Node bulunamadı. Node 20+ kurun (PATH üzerinde olsun) ya da AUSPEX_NODE değişkenini node.exe yoluna ayarlayın.',
   'The Auspex folder setting is invalid: AUSPEX_ROOT or "auspexRoot" in ~/.auspex/profiles.json must be the absolute path of the Auspex folder that holds src/stageCli.js.': 'Auspex klasörü ayarı geçersiz: AUSPEX_ROOT ya da ~/.auspex/profiles.json içindeki "auspexRoot", src/stageCli.js dosyasını içeren Auspex klasörünün mutlak yolu olmalı.',
@@ -1841,7 +1843,8 @@ function presetMeta(data) {
   if (!data) return null;
   const info = lastRunInfo(data);
   const p = data.presets;
-  const offered = p ? [...(p.builtIn || []).map(k => ({ label: presetLabel(k, lang), title: k })), ...(p.custom || []).map(c => ({ label: c.name, title: paramText(c.params) }))] : [];
+  const offered = offeredPresets(p, lang).map(o => (o.stale
+    ? { ...o, title: t('Not usable: its values no longer match the SQL parameters ({v})', { v: o.title }) } : o));
   const run = info && (info.preset || info.params?.length)
     ? h('div', { class: 'rep-meta' }, h('span', {}, t('Last run:')),
       info.preset ? h('span', { class: 'chip on', title: info.preset }, presetLabel(info.preset, lang)) : null,
@@ -1849,7 +1852,7 @@ function presetMeta(data) {
     : null;
   const list = offered.length
     ? h('div', { class: 'rep-meta', title: t('Ask Claude to run the report with a preset') }, h('span', {}, t('Presets:')),
-      offered.map(o => h('span', { class: 'chip', title: o.title }, o.label)))
+      offered.map(o => h('span', { class: 'chip' + (o.stale ? ' stale' : ''), title: o.title, 'aria-disabled': o.stale ? 'true' : null }, o.label)))
     : null;
   return [run, list];
 }
@@ -2124,6 +2127,17 @@ function buildAskPrompt(r, data, lng, maxColumns = 6) {
   }
   lines.push('', x.ask, '');
   return lines.join('\n');
+}
+// The preset chips of a report from its embedded presets block: built-in
+// keys with their label, then custom presets; those that no longer fit the
+// SQL (mismatched) are marked stale. title: the key or the parameter values.
+function offeredPresets(p, lng) {
+  if (!p) return [];
+  const stale = new Set(Array.isArray(p.mismatched) ? p.mismatched : []);
+  return [
+    ...(Array.isArray(p.builtIn) ? p.builtIn : []).map(k => ({ label: presetLabel(k, lng), title: k, stale: false })),
+    ...(Array.isArray(p.custom) ? p.custom : []).map(c => ({ label: String(c.name), title: paramText(c.params), stale: stale.has(c.name) })),
+  ];
 }
 // ask-claude:end
 let favs = { pins: [], recent: [] };
