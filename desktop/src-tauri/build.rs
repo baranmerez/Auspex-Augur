@@ -3,7 +3,7 @@
 fn main() {
     tauri_build::try_build(
         tauri_build::Attributes::new()
-            .app_manifest(tauri_build::AppManifest::new().commands(&["api", "approve_report", "revoke_report"])),
+            .app_manifest(tauri_build::AppManifest::new().commands(&["api", "approve_report", "revoke_report", "archive_note"])),
     )
     .expect("failed to run tauri-build")
 }
