@@ -77,8 +77,11 @@ late one.
    as `Orders/Delivery` and ask the user if unsure), a kebab-case name,
    title and description stating the definitions. Then `run_report`.
    For a date-range report write `$1` start (inclusive) and `$2` end
-   (exclusive) so the built-in presets (`last_month`, `this_year`, ...) work;
-   prefer them over fixed dates. When the user repeats a parameter set,
+   (exclusive), compared as `$1::date` / `$2::date` or against a date
+   column (day boundaries follow the Auspex machine; a `timestamptz`
+   comparison uses the database session time zone), and save with
+   `dateRange: true` so the built-in presets (`last_month`, `this_year`, ...)
+   work; prefer them over fixed dates. When the user repeats a parameter set,
    propose saving it as a custom preset (`save_report` `presets`, name in
    the `notesLanguage`) and run with `preset` instead of `params`.
    Write titles, descriptions and notes in the `notesLanguage` from `list_profiles` (ask once if null); SQL and identifiers stay as they are.
