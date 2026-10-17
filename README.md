@@ -413,7 +413,8 @@ library/
 A category is one folder or a topic path of up to three levels joined by
 `/`, for example `Orders` or `Orders/Delivery`; each level is a real folder
 (`SELECT/<db>/<schema>/Orders/Delivery/<name>.sql`). Every level follows the
-same rules (no `..`, no empty level, no leading or trailing spaces, Unicode
+same rules (no `..`, no empty level, no leading or trailing spaces, no
+Windows device names such as `CON` or `NUL`, Unicode
 letters allowed). Existing single-level categories keep working; nothing is
 moved.
 

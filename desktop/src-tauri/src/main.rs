@@ -109,22 +109,52 @@ fn memory_profile(query: &HashMap<String, String>) -> Result<PathBuf, String> {
 
 const STAGES: [(&str, &str); 3] = [("draft", "_drafts"), ("approved", "SELECT"), ("execute", "EXECUTE")];
 
-// One folder level (db, schema, one category level) or a report name; same rules as library.js.
+// One folder level (db, schema, one category level) or a report name, with
+// the checks of validateSegment in library.js: at most 80 UTF-16 units, no
+// leading or trailing dot, none of <>:"/\|?* or U+0000-U+001F. Not checked
+// here: NFC normalization (Rust std has none), so a non-NFC folder name may be
+// listed by the desktop app, but a stage change of it is refused by Node
+// (validateRefInput: the location must equal its normalized form).
 fn valid_segment(s: &str) -> bool {
     !s.is_empty()
-        && s.chars().count() <= 80
+        && s.encode_utf16().count() <= 80
         && !s.starts_with('.')
         && !s.ends_with('.')
-        && !s.chars().any(|c| c.is_control() || "<>:\"/\\|?*".contains(c))
+        && !s.chars().any(|c| c <= '\u{1f}' || "<>:\"/\\|?*".contains(c))
+}
+
+// The characters String.prototype.trim removes in JavaScript (WhiteSpace and
+// LineTerminator): unlike char::is_whitespace it includes U+FEFF and not U+0085.
+fn is_js_space(c: char) -> bool {
+    matches!(c, '\u{9}'..='\u{d}' | ' ' | '\u{a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' | '\u{205f}' | '\u{3000}' | '\u{feff}')
+}
+
+// s equals its JavaScript trim().
+fn js_trimmed(s: &str) -> bool {
+    s.trim_matches(is_js_space) == s
+}
+
+// A Windows device name with or without an extension, case-insensitive
+// (windowsReservedName in library.js): CON, PRN, AUX, NUL, COM0-9, LPT0-9 and
+// COM/LPT with a superscript 1-3.
+fn windows_reserved(s: &str) -> bool {
+    let stem = s.split('.').next().unwrap_or("").to_lowercase();
+    if matches!(stem.as_str(), "con" | "prn" | "aux" | "nul") {
+        return true;
+    }
+    let mut chars = stem.chars();
+    let prefix: String = chars.by_ref().take(3).collect();
+    let rest: Vec<char> = chars.collect();
+    (prefix == "com" || prefix == "lpt") && rest.len() == 1 && (rest[0].is_ascii_digit() || "¹²³".contains(rest[0]))
 }
 
 // Category levels below <db>/<schema>, as in library.js (maxCategoryLevels).
 const MAX_CATEGORY_LEVELS: usize = 3;
 
 // One category level as the library writes it: a valid segment without
-// surrounding spaces (categorySegments in library.js).
+// surrounding spaces that is no Windows device name (categorySegments in library.js).
 fn valid_category_level(s: &str) -> bool {
-    valid_segment(s) && s.trim() == s
+    valid_segment(s) && js_trimmed(s) && !windows_reserved(s)
 }
 
 // A category: 1 to MAX_CATEGORY_LEVELS levels joined by "/", each level valid
@@ -134,9 +164,11 @@ fn category_levels(s: &str) -> Option<Vec<&str>> {
     (levels.len() <= MAX_CATEGORY_LEVELS && levels.iter().all(|l| valid_category_level(l))).then_some(levels)
 }
 
+// Real subfolders only: the entry's own type, so symbolic links and junctions
+// are not followed (like Dirent.isDirectory() in Node).
 fn sub_dirs(p: &std::path::Path) -> Vec<String> {
     let mut v: Vec<String> = fs::read_dir(p)
-        .map(|it| it.filter_map(|e| e.ok()).filter(|e| e.path().is_dir()).map(|e| e.file_name().to_string_lossy().to_string()).collect())
+        .map(|it| it.filter_map(|e| e.ok()).filter(|e| e.file_type().is_ok_and(|t| t.is_dir())).map(|e| e.file_name().to_string_lossy().to_string()).collect())
         .unwrap_or_default();
     v.sort();
     v
@@ -169,7 +201,7 @@ fn list_category(stage: &str, db: &str, schema: &str, schema_dir: &std::path::Pa
     let folder = levels.iter().fold(schema_dir.to_path_buf(), |p, l| p.join(l));
     let category = levels.join("/");
     let mut files: Vec<String> = fs::read_dir(&folder)
-        .map(|it| it.filter_map(|e| e.ok()).filter(|e| e.path().is_file()).map(|e| e.file_name().to_string_lossy().to_string()).filter(|n| n.ends_with(".sql")).collect())
+        .map(|it| it.filter_map(|e| e.ok()).filter(|e| e.file_type().is_ok_and(|t| t.is_file())).map(|e| e.file_name().to_string_lossy().to_string()).filter(|n| n.ends_with(".sql")).collect())
         .unwrap_or_default();
     files.sort();
     for f in files {
@@ -515,7 +547,7 @@ fn stage_error(code: &str, message: impl Into<String>) -> Value {
 const MAX_REF_PART: usize = 260;
 
 fn valid_ref_part(key: &str, s: &str) -> bool {
-    if s.is_empty() || s.encode_utf16().count() > MAX_REF_PART || s.trim() != s {
+    if s.is_empty() || s.encode_utf16().count() > MAX_REF_PART || !js_trimmed(s) {
         return false;
     }
     if key == "category" {
@@ -901,6 +933,63 @@ mod tests {
         for bad in ["Orders/../Orders", "Orders/Delivery/Weekly/Deeper", "/Orders", "Orders//Delivery"] {
             assert!(report_content_in(root.clone(), &q(bad, "late")).is_err(), "{bad}");
         }
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn category_levels_follow_the_node_rules() {
+        // Length in UTF-16 units: 40 astral characters are 80 units, 41 are 82.
+        assert!(valid_category_level(&"😀".repeat(40)));
+        assert!(!valid_category_level(&"😀".repeat(41)));
+        assert!(valid_category_level(&"é".repeat(80)));
+        // Control characters: U+0000-U+001F refused, U+007F-U+009F allowed like in Node.
+        for bad in ["a\u{0}b", "a\u{1f}b", "a\tb"] {
+            assert!(!valid_category_level(bad), "{bad:?}");
+        }
+        assert!(valid_category_level("a\u{7f}b"));
+        assert!(valid_category_level("a\u{85}b"), "U+0085 is not trimmed by JavaScript");
+        // Trim like JavaScript: U+FEFF and U+00A0 count as spaces.
+        for bad in ["\u{feff}Orders", "Orders\u{a0}", "\u{3000}Orders"] {
+            assert!(!valid_category_level(bad), "{bad:?}");
+        }
+        // Windows device names on every level, with or without extension.
+        for bad in ["CON", "nul", "Aux.txt", "com1", "LPT9", "com¹", "prn.a.b"] {
+            assert!(!valid_category_level(bad), "{bad}");
+            assert!(!valid_ref_part("category", &format!("Orders/{bad}")), "{bad}");
+        }
+        for ok in ["Console", "Nullable", "COM10", "LPT", "auxiliary"] {
+            assert!(valid_category_level(ok), "{ok}");
+        }
+    }
+
+    #[test]
+    fn listing_does_not_follow_links() {
+        let root = std::env::temp_dir().join(format!("auspex-link-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let schema = root.join("SELECT").join("exampledb").join("example");
+        let outside = root.join("outside");
+        fs::create_dir_all(schema.join("Orders")).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(schema.join("Orders").join("kept.sql"), "select 1").unwrap();
+        fs::write(outside.join("linked.sql"), "select 2").unwrap();
+        // Symbolic links on Windows need Developer Mode or elevation; a
+        // junction (mklink /J) does not, and Node and Rust both treat it as a link.
+        #[cfg(windows)]
+        let linked = std::os::windows::fs::symlink_dir(&outside, schema.join("Linked"))
+            .and(std::os::windows::fs::symlink_file(outside.join("linked.sql"), schema.join("Orders").join("file-link.sql")))
+            .or_else(|_| {
+                let status = std::process::Command::new("cmd")
+                    .args(["/C", "mklink", "/J"]).arg(schema.join("Junction")).arg(&outside)
+                    .stdout(std::process::Stdio::null()).status()?;
+                if status.success() { Ok(()) } else { Err(std::io::Error::other("mklink /J failed")) }
+            });
+        #[cfg(unix)]
+        let linked = std::os::unix::fs::symlink(&outside, schema.join("Linked"))
+            .and(std::os::unix::fs::symlink(outside.join("linked.sql"), schema.join("Orders").join("file-link.sql")));
+        // When no link could be created the test only checks the plain listing.
+        let names: Vec<String> = list_reports_in(root.clone())["reports"].as_array().unwrap().iter()
+            .map(|r| format!("{}|{}", r["category"].as_str().unwrap(), r["name"].as_str().unwrap())).collect();
+        assert_eq!(names, vec!["Orders|kept"], "links created: {}", linked.is_ok());
         let _ = fs::remove_dir_all(&root);
     }
 
