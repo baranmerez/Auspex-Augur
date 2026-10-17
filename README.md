@@ -410,6 +410,13 @@ library/
 └── EXECUTE/<db>/<schema>/<category>/<name>.sql|.execute.json        change scripts for a human (.execute.json: file in a script root)
 ```
 
+A category is one folder or a topic path of up to three levels joined by
+`/`, for example `Orders` or `Orders/Delivery`; each level is a real folder
+(`SELECT/<db>/<schema>/Orders/Delivery/<name>.sql`). Every level follows the
+same rules (no `..`, no empty level, no leading or trailing spaces, Unicode
+letters allowed). Existing single-level categories keep working; nothing is
+moved.
+
 - **The agent only writes SQL.** `run_report` executes it read-only in one
   snapshot (`EXPLAIN (ANALYZE, BUFFERS, VERBOSE, SETTINGS, FORMAT JSON)` plus a
   cursor preview), summarizes the plan, masks personal columns, appends the run
@@ -713,7 +720,7 @@ Opens a local page at http://127.0.0.1:4719 (port: `AUSPEX_VIEWER_PORT`):
 - **Overview** — stat tiles, activity over time, usage by profile, tool and table, slowest operations, recent errors
 - **Operations** — sortable, paged log with full SQL, parameters and errors (the status shows the error code, the detail the correlation ID); copy and CSV/JSON download
 - **Tables** — which tables were accessed, how often and by which profile
-- **Reports** — the report library by database, schema and category (the list collapses to a rail; a filter box narrows it by name, category or stage), with each report's HTML: the question it answers at the top, the metrics in one strip with a plan-warnings badge that opens the list, and sticky tabs that open on *Preview*. SQL and change scripts are syntax-highlighted (step markers stand out, long lines soft-wrap), copy buttons inside a report work from the viewer, and drafts and approved reports can be approved or revoked (see below)
+- **Reports** — the report library as a collapsible tree: topic → subtopic → report (database and schema come from the database picker and the report header; the list collapses to a rail; a filter box narrows it by name, category or stage and opens the matching branches; change scripts have their own tab and are not part of *All*), with each report's HTML: the question it answers at the top, the metrics in one strip with a plan-warnings badge that opens the list, and sticky tabs that open on *Preview*. SQL and change scripts are syntax-highlighted (step markers stand out, long lines soft-wrap), copy buttons inside a report work from the viewer, and drafts and approved reports can be approved or revoked (see below)
 - **Schema** — the schema memory of a database in three views, an inspector with notes, relations and history, and a timeline of schema changes. A schema picker moves the selection and the view center into the chosen schema. A badge in the header counts schema changes you have not seen yet. Around a selected table, foreign keys give two roles: **Reference** (TR *Instance*: tables it points to, such as status codes) and **Dependent** (TR *Beslenen*: tables that point to it, such as order lines). Each role is ranked by linked rows, then by the table's row estimate; both are planner estimates, and a relation without a linked-row figure falls back to the row estimate.
   - *Graph* — a 3D graph (with a 2D fallback): click a table to focus it, and the focused table's Reference and Dependent tables are laid out in directed layers with always-visible labels; *+1 depth* adds the next ring and *Show all* shows everything. The focused table's FK edges are blue (Reference) or orange (Dependent), darkest at rank 1 and lightest at rank 10; edges beyond the top 10 are grey and dashed and can be hidden
   - *ER diagram* — Reference tables on the left, Dependent tables on the right, with a per-side top-N picker (5, 10, 25, 50 or All), every card with its rank, linked rows and explored state; the rest stay in the inspector's Relations list
@@ -755,8 +762,8 @@ a request only when all of these hold:
 - the `X-Auspex-Token` header matches a random token created per viewer
   process and embedded only in the served page (403 otherwise);
 - the body is `application/json`, at most 4 KB, and holds only `db`,
-  `schema`, `category` and `name` exactly as the library lists them (no
-  path tricks: 400), plus the required `expectedHash`: the SQL hash of the
+  `schema`, `category` and `name` exactly as the library lists them (a
+  nested category as its `/`-joined path; no path tricks: 400), plus the required `expectedHash`: the SQL hash of the
   report content the page opened (12 lower-case hex characters; 400
   otherwise). `/api/report` returns it as `sqlHash` with the content it
   served, taken from that HTML itself, so a live list refresh cannot change

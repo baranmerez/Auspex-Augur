@@ -72,7 +72,9 @@ late one.
    large tables and row estimates that explode after a join. Narrow by
    indexed columns before running.
 8. **Save and run.** `save_report` with db = profile, schema = main schema,
-   a category (ask once if unclear, default `General`), a kebab-case name,
+   a category (ask once if unclear, default `General`; it may be a topic
+   path of up to three levels joined by "/", so propose a topic/subtopic such
+   as `Orders/Delivery` and ask the user if unsure), a kebab-case name,
    title and description stating the definitions. Then `run_report`.
    Write titles, descriptions and notes in the `notesLanguage` from `list_profiles` (ask once if null); SQL and identifiers stay as they are.
 9. **Hand over.** Summary: row count, totals, timings, warnings, the HTML

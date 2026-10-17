@@ -29,7 +29,7 @@ the rest):
    (lookup table, enum type, CHECK constraint or column comment).
 4. Grain and grouping (one row per order, per line, per person).
 5. Output columns and number formats.
-6. Category and report name in the library.
+6. Category (optionally topic/subtopic, e.g. `Orders/Delivery`) and report name in the library.
 
 ## Do not ask
 
