@@ -25,6 +25,9 @@ function run(args) {
   return { status: res.status, out: JSON.parse(lines[0]) };
 }
 const refArgs = (r = ref) => ['--db', r.db, '--schema', r.schema, '--category', r.category, '--name', r.name];
+const hash = sqlHash(sql);
+// The location plus the SQL hash of the reviewed version (required).
+const stageArgs = (r = ref, h = hash) => [...refArgs(r), '--expected-hash', h];
 
 function auditEntries() {
   const dir = path.join(home, 'logs');
@@ -44,7 +47,7 @@ after(() => {
 });
 
 test('invalid actions and arguments are refused and change nothing', () => {
-  for (const args of [[], ['publish', ...refArgs()], ['APPROVE', ...refArgs()], ['__proto__', ...refArgs()]]) {
+  for (const args of [[], ['publish', ...stageArgs()], ['APPROVE', ...stageArgs()], ['__proto__', ...stageArgs()]]) {
     const { status, out } = run(args);
     assert.equal(status, 1, JSON.stringify(args));
     assert.deepEqual([out.ok, out.code], [false, 'INVALID_INPUT'], JSON.stringify(args));
@@ -65,7 +68,17 @@ test('invalid actions and arguments are refused and change nothing', () => {
     refArgs({ ...ref, name: 'a'.repeat(201) }),
     refArgs({ ...ref, db: '' }),
     ['--db', ref.db, 'positional', '--schema', ref.schema, '--category', ref.category, '--name', ref.name],
-  ];
+  ].map(a => [...a, '--expected-hash', hash]);
+  // The reviewed SQL hash is required, exactly once, in the sqlHash format.
+  bad.push(
+    refArgs(),
+    stageArgs(ref, ''),
+    stageArgs(ref, hash.toUpperCase()),
+    stageArgs(ref, hash.slice(1)),
+    stageArgs(ref, `${hash}0`),
+    [...stageArgs(), '--expected-hash', hash],
+    [...refArgs(), '--expected_hash', hash],
+  );
   for (const args of bad) {
     const { status, out } = run(['approve', ...args]);
     assert.equal(status, 1, JSON.stringify(args));
@@ -77,12 +90,16 @@ test('invalid actions and arguments are refused and change nothing', () => {
 
 test('approve and revoke move the report, refuse the wrong stage and unknown reports, and are audited as desktop', () => {
   const before = auditEntries().length;
-  const missing = run(['approve', ...refArgs({ ...ref, name: 'missing-report' })]);
+  const missing = run(['approve', ...stageArgs({ ...ref, name: 'missing-report' })]);
   assert.deepEqual([missing.status, missing.out.code], [1, 'NOT_FOUND']);
-  const early = run(['revoke', ...refArgs()]);
+  const early = run(['revoke', ...stageArgs()]);
   assert.deepEqual([early.status, early.out.code], [1, 'PRECONDITION_FAILED'], 'a draft cannot be revoked');
+  const stale = run(['approve', ...stageArgs(ref, 'abcdef012345')]);
+  assert.deepEqual([stale.status, stale.out.code], [1, 'STALE_VERSION'], 'another reviewed version is refused');
+  assert.match(stale.out.message, /changed since you opened it \(now version 1\)/);
+  assert.equal(lib.exists('draft', ref), true, 'nothing moved');
 
-  const ok = run(['approve', `--db=${ref.db}`, `--schema=${ref.schema}`, `--category=${ref.category}`, `--name=${ref.name}`]);
+  const ok = run(['approve', `--db=${ref.db}`, `--schema=${ref.schema}`, `--category=${ref.category}`, `--name=${ref.name}`, `--expected-hash=${hash}`]);
   assert.equal(ok.status, 0, JSON.stringify(ok.out));
   assert.deepEqual([ok.out.ok, ok.out.stage, ok.out.version, ok.out.report], [true, 'approved', 1, label]);
   assert.equal(lib.exists('approved', ref), true);
@@ -91,9 +108,10 @@ test('approve and revoke move the report, refuse the wrong stage and unknown rep
   assert.deepEqual(lib.readMeta('approved', ref).stageHistory.map(h => [h.from, h.to, h.version, h.by]), [['draft', 'approved', 1, 'desktop']]);
   const graph = path.join(home, 'memory', 'exampledb', 'graph.json');
   assert.ok(fs.existsSync(graph), 'the schema memory view is rebuilt');
-  assert.equal(run(['approve', ...refArgs()]).out.code, 'PRECONDITION_FAILED', 'already approved');
+  assert.equal(run(['approve', ...stageArgs()]).out.code, 'PRECONDITION_FAILED', 'already approved');
+  assert.equal(run(['revoke', ...stageArgs(ref, 'abcdef012345')]).out.code, 'STALE_VERSION', 'revoke is bound to the approved version');
 
-  const back = run(['revoke', ...refArgs()]);
+  const back = run(['revoke', ...stageArgs()]);
   assert.equal(back.status, 0, JSON.stringify(back.out));
   assert.deepEqual([back.out.stage, back.out.version], ['draft', 1]);
   assert.equal(lib.exists('draft', ref), true);
@@ -107,7 +125,8 @@ test('approve and revoke move the report, refuse the wrong stage and unknown rep
   ]);
   assert.equal(done[0].correlationId, ok.out.correlationId);
   assert.deepEqual(entries.filter(e => e.error).map(e => [e.tool, e.errorCode]), [
-    ['approve_report', 'NOT_FOUND'], ['revoke_report', 'PRECONDITION_FAILED'], ['approve_report', 'PRECONDITION_FAILED'],
+    ['approve_report', 'NOT_FOUND'], ['revoke_report', 'PRECONDITION_FAILED'], ['approve_report', 'STALE_VERSION'],
+    ['approve_report', 'PRECONDITION_FAILED'], ['revoke_report', 'STALE_VERSION'],
   ]);
   assert.ok(!JSON.stringify(entries).includes('status_code from'), 'no SQL in the audit log');
 });
@@ -117,7 +136,7 @@ test('a missing library folder is reported as not found and is not created', () 
   const saved = home;
   home = empty;
   try {
-    const { status, out } = run(['approve', ...refArgs()]);
+    const { status, out } = run(['approve', ...stageArgs()]);
     assert.deepEqual([status, out.code], [1, 'NOT_FOUND']);
     assert.equal(fs.existsSync(path.join(empty, 'library')), false);
   } finally {

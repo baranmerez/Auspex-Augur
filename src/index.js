@@ -14,7 +14,7 @@ import {
   parentFilterOps, maxParentFilters, maxParentFilterValues,
 } from './catalog.js';
 import { ReportService } from './reports/service.js';
-import { sqlHash } from './reports/library.js';
+import { sqlHash, sqlHashPattern } from './reports/library.js';
 import { SchemaMemory, noteKinds } from './memory/store.js';
 import { relationsFromTextPlan } from './memory/planUsage.js';
 import { loadPromptSkills, promptText } from './skills.js';
@@ -398,8 +398,11 @@ tool('run_report', {
 
 tool('approve_report', {
   title: 'Approve report',
-  description: 'Moves a report draft into SELECT/<db>/<schema>/<category>/. Requires a successful run_report of the current SQL; refused otherwise. Only call this after the user explicitly approved the report in this conversation.',
-  inputSchema: refArgs,
+  description: 'Moves a report draft into SELECT/<db>/<schema>/<category>/. Requires a successful run_report of the current SQL; refused otherwise. Only call this after the user explicitly approved the report in this conversation. Pass expectedHash, the sqlHash (from save_report or run_report) of the version the user approved: if the draft SQL changed since then, the call is refused with STALE_VERSION and nothing moves.',
+  inputSchema: {
+    ...refArgs,
+    expectedHash: z.string().regex(sqlHashPattern).optional().describe('sqlHash of the version the user reviewed and approved (12 lower-case hex characters, from save_report or run_report). Refused with STALE_VERSION when the current draft SQL differs.'),
+  },
 }, async args => db.audited('approve_report', reportDetails(args), () => reports.approve(args), r => ({ version: r.version })));
 
 tool('list_reports', {

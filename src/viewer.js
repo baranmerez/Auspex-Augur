@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { loadConfig, describeConnection, auspexHome } from './config.js';
 import { Library, LibraryError, refLabel } from './reports/library.js';
 import { approvedJoinPairs } from './reports/service.js';
-import { StageError as HttpError, stageActions as actions, validateRefInput, applyStageChange, statusOf } from './reports/stageChange.js';
+import { StageError as HttpError, stageActions as actions, validateStageInput, applyStageChange, statusOf } from './reports/stageChange.js';
 import { SchemaMemory } from './memory/store.js';
 import { createAuditLog } from './auditLog.js';
 import { classifyError } from './errors.js';
@@ -193,11 +193,12 @@ function readBody(req) {
   });
 }
 
-// The body: { db, schema, category, name } exactly as the library lists it.
-function parseRef(text) {
+// The body: { db, schema, category, name } exactly as the library lists it,
+// plus expectedHash, the SQL hash of the version the confirm dialog showed.
+function parseStageBody(text) {
   let body;
   try { body = JSON.parse(text); } catch { throw new HttpError(400, 'Body must be JSON'); }
-  return validateRefInput(body);
+  return validateStageInput(body);
 }
 
 // Approve or revoke one report. Every request that passed the origin and
@@ -209,10 +210,10 @@ async function changeStage(req, res, action) {
   const audit = createAuditLog(logDir());
   try {
     if (!/^application\/json\s*(;|$)/i.test(req.headers['content-type'] || '')) throw new HttpError(415, 'Content-Type must be application/json');
-    const ref = parseRef(await readBody(req));
+    const { ref, expectedHash } = parseStageBody(await readBody(req));
     Object.assign(entry, { profile: ref.db, report: refLabel(ref) });
     const lib = library();
-    const { report, stage, version } = applyStageChange(lib, action, ref, { by: 'viewer', memory: schemaMemory(lib) });
+    const { report, stage, version } = applyStageChange(lib, action, ref, { by: 'viewer', memory: schemaMemory(lib), expectedHash });
     audit({ ...entry, ms: Date.now() - started, version });
     return send(res, 200, { report, stage, version, correlationId: entry.correlationId });
   } catch (err) {
@@ -284,8 +285,14 @@ function handle(req, res) {
     }
     if (url.pathname === '/api/reports') {
       const lib = library();
-      // Drafts also carry the SQL version an approval would approve (confirm dialog).
-      const reports = lib.list().map(r => (r.stage === 'draft' ? { ...r, activeVersion: lib.readMeta('draft', r)?.activeVersion ?? null } : r));
+      // Drafts also carry the SQL version an approval would approve, and drafts
+      // and approved reports the SQL hash the confirm dialog sends back.
+      const reports = lib.list().map(r => {
+        if (r.stage !== 'draft' && r.stage !== 'approved') return r;
+        const meta = lib.readMeta(r.stage, r);
+        const activeHash = meta ? lib.activeHash(r.stage, r, meta) : null;
+        return r.stage === 'draft' ? { ...r, activeVersion: meta?.activeVersion ?? null, activeHash } : { ...r, activeHash };
+      });
       return send(res, 200, { libraryDir: lib.root, reports });
     }
     if (url.pathname === '/api/report') return send(res, 200, reportContent(url.searchParams));
