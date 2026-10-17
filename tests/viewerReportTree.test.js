@@ -12,7 +12,7 @@ const filterBlock = page.match(/\/\/ report-filter:start[\s\S]*?\/\/ report-filt
 function load() {
   assert.ok(block, 'report-tree block found in viewer.html');
   const context = vm.createContext({});
-  vm.runInContext(`${filterBlock}\n${block}\nthis.buildReportTree = buildReportTree; this.isNodeOpen = isNodeOpen; this.ancestorKeys = ancestorKeys; this.categoryLevels = categoryLevels; this.reportMatches = reportMatches;`, context);
+  vm.runInContext(`${filterBlock}\n${block}\nthis.buildReportTree = buildReportTree; this.isNodeOpen = isNodeOpen; this.ancestorKeys = ancestorKeys; this.categoryLevels = categoryLevels; this.reportMatches = reportMatches; this.inStageTab = inStageTab; this.stageTabCount = stageTabCount; this.stageTabFor = stageTabFor;`, context);
   return context;
 }
 
@@ -82,7 +82,26 @@ test('ancestor keys reveal a selected report; categories without categoryPath ar
 });
 
 test('the page keeps change scripts out of "All" and gives tree nodes aria-expanded', () => {
-  assert.match(page, /st === 'all' \? r\.stage !== 'execute'/);
+  assert.match(page, /const badge = stageTabCount\(all, 'all'\)/, 'the Reports tab badge counts what "All" shows');
   assert.match(page, /'aria-expanded': open \? 'true' : 'false'/);
   assert.match(page, /repTreeOpen: state\.repTreeOpen/, 'the open state is remembered');
+});
+
+test('"All" and the Reports badge leave change scripts out; each stage tab counts its own', () => {
+  const { stageTabCount, inStageTab } = load();
+  const items = [r('Orders', 'Draft one'), r('Orders', 'Approved one', { stage: 'approved' }), r('Orders/Fixes', 'Fix status', { stage: 'execute' })];
+  assert.equal(stageTabCount(items, 'all'), 2);
+  assert.equal(stageTabCount(items, 'draft'), 1);
+  assert.equal(stageTabCount(items, 'approved'), 1);
+  assert.equal(stageTabCount(items, 'execute'), 1);
+  assert.equal(inStageTab(items[2], 'all'), false);
+});
+
+test('a change script selected while "All" is on switches to the change-script tab', () => {
+  const { stageTabFor } = load();
+  const script = r('Orders/Fixes', 'Fix status', { stage: 'execute' });
+  assert.equal(stageTabFor(script, 'all'), 'execute');
+  assert.equal(stageTabFor(r('Orders', 'Draft one'), 'all'), 'all', 'a report keeps "All"');
+  assert.equal(stageTabFor(undefined, 'all'), 'all', 'no selection keeps the tab');
+  assert.equal(stageTabFor(script, 'draft'), 'draft', 'another chosen tab is left alone');
 });
