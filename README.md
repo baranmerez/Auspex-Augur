@@ -179,7 +179,7 @@ flowchart LR
 | 📤 `export_csv` | Streams the result to a new UTF-8 CSV file (`<time>_<random>_<name>.csv`, never overwrites) within a row, size and total-time budget; returns only path, columns, row count, size and `stopReason` when a limit cut it short |
 | 📝 `save_report` | Saves a read-only query as a versioned report draft in the library; with `root`, `folder` and `fileName` also as a new `.sql` file in a configured script root |
 | 🏁 `run_report` | Runs a report: plan + timings + masked preview, history, regenerated HTML; returns a compact summary |
-| ✅ `approve_report` | Moves a draft into `SELECT/` after the user approved it |
+| ✅ `approve_report` | Moves a draft into `SELECT/` after the user approved it; optional `expectedHash` (the `sqlHash` from `save_report` / `run_report` of the version the user approved) refuses a draft that changed since then with `STALE_VERSION` |
 | 📚 `list_reports` / 🎨 `render_reports` | Lists the library; re-renders every report HTML from stored JSON |
 | 📨 `share_report` | Writes a copy of a report to send to someone: masked preview and figures only, no SQL, plan, parameters or history |
 | 🧾 `save_execute_script` | Writes a change script into `EXECUTE/` for a human to run — never executed by Auspex; with `root`, `folder` and `fileName` also as a new file in a configured script root (for example a folder of saved SQL scripts) |
@@ -381,6 +381,7 @@ holds no message text, SQL, parameters, row values or connection details;
 | `PROFILE_INVALID` | Missing or unknown profile | no |
 | `NOT_FOUND` | Report, note, relation or column not found | no |
 | `PRECONDITION_FAILED` | An earlier step is missing (for example run the current SQL version before approving or sharing) | no |
+| `STALE_VERSION` | Approve or revoke named the SQL hash of a version the report no longer stands for (a new version was saved after it was reviewed); reload and review again | no |
 | `PERMISSION_DENIED` | No privilege on the object (42501) | no |
 | `CONNECTION_FAILED` | Could not connect or authenticate (08xxx, 28xxx, 57P01-57P03, 53300, network errors, a connection dropped mid-query); authentication failures are not retryable | network/server only |
 | `DISK_ERROR` | A local file could not be written or read (ENOSPC, EEXIST, EACCES, ...) | no |
@@ -427,7 +428,11 @@ library/
   the server instructions restrict to an explicit user approval, or through
   the user's own click in the viewer (see *Approving reports in the viewer*). Approval also
   requires a successful run of the current SQL (`run_report`); an older
-  revision's run does not count.
+  revision's run does not count. An approval is bound to the version that was
+  reviewed: the viewer and desktop app always send its SQL hash, and
+  `approve_report` accepts it as the optional `expectedHash` (`save_report`
+  and `run_report` return it as `sqlHash`). If the draft SQL changed since
+  then, the request is refused with `STALE_VERSION` and nothing moves.
 - **Change scripts:** `save_execute_script` only writes files. A script must
   start with `BEGIN`, end with `ROLLBACK`, contain no `COMMIT` and have `WHERE`
   on every `UPDATE`/`DELETE`; whoever runs it with a privileged role swaps the
@@ -749,8 +754,18 @@ a request only when all of these hold:
   process and embedded only in the served page (403 otherwise);
 - the body is `application/json`, at most 4 KB, and holds only `db`,
   `schema`, `category` and `name` exactly as the library lists them (no
-  path tricks: 400);
-- the report exists (404) and is in the right stage (409).
+  path tricks: 400), plus the required `expectedHash`: the SQL hash of the
+  version the confirm dialog showed (12 lower-case hex characters; 400
+  otherwise);
+- the report exists (404) and is in the right stage (409);
+- the report still stands for that version: the current draft SQL (approve)
+  or the approved SQL (revoke) has `expectedHash`. Otherwise the answer is
+  409 with code `STALE_VERSION` ("The report changed since you opened it (now
+  version N); reload and review again."), nothing moves, and the page
+  reloads the list and the report.
+
+A malformed request target (anything but a path starting with a single `/`)
+is answered with 400; no request can stop the viewer.
 
 There are no CORS headers, and the page cannot be framed by another site
 (`X-Frame-Options: DENY`). Every request that passed the origin and token
@@ -790,12 +805,13 @@ browser viewer. The library logic is not duplicated in Rust: the app's
 Auspex checkout,
 
 ```bash
-node <auspexRoot>/src/stageCli.js approve|revoke --db=<db> --schema=<schema> --category=<category> --name=<name>
+node <auspexRoot>/src/stageCli.js approve|revoke --db=<db> --schema=<schema> --category=<category> --name=<name> --expected-hash=<sqlHash>
 ```
 
 which applies the viewer's checks (the report location exactly as the library
-lists it, at most 200 characters per part, the report must exist and be in the
-right stage), takes the same library lock, records `stageHistory`,
+lists it, at most 200 characters per part, the required SQL hash of the
+version the dialog showed, the report must exist, be in the right stage and
+still stand for that version, else `STALE_VERSION`), takes the same library lock, records `stageHistory`,
 regenerates the HTML and rebuilds the schema memory view. Every run is written
 to the audit log with `source` and `actor` `desktop`. The CLI prints one
 JSON line (`{"ok":true,"stage":..,"version":..}` or
