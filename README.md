@@ -1039,9 +1039,9 @@ values); a broken schedule file is shown above the list. The desktop app does
 not show schedules or trends yet.
 
 The viewer uses the full window width with one page scroll, has an English
-and Turkish interface, and offers ready themes plus a theme generator that
-checks contrast; custom themes are saved in the browser and can be exported
-and imported as JSON. The generator has a *Summary palette* (TR *Özet paleti*)
+and Turkish interface, and offers ready themes plus a theme studio that checks
+contrast (see Themes below); custom themes are saved in the browser and can be
+exported and imported as JSON. The generator has a *Summary palette* (TR *Özet paleti*)
 section: one colour for each chip group of the table page Summary (primary
 key, foreign keys, columns by score, triggers, trigger functions, reports,
 referenced, referencing, disabled; the score colour gives the five-step ramp).
@@ -1068,6 +1068,40 @@ and column and table names are set heavier than types and meta text. The
 generator can switch *Glass look* on, tune blur (0-40 px) and opacity
 (20-95 %) and pick the two panel tints; they are saved with a custom theme and
 included in its JSON export and import (numbers clamped, colours hex only).
+
+Themes. The viewer and the desktop app start in the *Auspex* theme (dark) when
+nothing is saved; a saved choice (Auto, Light, Dark, Plain or any theme) is
+kept. The theme menu lists five *Auspex themes* (TR *Auspex temaları*):
+*Auspex*, *Forge*, *Phosphor* (monospace headings), *Verdigris* and *Ivory*
+(light), then the ready themes, then *My themes*. Every text and background
+pair of every ready theme passes the contrast check (4.5:1 for text, 3:1 for
+large text and interface parts).
+
+The *theme studio* (TR *tema stüdyosu*) is a modal dialog, opened with *New
+theme*, with the duplicate button next to any ready theme or saved theme
+(*Duplicate and edit*) or with the edit button of a saved theme. A duplicate
+carries every colour of its source. You can edit every token, each with a
+colour input and a hex field (`#rgb` or `#rrggbb`): surfaces (background,
+surface, raised), text (primary, secondary, muted), border, accent (accent,
+accent text, text on accent, secondary accent), status (success, warning,
+danger, info), the two side-panel tints, the score ramp base, the Summary
+palette and the glass look (strength, blur, opacity). A reset button next to a
+token returns it to the value derived from the background and accent. The whole
+page previews the draft while you edit; the dialog itself keeps the look of the
+theme that was active, so it stays readable. *Revert* restores the starting
+values, closing without saving restores the active theme (an in-app dialog
+asks before edits are discarded). The contrast panel lists each important pair
+with its ratio and an AAA, AA, AA large or Fail badge; *Auto-fix* moves failing
+text colours in lightness only until they pass. A theme can have a light and a
+dark variant; the Auto, Light and Dark switch then picks the variant. *Save*
+stores every field (colours, tints, palette, glass, variants, options) in the
+browser (`auspex.viewer.themes`) and makes the theme active; a name is unique;
+*Delete* asks first. *Export* writes JSON with every field and a version
+number (`auspexThemes: 2`); *Import* accepts versions 1 and 2, keeps hex
+colours only, clamps numbers, ignores unknown keys, takes at most 50 themes and
+200,000 characters per import (100 saved themes in all) and rejects anything
+else with a message. The viewer never uses `window.prompt`, `confirm` or
+`alert` (the desktop webview blocks them).
 
 The role colors and lane backgrounds are CSS variables at the top of
 `src/viewer.html` (`--role-ref-1`, `--role-ref-10`, `--role-dep-1`,

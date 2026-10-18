@@ -11,7 +11,7 @@ const block = page.match(/\/\/ themes:start[\s\S]*?\/\/ themes:end/)?.[0];
 function load() {
   assert.ok(block, 'themes block found in viewer.html');
   const context = vm.createContext({});
-  vm.runInContext(`${block}\nObject.assign(this, { themeTokens, themePresets, themeRecord, themeUpsert, themeExport, themeImport, themeSpecOf, themeBgFrom, contrastRatio, hexRgb, themeIdOf, summaryDefaults, summaryPaletteRecord, summaryGroups, summaryKeys, summaryMinStep, glassRecord, tintsRecord, glassFallback, glassDefaults });`, context);
+  vm.runInContext(`${block}\nObject.assign(this, { themeTokens, themePresets, themeRecord, themeUpsert, themeExport, themeImport, themeSpecOf, themeBgFrom, contrastRatio, hexRgb, themeIdOf, summaryDefaults, summaryPaletteRecord, summaryGroups, summaryKeys, summaryMinStep, glassRecord, tintsRecord, glassFallback, glassDefaults, themeDuplicate, themeMaterialize, themeAutoFix, themeContrast, themeResolve, themeDefaultId, themeColorKeys, themeColorGroups, themeBodyRecord, bgIsDark, themeMaxCount });`, context);
   return context;
 }
 const plain = v => JSON.parse(JSON.stringify(v));
@@ -69,9 +69,10 @@ test('invalid input is refused, never thrown', () => {
   }
 });
 
-test('ready themes: light, dark and plain are built in, nine in all', () => {
+test('ready themes: light, dark and plain are built in, fourteen in all with the five Auspex themes', () => {
   const { themePresets, themeSpecOf } = load();
-  assert.equal(themePresets.length, 9);
+  assert.equal(themePresets.length, 14);
+  assert.deepEqual(plain(themePresets.filter(p => p.auspex).map(p => p.id)), ['auspex', 'forge', 'phosphor', 'verdigris', 'ivory']);
   assert.equal(themeSpecOf('plain', []), null);
   assert.deepEqual(plain(themePresets.filter(p => p.glass).map(p => p.id)), ['glass', 'glassDark']);
   assert.equal(themeSpecOf('light', []), null);
@@ -185,7 +186,7 @@ test('summary palette: saved with custom themes, exported, imported, defaults fo
 
 test('summary palette: the generator has its section, a reset and a preview; chips use CSS variables only', () => {
   assert.match(page, /t\('Summary palette'\)/);
-  assert.match(page, /t\('Reset palette'\)/);
+  assert.match(page, /t\('Reset to derived'\)/);
   assert.match(page, /'Summary palette': 'Özet paleti'/);
   const css = page.match(/\.sum-chip\.c-pk[\s\S]*?\.sum-chip\.off \{[^}]*\}/)[0];
   assert.doesNotMatch(css, /#[0-9a-fA-F]{3,6}/, 'no literal colors in the chip styles');
@@ -220,7 +221,7 @@ test('glass presets: light and dark variants load and pass the contrast check on
     const r = themeTokens(spec);
     assert.equal(r.ok, true);
     assert.equal(r.warnings.length, 0, JSON.stringify(plain(r.warnings)));
-    assert.deepEqual(plain(Object.keys(r.glass).sort()), ['--glass-bg', '--glass-blur', '--glass-hi', '--glass-line', '--page-bg']);
+    assert.deepEqual(plain(Object.keys(r.glass).sort()), ['--glass-bg', '--glass-blur', '--glass-hi', '--glass-line', '--glass-sat', '--page-bg']);
     assert.match(r.glass['--glass-blur'], /^\d+px$/);
     // Glass tokens stay out of the tokens that embedded reports receive.
     assert.ok(Object.keys(r.tokens).every(k => !k.startsWith('--glass') && k !== '--page-bg'));
@@ -256,7 +257,7 @@ test('built-in light and dark: text on the tinted side panels reaches 4.5:1', ()
 
 test('plain is a built-in choice, flat and uncoloured, with a two-mode swatch', () => {
   assert.match(page, /:root\.plain \.tp-side \{[^}]*border-top: 1px solid var\(--line\)/);
-  assert.ok(page.includes("root.classList.toggle('plain', th === 'plain' && !themePreview)"));
+  assert.ok(page.includes("root.classList.toggle('plain', th === 'plain' && !studio)"));
   assert.ok(page.includes("t('Plain') : custom && spec"));
   assert.ok(page.includes("if (spec.id === 'plain')"));
   assert.ok(page.includes('body::before { content: ""; position: fixed; inset: 0; z-index: -1; background: var(--page-bg)'));
@@ -274,12 +275,12 @@ test('glass strength: numbers clamped, junk replaced by defaults', () => {
   const { glassRecord, glassDefaults } = load();
   assert.equal(glassRecord(null), null);
   assert.equal(glassRecord('x'), null);
-  assert.deepEqual(plain(glassRecord({ blur: 500, opacity: -4 })), { blur: 40, opacity: 20 });
-  assert.deepEqual(plain(glassRecord({ blur: -1, opacity: 999 })), { blur: 0, opacity: 95 });
-  assert.deepEqual(plain(glassRecord({ blur: 'abc', opacity: '30.4' })), { blur: glassDefaults.blur, opacity: 30 });
+  assert.deepEqual(plain(glassRecord({ blur: 500, opacity: -4 })), { blur: 40, opacity: 20, strength: 50 });
+  assert.deepEqual(plain(glassRecord({ blur: -1, opacity: 999, strength: 400 })), { blur: 0, opacity: 95, strength: 100 });
+  assert.deepEqual(plain(glassRecord({ blur: 'abc', opacity: '30.4' })), { blur: glassDefaults.blur, opacity: 30, strength: 50 });
   assert.deepEqual(plain(glassRecord({ blur: null, opacity: true })), plain(glassDefaults));
   assert.deepEqual(plain(glassRecord({})), plain(glassDefaults));
-  assert.deepEqual(plain(glassRecord({ blur: 8, opacity: 50, extra: 1 })), { blur: 8, opacity: 50 });
+  assert.deepEqual(plain(glassRecord({ blur: 8, opacity: 50, extra: 1 })), { blur: 8, opacity: 50, strength: 50 });
 });
 
 test('region tints: hex only, known keys only', () => {
@@ -293,14 +294,14 @@ test('region tints: hex only, known keys only', () => {
 test('custom themes: glass strength and tints round trip through export and import with validation', () => {
   const { themeRecord, themeUpsert, themeExport, themeImport } = load();
   const rec = plain(themeRecord({ name: 'Example glass', bg: '#e8ecf7', accent: '#4f5fe0', glass: { blur: 99, opacity: 10 }, tints: { ref: '#112233', dep: 'red' } }));
-  assert.deepEqual(rec.glass, { blur: 40, opacity: 20 });
+  assert.deepEqual(rec.glass, { blur: 40, opacity: 20, strength: 50 });
   assert.deepEqual(rec.tints, { ref: '#112233' });
   assert.equal('glass' in plain(themeRecord({ name: 'Flat', bg: '#fff', accent: '#00f' })), false);
   const list = themeUpsert(themeUpsert([], rec), { name: 'Test flat', bg: '#fafafa', accent: '#2a78d6' });
   const back = themeImport(themeExport(list), []);
   assert.deepEqual(plain(back.list), plain(list));
   const hostile = themeImport(JSON.stringify({ themes: [{ name: 'Bad', bg: '#000', accent: '#fff', glass: { blur: '1e9', opacity: null }, tints: { ref: '#zzz' } }] }), []);
-  assert.deepEqual(plain(hostile.list[0].glass), { blur: 40, opacity: 68 });
+  assert.deepEqual(plain(hostile.list[0].glass), { blur: 40, opacity: 68, strength: 50 });
   assert.equal('tints' in hostile.list[0], false);
 });
 
@@ -331,6 +332,232 @@ test('page: glass classes, fallback hook, region tints and generator controls ex
   assert.match(page, /:root\.glass:not\(\.glass-flat\) \.panel \{[^}]*backdrop-filter: blur\(var\(--glass-blur\)\)/);
   assert.ok(page.includes('.tp-refs { --tint-hue: var(--tint-ref-hue, var(--role-ref-1)); }'));
   assert.match(page, /'Glass': 'Cam'[\s\S]*'Plain': 'Sade'/);
-  assert.ok(page.includes("t(k === 'blur' ? 'Blur' : 'Opacity')"));
+  assert.ok(page.includes("t('Blur'), glassLimits.blur[0]"));
+  assert.ok(page.includes("t('Strength'), glassLimits.strength[0]"));
   assert.ok(page.includes("themeBuiltinIds = ['auto', 'light', 'dark', 'plain']"));
+});
+
+// Themes overhaul: Auspex presets, studio (generator), save/load, import validation, default theme.
+const auspexPalettes = {
+  auspex: { bg: '#14110e', surface: '#1f1a15', text: '#ede6da', muted: '#a89c8a', accent: '#2fbf71', accent2: '#c9a04f', warning: '#e0a33a', danger: '#e05a4a' },
+  forge: { bg: '#17110d', surface: '#22180f', text: '#f1e4d6', muted: '#b09a86', accent: '#d7783a', accent2: '#b8894a', success: '#7fbf6a', danger: '#d9534a' },
+  phosphor: { bg: '#060b07', surface: '#0b150e', text: '#b8f5c8', muted: '#6fa67f', accent: '#3ddc84', accent2: '#8fcb9b', warning: '#e8c547', danger: '#ff6b57' },
+  verdigris: { bg: '#0e1716', surface: '#152221', text: '#e3efec', muted: '#93aba6', accent: '#3bb3a0', accent2: '#c2a15a', warning: '#e0a33a', danger: '#e06a5a' },
+  ivory: { bg: '#f4eee2', surface: '#fffbf3', text: '#2a231b', muted: '#6e6252', accent: '#1e8a55', accent2: '#9a7330', warning: '#b7791f', danger: '#b83a2e' },
+};
+
+test('auspex presets: exact base palettes, dark except Ivory, every text and background pair passes', () => {
+  const { themePresets, themeTokens, themeContrast, bgIsDark } = load();
+  for (const [id, pal] of Object.entries(auspexPalettes)) {
+    const spec = themePresets.find(p => p.id === id);
+    assert.ok(spec && spec.auspex, id);
+    assert.equal(spec.bg, pal.bg);
+    assert.equal(spec.accent, pal.accent);
+    for (const [k, v] of Object.entries(pal)) if (!['bg', 'accent'].includes(k)) assert.equal(spec.colors[k], v, `${id} ${k}`);
+    assert.equal(bgIsDark(spec.bg), id !== 'ivory');
+    const r = themeTokens(spec);
+    assert.equal(r.ok, true);
+    assert.deepEqual(plain(r.warnings), [], id);
+    assert.equal(r.tokens['--bg'], pal.bg);
+    assert.equal(r.tokens['--surface'], pal.surface);
+    assert.equal(r.tokens['--text'], pal.text);
+    assert.equal(r.tokens['--text-3'], pal.muted);
+    const pairs = themeContrast(spec);
+    assert.ok(pairs.length >= 12);
+    for (const p of pairs) assert.ok(p.pass, `${id} ${p.id}: ${p.ratio}`);
+  }
+  assert.equal(themePresets.find(p => p.id === 'phosphor').mono, true);
+});
+
+test('every preset passes the contrast check, including pairs of the studio panel', () => {
+  const { themePresets, themeContrast, themeTokens } = load();
+  for (const spec of themePresets) {
+    assert.equal(themeTokens(spec).warnings.length, 0, spec.id);
+    for (const p of themeContrast(spec)) assert.ok(p.pass, `${spec.id} ${p.id}: ${p.ratio}:1 < ${p.min}`);
+  }
+});
+
+test('studio: every token is editable and listed in a group', () => {
+  const { themeColorKeys, themeColorGroups } = load();
+  const grouped = themeColorGroups.flatMap(g => g.keys).sort();
+  assert.deepEqual(plain(grouped), [...themeColorKeys, 'bg', 'accent'].sort());
+  assert.deepEqual(plain(themeColorGroups.map(g => g.id)), ['surfaces', 'text', 'border', 'accent', 'status']);
+});
+
+test('studio: duplicating any preset keeps every token and writes all colors out', () => {
+  const { themePresets, themeDuplicate, themeTokens, themeColorKeys } = load();
+  for (const spec of themePresets) {
+    const copy = themeDuplicate(spec, 'Example copy');
+    assert.equal(copy.name, 'Example copy');
+    assert.deepEqual(Object.keys(copy.colors).sort(), [...themeColorKeys].sort(), spec.id);
+    const a = themeTokens(spec), b = themeTokens(copy);
+    assert.deepEqual(plain(b.tokens), plain(a.tokens), spec.id);
+    assert.deepEqual(plain(b.summary), plain(a.summary), spec.id);
+    assert.deepEqual(plain(b.glass), plain(a.glass), spec.id);
+    assert.equal(b.base, a.base);
+  }
+});
+
+test('studio: hex fields accept #rgb and #rrggbb only', () => {
+  const { hexRgb, themeBodyRecord } = load();
+  assert.deepEqual(plain(hexRgb('#1a2B3c')), [26, 43, 60]);
+  assert.deepEqual(plain(hexRgb('#abc')), [170, 187, 204]);
+  for (const bad of ['', '#12', '#12345', '#1234567', 'red', 'rgb(1,2,3)', '#ggg', 'url(x)', '#fff;color:red', null, undefined, 12]) assert.equal(hexRgb(bad), null, String(bad));
+  assert.equal(themeBodyRecord({ bg: 'red', accent: '#fff' }), null);
+  assert.deepEqual(plain(themeBodyRecord({ bg: '#000', accent: '#fff', colors: { text: 'red', surface: '#101010', nope: '#fff' } }).colors), { surface: '#101010' });
+});
+
+test('studio: auto-fix moves only failing text colors, by lightness, until the pair passes', () => {
+  const { themeContrast, themeAutoFix, themeMaterialize } = load();
+  const bad = themeMaterialize({ bg: '#101010', accent: '#2a78d6' });
+  bad.colors = { ...bad.colors, text: '#242424', text2: '#303030', muted: '#383838', accentInk: '#1a2a40', onAccent: '#2a2a2a' };
+  const before = themeContrast(bad);
+  assert.ok(before.some(p => !p.pass), 'starts failing');
+  const { body, changed } = themeAutoFix(bad);
+  assert.deepEqual(plain(changed.sort()), ['accentInk', 'muted', 'text', 'text2']);
+  for (const p of themeContrast(body)) assert.ok(p.pass, `${p.id}: ${p.ratio}`);
+  assert.equal(body.bg, bad.bg);
+  assert.equal(body.colors.surface, bad.colors.surface, 'surfaces stay');
+  // A light theme with pale text works too, and a passing theme is left alone.
+  const pale = themeMaterialize({ bg: '#f4f4f0', accent: '#1e8a55' });
+  pale.colors = { ...pale.colors, text: '#cfcfc8', muted: '#d0d0c8' };
+  for (const p of themeContrast(themeAutoFix(pale).body)) assert.ok(p.pass, p.id);
+  const good = themeMaterialize({ bg: '#f4f4f0', accent: '#1e8a55' });
+  assert.deepEqual(plain(themeAutoFix(good).changed), []);
+});
+
+test('studio: contrast pairs report ratio, grade and the key a fix may change', () => {
+  const { themeContrast } = load();
+  const pairs = themeContrast({ bg: '#ffffff', accent: '#2a78d6', colors: { text: '#777777' } });
+  const t1 = pairs.find(p => p.id === 'text-bg');
+  assert.equal(t1.pass, false);
+  assert.equal(t1.fixKey, 'text');
+  assert.ok(t1.ratio > 4 && t1.ratio < 4.5);
+  assert.equal(t1.grade, 'AA large');
+  assert.equal(pairs.find(p => p.id === 'accent-ui').min, 3);
+  assert.deepEqual(plain(pairs.map(p => p.grade).filter(g => !['AAA', 'AA', 'AA large', 'Fail'].includes(g))), []);
+});
+
+test('save and load: every field survives storage and export, including glass, tints, palette and the light/dark pair', () => {
+  const { themeRecord, themeUpsert, themeExport, themeImport, themeDuplicate, themePresets } = load();
+  const src = themePresets.find(p => p.id === 'glassDark');
+  const draft = themeDuplicate(src, 'Example full');
+  draft.glass = { blur: 22, opacity: 55, strength: 70 };
+  draft.tints = { ref: '#112233', dep: '#443322' };
+  draft.palette = { pk: '#aa0000', score: '#00aa00', off: '#777777' };
+  draft.mono = true;
+  draft.contrast = 'high';
+  draft.pair = themeDuplicate(themePresets.find(p => p.id === 'ivory'), '');
+  delete draft.pair.name;
+  draft.pair.glass = { blur: 3, opacity: 90, strength: 10 };
+  const rec = themeRecord(draft);
+  for (const k of ['colors', 'glass', 'tints', 'palette', 'mono', 'pair']) assert.ok(rec[k], k);
+  assert.deepEqual(plain(rec.glass), { blur: 22, opacity: 55, strength: 70 });
+  assert.equal(rec.pair.glass.strength, 10);
+  const list = themeUpsert([], rec);
+  // localStorage round trip
+  const stored = JSON.parse(JSON.stringify(list)).map(themeRecord);
+  assert.deepEqual(plain(stored), plain(list));
+  // export and import round trip, with a version number
+  const text = themeExport(list);
+  assert.equal(JSON.parse(text).auspexThemes, 2);
+  const back = themeImport(text, []);
+  assert.deepEqual([back.added, back.skipped], [1, 0]);
+  assert.deepEqual(plain(back.list), plain(list));
+  assert.deepEqual(plain(back.list[0].colors), plain(rec.colors));
+});
+
+test('light/dark pair: the Auto, Light and Dark choice picks the variant', () => {
+  const { themeResolve, themeRecord, bgIsDark } = load();
+  const rec = themeRecord({ name: 'Example pair', bg: '#101820', accent: '#4c8dff', pair: { bg: '#f4f5f7', accent: '#2a78d6' } });
+  assert.equal(bgIsDark(themeResolve(rec, true).bg), true);
+  assert.equal(bgIsDark(themeResolve(rec, false).bg), false);
+  assert.equal(themeResolve(rec, false).accent, '#2a78d6');
+  assert.ok(!('pair' in themeResolve(rec, true)));
+  const single = themeRecord({ name: 'Example single', bg: '#101820', accent: '#4c8dff' });
+  assert.equal(themeResolve(single, false).bg, '#101820');
+  assert.equal(themeResolve(null, true), null);
+  // The page wires the switch to the variant.
+  assert.ok(page.includes('if (themeHasPair()) { state.themeMode = b.dataset.v;'));
+});
+
+test('import validation: hostile JSON, unknown keys, out-of-range numbers, bad colors, size and version limits', () => {
+  const { themeImport, themeExport, themeMaxCount, themeIdOf } = load();
+  assert.equal(themeImport('{not json', []).error, 'not valid JSON');
+  assert.equal(themeImport('', []).error, 'not valid JSON');
+  assert.equal(themeImport('42', []).error, 'nothing to import');
+  assert.equal(themeImport('null', []).error, 'nothing to import');
+  assert.equal(themeImport('[]', []).error, 'nothing to import');
+  assert.equal(themeImport('x'.repeat(200001), []).error, 'too large');
+  assert.equal(themeImport(JSON.stringify({ auspexThemes: 99, themes: [{ name: 'Example', bg: '#000', accent: '#fff' }] }), []).error, 'unsupported version');
+  assert.equal(themeImport(JSON.stringify({ auspexThemes: 'two', themes: [] }), []).error, 'unsupported version');
+  // Hostile content: prototype keys, markup in names, bad colors, huge numbers.
+  const hostile = '{"auspexThemes":2,"__proto__":{"polluted":1},"themes":[{"name":"<img src=x onerror=alert(1)>\\u0000bad","bg":"#000","accent":"#fff","__proto__":{"bg":"#123456"},'
+    + '"constructor":{"x":1},"colors":{"text":"url(javascript:1)","surface":"#101010","raised":"#12","__proto__":"#fff"},"palette":{"pk":"expression(1)","fk":"#00f"},'
+    + '"glass":{"blur":1e99,"opacity":-5,"strength":"7e3"},"tints":{"ref":"#12345678","dep":"#abc"},"extra":{"deep":[1,2,3]},"pair":{"bg":"nope","accent":"#fff"}},'
+    + '{"name":"Example ok","bg":"#fff","accent":"#00f","contrast":"extreme","mono":"yes"},5,null,"x",{"name":"No colors"}]}';
+  const r = themeImport(hostile, []);
+  assert.equal(({}).polluted, undefined);
+  assert.deepEqual([r.added, r.skipped], [2, 4]);
+  const a = plain(r.list[0]);
+  assert.ok(!/[\u0000-\u001f]/.test(a.name) && a.name.length <= 40);
+  assert.equal(a.bg, '#000000');
+  assert.deepEqual(a.colors, { surface: '#101010' });
+  assert.deepEqual(a.palette, { fk: '#0000ff' });
+  assert.deepEqual(a.glass, { blur: 40, opacity: 20, strength: 100 });
+  assert.deepEqual(a.tints, { dep: '#aabbcc' });
+  assert.ok(!('pair' in a) && !('extra' in a));
+  const b = plain(r.list[1]);
+  assert.equal(b.contrast, 'normal');
+  assert.ok(!('mono' in b), 'mono must be literally true');
+  // At most 50 themes per import and themeMaxCount in all.
+  const many = JSON.stringify(Array.from({ length: 80 }, (_, i) => ({ name: `Example ${i}`, bg: '#000', accent: '#fff' })));
+  const m = themeImport(many, []);
+  assert.deepEqual([m.added, m.skipped, m.list.length], [50, 30, 50]);
+  const full = Array.from({ length: themeMaxCount }, (_, i) => ({ id: themeIdOf(`Example ${i}`), name: `Example ${i}`, bg: '#000000', accent: '#ffffff', contrast: 'normal' }));
+  const over = themeImport(JSON.stringify([{ name: 'One more', bg: '#000', accent: '#fff' }, { name: 'Example 3', bg: '#111', accent: '#fff' }]), full);
+  assert.equal(over.list.length, themeMaxCount);
+  assert.deepEqual([over.added, over.skipped], [1, 1]);
+  // Version 1 files and plain arrays still import.
+  assert.equal(themeImport(JSON.stringify({ auspexThemes: 1, themes: [{ name: 'Old', bg: '#000', accent: '#fff' }] }), []).added, 1);
+  assert.equal(themeExport([]).includes('"auspexThemes": 2'), true);
+});
+
+test('default theme is Auspex only when nothing is saved', () => {
+  const { themeDefaultId, themeSpecOf } = load();
+  assert.equal(themeDefaultId(undefined), 'auspex');
+  assert.equal(themeDefaultId(null), 'auspex');
+  assert.equal(themeDefaultId(''), 'auspex');
+  for (const saved of ['auto', 'light', 'dark', 'plain', 'midnight', 'custom:abc']) assert.equal(themeDefaultId(saved), saved);
+  assert.equal(themeSpecOf('auspex', []).id, 'auspex');
+  assert.ok(page.includes('state.theme = themeDefaultId(state.theme);'));
+});
+
+test('header brand logo is the app icon as a small PNG data URI', () => {
+  const m = page.match(/<img class="logo" alt="" width="30" height="30" src="data:image\/png;base64,([A-Za-z0-9+/=]+)">/);
+  assert.ok(m, 'img logo in the header');
+  const png = Buffer.from(m[1], 'base64');
+  assert.equal(png.subarray(1, 4).toString(), 'PNG');
+  assert.ok(png.readUInt32BE(16) <= 64 && png.readUInt32BE(16) >= 30, 'width 30-64 px');
+  assert.ok(png.length < 16000, 'small');
+  assert.doesNotMatch(page, /<svg class="logo"/);
+});
+
+test('viewer.html never calls window.prompt, confirm or alert (blocked in the desktop app)', () => {
+  // Comments may mention them; code may not call them.
+  const code = page.split('\n').map(l => l.replace(/(^|\s)\/\/\s.*$/, '').replace(/\/\*.*?\*\//g, '')).join('\n');
+  assert.doesNotMatch(code, /(?<![\w.$])(?:window\.)?(?:prompt|confirm|alert)\s*\(/);
+  assert.match(page, /function themeConfirm\(/);
+  assert.match(page, /id="themeConfirmDlg"/);
+});
+
+test('studio dialog: modal, Esc handled, Tab trapped, colors edited in place and never through the menu', () => {
+  assert.match(page, /<dialog class="dlg th-studio" id="themeDlg"/);
+  assert.ok(page.includes("dlg.addEventListener('cancel', ev => { ev.preventDefault(); requestCloseStudio(); });"));
+  assert.ok(page.includes("if (ev.key === 'Tab')"));
+  assert.ok(page.includes("pickIn.addEventListener('input'"), 'live input events, not change at picker close');
+  assert.ok(page.includes('dlg.showModal()'));
+  // The popover menu has no color controls any more.
+  const menu = page.match(/function renderThemeMenu\(\) \{[\s\S]*?\n\}/)[0];
+  assert.doesNotMatch(menu, /type: 'color'/);
 });
