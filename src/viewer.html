@@ -743,6 +743,10 @@
   .rl-link:hover, .rl-link:focus-visible { color: var(--accent-ink); }
   .sum { display: grid; gap: 12px; min-width: 0; }
   .sum-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 12px; align-items: start; }
+  .sum-group.wide { width: 100%; }
+  .sum-subs { display: grid; gap: 10px; }
+  .sum-sub h5 { margin: 0 0 4px; font-size: 12px; color: var(--text-2); }
+  .sum-chip.c-more { --chip-bg: transparent; --chip-line: var(--line-strong); --chip-ink: var(--text-2); border-style: dashed; font-family: inherit; }
   .sum-group { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 10px 12px; min-width: 0; }
   .sum-group h4 { margin: 0 0 8px; font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: .5px; }
   .sum-group h4 .muted { text-transform: none; letter-spacing: 0; }
@@ -4593,7 +4597,7 @@ function tpMentions(sql, schema, table) {
   const text = sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ').replace(/"/g, '');
   const name = tpEsc(table), tail = `(?!${tpNameChar})`;
   const qualified = schema ? `(?<!${tpNameChar})${tpEsc(schema)}\\s*\\.\\s*${name}${tail}` : null;
-  const bare = `(?<![.\\p{L}\\p{N}_$])${name}${tail}`;
+  const bare = `(?<!${tpNameChar})(?<!\\.\\s*)${name}${tail}`;
   return new RegExp(qualified ? `${qualified}|${bare}` : bare, 'iu').test(text);
 }
 // The SQL of a /api/report document: the content of a plain report, the active
@@ -4610,19 +4614,39 @@ function tpSqlOfDoc(doc) {
     return typeof v?.sql === 'string' ? v.sql : null;
   } catch { return null; }
 }
-// reports: { items: [{ id, title, sql }], pending } (sql null while it loads).
+// Cache key of one report's SQL: the report, its SQL hash and its update time,
+// so a changed report is read again.
+const tpSqlKey = r => [r.stage, r.db, r.schema, r.category, r.name, r.activeHash ?? '', r.updatedAt ?? ''].join('|');
+// Reads the SQL of reps not yet known, a few at a time. A read that works is
+// kept in cache ('' when the document has no SQL); one that fails is kept apart
+// in failed, never in cache, so it can be tried again.
+async function tpFetchSql(reps, fetchDoc, cache, failed, workers = 4) {
+  const todo = reps.filter(r => !cache.has(tpSqlKey(r)) && !failed.has(tpSqlKey(r)));
+  const worker = async () => {
+    for (let r = todo.shift(); r; r = todo.shift()) {
+      const key = tpSqlKey(r);
+      try { cache.set(key, tpSqlOfDoc(await fetchDoc(r)) ?? ''); failed.delete(key); } catch { failed.set(key, true); }
+    }
+  };
+  await Promise.all(Array.from({ length: workers }, worker));
+}
+const tpListLimit = 12;
+// Effective score of a foreign key: its best column (unscored = 0).
+const tpFkScore = (f, columns) => Math.max(0, ...f.columns.map(name => columns.find(c => c.name === name)?.score ?? 0));
+// reports: { items: [{ id, title, sql }], pending, failed, capped } (sql null while it loads).
 function tpSummaryModel(model, reports) {
   const uniq = list => [...new Set(list)];
   const items = Array.isArray(reports?.items) ? reports.items : [];
   return {
     primary: uniq(model.keys.primary.flatMap(c => c.columns)),
-    foreign: model.keys.outgoing.map(f => ({ id: f.id, columns: f.columns, refColumns: f.refColumns, label: `${f.columns.join(', ')} → ${f.id}` })),
+    foreign: model.keys.outgoing.map((f, i) => ({ id: f.id, columns: f.columns, refColumns: f.refColumns, label: `${f.columns.join(', ')} → ${f.id}`, score: tpFkScore(f, model.columns), i }))
+      .sort((a, b) => b.score - a.score || a.i - b.i),
     columns: model.columns.filter(c => c.score !== 1),
     unused: model.columns.filter(c => c.score === 1),
     triggers: model.triggers.map(tr => ({ name: tr.name, disabled: tr.enabled === 'disabled' })),
     functions: uniq(model.triggers.map(tr => tr.function).filter(Boolean)),
     reports: items.filter(r => tpMentions(r.sql, model.schema, model.table)).map(r => ({ id: r.id, title: r.title })).sort((a, b) => String(a.title).localeCompare(String(b.title), undefined, { sensitivity: 'base' }) || tpCmp(a.id, b.id)),
-    pending: reports?.pending ?? 0,
+    pending: reports?.pending ?? 0, failed: reports?.failed ?? 0, capped: reports?.capped ?? 0,
     refs: model.neighbours.refs.map(n => n.id),
     deps: model.neighbours.deps.map(n => n.id),
   };
@@ -4633,31 +4657,46 @@ function tpChip(kind, label, { onclick, title, off, expanded } = {}) {
   return onclick ? h('button', { ...attrs, type: 'button', 'aria-expanded': expanded === undefined ? null : String(expanded), onclick }, label) : h('span', attrs, label);
 }
 function tpSummary(model, sum, ctx) {
-  const group = (title, hint, chips, empty) => h('section', { class: 'sum-group', 'aria-label': t(title) },
+  const group = (title, hint, chips, empty, wide) => h('section', { class: 'sum-group' + (wide ? ' wide' : ''), 'aria-label': t(title) },
     h('h4', {}, t(title), hint ? h('span', { class: 'muted' }, ' ', hint) : null),
     chips.length ? h('div', { class: 'sum-chips' }, chips) : h('div', { class: 'muted sum-none' }, empty ?? t('None known.')));
   const colChip = (name, score, type) => tpChip(score ? `s${score}` : 's0', name, { onclick: () => ctx.onColumn(name), title: [tpScoreLabel(score), type].filter(Boolean).join(' · ') });
   const col = c => colChip(c.name, c.score, c.type);
   const byName = name => { const c = model.columns.find(x => x.name === name); return colChip(name, c?.score ?? null, c?.type); };
+  const more = ctx.moreOpen || {};
+  // The first tpListLimit chips, the rest behind a "+N more" chip.
+  const limited = (key, list, chip) => {
+    const open = !!more[key];
+    const shown = open ? list : list.slice(0, tpListLimit);
+    return [shown.map(chip), list.length > tpListLimit ? tpChip('more', open ? t('show fewer') : t('+{n} more', { n: fmt(list.length - tpListLimit) }), { onclick: () => ctx.onMore(key, !open), expanded: open }) : null];
+  };
+  // Columns in sub-groups by effective score, each with a heading and a count.
+  const sub = (score, list) => (list.length ? h('div', { class: 'sum-sub' }, h('h5', {}, score ? `${score} · ${t(scoreStepLabels[score])}` : t('not scored'), h('span', { class: 'muted' }, ` (${fmt(list.length)})`)),
+    h('div', { class: 'sum-chips' }, list.map(col))) : null);
   const open = !!ctx.unusedOpen;
-  const columnChips = [sum.columns.map(col),
-    sum.unused.length ? tpChip('unused', open ? t('hide {n} unused', { n: fmt(sum.unused.length) }) : t('+{n} unused', { n: fmt(sum.unused.length) }), { onclick: () => ctx.onUnused(!open), expanded: open, title: t('Columns scored 1: they appear in no SQL') }) : null,
-    open ? sum.unused.map(col) : null];
-  const tableChip = (kind, id) => tpChip(kind, id, { onclick: () => ctx.onOpen(id) });
+  const columnBody = [[5, 4, 3, 2, 0].map(s => sub(s, sum.columns.filter(c => (c.score ?? 0) === s))),
+    sum.unused.length ? h('div', { class: 'sum-sub' }, h('div', { class: 'sum-chips' }, tpChip('unused', open ? t('hide {n} unused', { n: fmt(sum.unused.length) }) : t('+{n} unused', { n: fmt(sum.unused.length) }), { onclick: () => ctx.onUnused(!open), expanded: open, title: t('Columns scored 1: they appear in no SQL') }))) : null,
+    open ? sub(1, sum.unused) : null];
+  const tableChip = kind => id => tpChip(kind, id, { onclick: () => ctx.onOpen(id) });
+  const columnsGroup = h('section', { class: 'sum-group wide', 'aria-label': t('Columns by score') },
+    h('h4', {}, t('Columns by score'), model.scored ? null : h('span', { class: 'muted' }, ' ', t('not scored'))),
+    model.columns.length ? h('div', { class: 'sum-subs' }, columnBody) : h('div', { class: 'muted sum-none' }, model.described ? t('None known.') : t('Not described yet')));
+  const reportNotes = [sum.pending ? h('span', { class: 'muted sum-none', role: 'status' }, t('{n} still loading', { n: fmt(sum.pending) })) : null,
+    sum.failed ? h('span', { class: 'muted sum-none', role: 'status' }, t('{n} could not be read', { n: fmt(sum.failed) }), ' ', h('button', { type: 'button', class: 'tp-link', onclick: ctx.onRetryReports }, t('Retry'))) : null,
+    sum.capped ? h('span', { class: 'muted sum-none', role: 'status' }, t('first {n} reports checked', { n: fmt(sum.capped) })) : null].filter(Boolean);
   return h('div', { class: 'sum', role: 'region', 'aria-label': t('Summary') },
     !model.described ? h('div', { class: 'tp-empty sm' }, h('b', {}, t('Not described yet')),
       h('p', {}, t('Ask your agent to run describe_table on {id}; it reads the catalog only and records the columns, keys, indexes and triggers.', { id: model.id }))) : null,
+    group('Primary key', null, sum.primary.map(byName), null, true),
+    group('Foreign keys', t('(best column score first)'), limited('fk', sum.foreign, f => tpChip('fk', f.label, { onclick: () => ctx.onOpen(f.id), title: `${f.columns.join(', ')} → ${f.id}.${f.refColumns.join(', ')}` })), null, true),
+    columnsGroup,
     h('div', { class: 'sum-grid' },
-      group('Primary key', null, sum.primary.map(byName)),
-      group('Foreign keys', null, sum.foreign.map(f => tpChip('fk', f.label, { onclick: () => ctx.onOpen(f.id), title: `${f.columns.join(', ')} → ${f.id}.${f.refColumns.join(', ')}` }))),
-      group('Columns by score', model.scored ? null : t('not scored'), columnChips, model.described ? t('None known.') : t('Not described yet')),
       group('Triggers', null, sum.triggers.map(tr => tpChip('trigger', tr.name, { off: tr.disabled, title: tr.disabled ? t('disabled') : null }))),
       group('Trigger functions', null, sum.functions.map(f => tpChip('fn', f))),
-      group('Reports', t('Mentioned in SQL'), [sum.reports.map(r => tpChip('report', r.title, { onclick: () => ctx.onReport(r.id), title: t('Open on the Reports tab') })),
-        sum.pending ? h('span', { class: 'muted sum-none', role: 'status' }, t('{n} still loading', { n: fmt(sum.pending) })) : null].flat().filter(Boolean),
-      t('No report mentions this table.')),
-      group('Referenced tables', t('(this table points to them)'), sum.refs.map(id => tableChip('ref', id))),
-      group('Referencing tables', t('(they point to this table)'), sum.deps.map(id => tableChip('dep', id)))));
+      group('Reports', t('Mentioned in SQL'), [sum.reports.map(r => tpChip('report', r.title, { onclick: () => ctx.onReport(r.id), title: t('Open on the Reports tab') })), reportNotes].flat(Infinity).filter(Boolean),
+        t('No report mentions this table.')),
+      group('Referenced tables', t('(this table points to them)'), limited('refs', sum.refs, tableChip('ref'))),
+      group('Referencing tables', t('(they point to this table)'), limited('deps', sum.deps, tableChip('dep')))));
 }
 // The page's own choice, else the remembered one, else Summary (first visit).
 const tpViewChoice = (own, saved) => ((own ?? saved) === 'detail' ? 'detail' : 'summary');
@@ -4709,6 +4748,7 @@ const tablePageTr = {
   'Mentioned in SQL': 'SQL\'inde geçiyor', 'Referenced tables': 'Bağlı olduğu', 'Referencing tables': 'Ona bağlı olan', 'Trigger functions': 'Trigger fonksiyonları',
   'Foreign keys': 'Yabancı anahtarlar', '(this table points to them)': '(bu tablo onlara işaret eder)', '(they point to this table)': '(bunlar bu tabloya işaret eder)',
   '+{n} unused': '+{n} kullanılmayan', 'hide {n} unused': '{n} kullanılmayanı gizle', 'Columns scored 1: they appear in no SQL': '1 puanlı kolonlar: hiçbir SQL\'de geçmezler',
+  '(best column score first)': '(en yüksek kolon puanı önce)', 'show fewer': 'daha az göster', '{n} could not be read': '{n} okunamadı', 'first {n} reports checked': 'ilk {n} rapor denetlendi',
   'Open on the Reports tab': 'Raporlar sekmesinde aç', 'No report mentions this table.': 'Bu tabloyu anan rapor yok.', '{n} still loading': '{n} tanesi yükleniyor',
 };
 // table-page:end
@@ -4770,8 +4810,9 @@ const tpRecCache = new Map();
 // the active version only) and kept by report and SQL hash. An unreadable
 // report is kept as '' so it is not asked again.
 const tpSqlCache = new Map();
+const tpSqlFailed = new Map();
+const tpReportCap = 400;
 let tpSqlLoading = false;
-const tpSqlKey = r => `${repKey(r)}|${r.activeHash ?? ''}|${r.updatedAt ?? ''}`;
 function tpReportIndex(db) {
   const byName = new Map();
   for (const r of state.reports?.reports || []) {
@@ -4779,24 +4820,16 @@ function tpReportIndex(db) {
     const k = [r.schema, r.category, r.name].join('|');
     if (!byName.has(k) || r.stage === 'approved') byName.set(k, r);
   }
-  const reps = [...byName.values()].slice(0, 400);
+  const all = [...byName.values()], reps = all.slice(0, tpReportCap);
   const items = reps.map(r => ({ id: repKey(r), title: r.title || r.name, sql: tpSqlCache.get(tpSqlKey(r)) ?? null }));
-  return { reps, items, pending: reps.filter(r => !tpSqlCache.has(tpSqlKey(r))).length };
+  return { reps, items, pending: reps.filter(r => !tpSqlCache.has(tpSqlKey(r)) && !tpSqlFailed.has(tpSqlKey(r))).length,
+    failed: reps.filter(r => tpSqlFailed.has(tpSqlKey(r))).length, capped: all.length > tpReportCap ? tpReportCap : 0 };
 }
 async function tpLoadReportSql(reps) {
   if (tpSqlLoading) return;
-  const todo = reps.filter(r => !tpSqlCache.has(tpSqlKey(r)));
-  if (!todo.length) return;
   tpSqlLoading = true;
-  const worker = async () => {
-    for (let r = todo.shift(); r; r = todo.shift()) {
-      let sql = '';
-      try { sql = tpSqlOfDoc(await getJson('/api/report?' + new URLSearchParams({ stage: r.stage, db: r.db, schema: r.schema, category: r.category, name: r.name }))) ?? ''; } catch {}
-      if (tpSqlCache.size > 1000) tpSqlCache.clear();
-      tpSqlCache.set(tpSqlKey(r), sql);
-    }
-  };
-  await Promise.all([worker(), worker(), worker(), worker()]);
+  if (tpSqlCache.size > 1000) tpSqlCache.clear();
+  await tpFetchSql(reps, r => getJson('/api/report?' + new URLSearchParams({ stage: r.stage, db: r.db, schema: r.schema, category: r.category, name: r.name })), tpSqlCache, tpSqlFailed);
   tpSqlLoading = false;
   state.tablePageKey = null;
   if (state.tab === 'schema') renderSchema();
@@ -4861,7 +4894,7 @@ function renderTablePage(view, data) {
   }
   const viewKind = tpViewOf(tp);
   const index = viewKind === 'summary' ? tpReportIndex(tp.db) : null;
-  const key = JSON.stringify([tp.db, data.generatedAt, tp.trail, tp.open, tp.showAll, lang, state.scorePending ?? null, viewKind, !!tp.unusedOpen, index ? [index.items.length, index.pending] : null]);
+  const key = JSON.stringify([tp.db, data.generatedAt, tp.trail, tp.open, tp.showAll, lang, state.scorePending ?? null, viewKind, !!tp.unusedOpen, tp.moreOpen ?? null, index ? [index.items.length, index.pending, index.failed] : null]);
   if (state.tablePageKey === key && view.querySelector('.tp')) return;
   state.tablePageKey = key;
   const model = tablePageModel(data, id, recKey ? tpRecCache.get(recKey) : null);
@@ -4873,7 +4906,9 @@ function renderTablePage(view, data) {
     view: viewKind, unusedOpen: !!tp.unusedOpen, reports: index,
     onView: v => { state.tpView = v; persist(); set({ view: v }); },
     onColumn: name => set({ view: 'detail', open: name, showAll: true, reveal: name }),
-    onUnused: v => set({ unusedOpen: v }),
+    onUnused: v => set({ unusedOpen: v }), moreOpen: tp.moreOpen ?? {},
+    onMore: (k, v) => set({ moreOpen: { ...tp.moreOpen, [k]: v } }),
+    onRetryReports: () => { tpSqlFailed.clear(); state.tablePageKey = null; renderSchema(); },
     onReport: id => { const r = index?.reps.find(x => repKey(x) === id); if (r) openReportFromPage(r); },
   }));
   if (index?.pending) tpLoadReportSql(index.reps);
@@ -5348,7 +5383,7 @@ const summaryLabels = {
   report: 'Reports', ref: 'Referenced tables', dep: 'Referencing tables', off: 'Disabled',
 };
 const summaryKeys = ['pk', 'fk', 's5', 's4', 's3', 's2', 's1', 'trigger', 'fn', 'report', 'ref', 'dep', 'off'];
-const summaryRamp = { s5: 0.5, s4: 0.38, s3: 0.27, s2: 0.17, s1: 0.08 };
+const summaryMinStep = 1.5;
 const summaryDefaults = accent => ({
   pk: '#d4a017', fk: '#7c5cd6', score: rgbHex(hexRgb(accent) || [42, 120, 214]), trigger: '#c2478b', fn: '#1baf7a',
   report: '#0f9aa8', ref: '#2a78d6', dep: '#d9601f', off: '#8a8f98',
@@ -5407,7 +5442,29 @@ function themeTokens(spec) {
   };
   const strongOf = c => (dark ? mixRgb(c, white, 0.55) : mixRgb(c, black, 0.45));
   for (const k of ['pk', 'fk', 'trigger', 'fn', 'report', 'ref', 'dep']) chip(k, hexRgb(pal[k]), 0.16, strongOf(hexRgb(pal[k])));
-  for (const [k, w] of Object.entries(summaryRamp)) chip(k, hexRgb(pal.score), w, ink);
+  // Score ramp: s1 is nearly the surface; every next step moves toward the base
+  // color until it is at least summaryMinStep (contrast ratio) away from the
+  // previous one and its text can reach the target.
+  {
+    // A base too close to the surface cannot make five clear steps: move it away.
+    let base = hexRgb(pal.score);
+    const away = dark ? white : black;
+    for (let m = 0.05; m <= 1 && contrastRatio(base, surface) < summaryMinStep ** 4 * 1.5; m += 0.05) base = mixRgb(hexRgb(pal.score), away, m);
+    let prev = null, w = 0.04;
+    for (const k of ['s1', 's2', 's3', 's4', 's5']) {
+      let back = mixRgb(surface, base, w), ok = false;
+      for (; w <= 0.98; w += 0.02) {
+        back = mixRgb(surface, base, w);
+        ok = withContrast(ink, [back], minText).ok && (!prev || contrastRatio(back, prev) >= summaryMinStep);
+        if (ok) break;
+      }
+      w = Math.min(w, 0.98);
+      summary[`--sum-${k}`] = rgbHex(back);
+      summary[`--sum-${k}-line`] = rgbHex(mixRgb(surface, base, 0.6));
+      summary[`--sum-${k}-ink`] = rgbHex(fit(`--sum-${k}-ink`, ink, [back], minText));
+      prev = back;
+    }
+  }
   chip('off', hexRgb(pal.off), 0.12, mixRgb(ink, surface, 0.35));
   const tokens = {
     '--bg': rgbHex(bg), '--surface': rgbHex(surface), '--surface-2': rgbHex(surface2),
