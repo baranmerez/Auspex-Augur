@@ -276,6 +276,12 @@ test('code roots must be an object; env roots are validated too', () => {
   assert.throws(() => loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: none, AUSPEX_CODE_ROOT_9: dir }), /AUSPEX_CODE_ROOT_9/);
 });
 
+test('a code root that looks like a URL is reported as a code root, a script root as a script root', () => {
+  const url = { s: 'postgresql://u:p@h/db' };
+  assert.throws(() => loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: profilesFile({ codeRoots: url }) }), /a code root is a directory path/);
+  assert.throws(() => loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: profilesFile({ scriptRoots: url }) }), /a script root is a directory path/);
+});
+
 test('notesLanguage is read from the profiles file, null when absent, and is not a profile', () => {
   const file = profilesFile({ local: { url: 'postgresql://Auspex@localhost/postgres' }, notesLanguage: 'pt-BR' });
   const config = loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: file });

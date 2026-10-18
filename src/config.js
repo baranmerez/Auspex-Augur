@@ -171,10 +171,10 @@ export function readProfilesFile(file) {
 // or a password. Whether it exists is checked when a script is saved.
 const passwordLike = /:\/\/|\b(password|passwd|pwd|secret|token)\s*[=:]/i;
 
-function validateScriptRoot(value, where) {
+function validateScriptRoot(value, where, label = 'script root') {
   if (typeof value !== 'string' || !value.trim()) throw new Error(`Invalid ${where}: expected an absolute directory path.`);
   if (/[\u0000-\u001f\u007f]/.test(value)) throw new Error(`Invalid ${where}: the path contains control characters.`);
-  if (passwordLike.test(value)) throw new Error(`Invalid ${where}: a script root is a directory path; it must not look like a URL or hold a password.`);
+  if (passwordLike.test(value)) throw new Error(`Invalid ${where}: a ${label} is a directory path; it must not look like a URL or hold a password.`);
   if (!path.isAbsolute(value)) throw new Error(`Invalid ${where}: the path must be absolute.`);
   return path.resolve(value);
 }
