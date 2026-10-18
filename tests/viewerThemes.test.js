@@ -11,7 +11,7 @@ const block = page.match(/\/\/ themes:start[\s\S]*?\/\/ themes:end/)?.[0];
 function load() {
   assert.ok(block, 'themes block found in viewer.html');
   const context = vm.createContext({});
-  vm.runInContext(`${block}\nObject.assign(this, { themeTokens, themePresets, themeRecord, themeUpsert, themeExport, themeImport, themeSpecOf, themeBgFrom, contrastRatio, hexRgb, themeIdOf, summaryDefaults, summaryPaletteRecord, summaryGroups, summaryKeys });`, context);
+  vm.runInContext(`${block}\nObject.assign(this, { themeTokens, themePresets, themeRecord, themeUpsert, themeExport, themeImport, themeSpecOf, themeBgFrom, contrastRatio, hexRgb, themeIdOf, summaryDefaults, summaryPaletteRecord, summaryGroups, summaryKeys, summaryMinStep });`, context);
   return context;
 }
 const plain = v => JSON.parse(JSON.stringify(v));
@@ -190,4 +190,21 @@ test('summary palette: the generator has its section, a reset and a preview; chi
   // Built-in light, dark and auto set the summary variables too.
   assert.match(page, /function summaryBuiltIn\(th\)/);
   assert.match(page, /light-dark\(\$\{light\[k\]\}, \$\{dark\[k\]\}\)/);
+});
+
+test('summary palette: score steps are clearly apart in light and dark, for defaults and custom base colors', () => {
+  const { themeTokens, themePresets, contrastRatio, hexRgb, summaryMinStep } = load();
+  const samples = [...themePresets, { bg: '#ffffff', accent: '#2a78d6' }, { bg: '#121211', accent: '#3987e5' }, { bg: '#0e1a2f', accent: '#1f3a8a', palette: { score: '#223366' } },
+    { bg: '#f4f5f7', accent: '#2a78d6', palette: { score: '#e0b000' } }, { bg: '#1b1b1b', accent: '#2a78d6', palette: { score: '#bb2244' } }];
+  for (const spec of samples) {
+    const r = themeTokens(spec);
+    const steps = ['s1', 's2', 's3', 's4', 's5'].map(k => hexRgb(r.summary[`--sum-${k}`]));
+    for (let i = 1; i < steps.length; i++) {
+      const ratio = contrastRatio(steps[i], steps[i - 1]);
+      assert.ok(ratio >= summaryMinStep - 0.01, `${spec.bg}/${spec.palette?.score ?? spec.accent} s${i}->s${i + 1}: ${ratio.toFixed(2)}`);
+    }
+    assert.ok(contrastRatio(steps[4], steps[0]) >= 2.4, `${spec.bg}: s5 against s1`);
+    assert.equal(r.warnings.length, 0);
+  }
+  assert.ok(summaryMinStep >= 1.4);
 });

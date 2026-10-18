@@ -42,7 +42,7 @@ function load(lang = 'en') {
 const TR = Object.assign({}, ${JSON.stringify(pageTr)});
 for (const [k, v] of Object.entries(tablePageTr)) if (!Object.hasOwn(TR, k)) TR[k] = v;
 const t = (en, vars = {}) => String(${JSON.stringify(lang)} === 'tr' && TR[en] !== undefined ? TR[en] : en).replace(/\\{(\\w+)\\}/g, (_, k) => vars[k] ?? '');
-Object.assign(this, { tablePageModel, tablePageView, tpMentions, tpSqlOfDoc, tpSummaryModel, tpViewChoice, tablePageTr, TR });`, context);
+Object.assign(this, { tablePageModel, tablePageView, tpFetchSql, tpSqlKey, tpMentions, tpSqlOfDoc, tpSummaryModel, tpViewChoice, tablePageTr, TR });`, context);
   return context;
 }
 const calls = [];
@@ -51,12 +51,12 @@ const viewCtx = (extra = {}) => ({ view: 'summary', unusedOpen: false, reports: 
   onBack() {}, onClose() {}, onCrumb() {}, ...extra });
 const model = (ctx, id) => ctx.tablePageModel(data, id, recs[id] ?? null);
 const render = (ctx, id, extra, reports) => ctx.tablePageView(model(ctx, id), [id], viewCtx({ ...(reports ? { reports } : {}), ...extra }));
-const groupOf = (view, title) => all(view, n => n.tag === 'section' && n.attrs.class === 'sum-group' && n.attrs['aria-label'] === title)[0];
+const groupOf = (view, title) => byClass(view, 'sum-group').find(n => n.attrs['aria-label'] === title);
 const chipsOf = g => byClass(g, 'sum-chip');
 
 test('groups appear in a fixed order with names only', () => {
   const view = render(load(), 'example.orders');
-  assert.deepEqual(all(view, n => n.tag === 'section' && n.attrs.class === 'sum-group').map(n => n.attrs['aria-label']),
+  assert.deepEqual(byClass(view, 'sum-group').map(n => n.attrs['aria-label']),
     ['Primary key', 'Foreign keys', 'Columns by score', 'Triggers', 'Trigger functions', 'Reports', 'Referenced tables', 'Referencing tables']);
   assert.deepEqual(chipsOf(groupOf(view, 'Primary key')).map(textOf), ['order_id']);
   assert.deepEqual(chipsOf(groupOf(view, 'Foreign keys')).map(textOf), ['customer_id → example.customers']);
@@ -140,6 +140,8 @@ test('report mention match: case, qualified and bare names, no longer table name
   assert.equal(tpMentions('select 1 from test.orders', 'example', 'orders'), false, 'same name in another schema');
   assert.equal(tpMentions('select 1 -- from orders\n from test.invoices /* example.orders */', 'example', 'orders'), false, 'comments are ignored');
   assert.equal(tpMentions('select 1 from example.orders;', 'example', 'orders'), true, 'statement end');
+  assert.equal(tpMentions('select 1 from test . orders', 'example', 'orders'), false, 'another schema, spaces around the dot');
+  assert.equal(tpMentions('select 1 from test'+String.fromCharCode(10)+'.orders', 'example', 'orders'), false, 'another schema, line break');
   assert.equal(tpMentions(null, 'example', 'orders'), false);
   assert.equal(tpMentions('select 1', 'example', ''), false);
   // Names with regex characters never break the pattern.
@@ -260,4 +262,100 @@ test('opening a table page with a column opens that row in the detailed view', (
   assert.deepEqual(plain(state.tablePage), { db: 'exampledb', trail: ['example.orders'], open: 'status_code', showAll: true, view: 'detail', reveal: 'status_code' });
   ctx.openTablePage('exampledb', 'example.customers');
   assert.deepEqual(plain(state.tablePage), { db: 'exampledb', trail: ['example.orders', 'example.customers'], open: null, showAll: false }, 'no forced view: the remembered one applies');
+});
+
+const manyFks = (ctx, n) => {
+  const m = model(ctx, 'example.orders');
+  m.keys.outgoing = Array.from({ length: n }, (_, i) => ({ name: `fk${i}`, columns: [['teslim_durum_kodu', 'amount', 'status_code', 'order_id'][i % 4]], id: `example.t${String(i).padStart(2, '0')}`, refColumns: ['id'] }));
+  m.neighbours.refs = Array.from({ length: n }, (_, i) => ({ id: `example.r${i}`, links: [], estRows: null, explored: true }));
+  m.neighbours.deps = m.neighbours.refs.map(x => ({ ...x, id: x.id.replace('.r', '.d') }));
+  return m;
+};
+const fkCols = chips => chips.map(c => textOf(c).split(' → ')[0]);
+
+test('columns sit in sub-groups by effective score, each with a heading and a count', () => {
+  const view = render(load(), 'example.orders');
+  const subs = byClass(groupOf(view, 'Columns by score'), 'sum-sub');
+  assert.deepEqual(subs.slice(0, 4).map(s => textOf(s.kids[0])), ['5 · core (3)', '4 · frequent (1)', '3 · topical (1)', 'not scored (2)']);
+  assert.deepEqual(byClass(subs[0], 'sum-chip').map(textOf), ['created_at', 'order_id', 'status_code']);
+  const tr = textOf(groupOf(render(load('tr'), 'example.orders'), 'Puana göre kolonlar'));
+  assert.ok(tr.includes('5 · temel (3)') && tr.includes('4 · sık (1)'), tr);
+});
+
+test('foreign keys: best column score first, 12 shown, the rest behind "+N more"', () => {
+  const ctx = load();
+  const m = manyFks(ctx, 30);
+  const draw = more => ctx.tablePageView(m, ['example.orders'], viewCtx({ moreOpen: more, onMore: (k, v) => calls.push(['more', k, v]) }));
+  const chips = chipsOf(groupOf(draw({}), 'Foreign keys'));
+  assert.equal(chips.length, 13);
+  assert.equal(textOf(chips.at(-1)), '+18 more');
+  assert.equal(chips.at(-1).attrs['aria-expanded'], 'false');
+  // order_id and status_code score 5, amount 3, teslim_durum_kodu is unscored.
+  assert.deepEqual(new Set(fkCols(chips.slice(0, 12))), new Set(['order_id', 'status_code']), 'highest scores first');
+  calls.length = 0;
+  chips.at(-1).attrs.onclick();
+  assert.deepEqual(calls.at(-1), ['more', 'fk', true]);
+  const open = chipsOf(groupOf(draw({ fk: true }), 'Foreign keys'));
+  assert.equal(open.length, 31);
+  assert.equal(textOf(open.at(-1)), 'show fewer');
+  const rank = { order_id: 5, status_code: 5, amount: 3, teslim_durum_kodu: 0 };
+  const seq = fkCols(open.slice(0, -1)).map(c => rank[c]);
+  assert.deepEqual(seq, [...seq].sort((a, b) => b - a), 'never ascending');
+  assert.deepEqual([seq[0], seq.at(-1)], [5, 0]);
+  for (const [title, p] of [['Referenced tables', 'r'], ['Referencing tables', 'd']]) {
+    const cs = chipsOf(groupOf(draw({}), title));
+    assert.equal(cs.length, 13, title);
+    assert.equal(textOf(cs.at(-1)), '+18 more');
+    assert.equal(textOf(cs[0]), `example.${p}0`, 'the model order (estimated rows) is kept');
+  }
+  const tr = load('tr');
+  assert.equal(textOf(chipsOf(groupOf(tr.tablePageView(manyFks(tr, 30), ['x'], viewCtx()), 'Yabancı anahtarlar')).at(-1)), '+18 daha');
+});
+
+test('layout: foreign keys and columns take full-width rows, the other groups share a grid', () => {
+  const view = render(load(), 'example.orders');
+  const grid = byClass(view, 'sum-grid')[0];
+  const wide = byClass(view, 'sum-group').filter(g => /\bwide\b/.test(g.attrs.class)).map(g => g.attrs['aria-label']);
+  assert.deepEqual(wide, ['Primary key', 'Foreign keys', 'Columns by score']);
+  assert.deepEqual(byClass(grid, 'sum-group').map(g => g.attrs['aria-label']), ['Triggers', 'Trigger functions', 'Reports', 'Referenced tables', 'Referencing tables']);
+  assert.match(page, /\.sum-group\.wide \{ width: 100%/);
+});
+
+test('report notes: failed reads with Retry, and the cap', () => {
+  const ctx = load();
+  const retried = [];
+  const view = render(ctx, 'example.orders', { onRetryReports: () => retried.push(1) }, { items: [], pending: 0, failed: 3, capped: 400 });
+  const text = textOf(groupOf(view, 'Reports'));
+  assert.match(text, /3 could not be read/);
+  assert.match(text, /first 400 reports checked/);
+  all(groupOf(view, 'Reports'), n => n.tag === 'button' && textOf(n) === 'Retry')[0].attrs.onclick();
+  assert.equal(retried.length, 1);
+  assert.match(page, /const tpReportCap = 400/);
+  assert.match(fs.readFileSync(new URL('../README.md', import.meta.url), 'utf8'), /first 400 reports/);
+});
+
+test('report SQL loading: a failed read is not cached and is read again; the key changes with updatedAt', async () => {
+  const ctx = load();
+  const rep = { stage: 'draft', db: 'exampledb', schema: 'example', category: 'Example Reports', name: 'daily', activeHash: 'sha256:a', updatedAt: '2026-10-01T00:00:00Z' };
+  const cache = new Map(), failed = new Map();
+  let reads = 0, fail = true;
+  const fetchDoc = async () => { reads++; if (fail) throw new Error('boom'); return { kind: 'sql', content: 'select 1 from example.orders' }; };
+  await ctx.tpFetchSql([rep], fetchDoc, cache, failed);
+  assert.deepEqual([cache.size, failed.size, reads], [0, 1, 1], 'failure kept apart, never cached');
+  await ctx.tpFetchSql([rep], fetchDoc, cache, failed);
+  assert.equal(reads, 1, 'a failed read waits for an explicit retry');
+  failed.clear(); fail = false;
+  await ctx.tpFetchSql([rep], fetchDoc, cache, failed);
+  assert.deepEqual([cache.size, failed.size, reads], [1, 0, 2]);
+  assert.equal([...cache.values()][0], 'select 1 from example.orders');
+  await ctx.tpFetchSql([rep], fetchDoc, cache, failed);
+  assert.equal(reads, 2, 'cached');
+  const changed = { ...rep, updatedAt: '2026-10-02T00:00:00Z' };
+  assert.notEqual(ctx.tpSqlKey(changed), ctx.tpSqlKey(rep));
+  await ctx.tpFetchSql([changed], fetchDoc, cache, failed);
+  assert.equal(reads, 3, 'a changed report is read again');
+  const none = { ...rep, name: 'other' };
+  await ctx.tpFetchSql([none], async () => ({ kind: 'html', content: '<html></html>' }), cache, failed);
+  assert.equal(cache.get(ctx.tpSqlKey(none)), '', 'a document without SQL is cached as empty, not as a failure');
+  assert.equal(failed.size, 0);
 });
