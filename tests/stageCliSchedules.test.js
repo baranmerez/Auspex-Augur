@@ -76,3 +76,16 @@ test('trend refuses a bad location or unknown arguments', () => {
   assert.equal(bad.out.code, 'INVALID_INPUT');
   assert.equal(run(home, ['trend', '--expected-hash', 'abc']).out.ok, false);
 });
+
+test('a full trend history with several totals comes back as one complete JSON line', () => {
+  const home = homeWith({ schedules, trend: false });
+  for (let i = 0; i < 520; i++) {
+    const slot = new Date(Date.UTC(2016, 0, 4) + i * 7 * 864e5).toISOString().slice(0, 16);
+    appendTrend(path.join(home, 'trends'), ref, { v: 1, slot, ranAt: `${slot}:00.000Z`, preset: 'last_7_days', rows: 1000 + i,
+      totals: [{ column: 'amount', total: '12345678901234.57' }, { column: 'orders', total: i }, { column: 'shipped_amount', total: 98765.43 }] });
+  }
+  const { status, out } = run(home, ['trend', '--db', ref.db, '--schema', ref.schema, '--category', ref.category, '--name', ref.name]);
+  assert.equal(status, 0);
+  assert.equal(out.points.length, 520);
+  assert.ok(JSON.stringify(out).length > 64 * 1024, 'larger than the desktop cap for change results');
+});

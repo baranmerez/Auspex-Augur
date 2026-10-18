@@ -93,7 +93,8 @@ const finite = v => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 // ANALYZE, or a complete preview) or null with estimatedRows from the plan.
 // totals are the preview totals of the report page and only kept when the
 // preview holds every row; a total over a cut preview would be misleading.
-// Ready for later threshold checks: one number per series, keyed by column.
+// Ready for later threshold checks: one value per series, keyed by column; a
+// total is a number, or decimal text when it has more than 15 significant digits.
 export function trendPoint({ scheduleId, slot, ranAt, preset, params, last, sqlHash, version, totals }) {
   const s = last?.summary ?? {};
   const previewRows = Array.isArray(last?.preview) ? last.preview.length : 0;

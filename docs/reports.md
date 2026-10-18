@@ -330,8 +330,9 @@ Integer and numeric columns are summed exactly; a total with more than 15
 significant digits is stored as decimal text so no digit is lost (floating-point
 columns keep a sum rounded to 15 digits).
 Aggregates only, never row values. The newest 520 points are kept. There are
-no threshold alerts yet; the point format (one number per series, totals
-keyed by column) is ready for them.
+no threshold alerts yet; the point format is ready for them: one value per
+series, totals keyed by column, each a number or, for a total over 15
+significant digits, decimal text.
 
 **State:** the last result per schedule is in
 `<home>/schedule-state.json` (status, slot, time, error code; no messages),
