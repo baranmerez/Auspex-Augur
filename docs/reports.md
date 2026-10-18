@@ -30,6 +30,9 @@ moved.
   snapshot (`EXPLAIN (ANALYZE, BUFFERS, VERBOSE, SETTINGS, FORMAT JSON)` plus a
   cursor preview), summarizes the plan, masks personal columns, appends the run
   to the history and fills one fixed HTML template. Rendering costs no tokens.
+  It runs only the report's saved active revision (for an approved report the
+  approved one): a `.sql` file edited outside `save_report` is refused before
+  any database call; save it with `save_report` (and approve it again).
 - **The HTML is self-contained** (data embedded, no external files): stat tiles,
   plan warnings, a plan tree with time share and misestimates, joins read from
   the plan (with the column pairs they use), tables touched, the masked preview,
@@ -157,7 +160,10 @@ moved.
   allowlist: title, description, category, the masked preview, the
   timing/row figures and the result's SQL version number and run time. It is
   refused when the last results come from a SQL version other than the
-  current one (saved but not run yet); run the current version first. SQL,
+  current one (saved but not run yet); run the current version first. The
+  report's current `mask`/`unmask` is applied to the stored preview once more,
+  so a column masked after the last run is masked in the share; a value the
+  run already masked stays masked even if the column was unmasked later. SQL,
   plan, parameters, warnings, history and database, schema and server names are left out, not redacted. The title and
   description are kept as written, so keep secrets out of them.
 

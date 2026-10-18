@@ -717,3 +717,93 @@ test('sharing reads the report under the library lock', async () => {
   svc.share(ref, fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-share-out-')));
   assert.ok(reads.length > 0 && reads.every(Boolean), 'every metadata read happened while holding the lock');
 });
+
+// External review, package A: masking tightened after a run, and SQL files
+// changed outside save_report.
+function personService(columns, rows) {
+  const fake = {
+    calls: 0,
+    resolveProfile: name => String(name).toLowerCase(),
+    async runReport(profile) {
+      fake.calls++;
+      return { profile, serverVersion: '16.0', analyzed: true, plan: analyzedPlan, explainMs: 1, previewMs: 1, previewExecuted: true, columns, rows, rowCount: rows.length, truncated: false };
+    },
+  };
+  return { svc: new ReportService(fake, fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-mask-test-'))), fake };
+}
+
+test('a share after tightening mask/unmask never contains the value the old run left unmasked', async () => {
+  const value = 'synthetic@example.invalid';
+  const { svc } = personService([{ name: 'id', type: 'integer' }, { name: 'email', type: 'text' }, { name: 'note_text', type: 'text' }], [[1, value, 'NOTEMARK visible']]);
+  svc.save({ ...ref, sql: 'select id, email, note_text from example.customers', unmask: ['email'] });
+  await svc.run(ref);
+  assert.equal(svc.library.readMeta('draft', ref).last.preview[0][1], value, 'the run kept email unmasked as asked');
+
+  svc.save({ ...ref, sql: 'select id, email, note_text from example.customers', unmask: [], mask: ['email', 'note_text'] });
+  const html = fs.readFileSync(svc.share(ref, fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-share-out-'))).file, 'utf8');
+  assert.ok(!html.includes(value), 'the old unmasked email is not shared');
+  assert.ok(!html.includes('NOTEMARK'), 'a column masked after the run is masked in the share');
+  assert.deepEqual(embedded(html).last.maskedColumns.sort(), ['email', 'note_text']);
+});
+
+test('a column masked at run time stays masked in a share after it is unmasked', async () => {
+  const { svc } = personService([{ name: 'email', type: 'text' }], [['synthetic@example.invalid']]);
+  svc.save({ ...ref, sql: 'select email from example.customers' });
+  await svc.run(ref);
+  svc.save({ ...ref, sql: 'select email from example.customers', unmask: ['email'] });
+  const html = fs.readFileSync(svc.share(ref, fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-share-out-'))).file, 'utf8');
+  assert.ok(!html.includes('synthetic@example.invalid'), 'unmasking later cannot reveal what the run masked');
+  assert.deepEqual(embedded(html).last.maskedColumns, ['email']);
+});
+
+test('an approved report whose SQL file was edited outside save_report is refused before any database call', async () => {
+  const { svc, fake } = tempService();
+  let calls = 0;
+  const runReport = fake.runReport.bind(fake);
+  fake.runReport = (...a) => { calls++; return runReport(...a); };
+  svc.save({ ...ref, sql: 'select 1 as email' });
+  await svc.run(ref);
+  svc.approve(ref);
+  calls = 0;
+  fs.writeFileSync(svc.library.paths('approved', ref).sql, 'select 999 as email\n');
+  await assert.rejects(svc.run(ref, { stage: 'approved' }), err => err.errorCode === 'PRECONDITION_FAILED' && /changed outside save_report.*approved again/.test(err.message));
+  await assert.rejects(svc.run(ref), /changed outside save_report/, 'the default lookup refuses it too');
+  assert.equal(calls, 0, 'nothing reached the database');
+});
+
+test('a draft whose SQL file was edited outside save_report is refused; saving it makes it runnable', async () => {
+  const { svc } = tempService();
+  svc.save({ ...ref, sql: 'select 1' });
+  fs.writeFileSync(svc.library.paths('draft', ref).sql, 'select 1 /* edited */\n');
+  await assert.rejects(svc.run(ref), /not its saved active revision/);
+  svc.save({ ...ref, sql: 'select 1 /* edited */' });
+  assert.equal((await svc.run(ref)).version, 2);
+});
+
+test('an approved report runs only its approved revision, even when the file holds another saved one', async () => {
+  const { svc } = tempService();
+  svc.save({ ...ref, sql: 'select 1' });
+  await svc.run(ref);
+  svc.approve(ref);
+  const p = svc.library.paths('approved', ref);
+  const meta = JSON.parse(fs.readFileSync(p.meta, 'utf8'));
+  meta.sqlVersions.push({ version: 2, hash: sqlHash('select 2'), savedAt: meta.approvedAt, note: null, sql: 'select 2' });
+  meta.activeHash = sqlHash('select 2');
+  meta.activeVersion = 2;
+  fs.writeFileSync(p.meta, JSON.stringify(meta));
+  fs.writeFileSync(p.sql, 'select 2\n');
+  await assert.rejects(svc.run(ref, { stage: 'approved' }), /holds v2, but v1 was approved/);
+});
+
+test('a report saved before activeHash existed still runs any saved revision', async () => {
+  const { svc } = tempService();
+  svc.save({ ...ref, sql: 'select 1' });
+  const p = svc.library.paths('draft', ref);
+  const meta = JSON.parse(fs.readFileSync(p.meta, 'utf8'));
+  delete meta.activeHash;
+  delete meta.activeVersion;
+  fs.writeFileSync(p.meta, JSON.stringify(meta));
+  assert.equal((await svc.run(ref)).version, 1);
+  fs.writeFileSync(p.sql, 'select 3\n');
+  await assert.rejects(svc.run(ref), /not its saved active revision/, 'unknown SQL is refused without activeHash too');
+});
