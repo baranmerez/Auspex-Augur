@@ -7,7 +7,9 @@
 // (src/stageCli.js of the Auspex checkout), which moves one report in the
 // local library exactly like the viewer's approval routes, and `archive_note`
 // runs its archive-note command, which archives one schema-memory note like
-// the viewer's POST /api/memory/archive.
+// the viewer's POST /api/memory/archive, and `score_column` runs its
+// score-column command, which sets or removes one user column score like the
+// viewer's POST /api/memory/column-score.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::collections::HashMap;
@@ -825,6 +827,71 @@ async fn archive_note(profile: String, id: u64, reason: String) -> Result<Value,
         .map_err(|e| stage_error("INTERNAL", e.to_string()))?
 }
 
+// ---------- user column score ----------
+// Same rules as validateUserScoreInput in src/memory/userScore.js; Node checks
+// again. Names: 1 to MAX_NAME_BYTES UTF-8 bytes (PostgreSQL identifiers), no
+// control characters. Exactly one of score (1-5) or clear (true); roles only
+// with a score, each a known role at most once.
+const MAX_NAME_BYTES: usize = 63;
+const COLUMN_ROLES: [&str; 6] = ["key", "join", "filter", "display", "aggregate", "sort/group"];
+
+fn valid_name(s: &str) -> bool {
+    !s.is_empty() && s.len() <= MAX_NAME_BYTES && !s.chars().any(char::is_control)
+}
+
+fn score_column_args(profile: &str, schema: &str, table: &str, column: &str, score: Option<i64>, clear: Option<bool>, roles: Option<&[String]>) -> Result<Vec<String>, Value> {
+    if !valid_profile(profile) {
+        return Err(stage_error("PROFILE_INVALID", "Invalid profile name."));
+    }
+    for (key, value) in [("schema", schema), ("table", table), ("column", column)] {
+        if !valid_name(value) {
+            return Err(stage_error("INVALID_INPUT", format!("Invalid {key} name: 1 to {MAX_NAME_BYTES} bytes without control characters.")));
+        }
+    }
+    let mut args = vec!["score-column".to_string(), format!("--profile={profile}"), format!("--schema={schema}"), format!("--table={table}"), format!("--column={column}")];
+    match (score, clear) {
+        (None, Some(true)) => {
+            if roles.is_some() {
+                return Err(stage_error("INVALID_INPUT", "roles go with a score, not with clear."));
+            }
+            args.push("--clear=true".to_string());
+        }
+        (Some(score), None) => {
+            if !(1..=5).contains(&score) {
+                return Err(stage_error("INVALID_INPUT", "score must be an integer from 1 to 5."));
+            }
+            args.push(format!("--score={score}"));
+            if let Some(roles) = roles {
+                if roles.iter().any(|r| !COLUMN_ROLES.contains(&r.as_str())) {
+                    return Err(stage_error("INVALID_INPUT", format!("roles must be any of {}.", COLUMN_ROLES.join(", "))));
+                }
+                if roles.iter().enumerate().any(|(i, r)| roles[..i].contains(r)) {
+                    return Err(stage_error("INVALID_INPUT", "roles lists a role twice."));
+                }
+                args.push(format!("--roles={}", roles.join(",")));
+            }
+        }
+        (None, Some(false)) => return Err(stage_error("INVALID_INPUT", "clear must be true.")),
+        _ => return Err(stage_error("INVALID_INPUT", "Give exactly one of score or clear.")),
+    }
+    Ok(args)
+}
+
+fn run_score_cli(profile: &str, schema: &str, table: &str, column: &str, score: Option<i64>, clear: Option<bool>, roles: Option<&[String]>) -> Result<Value, Value> {
+    let args = score_column_args(profile, schema, table, column, score, clear, roles)?;
+    let action = if clear.is_some() { "clear" } else { "set" };
+    run_cli(&args, &json!({ "tool": "score_columns", "layer": "user", "action": action, "profile": profile, "schema": schema, "table": table, "column": column, "columns": 1 }))
+}
+
+// The page's score request: { profile, schema, table, column, score | clear, roles? } (src/viewer.html).
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+async fn score_column(profile: String, schema: String, table: String, column: String, score: Option<i64>, clear: Option<bool>, roles: Option<Vec<String>>) -> Result<Value, Value> {
+    tauri::async_runtime::spawn_blocking(move || run_score_cli(&profile, &schema, &table, &column, score, clear, roles.as_deref()))
+        .await
+        .map_err(|e| stage_error("INTERNAL", e.to_string()))?
+}
+
 fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
@@ -837,7 +904,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![HIDDEN_ARG])))
-        .invoke_handler(tauri::generate_handler![api, approve_report, revoke_report, archive_note])
+        .invoke_handler(tauri::generate_handler![api, approve_report, revoke_report, archive_note, score_column])
         .setup(|app| {
             let enabled = app.autolaunch().is_enabled().unwrap_or(false);
             let open = MenuItem::with_id(app, "open", "Open Auspex Augur", true, None::<&str>)?;
@@ -1123,6 +1190,36 @@ mod tests {
         assert_eq!(run_archive_cli("exampledb", MAX_NOTE_ID + 1, "outdated").unwrap_err()["code"], json!("INVALID_INPUT"));
         assert_eq!(run_archive_cli("exampledb", 1, "").unwrap_err()["code"], json!("INVALID_INPUT"));
         assert_eq!(run_archive_cli("exampledb", 1, "a\nb").unwrap_err()["code"], json!("INVALID_INPUT"));
+    }
+
+    #[test]
+    fn score_requests_are_checked_before_spawning() {
+        let r = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let ok = score_column_args("exampledb", "example", "orders", "status_code", Some(5), None, Some(&r(&["join", "filter"]))).unwrap();
+        assert_eq!(ok, r(&["score-column", "--profile=exampledb", "--schema=example", "--table=orders", "--column=status_code", "--score=5", "--roles=join,filter"]));
+        assert_eq!(score_column_args("exampledb", "example", "orders", "amount", Some(1), None, Some(&[])).unwrap().last().unwrap(), "--roles=");
+        assert_eq!(score_column_args("exampledb", "example", "orders", "amount", None, Some(true), None).unwrap().last().unwrap(), "--clear=true");
+        assert!(score_column_args("exampledb", "example", "orders", "teslim_durum_kodu", Some(3), None, None).is_ok());
+        assert!(score_column_args("exampledb", "example", "orders", &"\u{15f}".repeat(31), Some(3), None, None).is_ok(), "62 bytes");
+        let code = |res: Result<Vec<String>, Value>| res.unwrap_err()["code"].clone();
+        assert_eq!(code(score_column_args("Example", "example", "orders", "amount", Some(3), None, None)), json!("PROFILE_INVALID"));
+        let long = "a".repeat(64);
+        let long_tr = "\u{15f}".repeat(32);
+        for bad in ["", "two\nlines", "del\u{7f}x", "c1\u{85}x", long.as_str(), long_tr.as_str()] {
+            assert_eq!(code(score_column_args("exampledb", "example", bad, "amount", Some(3), None, None)), json!("INVALID_INPUT"), "{bad:?}");
+            assert_eq!(code(score_column_args("exampledb", "example", "orders", bad, Some(3), None, None)), json!("INVALID_INPUT"), "{bad:?}");
+        }
+        for score in [0, 6, -1] {
+            assert_eq!(code(score_column_args("exampledb", "example", "orders", "amount", Some(score), None, None)), json!("INVALID_INPUT"));
+        }
+        assert_eq!(code(score_column_args("exampledb", "example", "orders", "amount", None, None, None)), json!("INVALID_INPUT"));
+        assert_eq!(code(score_column_args("exampledb", "example", "orders", "amount", Some(3), Some(true), None)), json!("INVALID_INPUT"));
+        assert_eq!(code(score_column_args("exampledb", "example", "orders", "amount", None, Some(false), None)), json!("INVALID_INPUT"));
+        assert_eq!(code(score_column_args("exampledb", "example", "orders", "amount", None, Some(true), Some(&[]))), json!("INVALID_INPUT"));
+        assert_eq!(code(score_column_args("exampledb", "example", "orders", "amount", Some(3), None, Some(&r(&["owner"])))), json!("INVALID_INPUT"));
+        assert_eq!(code(score_column_args("exampledb", "example", "orders", "amount", Some(3), None, Some(&r(&["join", "join"])))), json!("INVALID_INPUT"));
+        // Refused before Node or the Auspex folder is looked up, so no process starts.
+        assert_eq!(run_score_cli("exampledb", "example", "orders", "amount", Some(9), None, None).unwrap_err()["code"], json!("INVALID_INPUT"));
     }
 
     #[test]
