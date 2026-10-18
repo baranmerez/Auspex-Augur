@@ -42,6 +42,7 @@ const invalid = [
   ['a dot segment', [ref({ path: './src/Order.cs' })], /"\.\."/],
   ['an empty path', [ref({ path: ' ' })], /path must be a non-empty string/],
   ['a control character in the path', [ref({ path: 'src/Ord\ner.cs' })], /control characters/],
+  ['a DEL character in the path', [ref({ path: 'src/Ord\x7fer.cs' })], /control characters/],
   ['line 0', [ref({ line: 0 })], /line must be an integer between 1/],
   ['a negative line', [ref({ line: -3 })], /line must be an integer/],
   ['a fractional line', [ref({ line: 1.5 })], /line must be an integer/],
