@@ -139,13 +139,16 @@ flowchart LR
      tools): time, source, tool, profile, SQL, params, row count, duration,
      error — also when the SQL guard rejects the query.
    - Library and memory changes (`save_report`, `approve_report`,
-     `save_execute_script`, `render_reports`, `share_report`, `remember`): which report or
-     note, the SQL hash and version or note id and status, and the error;
+     `save_execute_script`, `render_reports`, `share_report`, `remember`,
+     `score_columns`): which report, note or table, the SQL hash and version,
+     note id and status or the number of scored columns, trigger summaries and
+     scanned files, and the error;
      for a report or script saved into a script root also the root, folder
      and file name and the written paths.
-     The SQL text, note text, evidence and reasons are not logged.
+     The SQL text, note text, evidence, reasons, trigger summaries and
+     scanned file paths are not logged.
    - Not logged: tools that only read local files (`table_knowledge`,
-     `list_reports`, `list_profiles`) and calls the MCP SDK rejects for
+     `scanned_files`, `list_reports`, `list_profiles`) and calls the MCP SDK rejects for
      invalid arguments before any handler runs.
    - Writing is best effort: if the log cannot be written, the call still
      runs and the failure goes to stderr. The file is plain appendable JSONL
@@ -183,8 +186,10 @@ flowchart LR
 | 📚 `list_reports` / 🎨 `render_reports` | Lists the library; re-renders every report HTML from stored JSON |
 | 📨 `share_report` | Writes a copy of a report to send to someone: masked preview and figures only, no SQL, plan, parameters or history |
 | 🧾 `save_execute_script` | Writes a change script into `EXECUTE/` for a human to run — never executed by Auspex; with `root`, `folder` and `fileName` also as a new file in a configured script root (for example a folder of saved SQL scripts) |
-| 🧠 `table_knowledge` | What the schema memory knows about a table — key and used columns, relations, table notes, database-wide notes, recent changes, unexplored neighbors — without touching the database |
+| 🧠 `table_knowledge` | What the schema memory knows about a table — key and used columns, relations, table notes, database-wide notes, recent changes, column importance scores, triggers with their summaries, unexplored neighbors — without touching the database |
 | 📌 `remember` | Adds, confirms or archives a note: a rule the user stated, an observation backed by evidence, or an unconfirmed inference |
+| 🏷️ `score_columns` | Saves the agent's 1-5 importance score per column of a described table (roles, one-line reason, number of sources), one-line trigger summaries and the script files it read (path relative to the script root and sha256 only); local memory only, no database access |
+| 🗃️ `scanned_files` | Lists the script files `score_columns` recorded (root, relative path, sha256, last read), so the next run reads only new or changed files |
 
 ### Choosing the database
 
@@ -734,6 +739,12 @@ with the work and never crawls the catalog on its own:
   `run_report`, and with `query` when its SQL names the table as
   `schema.table`; database-wide notes come back with `table_knowledge`. They are
   archived with a reason, never deleted.
+- **Triggers:** `describe_table` and `describe_tables` also record each
+  trigger (name, timing, events, level, enabled, function, WHEN condition,
+  `CREATE TRIGGER` definition, constraint trigger); added, dropped, changed
+  and enabled/disabled triggers show up in `changesSinceLast`. Records
+  written before triggers were stored report no trigger change the first
+  time. The function source is never stored.
 - **Exploring further:** after a report, `run_report` and `table_knowledge`
   list neighbors that were never described. The server instructions tell the
   model to ask you before looking at them, and then to read their structure
@@ -744,6 +755,7 @@ memory/<profile>/
 ├── tables/<schema>/<table>.json   structure, used columns, change history
 ├── notes.json                     rules, observations, inferences
 ├── changelog.jsonl                explored tables, notes and schema changes
+├── scanned-files.json             script files read for column scores (relative path, sha256, lastReadAt)
 └── graph.json                     derived view for the viewer (rebuilt on every change)
 ```
 
@@ -754,7 +766,11 @@ changelog }`. Nodes and edges, with the optional fields `relation_stats` adds
 ```
 node: { id: "schema.table", schema, table, file?, state: "explored" | "seen" | "unexplored",
         kind, estimatedRows, columnCount, changes, notes,
-        estRows?: number | null }       // relation_stats row estimate; null = never analyzed
+        estRows?: number | null,        // relation_stats row estimate; null = never analyzed
+        scoredAt?: "ISO time",          // score_columns, see Column importance
+        columnScores?: { [column]: { score, roles, reason, sources, at, history: [{ score, reason, at }] } },
+        triggers?: [{ name, timing, events, level, enabled, function, when, definition, constraintTrigger,
+                      summary?, summaryAt?, summaryStale? }] }
 edge: { level: "fk" | "used" | "suggested", from: "schema.table", to: "schema.table",
         columns: [...], refColumns: [...], // from(columns) references to(refColumns)
         linkedRows?: number | null,      // rows of `from` with the key set; null = stats missing
@@ -765,6 +781,43 @@ edge: { level: "fk" | "used" | "suggested", from: "schema.table", to: "schema.ta
 `file` is only set for tables with a record (`explored` or `seen`). The table
 records keep the measurement (`estRows`, `estRowsAt`, and for centers
 `relationStats`), so describing a table again does not drop it.
+
+### Column importance
+
+Which columns of a table matter is decided by the agent, not computed: the
+`auspex-columns` skill (prompt `columns`) reads the SQL that uses a table -
+the report library and the script files in a script root the user confirms -
+attributes every column use to its table (aliases and CTEs resolved), and
+saves with `score_columns`:
+
+- `score` 1-5, relative within the table: 5 for the columns the reports
+  revolve around (keys joined everywhere, main display and filter fields),
+  1 for columns no read SQL uses.
+- `roles`: any of `key`, `join`, `filter`, `display`, `aggregate`,
+  `sort/group`; `reason`: one line (at most 200 characters) in the
+  `notesLanguage`; `sources`: distinct reports and scripts (versions of one
+  report count once).
+- Optional `triggers`: one-line summary per trigger of what its function does
+  (the source is never stored); marked `summaryStale` once the trigger
+  definition changes.
+- Optional `scannedFiles`: `root`, path relative to it and sha256 of each
+  script file read. `scanned_files` lists them, so later runs skip unchanged
+  files. Script files are never copied, saved as reports or modified.
+
+The table must be described first and every column and trigger must exist in
+its recorded structure; otherwise the whole call is rejected and nothing is
+saved. A new score replaces the current one, the previous 5 per column stay
+as history (newest first) and columns not listed keep their score. There is
+no manual override and no viewer write path. A column used only on
+application screens and in no report or script scores low; ask the agent to
+review it.
+
+```json
+{ "profile": "example", "schema": "example", "table": "orders",
+  "columns": [{ "name": "order_id", "score": 5, "roles": ["key", "join"], "reason": "Joined to example.order_items in every report.", "sources": 7 }],
+  "triggers": [{ "name": "orders_check", "summary": "Rejects rows whose status_code is not in example.status_codes." }],
+  "scannedFiles": [{ "root": "scripts", "path": "example/reports/orders_by_day.sql", "sha256": "<64 hex>" }] }
+```
 
 ## 🔌 Register with an MCP client
 
@@ -846,7 +899,7 @@ Other MCP clients work the same way: a stdio server started with
 
 ## 🧩 Skills and prompts
 
-Three workflow guides keep an agent on the cheap and safe path with Auspex.
+Four workflow guides keep an agent on the cheap and safe path with Auspex.
 Each is written once, in [`skills/`](skills), and reaches the agent in two
 ways: as an agent skill (installed files) and as an MCP prompt (served by the
 server from the same files at startup).
@@ -855,6 +908,7 @@ server from the same files at startup).
 |---|---|---|
 | [`auspex-explore`](skills/auspex-explore/SKILL.md) | `explore` | Finding tables, reading structure and relations, fill rates and fan-out, recording findings in the schema memory with few statements |
 | [`auspex-report`](skills/auspex-report/SKILL.md) | `report` | A combined report: one round of at most 3 questions, remembered rules as defaults, status codes from their source (lookup table, enum, check or comment), fan-out/duplicate/NULL checks, and whether cancelled or deleted rows count asked within the 3 questions when no rule is remembered, then save, run and approve in the report library |
+| [`auspex-columns`](skills/auspex-columns/SKILL.md) | `columns` | Scoring column importance 1-5 from the SQL of the report library and the user's script files (roles, reason, sources), plus one-line trigger summaries, saved with `score_columns`; no database queries for the scores |
 | [`auspex-ddl`](skills/auspex-ddl/SKILL.md) | `ddl` | Studying an existing table family (tables, functions, triggers) and designing a similar one: analysis note plus a `BEGIN ... ROLLBACK` script via `save_execute_script`, never executed by Auspex |
 
 Each `SKILL.md` holds the core rules and workflow; longer checklists live in

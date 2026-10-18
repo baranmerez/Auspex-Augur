@@ -67,7 +67,10 @@ database statements, and leave the answer in the schema memory.
 6. **Interpret.** Answer "why does this table exist" and "which columns
    matter" from the figures, without asking the user first; see
    [reading-stats.md](references/reading-stats.md). Label each conclusion as
-   fact (catalog, comment, rule) or inference (with confidence).
+   fact (catalog, comment, rule) or inference (with confidence). Column
+   importance by how reports and scripts use the columns is the
+   `auspex-columns` workflow (`score_columns`); its saved scores come back
+   with `table_knowledge`.
 7. **Record.** `remember` what was learned (see Recording below).
 8. **Next.** Name `unexploredNeighbors` and ask whether to explore them;
    after a yes, structure only (`describe_tables`).
