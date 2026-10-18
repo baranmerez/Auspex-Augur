@@ -138,8 +138,10 @@ elsewhere. Line format: `host:port:database:user:password`.
 fill missing parts from `PGHOST`, `PGPORT`, `PGDATABASE` and `PGUSER` and read
 `PGOPTIONS`, `PGREPLICATION`, `PGCLIENT_ENCODING`, `PGBINARY` and `PGPASSWORD`
 even for a complete URL; Auspex removes these from its own environment before
-it connects and says so once on stderr (names only). `PGPASSFILE` and the
-`PGSSL*` settings keep working.
+it connects and says so once on stderr (names only). `PGPASSFILE`,
+`PGSSLMODE` and `PGSSLNEGOTIATION` keep working; node-postgres reads no other
+`PGSSL*` variable, so put certificates in the URL (`sslrootcert`, `sslcert`,
+`sslkey`).
 
 If the server is behind a VPN, calls fail fast (10 s connect timeout) with a
 hint to check the VPN.

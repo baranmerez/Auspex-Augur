@@ -88,3 +88,19 @@ test('creating a pool clears PGOPTIONS, PGREPLICATION and PGPASSWORD before node
   assert.match(warned, /ignores PGPASSWORD, PGOPTIONS, PGREPLICATION from the environment/);
   assert.doesNotMatch(warned, /not-from-pgpass|search_path/, 'values are never printed');
 });
+
+test('socket, IPv6 and encoded URLs keep their target when the port is added', () => {
+  const cases = [
+    'postgresql://report_reader@%2Fvar%2Frun%2Fpostgresql/exampledb',
+    'postgresql://report_reader@[::1]/exampledb?sslmode=require',
+    'postgresql://report%20reader@db.example.test/example%2Fdb',
+  ];
+  for (const raw of cases) {
+    const url = loadConfig({ ...baseEnv, AUSPEX_DB_EXAMPLE: raw }).profiles.get('example');
+    const before = driverTarget(raw.replace(/(@[^/]+)\//, '$1:5432/'));
+    const after = driverTarget(url);
+    assert.deepEqual(after, before, raw);
+    const shown = describeConnection(url);
+    assert.deepEqual(after, { host: shown.host, port: shown.port, database: shown.database, user: shown.user }, `shown = used for ${raw}`);
+  }
+});
