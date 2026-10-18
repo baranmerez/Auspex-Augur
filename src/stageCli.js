@@ -7,6 +7,9 @@
 // "desktop". Also archives one schema-memory note like the viewer's
 // POST /api/memory/archive (src/memory/noteArchive.js):
 //   node src/stageCli.js archive-note --profile <p> --id <n> --reason <text>
+// and sets or removes one user column score like the viewer's
+// POST /api/memory/column-score (src/memory/userScore.js):
+//   node src/stageCli.js score-column --profile <p> --schema <s> --table <t> --column <c> (--score <1-5> [--roles <r,r>] | --clear true)
 // Files only: no database, no network. Prints one JSON line,
 // { ok: true, ... } or { ok: false, code, message }, and exits with 1 on any
 // error.
@@ -20,6 +23,7 @@ import { createAuditLog } from './auditLog.js';
 import { classifyError } from './errors.js';
 import { StageError, stageActions, validateStageInput, applyStageChange, refKeys, expectedHashKey } from './reports/stageChange.js';
 import { archiveKeys, validateArchiveInput, archiveNoteFor } from './memory/noteArchive.js';
+import { userScoreKeys, validateUserScoreInput, userScoreAudit, setUserScoreFor } from './memory/userScore.js';
 
 // The folders as the server and viewer see them; a broken profiles file does
 // not hide the library (the viewer falls back the same way).
@@ -89,10 +93,49 @@ function archiveMain(args, dirs) {
   }
 }
 
+// --profile, --schema, --table, --column, then --score (decimal 1-5) with an
+// optional --roles (comma-separated, empty for none) or --clear true; each at
+// most once. Strings that are not in this form stay strings and are refused by
+// validateUserScoreInput.
+const scoreArgKeys = new Map(userScoreKeys.map(k => [k, k]));
+function parseScoreArgs(args) {
+  let body;
+  try {
+    body = parseArgs(args, scoreArgKeys);
+  } catch {
+    // Not echoed: the audit log keeps no free text from a request.
+    throw new StageError(400, `Unknown, repeated or empty argument; use ${[...scoreArgKeys.keys()].map(k => `--${k}`).join(' ')}`);
+  }
+  if (typeof body.score === 'string' && /^[1-5]$/.test(body.score)) body.score = Number(body.score);
+  if (body.clear === 'true') body.clear = true;
+  if (typeof body.roles === 'string') body.roles = body.roles === '' ? [] : body.roles.split(',');
+  return validateUserScoreInput(body);
+}
+
+function scoreMain(args, dirs) {
+  const started = Date.now();
+  const entry = { source: 'desktop', tool: 'score_columns', actor: 'desktop', layer: 'user', correlationId: crypto.randomUUID() };
+  const audit = createAuditLog(dirs.logDir);
+  try {
+    const input = parseScoreArgs(args);
+    Object.assign(entry, userScoreAudit(input));
+    const lib = new Library(dirs.libraryDir);
+    const memory = new SchemaMemory(dirs.memoryDir, { approvedJoins: profile => approvedJoinPairs(lib, profile) });
+    const result = setUserScoreFor(memory, input);
+    audit({ ...entry, ms: Date.now() - started, scored: 1 });
+    return { status: 0, out: { ok: true, ...result, correlationId: entry.correlationId } };
+  } catch (err) {
+    const { code } = classifyError(err);
+    audit({ ...entry, ms: Date.now() - started, error: err.message, errorCode: code });
+    return { status: 1, out: { ok: false, code, message: err.message, correlationId: entry.correlationId } };
+  }
+}
+
 function main(argv, env) {
   if (argv[0] === 'archive-note') return archiveMain(argv.slice(1), folders(env));
+  if (argv[0] === 'score-column') return scoreMain(argv.slice(1), folders(env));
   const action = Object.hasOwn(stageActions, argv[0] ?? '') ? stageActions[argv[0]] : null;
-  if (!action) return { status: 1, out: { ok: false, code: 'INVALID_INPUT', message: 'Usage: stageCli.js approve|revoke --db <db> --schema <schema> --category <category> --name <name> --expected-hash <hash>, or stageCli.js archive-note --profile <profile> --id <id> --reason <reason>' } };
+  if (!action) return { status: 1, out: { ok: false, code: 'INVALID_INPUT', message: 'Usage: stageCli.js approve|revoke --db <db> --schema <schema> --category <category> --name <name> --expected-hash <hash>, stageCli.js archive-note --profile <profile> --id <id> --reason <reason>, or stageCli.js score-column --profile <profile> --schema <schema> --table <table> --column <column> (--score <1-5> [--roles <roles>] | --clear true)' } };
   const dirs = folders(env);
   const started = Date.now();
   const entry = { source: 'desktop', tool: action.tool, actor: 'desktop', correlationId: crypto.randomUUID(), fromStage: action.from, toStage: action.to };
