@@ -14,5 +14,8 @@
   },
   "scriptRoots": {
     "scripts": "/path/to/sql-scripts"
+  },
+  "codeRoots": {
+    "example_app": "/path/to/example_app"
   }
 }

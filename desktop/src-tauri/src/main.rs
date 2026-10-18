@@ -425,9 +425,9 @@ fn profiles() -> Value {
             match parsed {
                 Ok(Value::Object(entries)) => {
                     for (name, p) in entries {
-                        // Named folders for change scripts, the notes language and the
+                        // Named folders for change scripts and source code, the notes language and the
                         // Auspex checkout: settings, not profiles.
-                        if name == "scriptRoots" || name == "notesLanguage" || name == AUSPEX_ROOT_KEY {
+                        if name == "scriptRoots" || name == "codeRoots" || name == "notesLanguage" || name == AUSPEX_ROOT_KEY {
                             continue;
                         }
                         let url_text = p.get("url").and_then(Value::as_str).unwrap_or("");

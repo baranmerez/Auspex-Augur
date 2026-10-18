@@ -242,6 +242,40 @@ test('script roots must be an object; env roots are validated too', () => {
   assert.throws(() => loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: none, AUSPEX_SCRIPT_ROOT_9: dir }), /AUSPEX_SCRIPT_ROOT_9/);
 });
 
+test('code roots come from the profiles file and AUSPEX_CODE_ROOT_<NAME>, apart from script roots, and are not profiles', () => {
+  const codeA = path.join(dir, 'example_app');
+  const codeB = path.join(dir, 'spare_app');
+  const file = profilesFile({
+    local: { url: 'postgresql://Auspex@localhost/postgres' },
+    scriptRoots: { Scripts: path.join(dir, 'Scripts A') },
+    codeRoots: { Example_App: codeA },
+  });
+  const config = loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: file, AUSPEX_CODE_ROOT_SPARE: codeB });
+  assert.deepEqual([...config.profiles.keys()], ['local']);
+  assert.deepEqual(readProfilesFile(file).map(p => p.name), ['local']);
+  assert.deepEqual([...config.codeRoots], [['example_app', { dir: codeA, source: 'file' }], ['spare', { dir: codeB, source: 'env' }]]);
+  assert.deepEqual([...config.scriptRoots.keys()], ['scripts']);
+  assert.equal(loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: path.join(dir, 'none.json') }).codeRoots.size, 0);
+  assert.throws(() => loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: file, AUSPEX_CODE_ROOT_EXAMPLE_APP: codeB }), /Code root "example_app" is defined both/);
+  // The same name may be a script root and a code root: separate namespaces.
+  const both = profilesFile({ scriptRoots: { app: codeA }, codeRoots: { app: codeA } });
+  assert.equal(loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: both }).codeRoots.get('app').dir, codeA);
+});
+
+for (const [name, roots, message] of invalidRoots) {
+  test(`code roots reject ${name}`, () => {
+    const file = profilesFile({ codeRoots: roots });
+    assert.throws(() => loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: file }), message);
+  });
+}
+
+test('code roots must be an object; env roots are validated too', () => {
+  assert.throws(() => loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: profilesFile({ codeRoots: [dir] }) }), /Invalid "codeRoots".*expected an object/);
+  const none = path.join(dir, 'none.json');
+  assert.throws(() => loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: none, AUSPEX_CODE_ROOT_X: 'relative' }), /code root "x".*must be absolute/);
+  assert.throws(() => loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: none, AUSPEX_CODE_ROOT_9: dir }), /AUSPEX_CODE_ROOT_9/);
+});
+
 test('notesLanguage is read from the profiles file, null when absent, and is not a profile', () => {
   const file = profilesFile({ local: { url: 'postgresql://Auspex@localhost/postgres' }, notesLanguage: 'pt-BR' });
   const config = loadConfig({ ...baseEnv, AUSPEX_PROFILES_FILE: file });

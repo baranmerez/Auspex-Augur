@@ -14,15 +14,21 @@ import path from 'node:path';
 // elsewhere); node-postgres reads it automatically when no password is given.
 // The same file may hold a top-level "scriptRoots" object (name -> absolute
 // directory) for change scripts; AUSPEX_SCRIPT_ROOT_<NAME> adds one from env,
+// a top-level "codeRoots" object (name -> absolute directory) naming source
+// code folders the agent reads with its own tools (AUSPEX_CODE_ROOT_<NAME>
+// adds one from env; Auspex never reads or writes them, the names only scope
+// remember evidenceCode references),
 // an optional top-level "notesLanguage" (language code such as en or pt-BR), and
 // an optional top-level "auspexRoot" (this checkout, for the desktop app's
 // approve/revoke through src/stageCli.js).
 const profilePrefix = 'AUSPEX_DB_';
 const scriptRootPrefix = 'AUSPEX_SCRIPT_ROOT_';
+const codeRootPrefix = 'AUSPEX_CODE_ROOT_';
 export const scriptRootsKey = 'scriptRoots';
+export const codeRootsKey = 'codeRoots';
 export const notesLanguageKey = 'notesLanguage';
 export const auspexRootKey = 'auspexRoot';
-const settingKeys = new Set([scriptRootsKey, notesLanguageKey, auspexRootKey]);
+const settingKeys = new Set([scriptRootsKey, codeRootsKey, notesLanguageKey, auspexRootKey]);
 const notesLanguagePattern = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/i;
 const profileNamePattern = /^[a-z][a-z0-9_-]{0,39}$/;
 const profileKeys = new Set(['url', 'description', 'maxTimeoutSeconds', 'maxQueriesPerMinute']);
@@ -125,7 +131,8 @@ function readProfilesData(file) {
 
 // Reads and validates the profiles file. A missing file means no file profiles;
 // any other problem is an error so a broken file is never silently ignored.
-// The "scriptRoots", "notesLanguage" and "auspexRoot" keys are not profiles.
+// The "scriptRoots", "codeRoots", "notesLanguage" and "auspexRoot" keys are
+// not profiles.
 export function readProfilesFile(file) {
   const data = readProfilesData(file);
   if (!data) return [];
@@ -199,32 +206,43 @@ export function readAuspexRoot(file) {
   return dir;
 }
 
-// Script roots from the profiles file and from AUSPEX_SCRIPT_ROOT_<NAME>:
+// Named folders from the profiles file and from <envPrefix><NAME>:
 // name -> { dir, source }. Names follow the profile-name rules; the same name
-// in both places is an error.
-export function readScriptRoots(file, env = process.env) {
+// in both places is an error. Used for script roots and code roots.
+function readNamedRoots(file, env, key, envPrefix, label) {
   const roots = new Map();
-  const fromFile = readProfilesData(file)?.[scriptRootsKey];
+  const fromFile = readProfilesData(file)?.[key];
   if (fromFile !== undefined) {
     if (!fromFile || typeof fromFile !== 'object' || Array.isArray(fromFile)) {
-      throw new Error(`Invalid "${scriptRootsKey}" in ${file}: expected an object of name -> absolute directory.`);
+      throw new Error(`Invalid "${key}" in ${file}: expected an object of name -> absolute directory.`);
     }
     for (const [rawName, dir] of Object.entries(fromFile)) {
       const name = rawName.toLowerCase();
-      const where = `script root "${rawName}" in ${file}`;
+      const where = `${label} "${rawName}" in ${file}`;
       if (!profileNamePattern.test(name)) throw new Error(`Invalid ${where}: names use a-z, 0-9, - and _ and start with a letter.`);
-      if (roots.has(name)) throw new Error(`Script root "${name}" is defined twice in ${file} (names are case-insensitive).`);
-      roots.set(name, { dir: validateScriptRoot(dir, where), source: 'file' });
+      if (roots.has(name)) throw new Error(`${label[0].toUpperCase()}${label.slice(1)} "${name}" is defined twice in ${file} (names are case-insensitive).`);
+      roots.set(name, { dir: validateScriptRoot(dir, where, label), source: 'file' });
     }
   }
-  for (const [key, value] of Object.entries(env)) {
-    if (!key.toUpperCase().startsWith(scriptRootPrefix) || !value) continue;
-    const name = key.slice(scriptRootPrefix.length).toLowerCase();
-    if (!profileNamePattern.test(name)) throw new Error(`Invalid ${key}: script root names use a-z, 0-9, - and _ and start with a letter.`);
-    if (roots.has(name)) throw new Error(`Script root "${name}" is defined both in ${file} and in ${key}; keep only one.`);
-    roots.set(name, { dir: validateScriptRoot(value, `script root "${name}" in ${key}`), source: 'env' });
+  for (const [envKey, value] of Object.entries(env)) {
+    if (!envKey.toUpperCase().startsWith(envPrefix) || !value) continue;
+    const name = envKey.slice(envPrefix.length).toLowerCase();
+    if (!profileNamePattern.test(name)) throw new Error(`Invalid ${envKey}: ${label} names use a-z, 0-9, - and _ and start with a letter.`);
+    if (roots.has(name)) throw new Error(`${label[0].toUpperCase()}${label.slice(1)} "${name}" is defined both in ${file} and in ${envKey}; keep only one.`);
+    roots.set(name, { dir: validateScriptRoot(value, `${label} "${name}" in ${envKey}`, label), source: 'env' });
   }
   return roots;
+}
+
+// Script roots: folders save_execute_script writes change scripts into.
+export function readScriptRoots(file, env = process.env) {
+  return readNamedRoots(file, env, scriptRootsKey, scriptRootPrefix, 'script root');
+}
+
+// Code roots: source code folders the agent reads with its own file tools.
+// Auspex never reads or writes them; their names scope remember evidenceCode.
+export function readCodeRoots(file, env = process.env) {
+  return readNamedRoots(file, env, codeRootsKey, codeRootPrefix, 'code root');
 }
 
 export function loadConfig(env = process.env) {
@@ -281,6 +299,7 @@ export function loadConfig(env = process.env) {
     profileInfo,
     profilesFile,
     scriptRoots: readScriptRoots(profilesFile, env),
+    codeRoots: readCodeRoots(profilesFile, env),
     notesLanguage: readNotesLanguage(profilesFile),
     auspexRoot: readAuspexRoot(profilesFile),
     maxRows: intFromEnv(env, 'AUSPEX_MAX_ROWS', 500, 1, 10000),

@@ -100,7 +100,8 @@ column appears.
    | 1 unused | appears in no SQL |
 
    A column used on application screens but in no report or script gets a
-   low score here; that is what the question in step 8 is for.
+   low score here; that is what the question in step 8 is for. What a
+   column means in the application is the `auspex-code` workflow.
    Write the reason as one sentence (at most 200 characters) in the
    `notesLanguage` from `list_profiles` (ask once if null).
 5. **Triggers.** `table_knowledge` lists the recorded triggers of the table

@@ -35,6 +35,11 @@ export const maxScoredColumns = 2000;
 export const maxScannedFiles = 1000;
 export const maxTriggerSummary = 200;
 export const maxTriggerSummaries = 200;
+// remember evidenceCode: references into a configured code root (name, path
+// relative to it, optional line and symbol); never the code itself.
+export const maxEvidenceCode = 5;
+export const maxCodeSymbol = 120;
+export const maxCodeLine = 10000000;
 const maxScannedPath = 500;
 const sha256Pattern = /^[0-9a-f]{64}$/;
 const reservedFileName = /^(con|prn|aux|nul|com\d|lpt\d)$/;
@@ -175,7 +180,8 @@ export function changeText(c) {
 
 function noteLine(n) {
   const target = n.column ? ` ${n.column}` : '';
-  const suffix = n.kind === 'observation' && n.asOf ? ` (as of ${n.asOf})` : n.kind === 'inference' ? ' (unconfirmed)' : '';
+  const suffix = n.kind === 'observation' && n.asOf ? ` (as of ${n.asOf})`
+    : n.kind === 'inference' ? (n.evidenceCode?.length ? ' (code inference, unconfirmed)' : ' (unconfirmed)') : '';
   return `#${n.id} ${n.kind}${target}: ${n.text}${suffix}`;
 }
 
@@ -398,11 +404,12 @@ export class SchemaMemory {
     this.writeJson(path.join(this.profileDir(profile), 'notes.json'), data);
   }
 
-  addNote(profile, { kind, schema, table, column, text, evidence, source }) {
-    return this.locked(profile, () => this.addNoteUnlocked(profile, { kind, schema, table, column, text, evidence, source }));
+  // codeRoots: names an evidenceCode root must be one of (null = not checked).
+  addNote(profile, { kind, schema, table, column, text, evidence, evidenceCode, source }, { codeRoots = null } = {}) {
+    return this.locked(profile, () => this.addNoteUnlocked(profile, { kind, schema, table, column, text, evidence, evidenceCode, source }, { codeRoots }));
   }
 
-  addNoteUnlocked(profile, { kind, schema, table, column, text, evidence, source }) {
+  addNoteUnlocked(profile, { kind, schema, table, column, text, evidence, evidenceCode, source }, { codeRoots = null } = {}) {
     if (!noteKinds.includes(kind)) throw new MemoryError(`kind must be one of ${noteKinds.join(', ')}.`);
     const body = String(text || '').trim();
     if (!body) throw new MemoryError('Note text is empty.');
@@ -412,6 +419,8 @@ export class SchemaMemory {
     const figures = evidence?.figures;
     if (figures && Object.keys(figures).length > 50) throw new MemoryError('Evidence figures are limited to 50 entries.');
     if (evidence?.sql && evidence.sql.length > 20000) throw new MemoryError('Evidence SQL is longer than 20000 characters.');
+    const code = validateEvidenceCode(evidenceCode, codeRoots);
+    if (code.length && kind === 'rule') throw new MemoryError('evidenceCode is only valid with kind inference or observation (a rule comes from the user).');
     const at = this.now();
     const data = this.readNotes(profile);
     const note = {
@@ -426,6 +435,7 @@ export class SchemaMemory {
       createdAt: at,
       ...(kind === 'observation' ? { asOf: at.slice(0, 10) } : {}),
       ...(evidence?.sql || figures ? { evidence: { ...(evidence.sql ? { sql: evidence.sql } : {}), ...(figures ? { figures } : {}) } } : {}),
+      ...(code.length ? { evidenceCode: code } : {}),
     };
     data.notes.push(note);
     data.nextId += 1;
@@ -492,6 +502,7 @@ export class SchemaMemory {
       databaseNotes: shown.map(n => ({
         id: n.id, scope: 'database', kind: n.kind, confirmed: n.kind !== 'inference', text: n.text,
         ...(n.asOf ? { asOf: n.asOf } : {}),
+        ...(n.evidenceCode?.length ? { evidenceCode: n.evidenceCode } : {}),
       })),
       ...(others.length > databaseNoteLimit ? { moreDatabaseNotes: others.length - databaseNoteLimit } : {}),
     };
@@ -667,7 +678,7 @@ export class SchemaMemory {
   knowledge(profile, schema, table) {
     const rec = this.readTable(profile, schema, table);
     if (!rec) {
-      const notes = this.activeNotes(profile, [{ schema, table }]).map(n => ({ id: n.id, kind: n.kind, column: n.column, text: n.text }));
+      const notes = this.activeNotes(profile, [{ schema, table }]).map(n => ({ id: n.id, kind: n.kind, column: n.column, text: n.text, ...(n.evidenceCode?.length ? { evidenceCode: n.evidenceCode } : {}) }));
       return { relation: tableKey(schema, table), known: false, hint: 'Not in memory yet. describe_table records it (reads the catalog only).', ...(notes.length ? { notes } : {}), ...this.databaseNotesSection(profile) };
     }
     const tables = this.listTables(profile);
@@ -702,7 +713,10 @@ export class SchemaMemory {
         used: edges.filter(e => e.level === 'used').map(edgeText),
         suggested: edges.filter(e => e.level === 'suggested').map(e => `${edgeText(e)} (name match, unconfirmed)`),
       },
-      notes: notes.map(n => ({ id: n.id, kind: n.kind, column: n.column, text: n.text, ...(n.asOf ? { asOf: n.asOf } : {}), ...(n.evidence?.figures ? { figures: n.evidence.figures } : {}) })),
+      notes: notes.map(n => ({
+        id: n.id, kind: n.kind, column: n.column, text: n.text, ...(n.asOf ? { asOf: n.asOf } : {}), ...(n.evidence?.figures ? { figures: n.evidence.figures } : {}),
+        ...(n.evidenceCode?.length ? { evidenceCode: n.evidenceCode } : {}),
+      })),
       recentChanges: (rec.history || []).slice(-5).map(h => `${h.at.slice(0, 10)}: ${h.changes.map(changeText).join('; ')}`),
       ...columnScoresSection(rec, notes),
       ...(Array.isArray(rec.triggers) ? { triggers: triggersWithSummaries(rec) } : {}),
@@ -802,14 +816,51 @@ function rejectUnknownKeys(obj, allowed, what) {
 
 // A script path relative to its script root, with / separators; never
 // absolute, never leaving the root.
-function normalizeScannedPath(value, where) {
+function normalizeScannedPath(value, where, rootLabel = 'script root') {
   if (typeof value !== 'string' || !value.trim()) throw new MemoryError(`${where}.path must be a non-empty string.`);
   const rel = value.trim().replace(/\\/g, '/');
   if (rel.length > maxScannedPath) throw new MemoryError(`${where}.path is longer than ${maxScannedPath} characters.`);
   if (/[\x00-\x1f]/.test(rel)) throw new MemoryError(`${where}.path contains control characters.`);
-  if (rel.startsWith('/') || /^[A-Za-z]:/.test(rel)) throw new MemoryError(`${where}.path must be relative to its script root, not absolute.`);
+  if (rel.startsWith('/') || /^[A-Za-z]:/.test(rel)) throw new MemoryError(`${where}.path must be relative to its ${rootLabel}, not absolute.`);
   if (rel.split('/').some(s => s === '' || s === '.' || s === '..')) throw new MemoryError(`${where}.path must not contain empty, "." or ".." segments.`);
   return rel;
+}
+
+// Strict check of remember evidenceCode: at most maxEvidenceCode references
+// { root, path, line?, symbol? }; root is a configured code root name, path is
+// relative to it (no absolute, drive or UNC path, no "." or ".." segments,
+// separators normalised to /), line a positive integer, symbol one line.
+// Returns the normalized list ([] when absent).
+export function validateEvidenceCode(list, codeRoots = null) {
+  if (list === undefined || list === null) return [];
+  if (!Array.isArray(list)) throw new MemoryError('evidenceCode must be an array.');
+  if (list.length > maxEvidenceCode) throw new MemoryError(`At most ${maxEvidenceCode} evidenceCode references per note.`);
+  const seen = new Set();
+  return list.map((ref, i) => {
+    const where = `evidenceCode[${i}]`;
+    rejectUnknownKeys(ref, ['root', 'path', 'line', 'symbol'], where);
+    if (typeof ref.root !== 'string' || !profilePattern.test(ref.root)) throw new MemoryError(`${where}.root must be the name of a configured code root (list_profiles), not a path.`);
+    if (codeRoots && !codeRoots.includes(ref.root)) {
+      throw new MemoryError(`${where}.root "${ref.root}" is not a configured code root (list_profiles: ${codeRoots.join(', ') || 'none; add "codeRoots" to profiles.json'}).`);
+    }
+    const rel = normalizeScannedPath(ref.path, where, 'code root');
+    const out = { root: ref.root, path: rel };
+    if (ref.line !== undefined) {
+      if (!Number.isInteger(ref.line) || ref.line < 1 || ref.line > maxCodeLine) throw new MemoryError(`${where}.line must be an integer between 1 and ${maxCodeLine}.`);
+      out.line = ref.line;
+    }
+    if (ref.symbol !== undefined) {
+      if (typeof ref.symbol !== 'string' || !ref.symbol.trim()) throw new MemoryError(`${where}.symbol must be a non-empty string.`);
+      const symbol = ref.symbol.trim();
+      if (/[\x00-\x1f\x7f]/.test(symbol)) throw new MemoryError(`${where}.symbol must be one line without control characters.`);
+      if (symbol.length > maxCodeSymbol) throw new MemoryError(`${where}.symbol is longer than ${maxCodeSymbol} characters.`);
+      out.symbol = symbol;
+    }
+    const key = `${out.root}\n${out.path}\n${out.line ?? ''}\n${out.symbol ?? ''}`;
+    if (seen.has(key)) throw new MemoryError(`${where} is listed twice.`);
+    seen.add(key);
+    return out;
+  });
 }
 
 // Strict check of a score_columns input; the whole call is rejected on the

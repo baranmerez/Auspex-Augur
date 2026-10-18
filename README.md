@@ -167,7 +167,7 @@ flowchart LR
 
 | Tool | What it does |
 |---|---|
-| 🗂️ `list_profiles` | Configured profiles (description, host, database, user, timeout limit, role check; never passwords) and script roots (name and folder) |
+| 🗂️ `list_profiles` | Configured profiles (description, host, database, user, timeout limit, role check; never passwords), script roots and code roots (name and folder) |
 | 🔐 `check_profile` | Checks that a profile's database role is read-only; a role that can write blocks the profile |
 | 🔎 `search` | Tables, views, columns, functions and triggers whose name or comment contains a text (always a case-insensitive contains-match), across all schemas, in one statement; with estimated rows and privileges; optionally function source text too (`searchSource`) |
 | 📁 `list_schemas` | Non-system schemas with owner, relation count, usage privilege, comment |
@@ -187,7 +187,7 @@ flowchart LR
 | 📨 `share_report` | Writes a copy of a report to send to someone: masked preview and figures only, no SQL, plan, parameters or history |
 | 🧾 `save_execute_script` | Writes a change script into `EXECUTE/` for a human to run — never executed by Auspex; with `root`, `folder` and `fileName` also as a new file in a configured script root (for example a folder of saved SQL scripts) |
 | 🧠 `table_knowledge` | What the schema memory knows about a table — key and used columns, relations, table notes, database-wide notes, recent changes, column importance scores, triggers with their summaries, unexplored neighbors — without touching the database |
-| 📌 `remember` | Adds, confirms or archives a note: a rule the user stated, an observation backed by evidence, or an unconfirmed inference |
+| 📌 `remember` | Adds, confirms or archives a note: a rule the user stated, an observation backed by evidence, or an unconfirmed inference; `evidenceCode` adds up to 5 references into a configured code root (see Code meanings) |
 | 🏷️ `score_columns` | Saves 1-5 importance scores per column of a described table in two layers: the agent's (roles, one-line reason, number of sources) and the user's (stated by the user; wins when present), one-line trigger summaries and the script files it read (path relative to the script root and sha256 only); local memory only, no database access |
 | 🗃️ `scanned_files` | Lists the script files `score_columns` recorded (root, relative path, sha256, last read), so the next run reads only new or changed files |
 
@@ -808,6 +808,40 @@ score. An agent rescan updates only the agent layer, so both stay visible
 (newest first, a removal included); columns and layers not listed keep their
 score.
 
+### Code meanings
+
+What a column means is often visible only in the application that writes
+or shows it. The `auspex-code` skill (prompt `code`) has the agent read the
+source code in a configured **code root** with its own file tools - ORM
+mappings, computations, UI labels, permission flags, validation messages and
+enum names - and save one sentence per column with `remember` as an
+inference with `evidenceCode`:
+
+```json
+{ "action": "add", "kind": "inference", "schema": "example", "table": "orders", "column": "amount",
+  "text": "Appears to be the order total: net amount plus tax and shipping.",
+  "evidenceCode": [{ "root": "example_app", "path": "src/Orders/Order.cs", "line": 42, "symbol": "Order.Amount" }] }
+```
+
+- `evidenceCode` is accepted with `kind` `inference` or `observation` (not
+  `rule`) and only on `action=add`; at most 5 references.
+- `root` must be a configured code root name (see Configuration). `path` is
+  relative to it: absolute, drive (`C:\...`), drive-relative and UNC paths
+  and `.`/`..` segments are rejected; `\` becomes `/`. `line` (optional) is an
+  integer from 1 to 10000000; `symbol` (optional) is one line of at most 120
+  characters. Unknown keys are rejected.
+- Only the references are stored on the note (`evidenceCode` in
+  `notes.json`, `graph.json` and `table_knowledge`); Auspex never reads or
+  writes code files and never stores code text. The audit entry of `remember`
+  stays as before: no note text and no evidence.
+- Such a note is a code inference until the user agrees and the agent
+  confirms it (`action=confirm`, which keeps the references). The viewer shows
+  a *from code* badge (TR *koddan*) next to the kind on the Rules tab and in
+  the table page's column rows, and the references as
+  `root:path:line · symbol` text in the evidence (no links, nothing opens a
+  file). In the table page's Summary, a column chip's tooltip adds the meaning
+  of a confirmed note read from code.
+
 | Score | Meaning (relative within the table) |
 |---|---|
 | 5 core | most reports revolve around it: main join key, period filter, primary display field |
@@ -928,7 +962,7 @@ Other MCP clients work the same way: a stdio server started with
 
 ## 🧩 Skills and prompts
 
-Four workflow guides keep an agent on the cheap and safe path with Auspex.
+Five workflow guides keep an agent on the cheap and safe path with Auspex.
 Each is written once, in [`skills/`](skills), and reaches the agent in two
 ways: as an agent skill (installed files) and as an MCP prompt (served by the
 server from the same files at startup).
@@ -938,6 +972,7 @@ server from the same files at startup).
 | [`auspex-explore`](skills/auspex-explore/SKILL.md) | `explore` | Finding tables, reading structure and relations, fill rates and fan-out, recording findings in the schema memory with few statements |
 | [`auspex-report`](skills/auspex-report/SKILL.md) | `report` | A combined report: one round of at most 3 questions, remembered rules as defaults, status codes from their source (lookup table, enum, check or comment), fan-out/duplicate/NULL checks, and whether cancelled or deleted rows count asked within the 3 questions when no rule is remembered, then save, run and approve in the report library |
 | [`auspex-columns`](skills/auspex-columns/SKILL.md) | `columns` | Scoring column importance 1-5 from the SQL of the report library and the user's script files (roles, reason, sources) next to scores the user states, plus one-line trigger summaries, saved with `score_columns`; no database queries for the scores |
+| [`auspex-code`](skills/auspex-code/SKILL.md) | `code` | Column meanings from the application source code in a configured code root (ORM mapping first, then computations, UI labels, permission flags, validation messages, enum names): one sentence per column saved as an inference with `evidenceCode` references, confirmed only after the user agrees; no database queries |
 | [`auspex-ddl`](skills/auspex-ddl/SKILL.md) | `ddl` | Studying an existing table family (tables, functions, triggers) and designing a similar one: analysis note plus a `BEGIN ... ROLLBACK` script via `save_execute_script`, never executed by Auspex |
 
 Each `SKILL.md` holds the core rules and workflow; longer checklists live in
@@ -983,11 +1018,11 @@ Opens a local page at http://127.0.0.1:4719 (port: `AUSPEX_VIEWER_PORT`):
   - *Data dictionary* (TR *Veri sözlüğü*) — downloads a self-contained HTML or Markdown document of the database built from the schema memory only (no database access): the explored tables with their comment, key columns (primary key, foreign key, used, noted), relations (Reference/instance and Dependent), active rules and observations (observations with their aggregate figures), and the database-wide rules and observations, with the generation date. Unconfirmed inferences, archived notes and evidence SQL are left out; every name and text is escaped. The file is saved as `auspex-data-dictionary-<db>-<date>.html` or `.md` after a click (when loading the table files took too long, the next click downloads)
 - **Table page** (TR *Tablo sayfası*) — opened from a table name in the Tables tab, the Schema inspector (*Open table page*) or the Schema search (matching tables are listed under the bar); shown in the Schema tab with a breadcrumb (Back, Schema, each visited table). From `graph.json` and the table file only:
   - header: `schema.table`, estimated rows, column count, note count, comment, last scored date, sources (most reports and scripts found for one column) and a badge when the last describe recorded changes
-  - columns sorted by effective score, then name: a 5-step single-hue score chip (the accent mixed into the surface, so it follows light, dark and custom themes), name and type, roles as icons with tooltips, the agent's one-line reason and its number of reports; "user 5 · agent 2" when both layers exist. By default only scores 4–5 are listed, with a counter and *Show all columns*; the legend explains the rubric (5 core, 4 frequent, 3 topical, 2 rare, 1 unused). A row expands to the score history of both layers (newest 5 each), the column's notes, its FK target, default and comment
+  - columns sorted by effective score, then name: a 5-step single-hue score chip (the accent mixed into the surface, so it follows light, dark and custom themes), name and type, roles as icons with tooltips, the agent's one-line reason and its number of reports; "user 5 · agent 2" when both layers exist. By default only scores 4–5 are listed, with a counter and *Show all columns*; the legend explains the rubric (5 core, 4 frequent, 3 topical, 2 rare, 1 unused). A row expands to the score history of both layers (newest 5 each), the column's notes (a note read from code with a *from code* badge and its `root:path:line · symbol` references), its FK target, default and comment
   - keys and structure (primary key, unique and check constraints with definitions, outgoing and incoming foreign keys, indexes), triggers (timing and events, level, enabled, function, WHEN, the agent summary; a stale summary is marked *may be out of date*), and neighbours: tables it references on the left, tables that reference it on the right (linking columns, estimated rows; not explored ones muted), each opening its own page
   - an undescribed table explains that `describe_table` is needed; an unscored table points to the `auspex-columns` skill. Clicking a score chip sets your own score (see below)
   - *Detailed / Summary* switch (TR *Ayrıntılı / Özet*). A first visit opens **Summary**: names only, as coloured, clickable chips in groups: primary key, foreign keys (`column → table`, best column score first; the first 12, the rest behind *+N more*, TR *+N daha*; the same for referenced and referencing tables), columns by effective score (coloured by score and grouped under a heading with a count, such as *5 · core (3)*; the five score steps are clearly apart in light and dark; score 1 columns collapse into a *+N unused* chip that expands; unscored columns are dashed), triggers (a disabled one is muted and struck through), trigger functions, reports whose SQL mentions the table (*Mentioned in SQL*, TR *SQL'inde geçiyor*), referenced tables (*Bağlı olduğu*) and referencing tables (*Ona bağlı olan*). A column chip opens its row in the Detailed view, a table chip opens that table's page, a report chip opens the report on the Reports tab. The last choice is remembered in browser storage (the page works without storage). The report match is a simple, case-insensitive name match over the SQL of the database's draft and approved reports (read once each through the existing `GET /api/report`, four at a time, again when the report changes); schema-qualified and bare names match, a longer name that shares a prefix (`example.orders` vs `example.orders_archive`) does not, and neither does the name after another schema (`test.orders`). The first 400 reports are checked (the page says *first 400 reports checked* when there are more); a report that cannot be read is counted as *could not be read* with *Retry*, not remembered as empty. It is a hint, not a hard link
-- **Rules** (TR *Kurallar*) — every schema-memory note of the chosen database: rules, observations and inferences with table and column, text, status, confirmed or unconfirmed, created/confirmed/archived dates, and the evidence (figures and SQL) behind a collapsed *Evidence* toggle. Filters: status (active by default, archived, all), kind, table (part of `schema.table`) and text (case-insensitive, Turkish İ/I/ı/i match each other). An active note can be archived with a required reason (see below); adding or confirming notes stays an agent action (`remember`). The table header and the column sub-header of each group are links: a table opens its table page, a column opens its row in the Detailed view.
+- **Rules** (TR *Kurallar*) — every schema-memory note of the chosen database: rules, observations and inferences with table and column, text, status, confirmed or unconfirmed, created/confirmed/archived dates, and the evidence (figures, SQL and code references) behind a collapsed *Evidence* toggle; a note with code references carries a *from code* badge (TR *koddan*) under its kind. Filters: status (active by default, archived, all), kind, table (part of `schema.table`) and text (case-insensitive, Turkish İ/I/ı/i match each other). An active note can be archived with a required reason (see below); adding or confirming notes stays an agent action (`remember`). The table header and the column sub-header of each group are links: a table opens its table page, a column opens its row in the Detailed view.
 - **Profiles** — configured databases with connection details (never passwords) and the latest role check; a `check_profile` that failed shows "unable to assess" with its code, never as a passed check
 
 Scheduled reports (see Scheduled runs): an approved report with a schedule
@@ -1268,6 +1303,24 @@ startup. Root names follow the profile-name rules. If the folder is under
 AppData, check that saved scripts appear there: MSIX-packaged clients may
 redirect AppData writes (see Configuration).
 
+An optional top-level `codeRoots` object names source code folders the
+agent may read with its own file tools for column meanings (see Code
+meanings); it is not a profile and has the same shape and checks as
+`scriptRoots`:
+
+```json
+{
+  "codeRoots": {
+    "example_app": "/path/to/example_app"
+  }
+}
+```
+
+Auspex never reads or writes a code root; the name only scopes the
+`evidenceCode` references of `remember`, and `list_profiles` lists the roots
+as `codeRoots` (`name`, `path`, `source`). Code root names are a separate
+namespace from script root names.
+
 An optional top-level `notesLanguage` sets the language of schema-memory
 notes and of report titles, descriptions, version notes and change-script texts (save_execute_script title, purpose and comments; step markers such as BEGIN and MATCH stay as written) (a language code such as `tr`, `en`, `de` or `pt-BR`); it is not a
 profile and an invalid value stops the server at startup:
@@ -1310,6 +1363,7 @@ naming the problem.
 | `AUSPEX_PROFILES_FILE` | `<home>/profiles.json` | Profiles file location |
 | `AUSPEX_DB_<NAME>` | none | Extra profile from the environment, e.g. `AUSPEX_DB_LOCAL`; the same name in the file and env is an error |
 | `AUSPEX_SCRIPT_ROOT_<NAME>` | none | Extra script root (absolute folder for `save_execute_script`), e.g. `AUSPEX_SCRIPT_ROOT_SCRIPTS`; the same name in `scriptRoots` and env is an error |
+| `AUSPEX_CODE_ROOT_<NAME>` | none | Extra code root (absolute source code folder the agent reads itself; names `remember` `evidenceCode` roots), e.g. `AUSPEX_CODE_ROOT_EXAMPLE_APP`; the same name in `codeRoots` and env is an error |
 | `AUSPEX_ROOT` | `auspexRoot` in the profiles file | Auspex checkout the desktop app runs `src/stageCli.js` from (report approve/revoke) |
 | `AUSPEX_NODE` | `node` on `PATH` | Absolute path of the Node executable the desktop app uses for approve/revoke |
 | `AUSPEX_MAX_ROWS` | 500 | Row cap for `query` |

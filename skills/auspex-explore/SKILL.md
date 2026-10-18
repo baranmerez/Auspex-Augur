@@ -98,6 +98,7 @@ Write note text in the `notesLanguage` from `list_profiles` (ask once if null).
 | Rule the user stated ("reports on example.orders use status_code = 1 only") | `rule` | user's words |
 | Finding from data (fill rate 0 %, fan-out max 12) | `observation` | `evidenceSql` + aggregate `evidenceFigures` |
 | Your interpretation ("looks like an audit copy") | `inference` | confidence in the text |
+| Column meaning read from application code (auspex-code workflow) | `inference` | `evidenceCode` references into a configured code root (never code text) |
 
 Confirm an inference (`action=confirm`) only after the user agreed. Archive
 outdated notes with a reason; never re-add a duplicate. The user can also

@@ -24,7 +24,7 @@ after(async () => { await client?.close(); });
 
 test('the workflow prompts are listed with the skill descriptions and their arguments', async () => {
   const { prompts } = await client.listPrompts();
-  assert.deepEqual(prompts.map(p => p.name).sort(), ['columns', 'ddl', 'explore', 'report']);
+  assert.deepEqual(prompts.map(p => p.name).sort(), ['code', 'columns', 'ddl', 'explore', 'report']);
   for (const p of prompts) {
     const skill = loadSkill(promptSkills.find(s => s.prompt === p.name).skill);
     assert.equal(p.description, skill.description);

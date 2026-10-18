@@ -72,6 +72,31 @@ test('rows: archive button only on active notes, note text and reason stay plain
   assert.match(gone.attrs.class, /archived/);
 });
 
+test('a note read from code shows a "from code" badge next to its kind and its references as plain text in the evidence', () => {
+  const src = page.match(/function ruleCard\(n\) \{[\s\S]*?\r?\n\}\r?\n/)?.[0];
+  const refFn = page.match(/function codeRefText\(r\) \{[\s\S]*?\r?\n\}\r?\n/)?.[0];
+  assert.ok(src && refFn, 'ruleCard and codeRefText found');
+  const h = (tag, attrs = {}, ...kids) => ({ tag, attrs: attrs || {}, kids: kids.flat(Infinity).filter(k => k !== null && k !== undefined && k !== false) });
+  const ctx = vm.createContext({
+    h, svg: h, state: {}, locale: 'en-GB', fmt: String, confirmArchiveNote() {},
+    t: (k, v = {}) => k.replace(/\{(\w+)\}/g, (_, x) => v[x]), ruleDay: ts => (ts ? 'D' : '?'),
+  });
+  vm.runInContext(`${refFn}\n${src}\nthis.ruleCard = ruleCard;`, ctx);
+  const all = node => (typeof node === 'string' ? [node] : [node, ...node.kids.flatMap(all)]);
+  const cls = (node, c) => all(node).filter(x => typeof x !== 'string' && String(x.attrs.class || '').split(' ').includes(c));
+  const row = ctx.ruleCard({ id: 7, kind: 'inference', text: 'Appears to be the total.', status: 'active', createdAt: 't',
+    evidenceCode: [{ root: 'example_app', path: 'src/Orders/Order.cs', line: 42, symbol: '<b>Order.Amount</b>' }, { root: 'example_app', path: 'src/Orders/Order.cs' }] });
+  const badges = cls(row, 'rl-badges')[0];
+  assert.deepEqual(badges.kids.map(b => [b.attrs.class, b.kids[0]]), [['badge inference', 'inference'], ['badge code', 'from code']]);
+  const refs = cls(row, 'code-refs')[0];
+  assert.deepEqual(refs.kids.map(li => li.kids), [['example_app:src/Orders/Order.cs:42 · <b>Order.Amount</b>'], ['example_app:src/Orders/Order.cs']]);
+  assert.ok(!all(row).some(x => typeof x !== 'string' && x.tag === 'a'), 'no links');
+  const plain = ctx.ruleCard({ id: 8, kind: 'rule', text: 'x', status: 'active', createdAt: 't' });
+  assert.equal(cls(plain, 'code').length, 0);
+  assert.equal(cls(plain, 'rl-badges').length, 0);
+  for (const key of ['from code', 'Code references']) assert.ok(page.includes(`'${key}': '`), `Turkish text for ${key}`);
+});
+
 test('Turkish texts exist for the new labels', () => {
   for (const key of ['(table)', 'Observations', '{n} rules', '{n} observations', '{n} archived']) {
     assert.ok(page.includes(`'${key}': '`), `Turkish text for ${key}`);
