@@ -214,3 +214,16 @@ test('database rules are never cut; other database notes are capped and counted'
   assert.equal(k.databaseNotes.filter(n => n.kind === 'inference').length, 10);
   assert.equal(k.moreDatabaseNotes, 4);
 });
+
+test('names outside the Basic Multilingual Plane get their own memory file and read back as themselves', () => {
+  assert.notEqual(fileSegment('😀'), fileSegment('😁'));
+  assert.equal(fileSegment('😀'), '~f09f9880');
+  assert.equal(fileSegment('çay😀'), '~c3a7ay~f09f9880');
+  const mem = tempMemory();
+  const describe = table => ordersDescribe({ relation: `sales.${table}`, table });
+  mem.recordDescribe(describe('😀'));
+  mem.recordDescribe(describe('😁'));
+  assert.equal(mem.readTable('example', 'sales', '😀')?.table, '😀');
+  assert.equal(mem.readTable('example', 'sales', '😁')?.table, '😁');
+  assert.deepEqual(mem.listTables('example').map(t => t.table).filter(t => t.length === 2).sort(), ['😀', '😁']);
+});

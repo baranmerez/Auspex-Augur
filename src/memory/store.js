@@ -54,11 +54,14 @@ export class MemoryError extends Error {
 
 // Lower-case letters, digits, _ and - stay; any other character becomes
 // ~<UTF-8 hex>, so names that differ only in case (or reserved device names)
-// never collide on case-insensitive file systems.
+// never collide on case-insensitive file systems. The match is per code point
+// (u flag): a character outside the Basic Multilingual Plane, such as an
+// emoji, is one character with its own UTF-8 bytes, not two halves that would
+// each turn into the replacement character and collide.
 export function fileSegment(name) {
   const value = String(name ?? '');
   if (!value) throw new MemoryError('Schema and table names must not be empty.');
-  const encoded = value.replace(/[^a-z0-9_-]/g, ch => `~${Buffer.from(ch, 'utf8').toString('hex')}`);
+  const encoded = value.replace(/[^a-z0-9_-]/gu, ch => `~${Buffer.from(ch, 'utf8').toString('hex')}`);
   return reservedFileName.test(encoded) ? `~${encoded}` : encoded;
 }
 
