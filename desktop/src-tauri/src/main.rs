@@ -19,7 +19,8 @@ use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant, SystemTime};
 
 use percent_encoding::percent_decode_str;
 use serde_json::{json, Map, Value};
@@ -183,9 +184,35 @@ fn sub_dirs(p: &std::path::Path) -> Vec<String> {
 fn list_reports() -> Value {
     let mut list = list_reports_in(library_dir());
     if schedules_file().is_file() {
-        apply_schedules(&mut list, run_read_cli(&["schedules".to_string()]));
+        apply_schedules(&mut list, cached_schedules());
     }
     list
+}
+
+// The `stageCli.js schedules` result, reused for up to a minute while
+// schedules.json and schedule-state.json are unchanged (size and modification
+// time), so a list refresh (every 5 s in live mode) does not start Node each
+// time; next slots move at most once a minute anyway.
+fn cached_schedules() -> Result<Value, Value> {
+    type Stamp = Vec<Option<(u64, Option<SystemTime>)>>;
+    static CACHE: OnceLock<Mutex<Option<(Stamp, Instant, Result<Value, Value>)>>> = OnceLock::new();
+    let stamp: Stamp = [schedules_file(), auspex_home().join("schedule-state.json")]
+        .iter()
+        .map(|f| fs::metadata(f).ok().map(|m| (m.len(), m.modified().ok())))
+        .collect();
+    let cache = CACHE.get_or_init(Default::default);
+    if let Ok(guard) = cache.lock() {
+        if let Some((s, at, result)) = guard.as_ref() {
+            if *s == stamp && at.elapsed() < Duration::from_secs(60) {
+                return result.clone();
+            }
+        }
+    }
+    let result = run_read_cli(&["schedules".to_string()]);
+    if let Ok(mut guard) = cache.lock() {
+        *guard = Some((stamp, Instant::now(), result.clone()));
+    }
+    result
 }
 
 fn list_reports_in(root: PathBuf) -> Value {
@@ -304,6 +331,27 @@ fn is_day(s: &str) -> bool {
         && b.iter().enumerate().all(|(i, c)| if i == 4 || i == 7 { *c == b'-' } else { c.is_ascii_digit() })
 }
 
+// Line count of a log file, reused while its size and modification time stay
+// the same (as in src/viewer.js): past days never change, so a refresh
+// (every 5 s in live mode) reads only the file that grew.
+fn count_log_lines(file: &std::path::Path) -> usize {
+    static COUNTS: OnceLock<Mutex<HashMap<PathBuf, (u64, Option<SystemTime>, usize)>>> = OnceLock::new();
+    let stamp = fs::metadata(file).ok().map(|m| (m.len(), m.modified().ok()));
+    let cache = COUNTS.get_or_init(Default::default);
+    if let (Some((len, modified)), Ok(map)) = (stamp, cache.lock()) {
+        if let Some(&(l, m, count)) = map.get(file) {
+            if l == len && m == modified {
+                return count;
+            }
+        }
+    }
+    let count = fs::read_to_string(file).map(|t| t.lines().filter(|l| !l.trim().is_empty()).count()).unwrap_or(0);
+    if let (Some((len, modified)), Ok(mut map)) = (stamp, cache.lock()) {
+        map.insert(file.to_path_buf(), (len, modified, count));
+    }
+    count
+}
+
 fn list_days() -> Vec<(String, usize)> {
     let mut days: Vec<(String, usize)> = fs::read_dir(log_dir())
         .map(|entries| {
@@ -315,10 +363,7 @@ fn list_days() -> Vec<(String, usize)> {
                     if !is_day(&day) {
                         return None;
                     }
-                    let count = fs::read_to_string(e.path())
-                        .map(|t| t.lines().filter(|l| !l.trim().is_empty()).count())
-                        .unwrap_or(0);
-                    Some((day, count))
+                    Some((day, count_log_lines(&e.path())))
                 })
                 .collect()
         })
