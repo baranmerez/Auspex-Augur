@@ -820,7 +820,7 @@ function normalizeScannedPath(value, where, rootLabel = 'script root') {
   if (typeof value !== 'string' || !value.trim()) throw new MemoryError(`${where}.path must be a non-empty string.`);
   const rel = value.trim().replace(/\\/g, '/');
   if (rel.length > maxScannedPath) throw new MemoryError(`${where}.path is longer than ${maxScannedPath} characters.`);
-  if (/[\x00-\x1f]/.test(rel)) throw new MemoryError(`${where}.path contains control characters.`);
+  if (/[\x00-\x1f\x7f]/.test(rel)) throw new MemoryError(`${where}.path contains control characters.`);
   if (rel.startsWith('/') || /^[A-Za-z]:/.test(rel)) throw new MemoryError(`${where}.path must be relative to its ${rootLabel}, not absolute.`);
   if (rel.split('/').some(s => s === '' || s === '.' || s === '..')) throw new MemoryError(`${where}.path must not contain empty, "." or ".." segments.`);
   return rel;
