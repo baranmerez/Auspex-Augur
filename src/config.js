@@ -344,7 +344,8 @@ export function describeConnection(connectionString) {
     return {
       host: decodeURIComponent(url.hostname.replace(/^\[(.*)\]$/, '$1')),
       port: url.port || '5432',
-      database: decodeURIComponent(url.pathname.replace(/^\//, '')),
+      // The database with decodeURI, like node-postgres (an encoded / stays %2F).
+      database: decodeURI(url.pathname.replace(/^\//, '')),
       user: decodeURIComponent(url.username),
       passwordInString: url.password !== '' || queryPasswordKeys(url).length > 0,
     };

@@ -408,6 +408,16 @@ fn profile_problem(name: &str, url_text: &str) -> Option<String> {
     if let Some((k, _)) = u.query_pairs().find(|(k, _)| !ALLOWED.contains(&k.as_ref())) {
         return Some(format!("Query option \"{k}\" is not allowed in the URL; the server will not start."));
     }
+    // Host, user and database are required: the server never takes them from
+    // the environment (PGHOST, PGUSER, PGDATABASE); as in config.js.
+    let missing: Vec<&str> = [
+        ("host", u.host_str().map_or(true, str::is_empty)),
+        ("user", u.username().is_empty()),
+        ("database", u.path().trim_start_matches('/').is_empty()),
+    ].into_iter().filter(|(_, gone)| *gone).map(|(part, _)| part).collect();
+    if !missing.is_empty() {
+        return Some(format!("The URL needs {} (postgresql://user@host:port/db); the server will not start.", missing.join(", ")));
+    }
     None
 }
 
@@ -989,6 +999,22 @@ mod tests {
         assert_eq!(m["host"], json!("::1"));
         assert_eq!(m["port"], json!("5433"));
         assert_eq!(describe("postgresql://u@%2Fvar%2Frun%2Fpostgresql/x")["host"], json!("/var/run/postgresql"));
+    }
+
+    #[test]
+    fn host_user_and_database_are_required_as_on_the_server() {
+        for ok in ["postgresql://u@db.example.test/x", "postgresql://u@[::1]:5433/x", "postgresql://u@%2Fvar%2Frun%2Fpostgresql/x"] {
+            assert_eq!(profile_problem("example", ok), None, "{ok}");
+        }
+        for (bad, part) in [
+            ("postgresql://localhost", "user, database"),
+            ("postgresql://db.example.test/exampledb", "user"),
+            ("postgresql://report_reader@db.example.test", "database"),
+            ("postgresql:///exampledb", "host, user"),
+        ] {
+            let problem = profile_problem("example", bad).expect(bad);
+            assert!(problem.contains(&format!("needs {part} (")), "{bad}: {problem}");
+        }
     }
 
     #[test]
