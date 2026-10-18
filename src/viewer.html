@@ -653,6 +653,93 @@
   .dlg .dlg-field input { height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 13px; outline: none; }
   .dlg .dlg-field input:focus { border-color: var(--accent); }
   .dlg .dlg-hint { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--text-3); margin: 0 0 14px; }
+  /* Table page (Schema tab): columns by importance score, keys, triggers, neighbours.
+     Score chips: one hue (the accent) mixed into the surface, light to strong. */
+  .tp { display: grid; gap: 14px; min-width: 0; }
+  .tp-crumbs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; color: var(--text-3); }
+  .tp-crumbs .crumb, .tp-search .crumb { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 1px 9px; font: 12px var(--mono); color: var(--text-2);
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tp-crumbs button.crumb:hover, .tp-search .crumb:hover { border-color: var(--accent); color: var(--text); }
+  .tp-crumbs .crumb.cur { font-weight: 650; color: var(--text); border-color: var(--accent); }
+  .tp-search { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 0 12px 10px; font-size: 12px; }
+  .tp-search .crumb.dim { color: var(--text-3); border-style: dashed; }
+  .tp-head { padding: 14px 16px; }
+  .tp-title { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+  .tp-title h2 { margin: 0; font: 650 18px var(--mono); overflow-wrap: anywhere; min-width: 0; }
+  .tp-comment { margin: 6px 0 0; color: var(--text-2); font-size: 13px; overflow-wrap: anywhere; }
+  .tp-facts { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 8px; font-size: 12px; color: var(--text-2); }
+  .tp-facts b { color: var(--text); font-size: 14px; font-variant-numeric: tabular-nums; }
+  .tp-body { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(0, 2.6fr) minmax(200px, 1fr); grid-template-areas: "refs main deps"; gap: 14px; align-items: start; }
+  .tp-main { grid-area: main; display: grid; gap: 14px; min-width: 0; }
+  .tp-refs { grid-area: refs; } .tp-deps { grid-area: deps; }
+  .tp-side { min-width: 0; }
+  @media (max-width: 1100px) { .tp-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "main main" "refs deps"; } }
+  @media (max-width: 700px) { .tp-body { grid-template-columns: minmax(0, 1fr); grid-template-areas: "main" "refs" "deps"; } }
+  .score-chip { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 22px; flex: none; padding: 0; border-radius: 6px;
+    border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line)); font: 650 12px var(--mono); color: var(--text); background: var(--surface); }
+  .score-chip.s1 { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+  .score-chip.s2 { background: color-mix(in srgb, var(--accent) 20%, var(--surface)); }
+  .score-chip.s3 { background: color-mix(in srgb, var(--accent) 34%, var(--surface)); }
+  .score-chip.s4 { background: color-mix(in srgb, var(--accent) 48%, var(--surface)); }
+  .score-chip.s5 { background: color-mix(in srgb, var(--accent) 62%, var(--surface)); border-color: var(--accent); }
+  .score-chip.s0 { border-style: dashed; border-color: var(--line-strong); color: var(--text-3); }
+  button.score-chip:hover { border-color: var(--text); }
+  .tp-legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 4px 16px; font-size: 12px; color: var(--text-2); margin-bottom: 10px; }
+  .tp-step { display: flex; gap: 6px; align-items: baseline; min-width: 0; }
+  .tp-step .score-chip { align-self: center; }
+  .tp-cols { border: 1px solid var(--line); border-radius: 8px; }
+  .tp-col + .tp-col { border-top: 1px solid var(--line); }
+  .tp-col.open { background: var(--surface-2); }
+  .tp-col.gone .tp-cname { color: var(--text-3); text-decoration: line-through; }
+  .tp-row { display: grid; grid-template-columns: auto minmax(0, 1.3fr) auto minmax(0, 2fr) auto; gap: 4px 12px; align-items: center; padding: 7px 10px; cursor: pointer; }
+  .tp-row:hover .tp-cname { color: var(--accent-ink); }
+  @media (max-width: 700px) { .tp-row { grid-template-columns: auto minmax(0, 1fr) auto; } .tp-reason { grid-column: 2 / -1; } .tp-src { grid-column: 2 / -1; justify-self: start; } }
+  .tp-name { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; min-width: 0; }
+  .tp-cname { border: 0; background: none; padding: 0; font: 600 13px var(--mono); color: var(--text); text-align: left; overflow-wrap: anywhere; }
+  .tp-type { font: 11px var(--mono); color: var(--text-3); overflow-wrap: anywhere; }
+  .tp-roles { display: flex; gap: 3px; }
+  .tp-role { display: inline-flex; width: 20px; height: 20px; align-items: center; justify-content: center; border-radius: 5px; background: var(--surface-2); color: var(--text-2); }
+  .tp-role svg { width: 13px; height: 13px; }
+  .tp-reason { font-size: 13px; color: var(--text-2); overflow-wrap: anywhere; min-width: 0; }
+  .tp-layers { display: inline-block; margin-right: 8px; font: 600 11px var(--mono); color: var(--accent-ink); }
+  .tp-src { font-size: 12px; color: var(--text-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .tp-detail { padding: 2px 12px 12px 48px; font-size: 13px; display: grid; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+  @media (max-width: 700px) { .tp-detail { padding-left: 12px; } }
+  .tp-detail h5 { margin: 6px 0 2px; font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: .5px; }
+  .tp-detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 4px 16px; }
+  .tp-detail code, .tp-keys code, .tp-trg code { font: 12px var(--mono); overflow-wrap: anywhere; }
+  .tp-hist { list-style: none; margin: 0; padding: 0; font-size: 12px; display: grid; gap: 2px; }
+  .tp-mono { font-family: var(--mono); font-size: 12px; }
+  .tp-link { border: 0; background: none; padding: 0; color: var(--accent-ink); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; text-align: left; }
+  .tp-hint { margin: 10px 0 0; font-size: 12px; color: var(--text-3); }
+  .tp-empty { padding: 18px 8px; text-align: center; color: var(--text-3); font-size: 13px; }
+  .tp-empty.sm { padding: 10px 8px; }
+  .tp-empty b { color: var(--text); }
+  .tp-empty p { margin: 6px auto 0; max-width: 60ch; }
+  .tp-keys h4 { margin: 12px 0 4px; font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: .5px; }
+  .tp-keys h4:first-child { margin-top: 0; }
+  .tp-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
+  .tp-list li { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; min-width: 0; overflow-wrap: anywhere; }
+  .tp-nm { font-weight: 600; }
+  .tp-nm2 { font-size: 11px; }
+  .tp-def { color: var(--text-2); }
+  .tp-trg li { display: grid; gap: 3px; padding: 8px 0; border-top: 1px solid var(--line); }
+  .tp-trg li:first-child { border-top: 0; padding-top: 0; }
+  .tp-trg-h { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+  .tp-sum { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+  .tp-nbs { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+  .tp-nb { width: 100%; display: grid; gap: 2px; text-align: left; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); padding: 7px 10px; min-width: 0; }
+  .tp-nb:hover { border-color: var(--accent); }
+  .tp-nb .tp-nm, .tp-nb .tp-jn { overflow-wrap: anywhere; }
+  .tp-nb .tp-jn { color: var(--text-2); font-size: 11px; }
+  .tp-nb .tp-meta { display: flex; flex-wrap: wrap; gap: 2px 8px; font-size: 11px; color: var(--text-3); }
+  .tp-nb.muted-card { border-style: dashed; background: var(--surface-2); }
+  .tp-nb.muted-card .tp-nm { color: var(--text-3); }
+  .tp-pick { border: 1px solid var(--line); border-radius: 8px; margin: 0 0 10px; padding: 6px 10px 8px; display: flex; flex-wrap: wrap; gap: 6px 12px; }
+  .tp-pick legend { font-size: 12px; color: var(--text-3); padding: 0 4px; }
+  .tp-pick-opt { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; cursor: pointer; }
+  .dlg .dlg-status { min-height: 18px; font-size: 13px; color: var(--critical); margin: 0 0 10px; overflow-wrap: anywhere; }
+  .dlg-actions .grow { flex: 1; }
   .mem-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
   .mem-card { padding: 16px; cursor: pointer; text-align: left; border: 1px solid var(--line); transition: transform .2s var(--ease), box-shadow .2s; animation: rise .4s var(--ease) both; }
   .mem-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
@@ -779,6 +866,7 @@
 <div class="toast" id="toast"></div>
 <dialog class="dlg" id="stageDlg" aria-labelledby="stageDlgTitle"></dialog>
 <dialog class="dlg" id="archiveDlg" aria-labelledby="archiveDlgTitle"></dialog>
+<dialog class="dlg" id="scoreDlg" aria-labelledby="scoreDlgTitle"></dialog>
 
 <script>
 'use strict';
@@ -1494,6 +1582,14 @@ function renderOps(rows) {
     rows.length > state.pageSize ? pager : null));
 }
 
+// A schema-qualified table name in the Tables tab opens its table page when
+// the database is known (the chosen one, or the only profile that used it).
+function tableTabLink(rel, dbs) {
+  const list = [...(dbs || [])];
+  const db = state.db || (list.length === 1 ? list[0] : '');
+  if (!db || !/^[^.\s]+\.[^.\s]+$/.test(rel)) return rel;
+  return h('button', { type: 'button', class: 'tp-link', title: t('Open table page'), onclick: ev => { ev.stopPropagation(); openTablePage(db, rel); } }, rel);
+}
 function renderTables(rows) {
   const groups = groupCount(rows, e => relationsOf(e).filter(r => state.systemTables || !isSystemRel(r)));
   const byRel = new Map();
@@ -1503,7 +1599,7 @@ function renderTables(rows) {
   const table = groups.length ? h('div', { class: 'tbl-wrap' }, h('table', {},
     h('thead', {}, h('tr', {}, h('th', {}, t('Table / view')), h('th', { class: 'num' }, t('Accesses')), h('th', { class: 'num' }, t('Errors')), h('th', { class: 'num hide-sm' }, t('Avg. duration')), h('th', { class: 'hide-sm' }, t('Profiles')), h('th', {}, t('Last access')))),
     h('tbody', {}, groups.map(g => h('tr', { class: 'r', onclick: () => { F.text.value = g.key; switchTab('ops'); } },
-      h('td', { class: 'sum' }, g.key), h('td', { class: 'num' }, fmt(g.count)), h('td', { class: 'num' }, g.errors ? fmt(g.errors) : '–'),
+      h('td', { class: 'sum' }, tableTabLink(g.key, byRel.get(g.key))), h('td', { class: 'num' }, fmt(g.count)), h('td', { class: 'num' }, g.errors ? fmt(g.errors) : '–'),
       h('td', { class: 'num hide-sm' }, fmtMs(g.ms / g.count)), h('td', { class: 'hide-sm' }, [...(byRel.get(g.key) || [])].join(', ')),
       h('td', { class: 'time' }, dateTimeOf(g.last))))))) : emptyState(t('No table access in this range'));
   $('v-tables').replaceChildren(h('div', { class: 'stack' },
@@ -2929,7 +3025,7 @@ function inspector(data, id) {
   const events = data.changelog.filter(e => e.schema === n.schema && e.table === n.table).slice().reverse();
   const relLimit = 200;
   return h('div', { class: 'panel insp' }, h('div', { class: 'panel-b' },
-    h('h3', {}, n.id),
+    h('h3', {}, h('button', { type: 'button', class: 'tp-link', title: t('Open table page'), onclick: () => openTablePage(state.db, id) }, n.id)),
     h('div', { class: 'sub' }, h('span', { class: 'badge ' + n.state }, stateLabel(n.state)), n.kind ? h('span', {}, n.kind) : null),
     h('div', { class: 'facts' },
       h('div', {}, h('b', {}, n.estimatedRows === null || n.estimatedRows === undefined ? '–' : compact(n.estimatedRows)), h('span', {}, t('Est. rows'))),
@@ -2937,6 +3033,7 @@ function inspector(data, id) {
       h('div', {}, h('b', {}, fmt(rels.length)), h('span', {}, t('Relations'))),
       h('div', {}, h('b', {}, fmt(active.length)), h('span', {}, t('Notes')))),
     h('div', { class: 'acts' },
+      h('button', { class: 'icon-btn primary', onclick: () => openTablePage(state.db, id) }, t('Open table page')),
       state.memMode !== 'graph' ? h('button', { class: 'icon-btn', onclick: () => { setMemFocus(id); state.memShowAll = false; state.mem3dDepth = 1; state.memMode = 'graph'; persist(); renderSchema(); } }, t('Graph')) : null,
       state.memMode !== 'er' ? h('button', { class: 'icon-btn', onclick: () => { state.memMode = 'er'; persist(); renderSchema(); } }, t('ER diagram')) : null,
       state.memMode !== 'flow' ? h('button', { class: 'icon-btn', onclick: () => { state.memMode = 'flow'; persist(); renderSchema(); } }, t('Flow')) : null,
@@ -3584,6 +3681,7 @@ function applyMemSearch() {
   const q = state.tab === 'schema' ? F.text.value.trim().toLowerCase() : '';
   graphSim?.search(q);
   graph3d?.search(q);
+  if (state.memSearchHost?.isConnected) put(state.memSearchHost, memSearchResults(state.memView?.profile === state.db ? state.memView.data : null, q));
 }
 
 // ---------- ER diagram ----------
@@ -4171,6 +4269,485 @@ async function runArchiveNote(profile, n, text) {
   }
 }
 
+// table-page:start (tests/viewerTablePage.test.js runs this block in isolation)
+// The table page of one schema-memory table: columns ranked by importance
+// score (score_columns: agent and user layers, the user score wins), keys and
+// indexes, triggers with the agent's summary, and the neighbouring tables.
+// Built from graph.json and the table file only; nothing here reads a
+// database. Every name and text goes into text nodes (h), never into HTML.
+const scoreSteps = [5, 4, 3, 2, 1];
+const scoreStepLabels = { 5: 'core', 4: 'frequent', 3: 'topical', 2: 'rare', 1: 'unused' };
+const scoreStepTexts = {
+  5: 'most reports revolve around it: main join key, period filter, primary display field',
+  4: 'used regularly in many reports',
+  3: 'appears in the reports of one topic',
+  2: 'one report, or only in an old version',
+  1: 'appears in no SQL',
+};
+const tpRoles = ['key', 'join', 'filter', 'display', 'aggregate', 'sort/group'];
+const tpRoleTexts = {
+  key: 'key: primary or unique key', join: 'join: JOIN ... ON or USING', filter: 'filter: WHERE or HAVING',
+  display: 'display: SELECT list', aggregate: 'aggregate: sum, count, avg, ...', 'sort/group': 'sort/group: ORDER BY or GROUP BY',
+};
+const tpCmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+const tpOwn = (obj, key) => (obj && Object.hasOwn(obj, key) ? obj[key] : null);
+// The user score wins over the agent score (store.js effectiveScore).
+function tpEffective(entry) {
+  const user = entry?.user && !entry.user.cleared ? entry.user : null;
+  if (user) return { score: user.score, by: 'user', user };
+  if (entry?.agent) return { score: entry.agent.score, by: 'agent', user: null };
+  return { score: null, by: null, user: null };
+}
+// Current state plus history of one layer, newest first, at most 5.
+const tpLayerHistory = layer => (layer ? [{ ...layer, history: undefined }, ...(Array.isArray(layer.history) ? layer.history : [])].slice(0, 5) : []);
+
+// Everything the page shows for table id. rec: the table file (null when the
+// table is not described or not loaded).
+function tablePageModel(data, id, rec) {
+  const nodes = Array.isArray(data?.nodes) ? data.nodes : [];
+  const edges = Array.isArray(data?.edges) ? data.edges : [];
+  const node = nodes.find(n => n.id === id) || null;
+  const dot = String(id).indexOf('.');
+  const schema = node?.schema ?? (dot < 0 ? '' : String(id).slice(0, dot));
+  const table = node?.table ?? (dot < 0 ? String(id) : String(id).slice(dot + 1));
+  const described = !!rec?.describedAt;
+  const notes = (Array.isArray(data?.notes) ? data.notes : []).filter(n => n.status === 'active' && n.schema === schema && n.table === table);
+  const scores = node?.columnScores && typeof node.columnScores === 'object' ? node.columnScores : (rec?.columnScores ?? null);
+  const constraints = described && Array.isArray(rec.constraints) ? rec.constraints : [];
+  const pk = new Set(constraints.filter(c => c.type === 'primary key').flatMap(c => c.columns || []));
+  const fkOf = new Map();
+  for (const c of constraints.filter(c => c.references)) {
+    (c.columns || []).forEach((col, i) => { if (!fkOf.has(col)) fkOf.set(col, { id: `${c.references.schema}.${c.references.table}`, column: (c.references.columns || [])[i] ?? null }); });
+  }
+  const column = (c, inStructure) => {
+    const entry = tpOwn(scores, c.name);
+    const eff = tpEffective(entry);
+    const roles = eff.by === 'user' && Array.isArray(eff.user.roles) ? eff.user.roles : Array.isArray(entry?.agent?.roles) ? entry.agent.roles : [];
+    return {
+      name: c.name, type: c.type ?? null, notNull: !!c.notNull, default: c.default ?? null, comment: c.comment ?? null, inStructure,
+      score: eff.score, scoreBy: eff.by, user: eff.user, agent: entry?.agent ?? null, roles: tpRoles.filter(r => roles.includes(r)),
+      reason: entry?.agent?.reason ?? null, sources: Number.isInteger(entry?.agent?.sources) ? entry.agent.sources : null,
+      pk: pk.has(c.name), fk: fkOf.get(c.name) ?? null, notes: notes.filter(n => n.column === c.name),
+      history: { user: tpLayerHistory(entry?.user), agent: tpLayerHistory(entry?.agent) },
+    };
+  };
+  const structure = described && Array.isArray(rec.columns) ? rec.columns : [];
+  const known = new Set(structure.map(c => c.name));
+  const columns = [...structure.map(c => column(c, true)),
+    ...Object.keys(scores || {}).filter(name => !known.has(name) && described).map(name => column({ name }, false))]
+    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0) || tpCmp(a.name, b.name));
+  const scored = columns.some(c => c.score !== null);
+  const sourcesMax = columns.reduce((m, c) => Math.max(m, c.sources ?? 0), 0);
+  const last = described && Array.isArray(rec.history) ? rec.history.at(-1) : null;
+  const lastChanges = last && last.at === rec.describedAt && Array.isArray(last.changes) ? last.changes : [];
+  const nb = (other, list) => {
+    const n = nodes.find(x => x.id === other);
+    const est = n ? (n.estRows ?? n.estimatedRows ?? null) : null;
+    return { id: other, links: list, estRows: typeof est === 'number' ? est : null, explored: n?.state === 'explored' };
+  };
+  const group = (pick, other) => {
+    const byId = new Map();
+    for (const e of edges.filter(e => e.level === 'fk' && e.from !== e.to && pick(e))) {
+      const key = other(e);
+      byId.set(key, [...(byId.get(key) || []), { columns: e.columns || [], refColumns: e.refColumns || [] }]);
+    }
+    return [...byId].map(([k, list]) => nb(k, list)).sort((a, b) => (b.estRows ?? -1) - (a.estRows ?? -1) || tpCmp(a.id, b.id));
+  };
+  const triggers = Array.isArray(node?.triggers) ? node.triggers : described && Array.isArray(rec.triggers) ? rec.triggers : [];
+  const byType = type => constraints.filter(c => c.type === type).map(c => ({ name: c.name, columns: c.columns || [], definition: c.definition ?? '' }));
+  return {
+    id, schema, table, profile: data?.profile ?? null, state: node?.state ?? 'unexplored', described,
+    kind: rec?.kind ?? node?.kind ?? null, comment: rec?.comment ?? null,
+    estimatedRows: rec?.estimatedRows ?? node?.estimatedRows ?? null, columnCount: described ? structure.length : (node?.columnCount ?? 0),
+    noteCount: notes.length, scoredAt: node?.scoredAt ?? rec?.scoredAt ?? null, sourcesMax, lastChanges, describedAt: rec?.describedAt ?? null,
+    columns, scored,
+    keys: {
+      primary: byType('primary key'), unique: byType('unique'), check: byType('check'),
+      outgoing: constraints.filter(c => c.references).map(c => ({ name: c.name, columns: c.columns || [], id: `${c.references.schema}.${c.references.table}`, refColumns: c.references.columns || [] })),
+      incoming: (described && Array.isArray(rec.referencedBy) ? rec.referencedBy : []).map(r => ({ name: r.name, id: `${r.schema}.${r.table}`, columns: r.columns || [], refColumns: r.refColumns || [] })),
+      indexes: (described && Array.isArray(rec.indexes) ? rec.indexes : []).map(i => ({ name: i.name, definition: i.definition ?? '' })),
+    },
+    triggers,
+    neighbours: { refs: group(e => e.from === id, e => e.to), deps: group(e => e.to === id, e => e.from) },
+  };
+}
+// Default filter: scores 4-5 only (when the table is scored at all).
+const tpTop = c => (c.score ?? 0) >= 4;
+const tpVisibleColumns = (model, showAll) => (showAll || !model.scored ? model.columns : model.columns.filter(tpTop));
+
+// ----- view (h, svg, t, fmt, compact, ruleDay, locale and changeLabel come from the page) -----
+const tpDay = ts => ruleDay(ts, locale);
+const tpScoreLabel = s => (s ? `${s} ${t(scoreStepLabels[s])}` : t('not scored'));
+const tpRoleIcons = {
+  key: 'M14 7a4 4 0 1 1-3.9 5H7v3H5v-3H3v-2h7.1A4 4 0 0 1 14 7Zm0 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z',
+  join: 'M9 15 15 9M10 6l1-1a4 4 0 0 1 6 6l-1 1M14 18l-1 1a4 4 0 0 1-6-6l1-1',
+  filter: 'M3 5h18l-7 8v5l-4 2v-7Z',
+  display: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Zm10-3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z',
+  aggregate: 'M18 5H6l6 7-6 7h12',
+  'sort/group': 'M4 6h16M4 12h10M4 18h5',
+};
+function tpRoleIcon(role) {
+  const label = t(tpRoleTexts[role] || role);
+  return h('span', { class: 'tp-role', role: 'img', 'aria-label': label, title: label },
+    svg('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.8', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' }, svg('path', { d: tpRoleIcons[role] })));
+}
+// 5-step single-hue chip, the number inside; a button when the person may score.
+function tpScoreChip(c, onScore) {
+  const s = c.score;
+  const label = s ? t('Score {s}', { s: tpScoreLabel(s) }) : t('Not scored');
+  const attrs = { class: `score-chip s${s || 0}`, title: label };
+  if (!onScore) return h('span', { ...attrs, role: 'img', 'aria-label': label }, s ?? '–');
+  return h('button', { ...attrs, type: 'button', 'aria-label': `${label}. ${t('Set your score for {c}', { c: c.name })}`, onclick: ev => { ev.stopPropagation(); onScore(c); } }, s ?? '–');
+}
+function tpLegend() {
+  return h('div', { class: 'tp-legend', 'aria-label': t('Score legend') },
+    scoreSteps.map(s => h('span', { class: 'tp-step', title: t(scoreStepTexts[s]) }, h('span', { class: `score-chip s${s}`, 'aria-hidden': 'true' }, s), h('b', {}, t(scoreStepLabels[s])), h('span', { class: 'muted' }, t(scoreStepTexts[s])))));
+}
+const tpLayerLine = (item, layer) => h('li', {},
+  h('span', { class: 'muted' }, tpDay(item.at)), ' ',
+  item.cleared ? t('removed') : h('b', {}, item.score),
+  !item.cleared && Array.isArray(item.roles) && item.roles.length ? h('span', { class: 'tp-mono' }, ' ', item.roles.join(', ')) : null,
+  layer === 'agent' && item.reason ? h('span', {}, ' · ', item.reason) : null);
+function tpColumnDetail(c, ctx) {
+  const layer = (key, title) => h('div', {}, h('h5', {}, t(title)),
+    c.history[key].length ? h('ul', { class: 'tp-hist' }, c.history[key].map(item => tpLayerLine(item, key))) : h('div', { class: 'muted' }, t('none')));
+  return h('div', { class: 'tp-detail', id: `tp-col-${ctx.index}` },
+    h('div', { class: 'tp-detail-grid' }, layer('user', 'Your score'), layer('agent', 'Agent score')),
+    c.fk ? h('div', {}, h('span', { class: 'muted' }, t('References')), ' ',
+      h('button', { type: 'button', class: 'tp-link', onclick: () => ctx.onOpen(c.fk.id) }, c.fk.column ? `${c.fk.id}.${c.fk.column}` : c.fk.id)) : null,
+    c.default !== null ? h('div', {}, h('span', { class: 'muted' }, t('Default')), ' ', h('code', {}, c.default)) : null,
+    c.comment ? h('div', {}, h('span', { class: 'muted' }, t('Comment')), ' ', c.comment) : null,
+    h('h5', {}, t('Notes')),
+    c.notes.length ? c.notes.map(n => h('div', { class: `note ${n.kind}` }, h('div', { class: 'nh' }, h('span', { class: 'badge ' + n.kind }, t(n.kind)), h('span', {}, '#' + n.id)), h('div', {}, n.text)))
+      : h('div', { class: 'muted' }, t('No notes on this column.')));
+}
+function tpColumnRow(c, ctx) {
+  const open = ctx.open === c.name;
+  const scoreText = c.user && c.agent ? t('user {u} · agent {a}', { u: c.user.score, a: c.agent.score }) : c.user ? t('user {u}', { u: c.user.score }) : null;
+  const toggle = () => ctx.onToggle(open ? null : c.name);
+  return h('div', { class: 'tp-col' + (open ? ' open' : '') + (c.inStructure ? '' : ' gone') },
+    h('div', { class: 'tp-row', onclick: toggle },
+      tpScoreChip(c, ctx.canScore && c.inStructure ? ctx.onScore : null),
+      h('div', { class: 'tp-name' },
+        h('button', { type: 'button', class: 'tp-cname', 'aria-expanded': String(open), 'aria-controls': `tp-col-${ctx.index}`, onclick: ev => { ev.stopPropagation(); toggle(); } }, c.name),
+        h('span', { class: 'tp-type' }, c.type ?? '', c.notNull ? ' NOT NULL' : ''),
+        c.pk ? h('span', { class: 'badge explored' }, 'PK') : null, c.fk ? h('span', { class: 'badge seen' }, 'FK') : null,
+        c.inStructure ? null : h('span', { class: 'badge inference' }, t('not in the recorded structure'))),
+      h('div', { class: 'tp-roles' }, c.roles.map(tpRoleIcon)),
+      h('div', { class: 'tp-reason' }, scoreText ? h('span', { class: 'tp-layers' }, scoreText) : null, c.reason ?? ''),
+      h('div', { class: 'tp-src', title: t('Reports and scripts that use the column') }, c.sources === null ? '' : t(c.sources === 1 ? '{n} report' : '{n} reports', { n: fmt(c.sources) }))),
+    open ? tpColumnDetail(c, ctx) : null);
+}
+function tpColumns(model, ctx) {
+  const list = tpVisibleColumns(model, ctx.showAll);
+  const top = model.columns.filter(tpTop).length;
+  const head = h('div', { class: 'panel-h' }, h('h2', {}, t('Columns')),
+    model.scored ? h('span', { class: 'hint', role: 'status' }, ctx.showAll ? t('{n} columns', { n: fmt(model.columns.length) }) : t('{n} of {all} columns scored 4–5', { n: fmt(top), all: fmt(model.columns.length) })) : null,
+    h('span', { class: 'grow' }),
+    model.scored ? h('button', { type: 'button', class: 'icon-btn sm', 'aria-pressed': String(!!ctx.showAll), onclick: () => ctx.onShowAll(!ctx.showAll) }, ctx.showAll ? t('Only 4–5') : t('Show all columns')) : null);
+  let body;
+  if (!model.described) {
+    body = h('div', { class: 'tp-empty' }, h('b', {}, t('Not described yet')),
+      h('p', {}, t('Ask your agent to run describe_table on {id}; it reads the catalog only and records the columns, keys, indexes and triggers.', { id: model.id })));
+  } else {
+    body = [
+      model.scored ? null : h('div', { class: 'tp-empty sm' }, h('b', {}, t('No column scores yet')),
+        h('p', {}, t('The auspex-columns skill scores the columns from the SQL that uses them (report library and your script files). You can also give your own score with the chip.'))),
+      list.length ? h('div', { class: 'tp-cols' }, list.map((c, i) => tpColumnRow(c, { ...ctx, index: i })))
+        : h('div', { class: 'tp-empty sm' }, t('No column is scored 4 or 5.'), ' ', h('button', { type: 'button', class: 'tp-link', onclick: () => ctx.onShowAll(true) }, t('Show all columns'))),
+      ctx.canScore ? h('p', { class: 'tp-hint' }, t('Click a score chip to set your own score. To add a usage note ("mostly in WHERE"), tell Claude in chat; it is saved as a rule on the column.')) : null,
+    ];
+  }
+  return h('section', { class: 'panel tp-main-cols', 'aria-label': t('Columns') }, head, h('div', { class: 'panel-b' }, model.described && model.columns.length ? tpLegend() : null, body));
+}
+const tpDef = (name, def) => h('li', {}, h('span', { class: 'tp-mono tp-nm' }, name), h('code', { class: 'tp-def' }, def));
+function tpKeys(model, ctx) {
+  const k = model.keys;
+  const link = id => h('button', { type: 'button', class: 'tp-link tp-mono', onclick: () => ctx.onOpen(id) }, id);
+  const part = (title, items, row) => (items.length ? [h('h4', {}, t(title)), h('ul', { class: 'tp-list' }, items.map(row))] : null);
+  const empty = !Object.values(k).some(v => v.length);
+  return h('section', { class: 'panel', 'aria-label': t('Keys and structure') }, h('div', { class: 'panel-h' }, h('h2', {}, t('Keys and structure'))),
+    h('div', { class: 'panel-b tp-keys' }, empty ? h('div', { class: 'muted' }, model.described ? t('No keys, constraints or indexes recorded.') : t('Not described yet')) : [
+      part('Primary key', k.primary, c => tpDef(c.name, c.definition)),
+      part('Unique', k.unique, c => tpDef(c.name, c.definition)),
+      part('Check', k.check, c => tpDef(c.name, c.definition)),
+      part('Outgoing foreign keys', k.outgoing, f => h('li', {}, h('span', { class: 'tp-mono' }, f.columns.join(', ')), ' → ', link(f.id), h('span', { class: 'tp-mono' }, `.${f.refColumns.join(', ')}`), h('span', { class: 'muted tp-nm2' }, f.name))),
+      part('Incoming foreign keys', k.incoming, f => h('li', {}, link(f.id), h('span', { class: 'tp-mono' }, `.${f.columns.join(', ')}`), ' → ', h('span', { class: 'tp-mono' }, f.refColumns.join(', ')), h('span', { class: 'muted tp-nm2' }, f.name))),
+      part('Indexes', k.indexes, i => tpDef(i.name, i.definition)),
+    ]));
+}
+function tpTriggers(model) {
+  const list = model.triggers;
+  return h('section', { class: 'panel', 'aria-label': t('Triggers') }, h('div', { class: 'panel-h' }, h('h2', {}, t('Triggers')), h('span', { class: 'hint' }, list.length ? fmt(list.length) : '')),
+    h('div', { class: 'panel-b' }, list.length ? h('ul', { class: 'tp-list tp-trg' }, list.map(tr => h('li', {},
+      h('div', { class: 'tp-trg-h' }, h('span', { class: 'tp-mono tp-nm' }, tr.name),
+        h('span', {}, [tr.timing, (tr.events || []).join(' OR ')].filter(Boolean).join(' ')),
+        tr.level ? h('span', { class: 'muted' }, t('for each {l}', { l: tr.level })) : null,
+        tr.enabled ? h('span', { class: 'badge ' + (tr.enabled === 'disabled' ? 'seen' : 'ok') }, t(tr.enabled)) : null),
+      tr.function ? h('div', {}, h('span', { class: 'muted' }, t('Function')), ' ', h('code', {}, tr.function)) : null,
+      tr.when ? h('div', {}, h('span', { class: 'muted' }, 'WHEN'), ' ', h('code', {}, tr.when)) : null,
+      tr.summary ? h('div', { class: 'tp-sum' }, tr.summary, tr.summaryStale ? h('span', { class: 'badge inference', title: t('The trigger definition changed after this summary was written.') }, t('may be out of date')) : null)
+        : h('div', { class: 'muted' }, t('No summary yet (auspex-columns writes one).')))))
+      : h('div', { class: 'muted' }, model.described ? t('No triggers recorded.') : t('Not described yet'))));
+}
+function tpNeighbours(list, side, ctx) {
+  const title = side === 'refs' ? 'References' : 'Referenced by';
+  const hint = side === 'refs' ? 'Tables this table points to' : 'Tables that point to this table';
+  const cols = l => `${l.columns.join(', ')} → ${l.refColumns.join(', ')}`;
+  return h('section', { class: `panel tp-side tp-${side}`, 'aria-label': t(title) },
+    h('div', { class: 'panel-h' }, h('h2', {}, t(title)), h('span', { class: 'hint' }, fmt(list.length))),
+    h('div', { class: 'panel-b' }, h('p', { class: 'tp-hint' }, t(hint)),
+      list.length ? h('ul', { class: 'tp-nbs' }, list.map(n => h('li', {},
+        h('button', { type: 'button', class: 'tp-nb' + (n.explored ? '' : ' muted-card'), onclick: () => ctx.onOpen(n.id), title: n.explored ? null : t('Not explored yet: describe_table records it.') },
+          h('span', { class: 'tp-mono tp-nm' }, n.id),
+          n.links.map(l => h('span', { class: 'tp-mono tp-jn' }, cols(l))),
+          h('span', { class: 'tp-meta' }, n.estRows === null ? '' : t('~{n} rows (est.)', { n: compact(n.estRows) }), n.explored ? '' : h('span', {}, t('not explored yet'))))))) : h('div', { class: 'muted' }, t('None known.'))));
+}
+function tpHeader(model, ctx) {
+  const facts = [
+    [t('Est. rows'), model.estimatedRows === null ? '–' : compact(model.estimatedRows)],
+    [t('Columns'), fmt(model.columnCount)],
+    [t('Notes'), fmt(model.noteCount)],
+    [t('Last scored'), model.scoredAt ? tpDay(model.scoredAt) : '–'],
+    [t('Sources'), model.scored ? fmt(model.sourcesMax) : '–', t('Most reports and scripts found for one column')],
+  ];
+  const changes = model.lastChanges;
+  return h('section', { class: 'panel tp-head' },
+    h('div', { class: 'tp-title' }, h('h2', {}, model.id),
+      h('span', { class: 'badge ' + model.state }, t({ explored: 'explored', seen: 'seen in a plan', unexplored: 'not explored' }[model.state] || model.state)),
+      model.kind ? h('span', { class: 'muted' }, model.kind) : null,
+      changes.length ? h('span', { class: 'chg-badge', title: changes.map(changeLabel).join('\n') }, h('span', { class: 'dot' }),
+        t(changes.length === 1 ? '1 change at the last describe' : '{n} changes at the last describe', { n: fmt(changes.length) })) : null),
+    model.comment ? h('p', { class: 'tp-comment' }, model.comment) : null,
+    h('div', { class: 'tp-facts' }, facts.map(([k, v, title]) => h('span', { title: title ?? null }, h('b', {}, v), ' ', k))));
+}
+function tpCrumbs(trail, ctx) {
+  return h('nav', { class: 'tp-crumbs', 'aria-label': t('Breadcrumb') },
+    h('button', { type: 'button', class: 'icon-btn sm', onclick: ctx.onBack }, '← ', t('Back')),
+    h('button', { type: 'button', class: 'crumb', onclick: ctx.onClose }, t('Schema')),
+    trail.map((id, i) => [h('span', { 'aria-hidden': 'true' }, '›'),
+      i === trail.length - 1 ? h('span', { class: 'crumb cur', 'aria-current': 'page' }, id) : h('button', { type: 'button', class: 'crumb', onclick: () => ctx.onCrumb(i) }, id)]));
+}
+function tablePageView(model, trail, ctx) {
+  return h('div', { class: 'tp' }, tpCrumbs(trail, ctx), tpHeader(model, ctx),
+    h('div', { class: 'tp-body' },
+      h('div', { class: 'tp-main' }, tpColumns(model, ctx), tpKeys(model, ctx), tpTriggers(model)),
+      tpNeighbours(model.neighbours.refs, 'refs', ctx),
+      tpNeighbours(model.neighbours.deps, 'deps', ctx)));
+}
+const tablePageTr = {
+  'core': 'temel', 'frequent': 'sık', 'topical': 'konuya özel', 'rare': 'nadir', 'unused': 'kullanılmıyor',
+  'most reports revolve around it: main join key, period filter, primary display field': 'raporların çoğu bunun etrafında döner: ana birleştirme anahtarı, dönem filtresi, ana gösterim alanı',
+  'used regularly in many reports': 'birçok raporda düzenli kullanılır',
+  'appears in the reports of one topic': 'tek bir konunun raporlarında geçer',
+  'one report, or only in an old version': 'tek raporda ya da yalnızca eski bir sürümde',
+  'appears in no SQL': 'hiçbir SQL\'de geçmez',
+  'key: primary or unique key': 'anahtar: birincil ya da tekil anahtar', 'join: JOIN ... ON or USING': 'birleştirme: JOIN ... ON ya da USING',
+  'filter: WHERE or HAVING': 'filtre: WHERE ya da HAVING', 'display: SELECT list': 'gösterim: SELECT listesi',
+  'aggregate: sum, count, avg, ...': 'toplama: sum, count, avg, ...', 'sort/group: ORDER BY or GROUP BY': 'sıralama/gruplama: ORDER BY ya da GROUP BY',
+  'not scored': 'puanlanmamış', 'Not scored': 'Puanlanmamış', 'Score {s}': 'Puan {s}', 'Set your score for {c}': '{c} için puanınızı verin',
+  'Score legend': 'Puan açıklaması', 'removed': 'kaldırıldı', 'none': 'yok', 'Your score': 'Sizin puanınız', 'Agent score': 'Ajan puanı',
+  'References': 'Başvurduğu tablolar', 'Default': 'Varsayılan', 'Comment': 'Açıklama', 'Notes': 'Notlar', 'No notes on this column.': 'Bu kolonda not yok.',
+  'user {u} · agent {a}': 'kullanıcı {u} · ajan {a}', 'user {u}': 'kullanıcı {u}', 'not in the recorded structure': 'kayıtlı yapıda yok',
+  'Reports and scripts that use the column': 'Kolonu kullanan rapor ve betikler', '{n} report': '{n} rapor', '{n} reports': '{n} rapor',
+  'Columns': 'Kolon', '{n} columns': '{n} kolon', '{n} of {all} columns scored 4–5': '{all} kolondan {n} tanesi 4–5 puanlı',
+  'Only 4–5': 'Yalnızca 4–5', 'Show all columns': 'Tüm kolonları göster', 'Not described yet': 'Henüz tanımlanmadı',
+  'Ask your agent to run describe_table on {id}; it reads the catalog only and records the columns, keys, indexes and triggers.': 'Ajanınızdan {id} için describe_table çalıştırmasını isteyin; yalnızca kataloğu okur ve kolonları, anahtarları, indeksleri ve trigger\'ları kaydeder.',
+  'No column scores yet': 'Henüz kolon puanı yok',
+  'The auspex-columns skill scores the columns from the SQL that uses them (report library and your script files). You can also give your own score with the chip.': 'auspex-columns becerisi kolonları onları kullanan SQL\'den puanlar (rapor kütüphanesi ve betik dosyalarınız). Puan çipiyle kendi puanınızı da verebilirsiniz.',
+  'No column is scored 4 or 5.': '4 ya da 5 puanlı kolon yok.',
+  'Click a score chip to set your own score. To add a usage note ("mostly in WHERE"), tell Claude in chat; it is saved as a rule on the column.': 'Kendi puanınızı vermek için bir puan çipine tıklayın. Kullanım notu eklemek için ("çoğunlukla WHERE\'de") sohbette Claude\'a söyleyin; kolona kural olarak kaydedilir.',
+  'Keys and structure': 'Anahtarlar ve yapı', 'No keys, constraints or indexes recorded.': 'Kayıtlı anahtar, kısıt ya da indeks yok.',
+  'Primary key': 'Birincil anahtar', 'Unique': 'Tekil', 'Check': 'Check', 'Outgoing foreign keys': 'Giden yabancı anahtarlar', 'Incoming foreign keys': 'Gelen yabancı anahtarlar', 'Indexes': 'İndeksler',
+  'Triggers': 'Trigger\'lar', 'for each {l}': 'her {l} için', 'enabled': 'açık', 'disabled': 'kapalı', 'replica only': 'yalnızca replika', 'always': 'her zaman',
+  'Function': 'Fonksiyon', 'The trigger definition changed after this summary was written.': 'Bu özet yazıldıktan sonra trigger tanımı değişti.',
+  'may be out of date': 'güncel olmayabilir', 'No summary yet (auspex-columns writes one).': 'Henüz özet yok (auspex-columns yazar).', 'No triggers recorded.': 'Kayıtlı trigger yok.',
+  'Referenced by': 'Ona başvuran tablolar', 'Tables this table points to': 'Bu tablonun işaret ettiği tablolar', 'Tables that point to this table': 'Bu tabloya işaret eden tablolar',
+  'Not explored yet: describe_table records it.': 'Henüz keşfedilmedi: describe_table kaydeder.', '~{n} rows (est.)': '~{n} satır (tahmini)', 'not explored yet': 'henüz keşfedilmedi', 'None known.': 'Bilinen yok.',
+  'Est. rows': 'Tahmini satır', 'Last scored': 'Son puanlama', 'Sources': 'Kaynak', 'Most reports and scripts found for one column': 'Tek bir kolon için bulunan en çok rapor ve betik',
+  'explored': 'keşfedildi', 'seen in a plan': 'planda görüldü', 'not explored': 'keşfedilmedi',
+  '1 change at the last describe': 'son tanımlamada 1 değişiklik', '{n} changes at the last describe': 'son tanımlamada {n} değişiklik',
+  'Breadcrumb': 'Gezinti yolu', 'Back': 'Geri', 'Schema': 'Şema', 'rule': 'kural', 'observation': 'gözlem', 'inference': 'çıkarım',
+};
+// table-page:end
+
+// column-score:start (tests/viewerTablePage.test.js runs this block with stage-change)
+// A person's own column score from the table page: score 1-5 with optional
+// roles, or removing it. The browser viewer POSTs to /api/memory/column-score
+// with the page token; the desktop app calls the Tauri command score_column
+// (src/stageCli.js score-column). Both write the user layer only
+// (src/memory/userScore.js checks again).
+const userScoreRoles = ['key', 'join', 'filter', 'display', 'aggregate', 'sort/group'];
+// choice: { score, roles } or { clear: true }; roles left out when none is picked.
+function userScoreRequest(profile, schema, table, column, choice) {
+  const base = { profile, schema, table, column };
+  if (choice?.clear) return { ...base, clear: true };
+  const roles = userScoreRoles.filter(r => Array.isArray(choice?.roles) && choice.roles.includes(r));
+  return { ...base, score: choice?.score, ...(roles.length ? { roles } : {}) };
+}
+const userScoreProblem = choice => (choice?.clear || (Number.isInteger(choice?.score) && choice.score >= 1 && choice.score <= 5) ? null : 'Choose a score from 1 to 5.');
+async function postColumnScore(fetchFn, token, req) {
+  const res = await fetchFn('/api/memory/column-score', {
+    method: 'POST', cache: 'no-store', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', 'X-Auspex-Token': token },
+    body: JSON.stringify(req),
+  });
+  let data = null;
+  try { data = await res.json(); } catch {}
+  if (res.status === 403 && data?.code === 'TOKEN_INVALID') throw Object.assign(new Error(data.error), { viewerRestarted: true });
+  if (!res.ok) throw stageError(data?.error || res.statusText || `HTTP ${res.status}`, data?.code);
+  return data;
+}
+async function invokeColumnScore(invoke, req) {
+  try {
+    return await invoke('score_column', req);
+  } catch (err) {
+    const code = typeof err === 'object' && err ? err.code : undefined;
+    const message = typeof err === 'string' ? err : err?.message || String(err);
+    throw stageError(message, code);
+  }
+}
+// column-score:end
+
+// ---------- table page (glue) ----------
+// Opened from the Tables tab, the Schema inspector or the Schema search; lives
+// in the Schema tab. trail: the visited tables, the last one is shown.
+// Translations of the page; keys the dictionary already has keep their text.
+for (const [k, v] of Object.entries({ ...tablePageTr, ...{
+  'Open table page': 'Tablo sayfasını aç', 'Your score for {c}': '{c} için puanınız', 'Roles (optional)': 'Roller (isteğe bağlı)',
+  'Only the user layer changes; the agent score stays. Only local Auspex files change; no database is touched.': 'Yalnızca kullanıcı katmanı değişir; ajan puanı kalır. Yalnızca yerel Auspex dosyaları değişir; hiçbir veritabanına dokunulmaz.',
+  'A usage note ("mostly in WHERE") can be given to Claude in chat; it is stored as a rule on the column.': 'Kullanım notu ("çoğunlukla WHERE\'de") sohbette Claude\'a verilebilir; kolona kural olarak kaydedilir.',
+  'Remove my score': 'Puanımı kaldır', 'Save': 'Kaydet', 'Saving…': 'Kaydediliyor…', 'Score saved': 'Puan kaydedildi', 'Your score was removed': 'Puanınız kaldırıldı',
+  'Choose a score from 1 to 5.': '1 ile 5 arasında bir puan seçin.', 'Current': 'Şu an', 'Score': 'Puan', 'Tables matching the search': 'Aramaya uyan tablolar',
+} })) if (!Object.hasOwn(TR, k)) TR[k] = v;
+const tpRecCache = new Map();
+function openTablePage(db, id) {
+  if (!db || !id) return;
+  if (state.db !== db) setDb(db, { render: false });
+  const tp = state.tablePage && state.tablePage.db === db ? state.tablePage : { db, trail: [] };
+  const at = tp.trail.indexOf(id);
+  state.tablePage = { db, trail: at >= 0 ? tp.trail.slice(0, at + 1) : [...tp.trail, id].slice(-20), open: null, showAll: false };
+  state.tablePageKey = null;
+  state.schemaKey = null;
+  if (state.tab !== 'schema') switchTab('schema'); else renderSchema();
+  scrollTo({ top: 0, behavior: 'auto' });
+}
+function closeTablePage() {
+  const last = state.tablePage?.trail.at(-1);
+  state.tablePage = null;
+  state.tablePageKey = null;
+  state.schemaKey = null;
+  if (last) setMemSel(last);
+  renderSchema();
+}
+function tablePageBack() {
+  const tp = state.tablePage;
+  if (!tp || tp.trail.length <= 1) return closeTablePage();
+  state.tablePage = { ...tp, trail: tp.trail.slice(0, -1), open: null, showAll: false };
+  state.tablePageKey = null;
+  renderSchema();
+}
+function renderTablePage(view, data) {
+  const tp = state.tablePage, id = tp.trail.at(-1);
+  const node = data.nodes.find(n => n.id === id) || null;
+  const recKey = node?.file && node.state !== 'unexplored' ? `${tp.db}|${node.file}|${data.generatedAt}` : null;
+  if (recKey && !tpRecCache.has(recKey)) {
+    if (!view.querySelector('.tp')) put(view, h('div', { class: 'panel' }, h('div', { class: 'rep-empty' }, t('Loading…'))));
+    memTable(tp.db, node.file, data.generatedAt).then(rec => {
+      if (tpRecCache.size > 50) tpRecCache.clear();
+      tpRecCache.set(recKey, rec);
+      state.tablePageKey = null;
+      renderSchema();
+    });
+    return;
+  }
+  const key = JSON.stringify([tp.db, data.generatedAt, tp.trail, tp.open, tp.showAll, lang, state.scorePending ?? null]);
+  if (state.tablePageKey === key && view.querySelector('.tp')) return;
+  state.tablePageKey = key;
+  const model = tablePageModel(data, id, recKey ? tpRecCache.get(recKey) : null);
+  const set = patch => { state.tablePage = { ...state.tablePage, ...patch }; renderSchema(); };
+  put(view, tablePageView(model, tp.trail, {
+    open: tp.open, showAll: tp.showAll, canScore: model.described && !state.scorePending,
+    onOpen: next => openTablePage(tp.db, next), onToggle: name => set({ open: name }), onShowAll: v => set({ showAll: v }),
+    onScore: c => confirmColumnScore(model, c), onBack: tablePageBack, onClose: closeTablePage,
+    onCrumb: i => { state.tablePage = { ...tp, trail: tp.trail.slice(0, i + 1), open: null, showAll: false }; renderSchema(); },
+  }));
+}
+// Schema search: matching tables as links to their table page.
+function memSearchResults(data, q) {
+  if (!q || !data) return null;
+  const words = foldText(q).split(/\s+/).filter(Boolean);
+  const hits = data.nodes.filter(n => words.every(w => foldText(n.id).includes(w))).sort((a, b) => (a.state === 'explored' ? 0 : 1) - (b.state === 'explored' ? 0 : 1) || a.id.localeCompare(b.id));
+  if (!hits.length) return null;
+  return h('div', { class: 'tp-search', role: 'region', 'aria-label': t('Tables matching the search') },
+    h('span', { class: 'muted' }, t('Open table page')), hits.slice(0, 12).map(n => h('button', { type: 'button', class: 'crumb' + (n.state === 'explored' ? '' : ' dim'), onclick: () => openTablePage(state.db, n.id) }, n.id)),
+    hits.length > 12 ? h('span', { class: 'muted' }, t('+{n} more', { n: fmt(hits.length - 12) })) : null);
+}
+
+function confirmColumnScore(model, c) {
+  const dlg = $('scoreDlg');
+  const name = `${model.id}.${c.name}`;
+  const user = c.user;
+  const choice = { score: user?.score ?? null, roles: [...(user?.roles ?? [])] };
+  const status = h('div', { class: 'dlg-status', role: 'alert' });
+  const save = h('button', { type: 'button', class: 'icon-btn primary', disabled: !choice.score }, t('Save'));
+  const scores = h('fieldset', { class: 'tp-pick' }, h('legend', {}, t('Score')),
+    scoreSteps.map(s => h('label', { class: 'tp-pick-opt', title: t(scoreStepTexts[s]) },
+      h('input', { type: 'radio', name: 'tpScore', value: String(s), checked: choice.score === s ? true : null, onchange: () => { choice.score = s; save.disabled = false; status.textContent = ''; } }),
+      h('span', { class: `score-chip s${s}` }, s), h('span', {}, t(scoreStepLabels[s])))));
+  const roles = h('fieldset', { class: 'tp-pick roles' }, h('legend', {}, t('Roles (optional)')),
+    userScoreRoles.map(r => h('label', { class: 'tp-pick-opt', title: t(tpRoleTexts[r]) },
+      h('input', { type: 'checkbox', value: r, checked: choice.roles.includes(r) ? true : null, onchange: ev => { choice.roles = ev.target.checked ? [...choice.roles, r] : choice.roles.filter(x => x !== r); } }),
+      tpRoleIcon(r), h('span', {}, r))));
+  const buttons = [];
+  const busy = on => { for (const b of buttons) b.disabled = on; save.disabled = on || !choice.score; save.textContent = on ? t('Saving…') : t('Save'); dlg.setAttribute('aria-busy', on ? 'true' : 'false'); };
+  const run = async picked => {
+    const problem = userScoreProblem(picked);
+    if (problem) { status.textContent = t(problem); return; }
+    busy(true);
+    status.textContent = '';
+    try {
+      await runColumnScore(userScoreRequest(model.profile || state.db, model.schema, model.table, c.name, picked));
+      dlg.close('ok');
+      toast(picked.clear ? t('Your score was removed') : t('Score saved'));
+    } catch (err) {
+      status.textContent = err.viewerRestarted ? t('The viewer was restarted; reload the page') : err.setupText ? t(err.setupText) : err.message;
+      busy(false);
+    }
+  };
+  save.addEventListener('click', () => run({ score: choice.score, roles: choice.roles }));
+  const cancel = h('button', { type: 'button', class: 'icon-btn', onclick: () => dlg.close('cancel') }, t('Cancel'));
+  const remove = user ? h('button', { type: 'button', class: 'icon-btn secondary-danger', onclick: () => run({ clear: true }) }, t('Remove my score')) : null;
+  buttons.push(cancel, ...(remove ? [remove] : []));
+  put(dlg, h('div', {},
+    h('h3', { id: 'scoreDlgTitle' }, t('Your score for {c}', { c: name })),
+    h('p', {}, t('Only the user layer changes; the agent score stays. Only local Auspex files change; no database is touched.')),
+    h('dl', {}, h('dt', {}, t('Current')), h('dd', {}, c.user && c.agent ? t('user {u} · agent {a}', { u: c.user.score, a: c.agent.score }) : c.score ? `${c.score} (${c.scoreBy === 'user' ? t('Your score') : t('Agent score')})` : t('not scored'))),
+    scores, roles,
+    h('p', { class: 'tp-hint' }, t('A usage note ("mostly in WHERE") can be given to Claude in chat; it is stored as a rule on the column.')),
+    status,
+    h('div', { class: 'dlg-actions' }, remove, h('span', { class: 'grow' }), cancel, save)));
+  dlg.returnValue = '';
+  dlg.showModal();
+  (dlg.querySelector('input[name="tpScore"]:checked') || dlg.querySelector('input[name="tpScore"]'))?.focus();
+}
+async function runColumnScore(req) {
+  state.scorePending = `${req.schema}.${req.table}.${req.column}`;
+  try {
+    if (tauriCore) await invokeColumnScore(tauriCore.invoke, req);
+    else await postColumnScore(fetch, pageToken, req);
+  } finally {
+    state.scorePending = null;
+    // Show the memory as it is now (also after an unknown outcome).
+    try { state.memory = await getJson('/api/memory'); } catch {}
+    try { state.memView = { profile: req.profile, data: await getJson('/api/memory/graph?profile=' + encodeURIComponent(req.profile)) }; } catch {}
+    state.tablePageKey = null;
+    state.schemaKey = null;
+    state.rulesKey = null;
+    renderSchema();
+  }
+}
+
 // data-dictionary:start (tests/viewerDictionary.test.js runs this block in isolation)
 // A data dictionary of one database from the schema memory only (graph.json
 // plus the table files of explored tables): tables with comment, key columns,
@@ -4352,6 +4929,12 @@ function renderSchema() {
     if (!mv || mv.profile !== state.db) { stopGraph(); state.schemaKey = null; put(view, h('div', { class: 'panel' }, h('div', { class: 'rep-empty' }, t('Loading…')))); return; }
   }
   if (mv.error) { stopGraph(); state.schemaKey = null; put(view, h('div', { class: 'panel' }, h('div', { class: 'error-box', style: 'margin:16px' }, mv.error))); return; }
+  if (state.tablePage?.db === state.db && state.tablePage.trail.length) {
+    if (state.schemaKey) { stopGraph(); state.schemaKey = null; state.tablePageKey = null; }
+    renderTablePage(view, mv.data);
+    return;
+  }
+  state.tablePageKey = null;
 
   const data = mv.data;
   const g = memGraph(data);
@@ -4417,6 +5000,7 @@ function renderSchema() {
         h('button', { onclick: () => downloadDictionary('md'), 'aria-label': t('Data dictionary (Markdown)') }, 'MD')),
       h('button', { class: 'icon-btn', onclick: () => { if (state.memTimeline) state.memTimeline = false; else openTimeline(state.db); renderSchema(); } },
         t('Timeline'), nNew ? h('span', { class: 'badge inference' }, fmt(nNew)) : null)),
+    state.memSearchHost = h('div'),
     state.memTimeline ? timelinePanel(data, g.schema) : null);
 
   state.memInspHost = h('div');
