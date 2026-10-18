@@ -114,3 +114,10 @@ test('the Rules tab is wired: tab button, view, dialog and Turkish labels', () =
     assert.ok(page.includes(`'${key}': '`), `Turkish text for ${key}`);
   }
 });
+
+test('text filter ignores diacritics both ways (Rules tab)', () => {
+  assert.deepEqual(ids({ q: 'islenir' }), [], 'no such word');
+  assert.deepEqual(ids({ q: 'isaretlenir' }), [1], 'işaretlenir matches without the dots');
+  assert.deepEqual(ids({ q: 'İŞARETLENİR status_code' }), [1]);
+  assert.deepEqual(ids({ q: 'isaretlenir STATUS_CODE' }), [1]);
+});

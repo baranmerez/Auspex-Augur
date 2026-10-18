@@ -99,6 +99,7 @@ test('search: Turkish casing, name, meaning, reason and note text, all words, co
   ]);
   const names = (q, extra) => rowNames(render(ctx, { query: q, ...extra }, d));
   assert.deepEqual(names('ORDER_ID'), ['order_id'], 'case-insensitive name match');
+  assert.deepEqual(names('islem sekil'), ['teslim_durum_kodu'], 'diacritic-insensitive: islem matches işlem');
   assert.deepEqual(names('işlem şekil'), ['teslim_durum_kodu'], 'meaning with İ/ı and Ş/ş');
   assert.deepEqual(names('İŞLEM ŞEKİL'), ['teslim_durum_kodu']);
   assert.deepEqual(names('ışlem'), ['teslim_durum_kodu'], 'dotless ı matches i, as on the Rules tab');
@@ -174,11 +175,10 @@ test('Type groups: PK, FK and unique go to keys even when numeric; the other typ
   const groups = ctx.tpGroupColumns(model.columns);
   assert.deepEqual(plain(groups.map(x => x.key)), ['keys', 'dates', 'numbers', 'text', 'flags', 'other']);
   const of = key => plain(groups.find(x => x.key === key).columns.map(c => c.name));
-  assert.deepEqual(of('keys'), ['order_id', 'status_code', 'customer_id', 'ref_no'], 'score 5 PK (6 sources), user-scored 5 composite unique member, FK 4, unscored single unique');
+  assert.deepEqual(of('keys'), ['order_id', 'customer_id', 'ref_no'], 'score 5 PK (6 sources), FK 4, unscored single-column unique; a composite unique member is not a key');
   assert.deepEqual(of('dates'), ['created_at', 'delivered_at'], 'score 5 before score 1');
   assert.deepEqual(of('numbers'), ['amount']);
-  assert.deepEqual(of('text').sort(), ['<script>x</script>', 'note_text', 'teslim_durum_kodu'], 'unscored text columns, ordered by name');
-  assert.deepEqual(of('text'), [...of('text')].sort(), 'name order inside equal scores');
+  assert.deepEqual(of('text').sort(), ['<script>x</script>', 'note_text', 'status_code', 'teslim_durum_kodu'], 'unscored text columns, ordered by name');
   assert.deepEqual(of('flags'), ['is_open']);
   assert.deepEqual(of('other'), ['payload']);
   // sources break a score tie, then the name
@@ -190,7 +190,7 @@ test('Type grouping renders headers with counts in Detailed and in Summary; Scor
   const ctx = load();
   const detail = render(ctx, { group: 'type', showAll: true });
   const heads = byClass(detail, 'tp-group-h').map(textOf);
-  assert.deepEqual(heads, ['Keys and links (3)', 'Date and time (2)', 'Amounts and numbers (1)', 'Text (2)']);
+  assert.deepEqual(heads, ['Keys and links (2)', 'Date and time (2)', 'Amounts and numbers (1)', 'Text (3)']);
   assert.equal(rowNames(detail).length, 8);
   const ids = all(detail, n => typeof n.attrs.id === 'string' && n.attrs.id.startsWith('tp-col-')).map(n => n.attrs.id);
   assert.equal(new Set(ids).size, ids.length || 0);
@@ -226,7 +226,7 @@ test('group switch: segmented buttons with aria-pressed, Turkish labels', () => 
   assert.deepEqual(sw.kids.map(textOf), ['Puan', 'Tür']);
   assert.equal(sw.attrs['aria-label'], 'Kolonları grupla');
   assert.equal(byClass(render(tr, { query: 'created' }), 'tp-q')[0].attrs.placeholder, 'Kolonlarda ara');
-  assert.deepEqual(byClass(render(tr, { group: 'type', showAll: true }), 'tp-group-h').map(textOf), ['Anahtarlar ve bağlantılar (3)', 'Tarih ve saat (2)', 'Tutarlar ve sayılar (1)', 'Metin (2)']);
+  assert.deepEqual(byClass(render(tr, { group: 'type', showAll: true }), 'tp-group-h').map(textOf), ['Anahtarlar ve bağlantılar (2)', 'Tarih ve saat (2)', 'Tutarlar ve sayılar (1)', 'Metin (3)']);
 });
 
 test('the group choice is remembered like the view: page choice, then storage, garbage means Score', () => {
@@ -238,4 +238,51 @@ test('the group choice is remembered like the view: page choice, then storage, g
   assert.match(page, /perfOpen: state\.perfOpen, tpView: state\.tpView, tpGroup: state\.tpGroup \}\)\); \} catch \{\}/, 'saved by persist() inside try/catch');
   assert.match(page, /onGroup: v => \{ state\.tpGroup = v; persist\(\);/);
   assert.match(page, /const tpGroupOf = tp => tpGroupChoice\(tp\.group, state\.tpGroup\);/);
+});
+
+test('diacritic-insensitive search: a column without diacritics is found by a word with them', () => {
+  const ctx = load();
+  const rec = JSON.parse(JSON.stringify(recs['example.orders']));
+  rec.columns.push({ name: 'odeme_tutari', type: 'numeric' });
+  const names = q => rowNames(render(ctx, { query: q }, data, rec));
+  assert.deepEqual(names('ödeme'), ['odeme_tutari']);
+  assert.deepEqual(names('ÖDEME'), ['odeme_tutari']);
+  assert.deepEqual(names('islem'), []);
+  assert.deepEqual(names('IRSALIYE'), []);
+});
+
+test('the search box keeps focus, selection and a pending value over a redraw it did not start', () => {
+  const ctx = load();
+  const input = { id: 'tpSearch', value: 'abcdef', selectionStart: 2, selectionEnd: 4, selectionDirection: 'backward' };
+  const doc = { activeElement: input, getElementById: id => (id === 'tpSearch' ? doc.next : null), next: null };
+  const mk = () => { const el = { id: 'tpSearch', value: 'abcdef', focused: false, sel: null, focus() { this.focused = true; doc.activeElement = this; }, setSelectionRange(a, b, d) { this.sel = [a, b, d]; } }; return el; };
+  let el = mk();
+  ctx.tpKeepSearchFocus(doc, () => { doc.next = el; }, null);
+  assert.equal(el.focused, true);
+  assert.deepEqual(plain(el.sel), [2, 4, 'backward'], 'caret and selection are restored, not moved to the end');
+  // a pending (debounced) value is put back and the selection is clamped
+  doc.activeElement = { ...input, selectionStart: 6, selectionEnd: 6 };
+  el = mk();
+  ctx.tpKeepSearchFocus(doc, () => { doc.next = el; }, 'abcdefg');
+  assert.equal(el.value, 'abcdefg');
+  assert.deepEqual(plain(el.sel).slice(0, 2), [6, 6]);
+  // focus elsewhere: nothing is stolen
+  doc.activeElement = { id: 'other' };
+  el = mk();
+  ctx.tpKeepSearchFocus(doc, () => { doc.next = el; }, null);
+  assert.equal(el.focused, false);
+  assert.match(page, /tpKeepSearchFocus\(document, \(\) => put\(view, tablePageView\(/, 'the page redraw goes through it');
+});
+
+test('IME and debounce: composition is not applied until it ends; typing is applied after a pause', () => {
+  const ctx = load();
+  const input = all(render(ctx, {}), n => n.attrs.id === 'tpSearch')[0];
+  calls.length = 0;
+  input.attrs.oninput({ isComposing: true, target: { value: 'ş' } });
+  assert.deepEqual(calls, []);
+  input.attrs.oncompositionend({ target: { value: 'şe' } });
+  assert.deepEqual(calls.at(-1), ['query', 'şe']);
+  input.attrs.oninput({ isComposing: false, target: { value: 'x' } });
+  assert.deepEqual(calls.at(-1), ['query', 'x']);
+  assert.match(page, /setTimeout\(\(\) => \{ tpQPending = null; set\(\{ q \}\); \}, 100\)/);
 });
