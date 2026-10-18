@@ -92,7 +92,9 @@ function takeOver(lockPath, seen, staleMs, maxHoldMs) {
     if (now?.key !== seen.key || !isStale(now, staleMs, maxHoldMs)) return false;
     const aside = `${lockPath}.stale.${process.pid}.${seen.key}`;
     fs.renameSync(lockPath, aside);
-    fs.rmSync(aside, { force: true });
+    // The lock is gone from here on; a reader holding the aside file open
+    // (Windows) must not turn that into a failed takeover.
+    try { fs.rmSync(aside, { force: true }); } catch (err) { if (err.code !== 'ENOENT' && !transient.has(err.code)) throw err; }
     return true;
   } catch (err) {
     if (err.code !== 'ENOENT' && !transient.has(err.code)) throw err;
