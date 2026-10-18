@@ -47,7 +47,7 @@ auspex/
 │   ├── reports/        Report library: library, plan summary, masking, HTML template
 │   └── memory/         Schema memory: store (tables, notes, relations, view) and plan usage
 ├── desktop/            Tauri 2 desktop app (Rust)
-├── skills/             Workflow skills auspex-explore / -report / -ddl (also served as MCP prompts)
+├── skills/             Workflow skills auspex-explore / -report / -ddl / -columns / -code (also served as MCP prompts)
 ├── scripts/            SQL: local test setup (+ DDL fixture), role creation, schema grants; installSkills.mjs
 ├── tests/              Unit tests (*.test.js) + local integration test
 ├── profiles.example.json
@@ -271,7 +271,7 @@ Desktop build: Rust (MSVC toolchain), VS 2022 C++ Build Tools, WebView2;
 
 | Command | Scope | Last result |
 |---|---|---|
-| `npm test` | SQL guard, profiles, config, timeouts, explain, audit and errors (incl. MCP server end to end), reports, change-script lint, CSV export, file lock with child processes, schema memory, catalog batch tools, prompts, skills install, viewer roles, scheduled runs (no database) | 615 pass, 1 skipped (2026-10-18, Windows, Node 24) |
+| `npm test` | SQL guard, profiles, config, timeouts, explain, audit and errors (incl. MCP server end to end), reports, change-script lint, CSV export, file lock with child processes, schema memory, catalog batch tools, prompts, skills install, viewer roles, scheduled runs (no database) | 756 pass, 1 skipped (2026-10-18, Windows, Node 24) |
 | `npm run test:local` | Local PG16 + `auspex_test` schema: writes rejected by the database, unprivileged table, CTE, stacked statements, timeout, connection drop, EXPLAIN ANALYZE, CSV budget cancellation, search, reports, memory, DDL catalog | 39 pass, 4 skipped (2026-10-18; DDL fixture not applied locally, CI runs them) |
 | `cargo test` (in `desktop/src-tauri`) | Path validation and profile rules of the desktop API, report-stage argument validation, CLI result mapping, auspexRoot check, audit line for unknown outcomes | 12/12 (2026-10-17; needs an existing `desktop/dist` folder) |
 
@@ -467,6 +467,7 @@ Merged work:
 - 2026-10-18: column importance (PR 2): table page in the viewer and desktop app (columns ranked by score, keys, triggers, neighbours, breadcrumb) and user scoring from the score chip (`POST /api/memory/column-score`, desktop `score_column` -> `stageCli.js score-column`, user layer only, audited as `score_columns`).
 - 2026-10-18: table page Summary view (chips by group, report mention match, remembered choice), Summary palette in the theme generator (saved, exported and imported with custom themes) and links from the Rules tab to the table page. Next: glass theme and coloured side panels.
 - 2026-10-18: Glass and Glass dark presets, Plain, tinted references / referenced-by panels with stronger name hierarchy, glass strength and tints in the generator (saved, exported, imported); opaque fallback without backdrop-filter or with reduced transparency.
+- 2026-10-18: column importance (PR 3, code meanings): `codeRoots` in profiles.json / `AUSPEX_CODE_ROOT_<NAME>` (same shape and checks as `scriptRoots`, listed by `list_profiles`; Auspex never reads or writes them), `remember` `evidenceCode` (at most 5 `{ root, path, line?, symbol? }` references on inference/observation notes, relative paths only, no code text, not in the audit; kept on confirm), carried by `table_knowledge` and graph.json; viewer *from code* badge and `root:path:line · symbol` references on the Rules tab and table page, Summary chip tooltip with the confirmed meaning; skill `auspex-code` (prompt `code`); desktop skips the `codeRoots` key when listing profiles.
 
 Working agreements:
 

@@ -16,7 +16,7 @@ import {
 import { ReportService } from './reports/service.js';
 import { sqlHash, sqlHashPattern } from './reports/library.js';
 import { builtInPresetKeys, maxPresetName, maxPresets } from './reports/presets.js';
-import { SchemaMemory, noteKinds, columnRoles, scoreHistoryLimit, maxScoreReason, maxScoredColumns, maxScannedFiles, maxTriggerSummary, scoreLayers, maxTriggerSummaries } from './memory/store.js';
+import { SchemaMemory, noteKinds, columnRoles, scoreHistoryLimit, maxScoreReason, maxScoredColumns, maxScannedFiles, maxTriggerSummary, scoreLayers, maxTriggerSummaries, maxEvidenceCode, maxCodeSymbol, maxCodeLine } from './memory/store.js';
 import { relationsFromTextPlan } from './memory/planUsage.js';
 import { loadPromptSkills, promptText } from './skills.js';
 
@@ -131,7 +131,7 @@ if (typeof server.createToolError === 'function') {
 
 tool('list_profiles', {
   title: 'List connection profiles',
-  description: 'Lists configured database profiles with description, host, database, user, timeout limit and query budget per minute (never passwords), the script roots (named folders save_execute_script can write change scripts into, and that score_columns reads SQL from and records as scannedFiles) and notesLanguage (language for schema-memory notes, report texts and change-script texts, null when not configured). Call this and ask the user which profile to use when they have not named one in this conversation; show each description so production databases are clearly marked.',
+  description: 'Lists configured database profiles with description, host, database, user, timeout limit and query budget per minute (never passwords), the script roots (named folders save_execute_script can write change scripts into, and that score_columns reads SQL from and records as scannedFiles), the code roots (named source code folders you read with your own file tools; Auspex never reads or writes them; remember evidenceCode refers to them by name) and notesLanguage (language for schema-memory notes, report texts and change-script texts, null when not configured). Call this and ask the user which profile to use when they have not named one in this conversation; show each description so production databases are clearly marked.',
   inputSchema: {},
 }, async () => ({
   limits: {
@@ -144,6 +144,8 @@ tool('list_profiles', {
   notesLanguage: config.notesLanguage,
   // Folders save_execute_script can write into (root parameter).
   scriptRoots: [...config.scriptRoots].map(([name, r]) => ({ name, path: r.dir, source: r.source })),
+  // Source code folders the agent reads itself (remember evidenceCode root).
+  codeRoots: [...config.codeRoots].map(([name, r]) => ({ name, path: r.dir, source: r.source })),
   profiles: [...config.profiles].map(([name, cs]) => ({
     name,
     description: config.profileInfo.get(name)?.description ?? null,
@@ -467,7 +469,7 @@ tool('table_knowledge', {
 
 tool('remember', {
   title: 'Remember a fact about the data',
-  description: 'Adds, confirms or archives a note in the local schema memory of a profile (no database access). kind=rule: a business rule the user stated. kind=observation: a finding backed by evidence (SQL plus aggregate figures; dated). kind=inference: your own interpretation, shown as unconfirmed. Notes never contain row values or personal data. Write the note text in the notesLanguage from list_profiles; if it is null, ask the user once which language notes and report texts should be saved in, use the answer for this conversation and suggest adding "notesLanguage" to profiles.json (existing notes are not translated). action=confirm turns an inference into a rule or observation, only after the user agreed. Notes are archived with a reason, never deleted.',
+  description: `Adds, confirms or archives a note in the local schema memory of a profile (no database access). kind=rule: a business rule the user stated. kind=observation: a finding backed by evidence (SQL plus aggregate figures; dated). kind=inference: your own interpretation, shown as unconfirmed. Notes never contain row values or personal data. Write the note text in the notesLanguage from list_profiles; if it is null, ask the user once which language notes and report texts should be saved in, use the answer for this conversation and suggest adding "notesLanguage" to profiles.json (existing notes are not translated). action=confirm turns an inference into a rule or observation, only after the user agreed. evidenceCode (inference or observation only): up to ${maxEvidenceCode} references into the source code the meaning was read from, each { root: name of a configured code root from list_profiles, path: relative to that root, line?, symbol? }; you read the code with your own file tools, Auspex stores only the references, never code text; such a note is shown as a code inference until the user agreed and you confirmed it. Notes are archived with a reason, never deleted.`,
   inputSchema: {
     profile: profileArg,
     action: z.enum(['add', 'confirm', 'archive']),
@@ -479,17 +481,25 @@ tool('remember', {
     evidenceSql: z.string().optional().describe('Observation: the read-only SQL behind the finding.'),
     evidenceFigures: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).optional()
       .describe('Observation: aggregate figures, e.g. {"rows": 223000, "filled": 0}. Never row values.'),
+    evidenceCode: z.array(z.object({
+      root: z.string().describe('Name of a configured code root (list_profiles codeRoots), not a path.'),
+      path: z.string().describe('File path relative to the code root, e.g. src/Orders/Order.cs. No absolute, drive or UNC paths, no "..".'),
+      line: z.number().int().optional().describe(`Line number, 1 to ${maxCodeLine}.`),
+      symbol: z.string().optional().describe(`Class, property or method name, one line, at most ${maxCodeSymbol} characters. Never code text.`),
+    }).strict()).max(maxEvidenceCode).optional()
+      .describe(`add, kind inference or observation: up to ${maxEvidenceCode} source code references behind the note. Only references are stored.`),
     id: z.number().int().optional().describe('confirm / archive: the note id.'),
     reason: z.string().optional().describe('archive: why the note is no longer valid.'),
   },
-}, async ({ profile, action, kind, schema, table, column, text, evidenceSql, evidenceFigures, id, reason }) =>
+}, async ({ profile, action, kind, schema, table, column, text, evidenceSql, evidenceFigures, evidenceCode, id, reason }) =>
   // Logged without the note text, evidence or reason: only what was changed.
   db.audited('remember', { profile: profile ?? null, action, kind, schema, table, column, noteId: id }, async () => {
     const name = db.resolveProfile(profile);
     if (action === 'add') {
       const evidence = evidenceSql || evidenceFigures ? { sql: evidenceSql, figures: evidenceFigures } : undefined;
-      return { note: memory.addNote(name, { kind, schema, table, column, text, evidence }) };
+      return { note: memory.addNote(name, { kind, schema, table, column, text, evidence, evidenceCode }, { codeRoots: [...config.codeRoots.keys()] }) };
     }
+    if (evidenceCode !== undefined) throw new ToolError('INVALID_INPUT', 'evidenceCode is only accepted with action=add; confirm keeps the references of the note.');
     if (id === undefined) throw new ToolError('INVALID_INPUT', `action=${action} needs id.`);
     if (action === 'confirm') return { note: memory.confirmNote(name, id, kind) };
     return { note: memory.archiveNote(name, id, reason) };

@@ -359,3 +359,14 @@ test('report SQL loading: a failed read is not cached and is read again; the key
   assert.equal(cache.get(ctx.tpSqlKey(none)), '', 'a document without SQL is cached as empty, not as a failure');
   assert.equal(failed.size, 0);
 });
+
+test('a column chip tooltip carries the meaning of a confirmed note read from code, never an unconfirmed one', () => {
+  const ctx = load();
+  const note = (id, kind, column, text) => ({ id, kind, schema: 'example', table: 'orders', column, text, status: 'active', evidenceCode: [{ root: 'example_app', path: 'src/Orders/Order.cs' }] });
+  const withCode = { ...data, notes: [...data.notes, note(90, 'observation', 'customer_id', 'Buyer of the order <i>x</i>'), note(91, 'inference', 'amount', 'Appears to be the total')] };
+  const view = ctx.tablePageView(ctx.tablePageModel(withCode, 'example.orders', recs['example.orders']), ['example.orders'], viewCtx());
+  const chips = chipsOf(groupOf(view, 'Columns by score'));
+  assert.match(chips.find(c => textOf(c) === 'customer_id').attrs.title, / · Buyer of the order <i>x<\/i>$/);
+  assert.doesNotMatch(chips.find(c => textOf(c) === 'amount').attrs.title, /total/);
+  assert.ok(html(chips.find(c => textOf(c) === 'customer_id')).includes('&lt;i&gt;x&lt;/i&gt;'));
+});

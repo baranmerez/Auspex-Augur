@@ -318,3 +318,29 @@ test('the page posts the score with its token and maps refusals; the desktop cal
   assert.equal(invoked[0][0], 'score_column');
   await assert.rejects(ctx.invokeColumnScore(async () => { throw { code: 'NODE_NOT_FOUND', message: 'no node' }; }, req), err => err.code === 'NODE_NOT_FOUND' && !!err.setupText);
 });
+
+test('a note read from code shows a "from code" badge and its references as escaped text', () => {
+  const ctx = load();
+  const codeNote = {
+    id: 90, kind: 'inference', schema: 'example', table: 'orders', column: 'amount', text: 'Appears to be the <b>total</b>.', status: 'active',
+    evidenceCode: [{ root: 'example_app', path: 'src/Orders/<Order>.cs', line: 42, symbol: 'Order.Amount<script>' }, { root: 'example_app', path: 'web/orders.html' }],
+  };
+  const withCode = { ...data, notes: [...data.notes, codeNote] };
+  const view = ctx.tablePageView(ctx.tablePageModel(withCode, 'example.orders', recs['example.orders']), ['example.orders'], viewCtx({ showAll: true, open: 'amount' }));
+  const detail = byClass(view, 'tp-detail')[0];
+  const badge = byClass(detail, 'code')[0];
+  assert.equal(textOf(badge), 'from code');
+  const refs = byClass(detail, 'code-refs')[0];
+  assert.deepEqual(refs.kids.map(textOf), ['example_app:src/Orders/<Order>.cs:42 · Order.Amount<script>', 'example_app:web/orders.html']);
+  const out = html(detail);
+  assert.ok(out.includes('src/Orders/&lt;Order&gt;.cs:42 · Order.Amount&lt;script&gt;'));
+  assert.ok(!out.includes('<script>') && !out.includes('<b>total'), 'no markup from the note');
+  assert.ok(!all(detail, n => n.tag === 'a').length, 'no links to files');
+  // A column without code evidence has no badge.
+  const plainView = render(ctx, 'example.orders', { open: 'status_code' });
+  assert.equal(byClass(byClass(plainView, 'tp-detail')[0], 'code').length, 0);
+  // Turkish label.
+  const tr = load('tr');
+  const trView = tr.tablePageView(tr.tablePageModel(withCode, 'example.orders', recs['example.orders']), ['example.orders'], viewCtx({ showAll: true, open: 'amount' }));
+  assert.equal(textOf(byClass(byClass(trView, 'tp-detail')[0], 'code')[0]), 'koddan');
+});

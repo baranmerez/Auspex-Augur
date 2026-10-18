@@ -522,6 +522,9 @@
   .badge.rule { background: var(--accent-soft); color: var(--accent-ink); }
   .badge.observation { background: var(--good-soft); color: var(--good-ink); }
   .badge.inference { background: var(--warn-soft); color: var(--warn-ink); }
+  .badge.code { background: var(--surface-2); color: var(--text-2); border: 1px solid var(--line-strong); }
+  .code-refs { list-style: none; margin: 4px 0 0; padding: 0; font: 11px/1.5 var(--mono); color: var(--text-2); overflow-wrap: anywhere; }
+  .rl-badges { display: flex; flex-direction: column; gap: 4px; align-items: stretch; }
   .badge.explored { background: var(--accent-soft); color: var(--accent-ink); }
   .badge.seen, .badge.unexplored { background: var(--surface-2); color: var(--text-3); }
   .nlist { list-style: none; margin: 0; padding: 0; font-size: 13px; }
@@ -1023,6 +1026,7 @@ const TR = {
   'Timeline': 'Zaman çizelgesi', 'seen in a plan': 'planda görüldü', 'foreign key': 'yabancı anahtar (FK)',
   'used in an approved report': 'onaylı raporda kullanıldı', 'name match (unconfirmed)': 'isim benzerliği (onaysız)', 'rule': 'kural',
   'observation': 'gözlem', 'inference': 'çıkarım', 'as of {d}': '{d} itibarıyla',
+  'from code': 'koddan', 'Code references': 'Kod referansları', 'Meaning read from source code (references only, no code is stored).': 'Kaynak koddan okunan anlam (yalnızca referanslar saklanır, kod saklanmaz).',
   'unconfirmed': 'onaysız', 'archived': 'arşivlendi', 'Archived: ': 'Arşiv gerekçesi: ',
   'Evidence SQL': 'Kanıt SQL', 'Est. rows': 'Tahmini satır', 'Columns': 'Kolon',
   'Relations': 'İlişkiler', 'Notes': 'Notlar', 'History': 'Geçmiş',
@@ -4192,13 +4196,16 @@ function ruleCard(n) {
   const day = ts => ruleDay(ts, locale);
   const pending = state.archivePending === n.id;
   const active = n.status === 'active';
-  const evidence = fig || sql ? h('details', {}, h('summary', {}, t('Evidence')),
+  const code = Array.isArray(n.evidenceCode) ? n.evidenceCode : [];
+  const evidence = fig || sql || code.length ? h('details', {}, h('summary', {}, t('Evidence')),
     fig ? h('div', { class: 'fig' }, Object.entries(fig).map(([k, v]) => h('span', {}, `${k}: ${typeof v === 'number' ? fmt(v) : v}`))) : null,
-    sql ? h('pre', {}, sql) : null) : null;
+    sql ? h('pre', {}, sql) : null,
+    code.length ? h('ul', { class: 'code-refs', 'aria-label': t('Code references') }, code.map(r => h('li', {}, codeRefText(r)))) : null) : null;
+  const kindBadge = h('span', { class: 'badge ' + n.kind }, t(n.kind));
   const icon = svg('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.8', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' },
     svg('rect', { x: 3, y: 4, width: 18, height: 4, rx: 1 }), svg('path', { d: 'M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4' }));
   return h('div', { class: `rl-row ${n.kind}${active ? '' : ' archived'}` },
-    h('span', { class: 'badge ' + n.kind }, t(n.kind)),
+    code.length ? h('div', { class: 'rl-badges' }, kindBadge, h('span', { class: 'badge code', title: t('Meaning read from source code (references only, no code is stored).') }, t('from code'))) : kindBadge,
     h('div', {},
       h('div', { class: 'rl-text' }, n.text),
       h('div', { class: 'rl-meta' },
@@ -4349,6 +4356,13 @@ const tpRoleTexts = {
   display: 'display: SELECT list', aggregate: 'aggregate: sum, count, avg, ...', 'sort/group': 'sort/group: ORDER BY or GROUP BY',
 };
 const tpCmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+// One remember evidenceCode reference as text: root:path:line · symbol.
+function codeRefText(r) {
+  return `${r?.root ?? '?'}:${r?.path ?? '?'}${Number.isInteger(r?.line) ? `:${r.line}` : ''}${r?.symbol ? ` · ${r.symbol}` : ''}`;
+}
+const tpCodeRefs = n => (Array.isArray(n?.evidenceCode) ? n.evidenceCode : []);
+// The meaning of a column from a confirmed note read from code, for tooltips.
+const tpCodeMeaning = c => (c?.notes || []).find(n => n.kind !== 'inference' && tpCodeRefs(n).length)?.text ?? null;
 const tpOwn = (obj, key) => (obj && Object.hasOwn(obj, key) ? obj[key] : null);
 // The user score wins over the agent score (store.js effectiveScore).
 function tpEffective(entry) {
@@ -4489,7 +4503,12 @@ function tpColumnDetail(c, ctx) {
     c.default !== null ? h('div', {}, h('span', { class: 'muted' }, t('Default')), ' ', h('code', {}, c.default)) : null,
     c.comment ? h('div', {}, h('span', { class: 'muted' }, t('Comment')), ' ', c.comment) : null,
     h('h5', {}, t('Notes')),
-    c.notes.length ? c.notes.map(n => h('div', { class: `note ${n.kind}` }, h('div', { class: 'nh' }, h('span', { class: 'badge ' + n.kind }, t(n.kind)), h('span', {}, '#' + n.id)), h('div', {}, n.text)))
+    c.notes.length ? c.notes.map(n => h('div', { class: `note ${n.kind}` },
+      h('div', { class: 'nh' }, h('span', { class: 'badge ' + n.kind }, t(n.kind)),
+        tpCodeRefs(n).length ? h('span', { class: 'badge code', title: t('Meaning read from source code (references only, no code is stored).') }, t('from code')) : null,
+        h('span', {}, '#' + n.id)),
+      h('div', {}, n.text),
+      tpCodeRefs(n).length ? h('ul', { class: 'code-refs', 'aria-label': t('Code references') }, tpCodeRefs(n).map(r => h('li', {}, codeRefText(r)))) : null))
       : h('div', { class: 'muted' }, t('No notes on this column.')));
 }
 function tpColumnRow(c, ctx) {
@@ -4681,9 +4700,9 @@ function tpSummary(model, sum, ctx) {
   const group = (title, hint, chips, empty, wide) => h('section', { class: 'sum-group' + (wide ? ' wide' : ''), 'aria-label': t(title) },
     h('h4', {}, t(title), hint ? h('span', { class: 'muted' }, ' ', hint) : null),
     chips.length ? h('div', { class: 'sum-chips' }, chips) : h('div', { class: 'muted sum-none' }, empty ?? t('None known.')));
-  const colChip = (name, score, type) => tpChip(score ? `s${score}` : 's0', name, { onclick: () => ctx.onColumn(name), title: [tpScoreLabel(score), type].filter(Boolean).join(' · ') });
-  const col = c => colChip(c.name, c.score, c.type);
-  const byName = name => { const c = model.columns.find(x => x.name === name); return colChip(name, c?.score ?? null, c?.type); };
+  const colChip = (name, score, type, meaning) => tpChip(score ? `s${score}` : 's0', name, { onclick: () => ctx.onColumn(name), title: [tpScoreLabel(score), type, meaning].filter(Boolean).join(' · ') });
+  const col = c => colChip(c.name, c.score, c.type, tpCodeMeaning(c));
+  const byName = name => { const c = model.columns.find(x => x.name === name); return colChip(name, c?.score ?? null, c?.type, tpCodeMeaning(c)); };
   const more = ctx.moreOpen || {};
   // The first tpListLimit chips, the rest behind a "+N more" chip.
   const limited = (key, list, chip) => {
@@ -4744,6 +4763,7 @@ const tablePageTr = {
   'not scored': 'puanlanmamış', 'Not scored': 'Puanlanmamış', 'Score {s}': 'Puan {s}', 'Set your score for {c}': '{c} için puanınızı verin',
   'Score legend': 'Puan açıklaması', 'removed': 'kaldırıldı', 'none': 'yok', 'Your score': 'Sizin puanınız', 'Agent score': 'Ajan puanı',
   'References': 'Başvurduğu tablolar', 'Default': 'Varsayılan', 'Comment': 'Açıklama', 'Notes': 'Notlar', 'No notes on this column.': 'Bu kolonda not yok.',
+  'from code': 'koddan', 'Code references': 'Kod referansları', 'Meaning read from source code (references only, no code is stored).': 'Kaynak koddan okunan anlam (yalnızca referanslar saklanır, kod saklanmaz).',
   'user {u} · agent {a}': 'kullanıcı {u} · ajan {a}', 'user {u}': 'kullanıcı {u}', 'not in the recorded structure': 'kayıtlı yapıda yok',
   'Reports and scripts that use the column': 'Kolonu kullanan rapor ve betikler', '{n} report': '{n} rapor', '{n} reports': '{n} rapor',
   'Columns': 'Kolon', '{n} columns': '{n} kolon', '{n} of {all} columns scored 4–5': '{all} kolondan {n} tanesi 4–5 puanlı',
