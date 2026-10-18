@@ -974,13 +974,18 @@ Opens a local page at http://127.0.0.1:4719 (port: `AUSPEX_VIEWER_PORT`):
 
 - **Overview** — stat tiles, activity over time, usage by profile, tool and table, slowest operations, recent errors
 - **Operations** — sortable, paged log with full SQL, parameters and errors (the status shows the error code, the detail the correlation ID); copy and CSV/JSON download
-- **Tables** — which tables were accessed, how often and by which profile
+- **Tables** — which tables were accessed, how often and by which profile; a schema-qualified name opens its table page when the database is known
 - **Reports** — the report library as a collapsible tree: topic → subtopic → report (database and schema come from the database picker and the report header; the list collapses to a rail; a filter box narrows it by name, category or stage and opens the matching branches; change scripts have their own tab and are not part of *All*), with each report's HTML: the title with its stage badge and the approve/revoke button in the viewer header (the report's own title, location chips and language/theme controls are hidden there and stay in the saved file and *Open in new tab*), the question it answers at the top (first sentence, *More* for the rest, parameters on their own line, last run time and parameters beside *Last run*), execution time, rows and the plan-warnings badge in one strip with the cost, buffer, temp and join figures behind a *Performance details* toggle (remembered), and sticky tabs that open on *Preview*. The preview table has readable headers (raw name in the tooltip), click-to-sort, a quick filter, a preview-only totals row for numeric columns and a spreadsheet-safe CSV export of the rows shown (Turkish exports use a decimal comma; identifier and code columns such as `order_id` or `status_code` are skipped in the totals row; the download needs a click in the report and is saved with a sanitized `.csv` file name and a UTF-8 BOM); masked columns stay masked. The header also shows the last run's preset with its parameter values and lists the presets the report offers (read-only: running stays an agent action, the viewer never runs SQL), a star to pin the report, and *Ask Claude*, which copies a ready prompt in the viewer language (report location, title, last run time, preset and parameters, row count and the first column names, never preview values) to the clipboard. Above the tree, *Favorites* lists the pinned reports and *Recent* the last 8 opened; both are local to this viewer or desktop app (browser storage, nothing is written to the library) and drop reports that no longer exist. SQL and change scripts are syntax-highlighted (step markers stand out, long lines soft-wrap), copy buttons inside a report work from the viewer, and drafts and approved reports can be approved or revoked (see below)
 - **Schema** — the schema memory of a database in three views, an inspector with notes, relations and history, and a timeline of schema changes. A schema picker moves the selection and the view center into the chosen schema. A badge in the header counts schema changes you have not seen yet. Around a selected table, foreign keys give two roles: **Reference** (TR *Instance*: tables it points to, such as status codes) and **Dependent** (TR *Beslenen*: tables that point to it, such as order lines). Each role is ranked by linked rows, then by the table's row estimate; both are planner estimates, and a relation without a linked-row figure falls back to the row estimate.
   - *Graph* — a 3D graph (with a 2D fallback): click a table to focus it, and the focused table's Reference and Dependent tables are laid out in directed layers with always-visible labels; *+1 depth* adds the next ring and *Show all* shows everything. The focused table's FK edges are blue (Reference) or orange (Dependent), darkest at rank 1 and lightest at rank 10; edges beyond the top 10 are grey and dashed and can be hidden
   - *ER diagram* — Reference tables on the left, Dependent tables on the right, with a per-side top-N picker (5, 10, 25, 50 or All), every card with its rank, linked rows and explored state; the rest stay in the inspector's Relations list
   - *Flow* — Reference → Center → Dependent swimlanes around a center card, edge width by linked rows (log scale) and edges labelled with their join columns; the same top-N picker per side; a Dependent opens its own dependents as a further labelled lane (depth 2), clicking a table makes it the center and the trail leads back
   - *Data dictionary* (TR *Veri sözlüğü*) — downloads a self-contained HTML or Markdown document of the database built from the schema memory only (no database access): the explored tables with their comment, key columns (primary key, foreign key, used, noted), relations (Reference/instance and Dependent), active rules and observations (observations with their aggregate figures), and the database-wide rules and observations, with the generation date. Unconfirmed inferences, archived notes and evidence SQL are left out; every name and text is escaped. The file is saved as `auspex-data-dictionary-<db>-<date>.html` or `.md` after a click (when loading the table files took too long, the next click downloads)
+- **Table page** (TR *Tablo sayfası*) — opened from a table name in the Tables tab, the Schema inspector (*Open table page*) or the Schema search (matching tables are listed under the bar); shown in the Schema tab with a breadcrumb (Back, Schema, each visited table). From `graph.json` and the table file only:
+  - header: `schema.table`, estimated rows, column count, note count, comment, last scored date, sources (most reports and scripts found for one column) and a badge when the last describe recorded changes
+  - columns sorted by effective score, then name: a 5-step single-hue score chip (the accent mixed into the surface, so it follows light, dark and custom themes), name and type, roles as icons with tooltips, the agent's one-line reason and its number of reports; "user 5 · agent 2" when both layers exist. By default only scores 4–5 are listed, with a counter and *Show all columns*; the legend explains the rubric (5 core, 4 frequent, 3 topical, 2 rare, 1 unused). A row expands to the score history of both layers (newest 5 each), the column's notes, its FK target, default and comment
+  - keys and structure (primary key, unique and check constraints with definitions, outgoing and incoming foreign keys, indexes), triggers (timing and events, level, enabled, function, WHEN, the agent summary; a stale summary is marked *may be out of date*), and neighbours: tables it references on the left, tables that reference it on the right (linking columns, estimated rows; not explored ones muted), each opening its own page
+  - an undescribed table explains that `describe_table` is needed; an unscored table points to the `auspex-columns` skill. Clicking a score chip sets your own score (see below)
 - **Rules** (TR *Kurallar*) — every schema-memory note of the chosen database: rules, observations and inferences with table and column, text, status, confirmed or unconfirmed, created/confirmed/archived dates, and the evidence (figures and SQL) behind a collapsed *Evidence* toggle. Filters: status (active by default, archived, all), kind, table (part of `schema.table`) and text (case-insensitive, Turkish İ/I/ı/i match each other). An active note can be archived with a required reason (see below); adding or confirming notes stays an agent action (`remember`)
 - **Profiles** — configured databases with connection details (never passwords) and the latest role check; a `check_profile` that failed shows "unable to assess" with its code, never as a passed check
 
@@ -1009,7 +1014,7 @@ before template v2 keep their old layout until `render_reports` re-renders them.
 
 It binds to 127.0.0.1 only, rejects other Host headers, never connects to a
 database and never shows passwords. Every route is GET-only except the two
-approval routes and the note archive route below.
+approval routes, the note archive route and the user column score route below.
 
 #### Approving reports in the viewer
 
@@ -1085,6 +1090,30 @@ checks is audited like the `remember` tool (`tool` `remember`, `action`
 `archive`, `source` and `actor` `viewer`, profile and note id, never the note
 text or the reason).
 
+#### Scoring columns in the viewer
+
+On the table page, clicking a column's score chip opens a small dialog: choose
+a score from 1 to 5, optional roles, then *Save*; *Remove my score* (TR
+*Puanımı kaldır*) appears when you already gave one. Only the **user layer**
+changes, through the same store logic as `score_columns` with `by: "user"`
+(under the profile's memory lock, atomic writes, view rebuilt); the agent
+score, its reason and history stay. A usage note ("mostly in WHERE") is not
+taken here: tell your agent in chat and it is saved as a rule on the column.
+
+`POST /api/memory/column-score` has the same protections as the archive
+route (loopback Host, exact `Origin`, per-process `X-Auspex-Token`,
+`application/json` of at most 4 KB) and accepts exactly
+`{ "profile", "schema", "table", "column", "score" | "clear": true, "roles"? }`:
+a profile name, names of 1 to 63 bytes without control characters, a score
+from 1 to 5 or `clear: true` (not both), and roles only with a score (any of
+`key`, `join`, `filter`, `display`, `aggregate`, `sort/group`, each once).
+Anything else, including unknown keys, is 400. An unknown profile, table or
+column is 404; a table that is only seen in a plan (not described), or a
+`clear` without a user score, is 409 (`PRECONDITION_FAILED`). Every request
+that passed the origin and token checks is audited as `score_columns` with
+`layer` `user`, `action` `set` or `clear`, `source` and `actor` `viewer`,
+profile, schema, table, column, score and role names; there is no free text.
+
 ### 🖥️ Desktop app (Tauri)
 
 `desktop/` wraps the same viewer in a small native app (about 3 MB) that reads
@@ -1141,6 +1170,18 @@ node <auspexRoot>/src/stageCli.js archive-note --profile=<profile> --id=<id> --r
 which applies the viewer's checks and store logic (404 unknown note, 409
 already archived) and audits with `source` and `actor` `desktop`.
 
+The table page's score dialog works the same way: the app's `score_column`
+command checks the profile, the names, the score or clear and the roles in
+Rust (the same rules as the viewer route) and runs
+
+```bash
+node <auspexRoot>/src/stageCli.js score-column --profile=<profile> --schema=<schema> --table=<table> --column=<column> --score=<1-5> [--roles=<role,role>]
+node <auspexRoot>/src/stageCli.js score-column --profile=<profile> --schema=<schema> --table=<table> --column=<column> --clear=true
+```
+
+which writes the user layer only and audits like the viewer route with
+`source` and `actor` `desktop`.
+
 Requirements:
 
 - **Node 20+** on `PATH`, or `AUSPEX_NODE` set to the absolute path of
@@ -1156,7 +1197,7 @@ in Rust first, and stops the CLI after 30 seconds. When the CLI times out or
 gives no result, the change may or may not have been applied: the app says so,
 reloads the list and writes an audit line (actor `desktop`, error code
 `TIMEOUT` or `CLI_FAILED`) itself. Only `api`,
-`approve_report`, `revoke_report` and `archive_note` are allowed in the
+`approve_report`, `revoke_report`, `archive_note` and `score_column` are allowed in the
 window's capability; there is no shell plugin.
 
 ## 🗂️ Profiles file

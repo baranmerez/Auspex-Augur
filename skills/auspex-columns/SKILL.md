@@ -43,6 +43,10 @@ column appears.
    schema.table.column, keeping the user's meaning and wording as closely
    as possible, written in the `notesLanguage`. Never
    overwrite or clear a user score unless the user asks (`clearUser: true`).
+   The user can also set or remove their own score on the table page of
+   the Auspex viewer or desktop app (click the score chip); it lands in the
+   same user layer, so read `table_knowledge` before you report. The page
+   takes no usage note: when the user gives one in chat, save it as above.
    A rescan writes agent scores only; both layers stay visible.
 7. **Never invent business meaning.** A reason states where and how the
    column is used ("joined to example.customers in 6 reports, shown in all"),
