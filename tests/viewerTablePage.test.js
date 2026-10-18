@@ -42,7 +42,8 @@ function load(lang = 'en') {
     JSON, h, svg: h, locale: lang === 'tr' ? 'tr-TR' : 'en-GB', fmt: n => String(n), compact: n => `~${n}`,
     ruleDay: ts => (ts ? String(ts).slice(0, 10) : '?'), changeLabel: c => c.change,
   });
-  vm.runInContext(`${blockOf('table-page')}
+  vm.runInContext(`${page.match(/const foldText = .*;/)[0]}
+${blockOf('table-page')}
 const TR = Object.assign({}, ${JSON.stringify(pageTr)});
 for (const [k, v] of Object.entries(tablePageTr)) if (!Object.hasOwn(TR, k)) TR[k] = v;
 const t = (en, vars = {}) => String(${JSON.stringify(lang)} === 'tr' && TR[en] !== undefined ? TR[en] : en).replace(/\\{(\\w+)\\}/g, (_, k) => vars[k] ?? '');

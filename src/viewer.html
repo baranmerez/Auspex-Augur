@@ -722,6 +722,17 @@
   .tp-roles { display: flex; gap: 3px; }
   .tp-role { display: inline-flex; width: 20px; height: 20px; align-items: center; justify-content: center; border-radius: 5px; background: var(--surface-2); color: var(--text-2); }
   .tp-role svg { width: 13px; height: 13px; }
+  .tp-namecell { min-width: 0; display: grid; gap: 2px; }
+  .tp-meaning { font-size: 12px; line-height: 1.45; color: var(--text-3); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .tp-tools { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; margin: 0 0 10px; min-width: 0; }
+  .tp-search-box { display: flex; align-items: center; gap: 6px; flex: 1 1 220px; min-width: 0; }
+  .tp-q { flex: 1 1 auto; min-width: 0; font: inherit; font-size: 13px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); }
+  .tp-q:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .tp-q-count { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .tp-q-note { flex-basis: 100%; }
+  .tp-group { flex: 0 1 auto; }
+  .tp-tgroup + .tp-tgroup { margin-top: 12px; }
+  .tp-group-h { margin: 0 0 4px; font-size: 12px; color: var(--text-2); }
   .tp-reason { font-size: 13px; color: var(--text-2); overflow-wrap: anywhere; min-width: 0; }
   .tp-layers { display: inline-block; margin-right: 8px; font: 600 11px var(--mono); color: var(--accent-ink); }
   .tp-src { font-size: 12px; color: var(--text-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -1248,7 +1259,7 @@ const state = {
   memSchema: '', memErAll: false, memPos: new Map(), schemaKey: null,
 };
 try { Object.assign(state, JSON.parse(localStorage.getItem('auspex.viewer') || '{}'), { all: [], seen: new Set(), firstLoad: true, open: null, reports: null, reportDoc: null, memory: null, memView: null, memPos: new Map() }); } catch {}
-const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy, memHideFaint: state.memHideFaint, memGraph3d: state.memGraph3d, memGraphSoft: state.memGraphSoft, memExpand: state.memExpand, repListCollapsed: state.repListCollapsed, repTreeOpen: state.repTreeOpen, repFavOpen: state.repFavOpen, repRecentOpen: state.repRecentOpen, sqlWrap: state.sqlWrap, perfOpen: state.perfOpen, tpView: state.tpView })); } catch {} };
+const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy, memHideFaint: state.memHideFaint, memGraph3d: state.memGraph3d, memGraphSoft: state.memGraphSoft, memExpand: state.memExpand, repListCollapsed: state.repListCollapsed, repTreeOpen: state.repTreeOpen, repFavOpen: state.repFavOpen, repRecentOpen: state.repRecentOpen, sqlWrap: state.sqlWrap, perfOpen: state.perfOpen, tpView: state.tpView, tpGroup: state.tpGroup })); } catch {} };
 
 // In the Tauri desktop app the same routes are served by the Rust `api` command.
 const tauriCore = window.__TAURI__?.core;
@@ -4363,6 +4374,47 @@ function codeRefText(r) {
 const tpCodeRefs = n => (Array.isArray(n?.evidenceCode) ? n.evidenceCode : []);
 // The meaning of a column from a confirmed note read from code, for tooltips.
 const tpCodeMeaning = c => (c?.notes || []).find(n => n.kind !== 'inference' && tpCodeRefs(n).length)?.text ?? null;
+// The one-line meaning of a column: a confirmed note (rule, or observation; an
+// unconfirmed inference never counts). A note with code evidence comes first,
+// then a rule before an observation, then the newest.
+const tpNoteAt = n => String(n?.confirmedAt ?? n?.createdAt ?? '');
+function tpMeaning(c) {
+  const rank = n => (tpCodeRefs(n).length ? 2 : 0) + (n.kind === 'rule' ? 1 : 0);
+  const best = (c?.notes || []).filter(n => (n.kind === 'rule' || n.kind === 'observation') && typeof n.text === 'string' && n.text.trim())
+    .sort((a, b) => rank(b) - rank(a) || tpCmp(tpNoteAt(b), tpNoteAt(a)) || (Number(b.id) || 0) - (Number(a.id) || 0))[0];
+  return best ? best.text.trim() : null;
+}
+// Column search: every word of the query (Turkish-aware fold, like the Rules
+// tab) must appear in the name, meaning, agent reason or any note text.
+const tpQueryWords = q => foldText(q).split(/\s+/).filter(Boolean);
+function tpColumnMatches(c, words) {
+  if (!words.length) return true;
+  const hay = foldText([c.name, tpMeaning(c), c.reason, ...(c.notes || []).map(n => n.text)].filter(Boolean).join(' '));
+  return words.every(w => hay.includes(w));
+}
+// The columns the list shows: a query searches all of them (the 4-5 filter is
+// ignored), else the score filter applies.
+function tpShownColumns(model, showAll, query) {
+  const words = tpQueryWords(query);
+  return words.length ? { list: model.columns.filter(c => tpColumnMatches(c, words)), searching: true } : { list: tpVisibleColumns(model, showAll), searching: false };
+}
+// Groups by catalog facts only: keys and links, date and time, amounts and
+// numbers, text, flags, other.
+const tpTypeGroups = ['keys', 'dates', 'numbers', 'text', 'flags', 'other'];
+const tpTypeGroupLabels = { keys: 'Keys and links', dates: 'Date and time', numbers: 'Amounts and numbers', text: 'Text', flags: 'Flags', other: 'Other' };
+function tpTypeGroup(c) {
+  if (c.pk || c.fk || c.unique) return 'keys';
+  const ty = String(c.type ?? '').trim().toLowerCase();
+  if (!ty || ty.endsWith(']') || ty.startsWith('_')) return 'other';
+  if (/^(boolean|bool)\b/.test(ty)) return 'flags';
+  if (/^(date|time|timestamp|timestamptz|timetz|interval)\b/.test(ty)) return 'dates';
+  if (/^(smallint|integer|int\d?|bigint|serial\d?|bigserial|smallserial|numeric|decimal|real|double precision|float\d?|money)\b/.test(ty)) return 'numbers';
+  if (/^(character|char|bpchar|varchar|text|citext)\b/.test(ty)) return 'text';
+  return 'other';
+}
+const tpByEffective = (a, b) => (b.score ?? 0) - (a.score ?? 0) || (b.sources ?? -1) - (a.sources ?? -1) || tpCmp(a.name, b.name);
+const tpGroupColumns = list => tpTypeGroups.map(key => ({ key, columns: list.filter(c => tpTypeGroup(c) === key).sort(tpByEffective) })).filter(g => g.columns.length);
+const tpGroupChoice = (own, saved) => ((own ?? saved) === 'type' ? 'type' : 'score');
 const tpOwn = (obj, key) => (obj && Object.hasOwn(obj, key) ? obj[key] : null);
 // The user score wins over the agent score (store.js effectiveScore).
 function tpEffective(entry) {
@@ -4388,6 +4440,7 @@ function tablePageModel(data, id, rec) {
   const scores = node?.columnScores && typeof node.columnScores === 'object' ? node.columnScores : (rec?.columnScores ?? null);
   const constraints = described && Array.isArray(rec.constraints) ? rec.constraints : [];
   const pk = new Set(constraints.filter(c => c.type === 'primary key').flatMap(c => c.columns || []));
+  const uniq = new Set(constraints.filter(c => c.type === 'unique').flatMap(c => c.columns || []));
   const fkOf = new Map();
   for (const c of constraints.filter(c => c.references)) {
     (c.columns || []).forEach((col, i) => { if (!fkOf.has(col)) fkOf.set(col, { id: `${c.references.schema}.${c.references.table}`, column: (c.references.columns || [])[i] ?? null }); });
@@ -4401,7 +4454,7 @@ function tablePageModel(data, id, rec) {
       name: c.name, type: c.type ?? null, notNull: !!c.notNull, default: c.default ?? null, comment: c.comment ?? null, inStructure,
       score: eff.score, scoreBy: eff.by, user: eff.user, agent: entry?.agent ?? null, roles: tpRoles.filter(r => roles.includes(r)),
       reason: entry?.agent?.reason ?? null, sources: Number.isInteger(entry?.agent?.sources) ? entry.agent.sources : null,
-      pk: pk.has(c.name), fk: fkOf.get(c.name) ?? null, notes: notes.filter(n => n.column === c.name),
+      pk: pk.has(c.name), unique: uniq.has(c.name), fk: fkOf.get(c.name) ?? null, notes: notes.filter(n => n.column === c.name),
       history: { user: tpLayerHistory(entry?.user), agent: tpLayerHistory(entry?.agent) },
     };
   };
@@ -4515,26 +4568,48 @@ function tpColumnRow(c, ctx) {
   const open = ctx.open === c.name;
   const scoreText = c.user && c.agent ? t('user {u} · agent {a}', { u: c.user.score, a: c.agent.score }) : c.user ? t('user {u}', { u: c.user.score }) : null;
   const toggle = () => ctx.onToggle(open ? null : c.name);
+  const meaning = tpMeaning(c);
   return h('div', { class: 'tp-col' + (open ? ' open' : '') + (c.inStructure ? '' : ' gone') },
     h('div', { class: 'tp-row', onclick: toggle },
       tpScoreChip(c, ctx.canScore && c.inStructure ? ctx.onScore : null),
-      h('div', { class: 'tp-name' },
-        h('button', { type: 'button', class: 'tp-cname', 'aria-expanded': String(open), 'aria-controls': `tp-col-${ctx.index}`, onclick: ev => { ev.stopPropagation(); toggle(); } }, c.name),
-        h('span', { class: 'tp-type' }, c.type ?? '', c.notNull ? ' NOT NULL' : ''),
-        c.pk ? h('span', { class: 'badge explored' }, 'PK') : null, c.fk ? h('span', { class: 'badge seen' }, 'FK') : null,
-        c.inStructure ? null : h('span', { class: 'badge inference' }, t('not in the recorded structure'))),
+      h('div', { class: 'tp-namecell' },
+        h('div', { class: 'tp-name' },
+          h('button', { type: 'button', class: 'tp-cname', 'aria-expanded': String(open), 'aria-controls': `tp-col-${ctx.index}`, onclick: ev => { ev.stopPropagation(); toggle(); } }, c.name),
+          h('span', { class: 'tp-type' }, c.type ?? '', c.notNull ? ' NOT NULL' : ''),
+          c.pk ? h('span', { class: 'badge explored' }, 'PK') : null, c.fk ? h('span', { class: 'badge seen' }, 'FK') : null,
+          c.inStructure ? null : h('span', { class: 'badge inference' }, t('not in the recorded structure'))),
+        meaning ? h('div', { class: 'tp-meaning', title: meaning }, meaning) : null),
       h('div', { class: 'tp-roles' }, c.roles.map(tpRoleIcon)),
       h('div', { class: 'tp-reason' }, scoreText ? h('span', { class: 'tp-layers' }, scoreText) : null, c.reason ?? ''),
       h('div', { class: 'tp-src', title: t('Reports and scripts that use the column') }, c.sources === null ? '' : t(c.sources === 1 ? '{n} report' : '{n} reports', { n: fmt(c.sources) }))),
     open ? tpColumnDetail(c, ctx) : null);
 }
+// Search box and group switch above the column list (Detailed and Summary);
+// shown is the N of the counter "N / total".
+function tpColumnTools(model, ctx, shown) {
+  const q = ctx.query || '';
+  const searching = tpQueryWords(q).length > 0;
+  const group = tpGroupChoice(ctx.group, undefined);
+  return h('div', { class: 'tp-tools' },
+    h('div', { class: 'tp-search-box' },
+      h('input', { type: 'text', id: 'tpSearch', class: 'tp-q', value: q, placeholder: t('Search columns'), 'aria-label': t('Search columns'), autocomplete: 'off', spellcheck: 'false',
+        'aria-keyshortcuts': '/', oninput: ev => ctx.onQuery(ev.target.value),
+        onkeydown: ev => { if (ev.key === 'Escape' && ev.target.value) { ev.preventDefault(); ev.stopPropagation(); ctx.onQuery(''); } } }),
+      searching ? h('button', { type: 'button', class: 'icon-btn sm tp-q-clear', 'aria-label': t('Clear search'), title: t('Clear search'), onclick: () => ctx.onQuery('') }, '×') : null,
+      h('span', { class: 'hint tp-q-count', role: 'status' }, searching ? t('{n} / {all}', { n: fmt(shown), all: fmt(model.columns.length) }) : '')),
+    ctx.onGroup ? h('div', { class: 'seg tp-group', role: 'group', 'aria-label': t('Group columns by') },
+      [['score', t('Score')], ['type', t('Type{g}', { g: '' })]].map(([v, label]) => h('button', { type: 'button', class: group === v ? 'on' : '', 'aria-pressed': String(group === v), onclick: () => ctx.onGroup(v) }, label))) : null,
+    searching && ctx.view !== 'summary' ? h('span', { class: 'hint tp-q-note' }, t('Searching all columns; the 4–5 filter is ignored.')) : null);
+}
+const tpTypeHead = (key, count) => h('h5', { class: 'tp-group-h' }, t(tpTypeGroupLabels[key]), h('span', { class: 'muted' }, ` (${fmt(count)})`));
 function tpColumns(model, ctx) {
-  const list = tpVisibleColumns(model, ctx.showAll);
+  const { list, searching } = tpShownColumns(model, ctx.showAll, ctx.query);
+  const byType = tpGroupChoice(ctx.group, undefined) === 'type';
   const top = model.columns.filter(tpTop).length;
   const head = h('div', { class: 'panel-h' }, h('h2', {}, t('Columns')),
-    model.scored ? h('span', { class: 'hint', role: 'status' }, ctx.showAll ? t('{n} columns', { n: fmt(model.columns.length) }) : t('{n} of {all} columns scored 4–5', { n: fmt(top), all: fmt(model.columns.length) })) : null,
+    model.scored && !searching ? h('span', { class: 'hint', role: 'status' }, ctx.showAll ? t('{n} columns', { n: fmt(model.columns.length) }) : t('{n} of {all} columns scored 4–5', { n: fmt(top), all: fmt(model.columns.length) })) : null,
     h('span', { class: 'grow' }),
-    model.scored ? h('button', { type: 'button', class: 'icon-btn sm', 'aria-pressed': String(!!ctx.showAll), onclick: () => ctx.onShowAll(!ctx.showAll) }, ctx.showAll ? t('Only 4–5') : t('Show all columns')) : null);
+    model.scored && !searching ? h('button', { type: 'button', class: 'icon-btn sm', 'aria-pressed': String(!!ctx.showAll), onclick: () => ctx.onShowAll(!ctx.showAll) }, ctx.showAll ? t('Only 4–5') : t('Show all columns')) : null);
   let body;
   if (!model.described) {
     body = h('div', { class: 'tp-empty' }, h('b', {}, t('Not described yet')),
@@ -4543,7 +4618,12 @@ function tpColumns(model, ctx) {
     body = [
       model.scored ? null : h('div', { class: 'tp-empty sm' }, h('b', {}, t('No column scores yet')),
         h('p', {}, t('The auspex-columns skill scores the columns from the SQL that uses them (report library and your script files). You can also give your own score with the chip.'))),
-      list.length ? h('div', { class: 'tp-cols' }, list.map((c, i) => tpColumnRow(c, { ...ctx, index: i })))
+      model.columns.length ? tpColumnTools(model, ctx, list.length) : null,
+      list.length ? (byType
+        ? tpGroupColumns(list).map(g => h('section', { class: 'tp-tgroup', 'aria-label': t(tpTypeGroupLabels[g.key]) }, tpTypeHead(g.key, g.columns.length),
+          h('div', { class: 'tp-cols' }, g.columns.map((c, i) => tpColumnRow(c, { ...ctx, index: `${g.key}-${i}` })))))
+        : h('div', { class: 'tp-cols' }, list.map((c, i) => tpColumnRow(c, { ...ctx, index: i }))))
+        : searching ? h('div', { class: 'tp-empty sm' }, t('No column matches the search.'), ' ', h('button', { type: 'button', class: 'tp-link', onclick: () => ctx.onQuery('') }, t('Clear search')))
         : h('div', { class: 'tp-empty sm' }, t('No column is scored 4 or 5.'), ' ', h('button', { type: 'button', class: 'tp-link', onclick: () => ctx.onShowAll(true) }, t('Show all columns'))),
       ctx.canScore ? h('p', { class: 'tp-hint' }, t('Click a score chip to set your own score. To add a usage note ("mostly in WHERE"), tell Claude in chat; it is saved as a rule on the column.')) : null,
     ];
@@ -4701,8 +4781,8 @@ function tpSummary(model, sum, ctx) {
     h('h4', {}, t(title), hint ? h('span', { class: 'muted' }, ' ', hint) : null),
     chips.length ? h('div', { class: 'sum-chips' }, chips) : h('div', { class: 'muted sum-none' }, empty ?? t('None known.')));
   const colChip = (name, score, type, meaning) => tpChip(score ? `s${score}` : 's0', name, { onclick: () => ctx.onColumn(name), title: [tpScoreLabel(score), type, meaning].filter(Boolean).join(' · ') });
-  const col = c => colChip(c.name, c.score, c.type, tpCodeMeaning(c));
-  const byName = name => { const c = model.columns.find(x => x.name === name); return colChip(name, c?.score ?? null, c?.type, tpCodeMeaning(c)); };
+  const col = c => colChip(c.name, c.score, c.type, tpMeaning(c));
+  const byName = name => { const c = model.columns.find(x => x.name === name); return colChip(name, c?.score ?? null, c?.type, tpMeaning(c)); };
   const more = ctx.moreOpen || {};
   // The first tpListLimit chips, the rest behind a "+N more" chip.
   const limited = (key, list, chip) => {
@@ -4714,12 +4794,21 @@ function tpSummary(model, sum, ctx) {
   const sub = (score, list) => (list.length ? h('div', { class: 'sum-sub' }, h('h5', {}, score ? `${score} · ${t(scoreStepLabels[score])}` : t('not scored'), h('span', { class: 'muted' }, ` (${fmt(list.length)})`)),
     h('div', { class: 'sum-chips' }, list.map(col))) : null);
   const open = !!ctx.unusedOpen;
-  const columnBody = [[5, 4, 3, 2, 0].map(s => sub(s, sum.columns.filter(c => (c.score ?? 0) === s))),
+  const { list: found, searching } = tpShownColumns(model, true, ctx.query);
+  const typeSub = g => h('div', { class: 'sum-sub' }, tpTypeHead(g.key, g.columns.length), h('div', { class: 'sum-chips' }, g.columns.map(col)));
+  // A query or the Type grouping lists every column, unused ones included.
+  const columnBody = searching || tpGroupChoice(ctx.group, undefined) === 'type'
+    ? (found.length ? (tpGroupChoice(ctx.group, undefined) === 'type' ? tpGroupColumns(found).map(typeSub) : [5, 4, 3, 2, 1, 0].map(s => sub(s, found.filter(c => (c.score ?? 0) === s))))
+      : h('div', { class: 'muted sum-none' }, t('No column matches the search.')))
+    : [[5, 4, 3, 2, 0].map(s => sub(s, sum.columns.filter(c => (c.score ?? 0) === s))),
     sum.unused.length ? h('div', { class: 'sum-sub' }, h('div', { class: 'sum-chips' }, tpChip('unused', open ? t('hide {n} unused', { n: fmt(sum.unused.length) }) : t('+{n} unused', { n: fmt(sum.unused.length) }), { onclick: () => ctx.onUnused(!open), expanded: open, title: t('Columns scored 1: they appear in no SQL') }))) : null,
     open ? sub(1, sum.unused) : null];
   const tableChip = kind => id => tpChip(kind, id, { onclick: () => ctx.onOpen(id) });
-  const columnsGroup = h('section', { class: 'sum-group wide', 'aria-label': t('Columns by score') },
-    h('h4', {}, t('Columns by score'), model.scored ? null : h('span', { class: 'muted' }, ' ', t('not scored'))),
+  const byType = tpGroupChoice(ctx.group, undefined) === 'type';
+  const columnsTitle = byType ? 'Columns by type' : 'Columns by score';
+  const columnsGroup = h('section', { class: 'sum-group wide', 'aria-label': t(columnsTitle) },
+    h('h4', {}, t(columnsTitle), model.scored ? null : h('span', { class: 'muted' }, ' ', t('not scored'))),
+    model.columns.length ? tpColumnTools(model, ctx, found.length) : null,
     model.columns.length ? h('div', { class: 'sum-subs' }, columnBody) : h('div', { class: 'muted sum-none' }, model.described ? t('None known.') : t('Not described yet')));
   const reportNotes = [sum.pending ? h('span', { class: 'muted sum-none', role: 'status' }, t('{n} still loading', { n: fmt(sum.pending) })) : null,
     sum.failed ? h('span', { class: 'muted sum-none', role: 'status' }, t('{n} could not be read', { n: fmt(sum.failed) }), ' ', h('button', { type: 'button', class: 'tp-link', onclick: ctx.onRetryReports }, t('Retry'))) : null,
@@ -4790,6 +4879,10 @@ const tablePageTr = {
   'Foreign keys': 'Yabancı anahtarlar', '(this table points to them)': '(bu tablo onlara işaret eder)', '(they point to this table)': '(bunlar bu tabloya işaret eder)',
   '+{n} unused': '+{n} kullanılmayan', 'hide {n} unused': '{n} kullanılmayanı gizle', 'Columns scored 1: they appear in no SQL': '1 puanlı kolonlar: hiçbir SQL\'de geçmezler',
   '(best column score first)': '(en yüksek kolon puanı önce)', 'show fewer': 'daha az göster', '{n} could not be read': '{n} okunamadı', 'first {n} reports checked': 'ilk {n} rapor denetlendi',
+  'Search columns': 'Kolonlarda ara', 'Clear search': 'Aramayı temizle', '{n} / {all}': '{n} / {all}', 'Group columns by': 'Kolonları grupla',
+  'Type{g}': 'Tür', 'Score': 'Puan', 'Searching all columns; the 4–5 filter is ignored.': 'Tüm kolonlarda aranıyor; 4–5 filtresi yok sayılıyor.', 'No column matches the search.': 'Aramaya uyan kolon yok.',
+  'Keys and links': 'Anahtarlar ve bağlantılar', 'Date and time': 'Tarih ve saat', 'Amounts and numbers': 'Tutarlar ve sayılar', 'Text': 'Metin', 'Flags': 'Bayraklar', 'Other': 'Diğer',
+  'Columns by type': 'Türe göre kolonlar',
   'Open on the Reports tab': 'Raporlar sekmesinde aç', 'No report mentions this table.': 'Bu tabloyu anan rapor yok.', '{n} still loading': '{n} tanesi yükleniyor',
 };
 // table-page:end
@@ -4843,7 +4936,7 @@ for (const [k, v] of Object.entries({ ...tablePageTr, ...{
   'A usage note ("mostly in WHERE") can be given to Claude in chat; it is stored as a rule on the column.': 'Kullanım notu ("çoğunlukla WHERE\'de") sohbette Claude\'a verilebilir; kolona kural olarak kaydedilir.',
   'Remove my score': 'Puanımı kaldır', 'Save': 'Kaydet', 'Saving…': 'Kaydediliyor…', 'Score saved': 'Puan kaydedildi', 'Your score was removed': 'Puanınız kaldırıldı',
   'Summary palette': 'Özet paleti', 'Reset palette': 'Paleti sıfırla', 'Disabled': 'Kapalı', 'Preview of the summary chips': 'Özet çiplerinin önizlemesi',
-  'Choose a score from 1 to 5.': '1 ile 5 arasında bir puan seçin.', 'Current': 'Şu an', 'Score': 'Puan', 'Tables matching the search': 'Aramaya uyan tablolar',
+  'Choose a score from 1 to 5.': '1 ile 5 arasında bir puan seçin.', 'Current': 'Şu an', 'Tables matching the search': 'Aramaya uyan tablolar',
 } })) if (!Object.hasOwn(TR, k)) TR[k] = v;
 const tpRecCache = new Map();
 // Report SQL for the "mentioned in SQL" chips: the list has no SQL, so each
@@ -4882,6 +4975,7 @@ function openReportFromPage(r) {
   switchTab('reports');
 }
 const tpViewOf = tp => tpViewChoice(tp.view, state.tpView);
+const tpGroupOf = tp => tpGroupChoice(tp.group, state.tpGroup);
 function openTablePage(db, id, opts = {}) {
   if (!db || !id) return;
   if (state.db !== db) setDb(db, { render: false });
@@ -4935,7 +5029,7 @@ function renderTablePage(view, data) {
   }
   const viewKind = tpViewOf(tp);
   const index = viewKind === 'summary' ? tpReportIndex(tp.db) : null;
-  const key = JSON.stringify([tp.db, data.generatedAt, tp.trail, tp.open, tp.showAll, lang, state.scorePending ?? null, viewKind, !!tp.unusedOpen, tp.moreOpen ?? null, index ? [index.items.length, index.pending, index.failed] : null]);
+  const key = JSON.stringify([tp.db, data.generatedAt, tp.trail, tp.open, tp.showAll, lang, state.scorePending ?? null, viewKind, tpGroupOf(tp), tp.q ?? '', !!tp.unusedOpen, tp.moreOpen ?? null, index ? [index.items.length, index.pending, index.failed] : null]);
   if (state.tablePageKey === key && view.querySelector('.tp')) return;
   state.tablePageKey = key;
   const model = tablePageModel(data, id, recKey ? tpRecCache.get(recKey) : null);
@@ -4945,6 +5039,13 @@ function renderTablePage(view, data) {
     onOpen: next => openTablePage(tp.db, next), onToggle: name => set({ open: name }), onShowAll: v => set({ showAll: v }),
     onScore: c => confirmColumnScore(model, c), ...crumbCtx,
     view: viewKind, unusedOpen: !!tp.unusedOpen, reports: index,
+    group: tpGroupOf(tp), onGroup: v => { state.tpGroup = v; persist(); set({ group: v }); },
+    query: tp.q ?? '', onQuery: q => {
+      // The page is drawn again for every change; the search box keeps focus and caret.
+      const had = document.activeElement?.id === 'tpSearch';
+      set({ q });
+      if (had || q) { const el = $('tpSearch'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
+    },
     onView: v => { state.tpView = v; persist(); set({ view: v }); },
     onColumn: name => set({ view: 'detail', open: name, showAll: true, reveal: name }),
     onUnused: v => set({ unusedOpen: v }), moreOpen: tp.moreOpen ?? {},
@@ -5823,7 +5924,7 @@ $('refreshBtn').addEventListener('click', () => load());
 
 document.addEventListener('keydown', ev => {
   const typing = isTypingIn(document.activeElement);
-  if (ev.key === '/' && !typing) { ev.preventDefault(); F.text.focus(); }
+  if (ev.key === '/' && !typing) { ev.preventDefault(); (state.tab === 'schema' && $('tpSearch') || F.text).focus(); }
   else if (ev.key === 'Escape') { if (closeThemeMenu(true)) { ev.preventDefault(); return; } closeDbMenu(); if (typing) document.activeElement.blur(); else if (state.open) { state.open = null; render(); } else if (state.tab === 'schema' && graph3d) graph3d.showAll(); }
   else if (!typing && (ev.key === 'r' || ev.key === 'R') && !ev.ctrlKey && !ev.metaKey) load();
   else if (!typing && (ev.key === 'd' || ev.key === 'D') && !ev.ctrlKey && !ev.metaKey) { $('dbsel').classList.contains('open') ? closeDbMenu() : openDbMenu(); }
