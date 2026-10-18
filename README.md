@@ -1015,6 +1015,23 @@ its JSON export and import; groups left unset use the defaults, so every ready
 theme has a full palette. The chips use only the CSS variables `--sum-<group>`,
 `--sum-<group>-line` and `--sum-<group>-ink`.
 
+Ready themes also include *Glass* and *Glass dark* (TR *Cam*, *Cam koyu*):
+translucent panels with a backdrop blur over a soft multi-colour background,
+thin light borders and an inner highlight. The blur sits on panel containers
+only, not on rows of long lists. Text is checked with the same contrast check
+against the panel at its opacity over every backdrop colour. When the browser
+has no `backdrop-filter` or you prefer reduced transparency
+(`prefers-reduced-transparency`), the panels stay opaque and the page
+background flat (class `glass-flat` on `<html>`). *Plain* (TR *Sade*) is the
+flat look of the default kept as an explicit choice; the default theme is
+unchanged. On the table page the left *references* and right *referenced by*
+panels have their own tinted surface and accent (from `--role-ref-*` and
+`--role-dep-*`) in every theme (subtle in Plain), the centre stays neutral,
+and column and table names are set heavier than types and meta text. The
+generator can switch *Glass look* on, tune blur (0-40 px) and opacity
+(20-95 %) and pick the two panel tints; they are saved with a custom theme and
+included in its JSON export and import (numbers clamped, colours hex only).
+
 The role colors and lane backgrounds are CSS variables at the top of
 `src/viewer.html` (`--role-ref-1`, `--role-ref-10`, `--role-dep-1`,
 `--role-dep-10`, `--role-other`, `--lane-ref`, `--lane-center`, `--lane-dep`),

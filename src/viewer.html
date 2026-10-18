@@ -117,7 +117,16 @@
   .chips .scope { font-size: 12px; color: var(--text-3); }
 
   /* Panels */
-  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+  .panel { background: var(--panel-bg, var(--surface)); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+  /* Glass theme (class "glass" on <html>): translucent panels with a backdrop
+     blur over a soft multi-color page background. Blur sits on panel containers
+     only, never on rows of long lists. "glass-flat" (no backdrop-filter, or
+     reduced transparency requested) keeps the panels opaque and the page flat. */
+  :root.glass:not(.glass-flat) { --panel-bg: var(--glass-bg); }
+  :root.glass:not(.glass-flat) body { background: var(--page-bg); background-attachment: fixed; min-height: 100vh; }
+  :root.glass:not(.glass-flat) .panel { border-color: var(--glass-line); box-shadow: var(--shadow), inset 0 1px 0 var(--glass-hi);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.5); backdrop-filter: blur(var(--glass-blur)) saturate(1.5); }
+  :root.glass :focus-visible { box-shadow: 0 0 0 4px var(--surface); }
   .panel-h { display: flex; align-items: baseline; gap: 10px; padding: 14px 16px 0; }
   .panel-h h2 { margin: 0; font-size: 14px; font-weight: 600; }
   .panel-h .hint { color: var(--text-3); font-size: 12px; }
@@ -665,14 +674,18 @@
   .tp-search .crumb.dim { color: var(--text-3); border-style: dashed; }
   .tp-head { padding: 14px 16px; }
   .tp-title { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
-  .tp-title h2 { margin: 0; font: 650 18px var(--mono); overflow-wrap: anywhere; min-width: 0; }
+  .tp-title h2 { margin: 0; font: 700 20px/1.3 var(--mono); overflow-wrap: anywhere; min-width: 0; }
   .tp-comment { margin: 6px 0 0; color: var(--text-2); font-size: 13px; overflow-wrap: anywhere; }
   .tp-facts { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 8px; font-size: 12px; color: var(--text-2); }
   .tp-facts b { color: var(--text); font-size: 14px; font-variant-numeric: tabular-nums; }
   .tp-body { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(0, 2.6fr) minmax(200px, 1fr); grid-template-areas: "refs main deps"; gap: 14px; align-items: start; }
   .tp-main { grid-area: main; display: grid; gap: 14px; min-width: 0; }
   .tp-refs { grid-area: refs; } .tp-deps { grid-area: deps; }
-  .tp-side { min-width: 0; }
+  .tp-side { min-width: 0; --tint-pct: 7%; border-top: 3px solid var(--tint-hue);
+    background: color-mix(in srgb, var(--tint-hue) var(--tint-pct), var(--panel-bg, var(--surface))); }
+  .tp-refs { --tint-hue: var(--tint-ref-hue, var(--role-ref-1)); } .tp-deps { --tint-hue: var(--tint-dep-hue, var(--role-dep-1)); }
+  .tp-refs .panel-h h2 { color: var(--role-ref-1); } .tp-deps .panel-h h2 { color: var(--role-dep-1); }
+  :root.glass .tp-side { --tint-pct: 12%; }
   @media (max-width: 1100px) { .tp-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "main main" "refs deps"; } }
   @media (max-width: 700px) { .tp-body { grid-template-columns: minmax(0, 1fr); grid-template-areas: "main" "refs" "deps"; } }
   .score-chip { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 22px; flex: none; padding: 0; border-radius: 6px;
@@ -691,12 +704,12 @@
   .tp-col + .tp-col { border-top: 1px solid var(--line); }
   .tp-col.open { background: var(--surface-2); }
   .tp-col.gone .tp-cname { color: var(--text-3); text-decoration: line-through; }
-  .tp-row { display: grid; grid-template-columns: auto minmax(0, 1.3fr) auto minmax(0, 2fr) auto; gap: 4px 12px; align-items: center; padding: 7px 10px; cursor: pointer; }
+  .tp-row { display: grid; grid-template-columns: auto minmax(0, 1.3fr) auto minmax(0, 2fr) auto; gap: 4px 12px; align-items: center; padding: 9px 10px; line-height: 1.55; cursor: pointer; }
   .tp-row:hover .tp-cname { color: var(--accent-ink); }
   @media (max-width: 700px) { .tp-row { grid-template-columns: auto minmax(0, 1fr) auto; } .tp-reason { grid-column: 2 / -1; } .tp-src { grid-column: 2 / -1; justify-self: start; } }
   .tp-name { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; min-width: 0; }
-  .tp-cname { border: 0; background: none; padding: 0; font: 600 13px var(--mono); color: var(--text); text-align: left; overflow-wrap: anywhere; }
-  .tp-type { font: 11px var(--mono); color: var(--text-3); overflow-wrap: anywhere; }
+  .tp-cname { border: 0; background: none; padding: 0; font: 650 14px/1.45 var(--mono); color: var(--text); text-align: left; overflow-wrap: anywhere; }
+  .tp-type { font: 400 11px var(--mono); color: var(--text-3); overflow-wrap: anywhere; }
   .tp-roles { display: flex; gap: 3px; }
   .tp-role { display: inline-flex; width: 20px; height: 20px; align-items: center; justify-content: center; border-radius: 5px; background: var(--surface-2); color: var(--text-2); }
   .tp-role svg { width: 13px; height: 13px; }
@@ -720,7 +733,7 @@
   .tp-keys h4:first-child { margin-top: 0; }
   .tp-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
   .tp-list li { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; min-width: 0; overflow-wrap: anywhere; }
-  .tp-nm { font-weight: 600; }
+  .tp-nm { font-weight: 700; font-size: 13.5px; }
   .tp-nm2 { font-size: 11px; }
   .tp-def { color: var(--text-2); }
   .tp-trg li { display: grid; gap: 3px; padding: 8px 0; border-top: 1px solid var(--line); }
@@ -732,7 +745,7 @@
   .tp-nb:hover { border-color: var(--accent); }
   .tp-nb .tp-nm, .tp-nb .tp-jn { overflow-wrap: anywhere; }
   .tp-nb .tp-jn { color: var(--text-2); font-size: 11px; }
-  .tp-nb .tp-meta { display: flex; flex-wrap: wrap; gap: 2px 8px; font-size: 11px; color: var(--text-3); }
+  .tp-nb .tp-meta { display: flex; flex-wrap: wrap; gap: 2px 8px; font-size: 11px; line-height: 1.5; color: var(--text-3); }
   .tp-nb.muted-card { border-style: dashed; background: var(--surface-2); }
   .tp-nb.muted-card .tp-nm { color: var(--text-3); }
   .tp-pick { border: 1px solid var(--line); border-radius: 8px; margin: 0 0 10px; padding: 6px 10px 8px; display: flex; flex-wrap: wrap; gap: 6px 12px; }
@@ -1042,6 +1055,8 @@ const TR = {
   'No table of this schema is explored yet; pick one to make it the center.': 'Bu şemada henüz keşfedilmiş tablo yok; merkez yapmak için birini seçin.', '{n} relations': '{n} ilişki', 'the 3D library could not be loaded': '3B kütüphanesi yüklenemedi',
   'Theme': 'Tema', 'Ready themes and theme generator': 'Hazır temalar ve tema oluşturucu', 'Ready themes': 'Hazır temalar', 'My themes': 'Temalarım',
   'Midnight blue': 'Gece mavisi', 'Sepia paper': 'Sepya kağıt', 'High contrast': 'Yüksek kontrast', 'Forest': 'Orman',
+  'Glass': 'Cam', 'Glass dark': 'Cam koyu', 'Plain': 'Sade', 'Glass look': 'Cam görünümü', 'Blur': 'Bulanıklık', 'Opacity': 'Saydamlık',
+  'Tint, references': 'Ton, referanslar', 'Tint, referenced by': 'Ton, referans verenler',
   'No saved themes yet.': 'Henüz kayıtlı tema yok.', 'Create a theme': 'Tema oluştur', 'Background': 'Arka plan', 'Dark ↔ light': 'Koyu ↔ açık', 'Accent': 'Vurgu rengi',
   'High contrast (7:1)': 'Yüksek kontrast (7:1)', 'Preview': 'Önizle', 'Stop preview': 'Önizlemeyi bitir', 'Theme name': 'Tema adı', 'Save': 'Kaydet',
   'Give the theme a name.': 'Temaya bir ad verin.', 'Invalid color': 'Geçersiz renk', 'Could not save themes in this browser': 'Temalar bu tarayıcıda kaydedilemedi',
@@ -5395,7 +5410,33 @@ function summaryPaletteRecord(x) {
   for (const k of summaryGroups) { const c = Object.hasOwn(x, k) ? hexRgb(x[k]) : null; if (c) out[k] = rgbHex(c); }
   return out;
 }
-// spec: { bg, accent, contrast: 'high' | 'normal' } with #rgb or #rrggbb colors.
+// Glass look: blur 0-40 px and panel opacity 20-95 %, numbers clamped and
+// anything else replaced by the defaults. Region tints (left references panel,
+// right referenced-by panel) are hex colors only; unknown keys are dropped.
+const glassDefaults = { blur: 16, opacity: 68 };
+const glassLimits = { blur: [0, 40], opacity: [20, 95] };
+function glassRecord(x) {
+  if (!x || typeof x !== 'object') return null;
+  const out = {};
+  for (const k of Object.keys(glassDefaults)) {
+    const v = Object.hasOwn(x, k) ? x[k] : null, n = typeof v === 'number' || (typeof v === 'string' && v.trim() !== '') ? Number(v) : NaN, [lo, hi] = glassLimits[k];
+    out[k] = Number.isFinite(n) ? Math.round(Math.min(hi, Math.max(lo, n))) : glassDefaults[k];
+  }
+  return out;
+}
+function tintsRecord(x) {
+  const out = {};
+  if (!x || typeof x !== 'object') return out;
+  for (const k of ['ref', 'dep']) { const c = Object.hasOwn(x, k) ? hexRgb(x[k]) : null; if (c) out[k] = rgbHex(c); }
+  return out;
+}
+// True when panels must stay opaque: the user prefers reduced transparency or
+// the browser has no backdrop-filter. env = { matchMedia, CSS } (window).
+function glassFallback(env) {
+  try { if (env?.matchMedia?.('(prefers-reduced-transparency: reduce)')?.matches) return true; } catch { /* unsupported query */ }
+  try { const c = env?.CSS; return !(c?.supports?.('backdrop-filter', 'blur(1px)') || c?.supports?.('-webkit-backdrop-filter', 'blur(1px)')); } catch { return true; }
+}
+// spec: { bg, accent, contrast: 'high' | 'normal', glass?, tints? } with #rgb or #rrggbb colors.
 // Returns { ok, base: 'light' | 'dark', tokens, checks, warnings } or
 // { ok: false, error } for invalid input.
 function themeTokens(spec) {
@@ -5414,18 +5455,26 @@ function themeTokens(spec) {
     checks.push({ token, ratio: Math.round(r.ratio * 100) / 100, min, ok: r.ok, adjusted: r.adjusted });
     return r.color;
   };
-  const backs = [bg, surface, surface2];
   const hue = { ref: [42, 120, 214], dep: [217, 96, 31], good: [12, 163, 12], critical: [208, 59, 59], warn: [176, 120, 0], amber: [250, 178, 25], s3: [27, 175, 122] };
+  // Region tints sit on the side panels (7 % plain, 12 % glass); text on them,
+  // and on the glass panel over each backdrop color, must reach the target too.
+  const tints = tintsRecord(spec.tints), glass = glassRecord(spec.glass);
+  const tintC = { ref: hexRgb(tints.ref) || hue.ref, dep: hexRgb(tints.dep) || hue.dep };
+  const stops = [mixRgb(bg, accent, 0.35), mixRgb(bg, hue.dep, 0.3), mixRgb(bg, hue.ref, 0.35)];
+  const glassBacks = glass ? stops.flatMap(st => { const e = mixRgb(st, surface, glass.opacity / 100); return [e, mixRgb(e, tintC.ref, 0.12), mixRgb(e, tintC.dep, 0.12)]; }) : [];
+  const tintBacks = [0.07, 0.12].flatMap(p => [mixRgb(surface, tintC.ref, p), mixRgb(surface, tintC.dep, p)]);
+  const panelBacks = [surface, surface2, ...tintBacks, ...glassBacks];
+  const backs = [bg, ...panelBacks];
   const text = fit('--text', ink, backs, minText);
   const text2 = fit('--text-2', high ? ink : mixRgb(ink, surface, 0.3), backs, minText);
   const text3 = fit('--text-3', mixRgb(ink, surface, high ? 0.2 : 0.45), backs, minText);
   const acc = fit('--accent', accent, [surface], themeMinUi);
   const accentSoft = mixRgb(surface, acc, dark ? 0.22 : 0.12);
   const accentInk = fit('--accent-ink', dark ? mixRgb(acc, white, 0.35) : mixRgb(acc, black, 0.2), [surface, surface2, accentSoft], minText);
-  const strong = (token, c) => fit(token, dark ? mixRgb(c, white, 0.4) : mixRgb(c, black, 0.3), [surface, surface2], minText);
+  const strong = (token, c) => fit(token, dark ? mixRgb(c, white, 0.4) : mixRgb(c, black, 0.3), panelBacks, minText);
   const ref1 = strong('--role-ref-1', hue.ref), dep1 = strong('--role-dep-1', hue.dep);
   const goodInk = strong('--good-ink', hue.good), warnInk = strong('--warn-ink', hue.warn);
-  const critical = fit('--critical', hue.critical, [surface, surface2], minText);
+  const critical = fit('--critical', hue.critical, panelBacks, minText);
   const soft = (c, w) => rgbHex(mixRgb(surface, c, dark ? w * 1.6 : w));
   const pal = { ...summaryDefaults(spec.accent), ...summaryPaletteRecord(spec.palette) };
   const summary = {};
@@ -5477,13 +5526,21 @@ function themeTokens(spec) {
     '--warn': rgbHex(hue.amber), '--warn-ink': rgbHex(warnInk), '--warn-soft': soft(hue.amber, 0.16),
     '--role-ref-1': rgbHex(ref1), '--role-ref-10': soft(hue.ref, 0.25), '--role-dep-1': rgbHex(dep1), '--role-dep-10': soft(hue.dep, 0.25),
     '--role-other': rgbHex(mixRgb(surface, ink, 0.38)),
+    '--tint-ref-hue': rgbHex(tintC.ref), '--tint-dep-hue': rgbHex(tintC.dep),
     '--lane-ref': soft(hue.ref, 0.06), '--lane-center': rgbHex(surface2), '--lane-dep': soft(hue.dep, 0.06),
     '--s1': rgbHex(acc), '--s2': rgbHex(hue.dep), '--s3': rgbHex(hue.s3),
     '--code': rgbHex(dark ? mixRgb(bg, black, 0.25) : mixRgb(bg, white, 0.4)),
     '--shadow': dark ? '0 1px 2px rgba(0, 0, 0, .4)' : '0 1px 2px rgba(16, 24, 40, .06), 0 1px 3px rgba(16, 24, 40, .08)',
     '--shadow-lg': dark ? '0 12px 32px rgba(0, 0, 0, .5)' : '0 12px 32px rgba(16, 24, 40, .16)',
   };
-  return { ok: true, base: dark ? 'dark' : 'light', tokens, summary, checks, warnings: checks.filter(c => !c.ok) };
+  // Glass tokens stay apart from tokens: embedded reports do not receive them.
+  const glassTokens = glass ? {
+    '--glass-blur': `${glass.blur}px`, '--glass-bg': `color-mix(in srgb, ${rgbHex(surface)} ${glass.opacity}%, transparent)`,
+    '--glass-line': dark ? 'rgba(255, 255, 255, .16)' : 'rgba(255, 255, 255, .75)',
+    '--glass-hi': dark ? 'rgba(255, 255, 255, .10)' : 'rgba(255, 255, 255, .8)',
+    '--page-bg': `radial-gradient(56rem 38rem at 8% -8%, ${rgbHex(stops[0])}, transparent 62%), radial-gradient(48rem 34rem at 100% 4%, ${rgbHex(stops[1])}, transparent 60%), radial-gradient(60rem 40rem at 48% 108%, ${rgbHex(stops[2])}, transparent 62%), ${rgbHex(bg)}`,
+  } : null;
+  return { ok: true, base: dark ? 'dark' : 'light', tokens, summary, glass: glassTokens, checks, warnings: checks.filter(c => !c.ok) };
 }
 // Background for the light/dark slider (0 black ... 100 white), tinted 6 %
 // toward the accent so the surfaces belong to it.
@@ -5497,8 +5554,12 @@ const themePresets = [
   { id: 'sepia', name: 'Sepia paper', bg: '#f2e8d5', accent: '#9a5b1e' },
   { id: 'contrast', name: 'High contrast', bg: '#000000', accent: '#ffd400', contrast: 'high' },
   { id: 'forest', name: 'Forest', bg: '#0f1d16', accent: '#3fb27f' },
+  { id: 'glass', name: 'Glass', bg: '#e8ecf7', accent: '#4f5fe0', glass: { blur: 16, opacity: 68 } },
+  { id: 'glassDark', name: 'Glass dark', bg: '#0d1122', accent: '#8a98ff', glass: { blur: 16, opacity: 60 } },
+  // Plain is the flat look of the default, kept as an explicit choice (follows the system like Auto).
+  { id: 'plain', name: 'Plain', builtin: true, bg: '#f4f5f7', accent: '#2a78d6' },
 ];
-// Custom themes are { id, name, bg, accent, contrast, palette? }; the id derives from
+// Custom themes are { id, name, bg, accent, contrast, palette?, glass?, tints? }; the id derives from
 // the name (case-insensitive), so a name is unique.
 function themeIdOf(name) {
   let h = 2166136261;
@@ -5511,7 +5572,8 @@ function themeRecord(x) {
   const bg = hexRgb(x.bg), accent = hexRgb(x.accent);
   if (!name || !bg || !accent) return null;
   const palette = summaryPaletteRecord(x.palette);
-  return { id: themeIdOf(name), name, bg: rgbHex(bg), accent: rgbHex(accent), contrast: x.contrast === 'high' ? 'high' : 'normal', ...(Object.keys(palette).length ? { palette } : {}) };
+  const glass = glassRecord(x.glass), tints = tintsRecord(x.tints);
+  return { id: themeIdOf(name), name, bg: rgbHex(bg), accent: rgbHex(accent), contrast: x.contrast === 'high' ? 'high' : 'normal', ...(Object.keys(palette).length ? { palette } : {}), ...(glass ? { glass } : {}), ...(Object.keys(tints).length ? { tints } : {}) };
 }
 // Adds or replaces (same name) one theme; returns a new list.
 function themeUpsert(list, theme) {
@@ -5519,7 +5581,7 @@ function themeUpsert(list, theme) {
   if (!rec) return list;
   return [...list.filter(x => x.id !== rec.id), rec];
 }
-const themeExport = list => JSON.stringify({ auspexThemes: 1, themes: list.map(({ name, bg, accent, contrast, palette }) => ({ name, bg, accent, contrast, ...(palette && Object.keys(palette).length ? { palette } : {}) })) }, null, 2);
+const themeExport = list => JSON.stringify({ auspexThemes: 1, themes: list.map(({ name, bg, accent, contrast, palette, glass, tints }) => ({ name, bg, accent, contrast, ...(palette && Object.keys(palette).length ? { palette } : {}), ...(glass ? { glass } : {}), ...(tints && Object.keys(tints).length ? { tints } : {}) })) }, null, 2);
 // Import text: the export format, an array of themes or one theme. Returns
 // { list, added, skipped } or { error } when the text is not JSON.
 function themeImport(text, list) {
@@ -5541,6 +5603,7 @@ function themeSpecOf(id, customs) {
 // theme sets data-theme to its base (light or dark, for color-scheme) and its
 // tokens as inline properties on <html>; reports get the same through
 // themedReport, the 3D graph through recolor().
+const themeBuiltinIds = ['auto', 'light', 'dark', 'plain'];
 let customThemes = [];
 try { customThemes = (JSON.parse(localStorage.getItem('auspex.viewer.themes') || '[]') || []).map(themeRecord).filter(Boolean); } catch { customThemes = []; }
 const saveCustomThemes = () => { try { localStorage.setItem('auspex.viewer.themes', JSON.stringify(customThemes)); return true; } catch { return false; } };
@@ -5564,7 +5627,7 @@ function summaryBuiltIn(th) {
   return Object.fromEntries(Object.keys(light).map(k => [k, `light-dark(${light[k]}, ${dark[k]})`]));
 }
 function applyTheme() {
-  if (!['auto', 'light', 'dark'].includes(state.theme || 'auto') && !themeSpecOf(state.theme, customThemes)) state.theme = 'auto';
+  if (!themeBuiltinIds.includes(state.theme || 'auto') && !themeSpecOf(state.theme, customThemes)) state.theme = 'auto';
   const th = state.theme || 'auto', root = document.documentElement;
   for (const k of themeAppliedKeys) root.style.removeProperty(k);
   themeAppliedKeys = [];
@@ -5573,19 +5636,26 @@ function applyTheme() {
     root.setAttribute('data-theme', res.base);
     for (const [k, v] of Object.entries(res.tokens)) root.style.setProperty(k, v);
     themeAppliedKeys = Object.keys(res.tokens);
-  } else if (th === 'auto') root.removeAttribute('data-theme');
+  } else if (th === 'auto' || th === 'plain') root.removeAttribute('data-theme');
   else root.setAttribute('data-theme', th);
   // Summary chip colors: the generated theme's own, or the defaults of the
   // built-in light and dark (auto picks by the system, like the other tokens).
   const sum = res ? res.summary : summaryBuiltIn(th);
   for (const [k, v] of Object.entries(sum)) root.style.setProperty(k, v);
   themeAppliedKeys.push(...Object.keys(sum));
+  // Glass: translucent panels over a soft background; opaque panels when the
+  // browser has no backdrop-filter or the user prefers reduced transparency.
+  const gl = res?.glass || null;
+  root.classList.toggle('glass', !!gl);
+  root.classList.toggle('glass-flat', !!gl && glassFallback(window));
+  if (gl) { for (const [k, v] of Object.entries(gl)) root.style.setProperty(k, v); themeAppliedKeys.push(...Object.keys(gl)); }
   document.querySelectorAll('#theme button').forEach(b => b.classList.toggle('on', !themePreview && b.dataset.v === th));
-  const custom = !themePreview && !['auto', 'light', 'dark'].includes(th);
+  const custom = !themePreview && !['auto', 'light', 'dark', 'plain'].includes(th);
   $('themeMenuBtn').classList.toggle('on', custom);
   const spec = themeSpecOf(th, customThemes);
   $('themeMenuName').textContent = custom && spec ? themeName(spec) : t('Theme');
 }
+try { matchMedia('(prefers-reduced-transparency: reduce)').addEventListener('change', () => applyTheme()); } catch { /* unsupported query */ }
 function themeChanged() {
   applyTheme();
   graph3d?.recolor();
@@ -5635,6 +5705,15 @@ function renderThemeMenu() {
     onchange: ev => { themeDraft.accent = ev.target.value; preview(); } });
   const hc = h('input', { type: 'checkbox', onchange: ev => { themeDraft.contrast = ev.target.checked ? 'high' : 'normal'; preview(); } });
   hc.checked = themeDraft.contrast === 'high';
+  const gl = themeDraft.glass || null;
+  const glassOn = h('input', { type: 'checkbox', onchange: ev => { if (ev.target.checked) themeDraft.glass = { ...glassDefaults }; else delete themeDraft.glass; preview(); } });
+  glassOn.checked = !!gl;
+  const glassRange = k => h('label', { class: 'wide' }, h('span', {}, t(k === 'blur' ? 'Blur' : 'Opacity')),
+    h('input', { type: 'range', min: glassLimits[k][0], max: glassLimits[k][1], value: gl[k], 'aria-label': t(k === 'blur' ? 'Blur' : 'Opacity'),
+      onchange: ev => { themeDraft.glass = glassRecord({ ...themeDraft.glass, [k]: ev.target.value }); preview(); } }));
+  const tintIn = k => h('label', {}, h('span', {}, t(k === 'ref' ? 'Tint, references' : 'Tint, referenced by')),
+    h('input', { type: 'color', value: (themeDraft.tints && themeDraft.tints[k]) || (k === 'ref' ? '#2a78d6' : '#d9601f'), 'aria-label': t(k === 'ref' ? 'Tint, references' : 'Tint, referenced by'),
+      onchange: ev => { themeDraft.tints = { ...themeDraft.tints, [k]: ev.target.value }; preview(); } }));
   const defaults = summaryDefaults(themeDraft.accent);
   const palIn = k => h('label', {}, h('span', {}, t(summaryLabels[k])), h('input', { type: 'color', value: (themeDraft.palette && themeDraft.palette[k]) || defaults[k], 'aria-label': t(summaryLabels[k]),
     onchange: ev => { themeDraft.palette = { ...themeDraft.palette, [k]: ev.target.value }; preview(); } }));
@@ -5657,7 +5736,10 @@ function renderThemeMenu() {
       h('label', {}, h('span', {}, t('Background')), bgIn),
       h('label', { class: 'wide' }, h('span', {}, t('Dark ↔ light')), level),
       h('label', {}, h('span', {}, t('Accent')), accIn),
-      h('label', { class: 'chk' }, hc, h('span', {}, t('High contrast (7:1)')))),
+      h('label', { class: 'chk' }, hc, h('span', {}, t('High contrast (7:1)'))),
+      h('label', { class: 'chk' }, glassOn, h('span', {}, t('Glass look'))),
+      gl ? glassRange('blur') : null, gl ? glassRange('opacity') : null,
+      tintIn('ref'), tintIn('dep')),
     palette,
     h('div', { class: 'th-row' }, themeBadge(res), themePreview ? h('button', { class: 'icon-btn', onclick: () => { themePreview = false; themeChanged(); renderThemeMenu(); } }, t('Stop preview')) : h('button', { class: 'icon-btn', onclick: preview }, t('Preview'))),
     h('div', { class: 'th-row' }, nameIn, h('button', { class: 'icon-btn primary', onclick: () => {
