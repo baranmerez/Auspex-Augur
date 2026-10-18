@@ -62,14 +62,35 @@ export function reportHtmlHash(html) {
   }
 }
 
+// The SQL about to run must be a saved revision of the report: the active one
+// (meta.activeHash; a report saved before that field existed: any saved
+// revision), and for an approved report the approved revision. Otherwise the
+// .sql file was changed outside save_report and nothing may run.
+function assertSavedRevision(stage, ref, sql, meta) {
+  const hash = sqlHash(sql);
+  const saved = (meta.sqlVersions || []).find(v => v.hash === hash);
+  const again = stage === 'approved' ? ', then have it approved again' : '';
+  if (!saved || (meta.activeHash && meta.activeHash !== hash)) {
+    throw new ToolError('PRECONDITION_FAILED', `The SQL file of ${refLabel(ref)} is not its saved active revision (it was changed outside save_report); nothing was run. Save the SQL with save_report${again}.`);
+  }
+  if (stage === 'approved' && Number.isInteger(meta.approvedVersion) && saved.version !== meta.approvedVersion) {
+    throw new ToolError('PRECONDITION_FAILED', `The SQL file of approved report ${refLabel(ref)} holds v${saved.version}, but v${meta.approvedVersion} was approved; nothing was run. Save the SQL with save_report, then have it approved again.`);
+  }
+}
+
 // Data for a shared copy, built from an allowlist instead of the stored
 // metadata: title, description, category, the masked preview, plain figures
 // and provenance (the result's SQL version number and run time). Never SQL, plan or plan expressions, parameters, warnings, history,
-// profile, server or database/schema names. Values in preview rows stay as the
-// masking left them; masking is by column name only.
+// profile, server or database/schema names. Masking is by column name only.
+// The preview was masked with the policy of its run; the report's current
+// mask/unmask is applied once more on top, so tightening the policy after a
+// run never lets an old unmasked value out (values masked then stay masked).
 export function shareableReport(meta) {
   const last = meta.last;
   const s = last?.summary;
+  const remasked = last
+    ? maskRows((last.columns || []).map(c => c.name), last.preview || [], { mask: meta.mask || [], unmask: meta.unmask || [] })
+    : null;
   return {
     shareable: true, name: meta.name, title: meta.title || meta.name, description: meta.description || '',
     category: meta.category, status: meta.status, sqlVersions: [], runs: [],
@@ -77,8 +98,8 @@ export function shareableReport(meta) {
       at: last.at,
       version: Number.isInteger(last.version) ? last.version : null,
       columns: (last.columns || []).map(c => ({ name: c.name, type: c.type })),
-      preview: last.preview || [],
-      maskedColumns: last.maskedColumns || [],
+      preview: remasked.rows,
+      maskedColumns: [...new Set([...(last.maskedColumns || []), ...remasked.maskedColumns])],
       previewTruncated: !!last.previewTruncated,
       previewMs: last.previewMs,
       previewExecuted: last.previewExecuted,
@@ -192,13 +213,21 @@ export class ReportService {
   async run(input, { analyze = 'auto', previewRows = 50, returnRows = 20, timeoutSeconds, params, preset, presetDate, stage: onlyStage, includeLast = false } = {}) {
     const ref = this.ref(input);
     if (preset !== undefined && params !== undefined) throw new ToolError('INVALID_INPUT', 'Pass either preset or params, not both.');
-    if (onlyStage !== undefined && !this.library.exists(onlyStage, ref)) {
-      throw new ToolError(onlyStage === 'approved' ? 'PRECONDITION_FAILED' : 'NOT_FOUND', `Report ${refLabel(ref)} is not in stage ${onlyStage}.`);
-    }
-    const stage = onlyStage ?? this.library.locate(ref);
-    const sql = this.library.readSql(stage, ref);
-    const meta = this.library.readMeta(stage, ref);
-    if (!meta) throw new ToolError('NOT_FOUND', `Report metadata missing for ${refLabel(ref)}; save the report first.`);
+    // SQL and metadata are read together under the library lock, and only SQL
+    // that is the report's saved active revision (for an approved report: the
+    // approved one) reaches the database. A .sql file changed outside
+    // save_report is refused before any database call.
+    const { stage, sql, meta } = this.library.locked(() => {
+      if (onlyStage !== undefined && !this.library.exists(onlyStage, ref)) {
+        throw new ToolError(onlyStage === 'approved' ? 'PRECONDITION_FAILED' : 'NOT_FOUND', `Report ${refLabel(ref)} is not in stage ${onlyStage}.`);
+      }
+      const stage = onlyStage ?? this.library.locate(ref);
+      const sql = this.library.readSql(stage, ref);
+      const meta = this.library.readMeta(stage, ref);
+      if (!meta) throw new ToolError('NOT_FOUND', `Report metadata missing for ${refLabel(ref)}; save the report first.`);
+      assertSavedRevision(stage, ref, sql, meta);
+      return { stage, sql, meta };
+    });
     let usedPreset = null;
     if (preset !== undefined) {
       const resolved = resolvePreset(preset, meta.presets, sqlParamCount(sql), msg => new ToolError('INVALID_INPUT', msg), presetDate ?? new Date(), meta.dateRange);
