@@ -1129,7 +1129,7 @@ const TR = {
   'Secondary text on surface': 'Yüzeyde ikincil metin', 'Secondary text on side panels': 'Yan panellerde ikincil metin', 'Muted text on surface': 'Yüzeyde soluk metin', 'Muted text on raised surface': 'Yükseltilmiş yüzeyde soluk metin',
   'Accent text on surface': 'Yüzeyde vurgu metni', 'Accent text on accent tint': 'Vurgu tonunda vurgu metni', 'Accent on surface (UI part)': 'Yüzeyde vurgu (arayüz öğesi)',
   'Success text on surface': 'Yüzeyde başarı metni', 'Warning text on surface': 'Yüzeyde uyarı metni', 'Danger text on surface': 'Yüzeyde tehlike metni', 'Info text on surface': 'Yüzeyde bilgi metni',
-  'Revert': 'Geri al', 'Edits reverted': 'Düzenlemeler geri alındı', 'Saved': 'Kaydedildi', 'Discard changes?': 'Değişiklikler silinsin mi?', 'Your edits to this theme will be lost.': 'Bu temadaki düzenlemeler kaybolacak.', 'Discard': 'Sil',
+  'Revert': 'Geri al', 'Edits reverted': 'Düzenlemeler geri alındı', 'Saved': 'Kaydedildi', 'Discard changes?': 'Değişiklikler silinsin mi?', 'Your edits to this theme will be lost.': 'Bu temadaki düzenlemeler kaybolacak.', 'Discard': 'Değişiklikleri at',
   'Delete theme {n}?': '{n} teması silinsin mi?', 'This cannot be undone.': 'Bu işlem geri alınamaz.', 'A theme with this name already exists.': 'Bu adda bir tema zaten var.', 'Too many saved themes.': 'Çok fazla kayıtlı tema var.',
   'Import failed: {e}': 'İçe aktarılamadı: {e}', 'not valid JSON': 'geçerli JSON değil', 'too large': 'çok büyük', 'unsupported version': 'desteklenmeyen sürüm', 'nothing to import': 'içe aktarılacak bir şey yok',
   'Delete theme {n}': '{n} temasını sil', 'Contrast below target for {n} colors': '{n} renkte kontrast hedefin altında', 'Text contrast ≥ {r}:1': 'Metin kontrastı ≥ {r}:1',
@@ -5886,18 +5886,23 @@ const themePresets = [
   { id: 'plain', name: 'Plain', builtin: true, bg: '#f4f5f7', accent: '#2a78d6' },
   { id: 'auspex', name: 'Auspex', auspex: true, bg: '#14110e', accent: '#2fbf71',
     colors: { surface: '#1f1a15', text: '#ede6da', muted: '#a89c8a', accent2: '#c9a04f', warning: '#e0a33a', danger: '#e05a4a' },
+    tints: { ref: '#c9a04f', dep: '#2fbf71' },
     palette: { pk: '#c9a04f', fk: '#9a7bd6', score: '#2fbf71', trigger: '#d0638f', fn: '#3bb3a0', report: '#4a9fb0', ref: '#5b9bd5', dep: '#e0a33a', off: '#8a8070' } },
   { id: 'forge', name: 'Forge', auspex: true, bg: '#17110d', accent: '#d7783a',
     colors: { surface: '#22180f', text: '#f1e4d6', muted: '#b09a86', accent2: '#b8894a', success: '#7fbf6a', danger: '#d9534a' },
+    tints: { ref: '#b8894a', dep: '#d7783a' },
     palette: { pk: '#b8894a', fk: '#a07acb', score: '#d7783a', trigger: '#d0638f', fn: '#7fbf6a', report: '#4a9fb0', ref: '#6aa6c9', dep: '#d9534a', off: '#8a7a6a' } },
   { id: 'phosphor', name: 'Phosphor', auspex: true, mono: true, bg: '#060b07', accent: '#3ddc84',
     colors: { surface: '#0b150e', text: '#b8f5c8', muted: '#6fa67f', accent2: '#8fcb9b', warning: '#e8c547', danger: '#ff6b57' },
+    tints: { ref: '#4f9a67', dep: '#e8c547' },
     palette: { pk: '#e8c547', fk: '#8fcb9b', score: '#3ddc84', trigger: '#ff6b57', fn: '#6fe0c8', report: '#59c2d9', ref: '#5fb0e0', dep: '#e8a247', off: '#6a8a74' } },
   { id: 'verdigris', name: 'Verdigris', auspex: true, bg: '#0e1716', accent: '#3bb3a0',
     colors: { surface: '#152221', text: '#e3efec', muted: '#93aba6', accent2: '#c2a15a', warning: '#e0a33a', danger: '#e06a5a' },
+    tints: { ref: '#3bb3a0', dep: '#c2a15a' },
     palette: { pk: '#c2a15a', fk: '#8f86d6', score: '#3bb3a0', trigger: '#d9688f', fn: '#6bbf8a', report: '#4aa6c0', ref: '#5aa0d0', dep: '#e0a33a', off: '#7a908c' } },
   { id: 'ivory', name: 'Ivory', auspex: true, bg: '#f4eee2', accent: '#1e8a55',
     colors: { surface: '#fffbf3', text: '#2a231b', muted: '#6e6252', accent2: '#9a7330', warning: '#b7791f', danger: '#b83a2e' },
+    tints: { ref: '#9a7330', dep: '#1e8a55' },
     palette: { pk: '#9a7330', fk: '#6a50b0', score: '#1e8a55', trigger: '#b03a78', fn: '#1a8a6a', report: '#1a7f90', ref: '#2a6fb0', dep: '#b8561f', off: '#7a7060' } },
 ];
 const themeDefaultId = saved => (typeof saved === 'string' && saved ? saved : 'auspex');
@@ -5981,6 +5986,11 @@ function themeSpecOf(id, customs) {
   const p = themePresets.find(x => x.id === id);
   if (p) return p.builtin ? null : p;
   return (customs || []).find(x => x.id === id) || null;
+}
+// Re-shows the studio dialog when it closed natively while its session is still active.
+function themeDialogRecover(active, dlg) {
+  if (active && dlg && !dlg.open) { dlg.showModal(); return true; }
+  return false;
 }
 // themes:end
 // Custom themes live in localStorage (auspex.viewer.themes). A generated
@@ -6153,7 +6163,7 @@ function openStudio(opts = {}) {
   else { const src = opts.from || active; draft = themeDuplicate(src, studioName(src.name === undefined ? '' : (src.builtin || themePresets.includes(src) ? t(src.name) : src.name), customThemes)); }
   const dark = themeWantsDark();
   const prevSpec = themeResolve(themeSpecOf(state.theme, customThemes), dark) || themePresets[state.theme === 'dark' || (state.theme !== 'light' && dark) ? 1 : 0];
-  studio = { draft, snapshot: structuredClone(draft), prevSpec, editing: 'main', origId, dirty: false, ioOpen: !!opts.io };
+  studio = { draft, snapshot: structuredClone(draft), snapshotOrigId: origId, prevSpec, editing: 'main', origId, dirty: false, ioOpen: !!opts.io };
   studioChrome(true);
   renderStudio();
   const dlg = $('themeDlg');
@@ -6185,7 +6195,7 @@ function closeStudio() {
 }
 async function requestCloseStudio() {
   if (!studio) return;
-  if (studio.dirty && !await themeConfirm({ title: t('Discard changes?'), text: t('Your edits to this theme will be lost.'), ok: t('Discard'), danger: true })) return;
+  if (studio.dirty && !await themeConfirm({ title: t('Discard changes?'), text: t('Your edits to this theme will be lost.'), ok: t('Discard'), danger: true })) { themeDialogRecover(!!studio, $('themeDlg')); return; }
   closeStudio();
   $('themeMenuBtn').focus();
 }
@@ -6320,7 +6330,7 @@ function renderStudio() {
     if (!studio.origId && customThemes.length >= themeMaxCount) { msg.textContent = t('Too many saved themes.'); return; }
     customThemes = themeUpsert(customThemes.filter(x => x.id !== studio.origId), rec);
     const stored = saveCustomThemes();
-    studio.origId = rec.id; studio.snapshot = structuredClone(draft); studio.dirty = false;
+    studio.origId = rec.id; studio.snapshotOrigId = rec.id; studio.snapshot = structuredClone(draft); studio.dirty = false;
     state.theme = rec.id; persist();
     msg.textContent = stored ? t('Saved') : t('Could not save themes in this browser');
     updateStudioButtons();
@@ -6331,7 +6341,7 @@ function renderStudio() {
     h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('Close'), onclick: requestCloseStudio }, '✕'));
   put($('studioTop'), h('label', { class: 'th-name' }, h('span', {}, t('Theme name')), nameIn), sources);
   const revert = h('button', { type: 'button', class: 'icon-btn', onclick: () => {
-    studio.draft = structuredClone(studio.snapshot); studio.editing = 'main'; studio.dirty = false; renderStudio(); applyTheme(); $('studioMsg').textContent = t('Edits reverted');
+    studio.draft = structuredClone(studio.snapshot); studio.origId = studio.snapshotOrigId; studio.editing = 'main'; studio.dirty = false; renderStudio(); applyTheme(); $('studioMsg').textContent = t('Edits reverted');
   } }, t('Revert'));
   const del = h('button', { type: 'button', class: 'icon-btn secondary-danger', id: 'studioDelete', onclick: () => { const rec = customThemes.find(x => x.id === studio.origId); if (rec) askDeleteTheme(rec); } }, t('Delete'));
   put($('studioFoot'),
@@ -6356,6 +6366,9 @@ function updateStudioButtons() { const d = $('studioDelete'); if (d) d.hidden = 
 {
   const dlg = $('themeDlg');
   dlg.addEventListener('cancel', ev => { ev.preventDefault(); requestCloseStudio(); });
+  // A native close that slipped past cancel (repeated Esc) while the studio is active: keep editing.
+  dlg.addEventListener('close', () => { themeDialogRecover(!!studio, dlg); });
+  $('themeConfirmDlg').addEventListener('keydown', ev => ev.stopPropagation());
   dlg.addEventListener('keydown', ev => {
     if (ev.key === 'Tab') {
       const f = [...dlg.querySelectorAll('button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])')].filter(n => !n.disabled && !n.hidden && n.offsetParent !== null);
