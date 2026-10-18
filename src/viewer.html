@@ -62,8 +62,7 @@
     backdrop-filter: saturate(1.4) blur(10px); border-bottom: 1px solid var(--line); }
   .top-inner { padding: 12px 24px 0; }
   .brand { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-  .logo { width: 30px; height: 30px; flex: none; }
-  .logo .ring { transform-origin: 16px 16px; animation: spin 14s linear infinite; }
+  .logo { width: 30px; height: 30px; flex: none; border-radius: 7px; }
   .brand h1 { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: .2px; }
   .brand .sub { color: var(--text-3); font-size: 13px; }
   .brand .spacer { flex: 1; }
@@ -126,7 +125,7 @@
   :root.glass:not(.glass-flat) body { background: var(--bg); min-height: 100vh; }
   :root.glass:not(.glass-flat) body::before { content: ""; position: fixed; inset: 0; z-index: -1; background: var(--page-bg); pointer-events: none; }
   :root.glass:not(.glass-flat) .panel { border-color: var(--glass-line); box-shadow: var(--shadow), inset 0 1px 0 var(--glass-hi);
-    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.5); backdrop-filter: blur(var(--glass-blur)) saturate(1.5); }
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat, 1.5)); backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat, 1.5)); }
   :root.glass :focus-visible { box-shadow: 0 0 0 4px var(--surface); }
   .panel-h { display: flex; align-items: baseline; gap: 10px; padding: 14px 16px 0; }
   .panel-h h2 { margin: 0; font-size: 14px; font-weight: 600; }
@@ -285,17 +284,52 @@
   .th-pick { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; border: 0; background: none; padding: 5px 6px; border-radius: 8px; text-align: left; font-size: 13px; color: var(--text); }
   .th-pick span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .th-pick:hover { background: var(--surface-2); }
-  .th-del { border: 0; background: none; color: var(--text-3); width: 24px; height: 24px; border-radius: 6px; flex: none; }
-  .th-del:hover { background: var(--critical-soft); color: var(--critical); }
   .th-sw { width: 26px; height: 18px; border-radius: 5px; border: 1px solid; display: inline-flex; align-items: center; justify-content: center; gap: 3px; flex: none; }
   .th-sw i { width: 6px; height: 6px; border-radius: 50%; }
+  .th-list.one { grid-template-columns: 1fr; }
+  .th-act { border: 0; background: none; color: var(--text-3); width: 24px; height: 24px; border-radius: 6px; flex: none; padding: 0; line-height: 1; }
+  .th-act:hover { background: var(--surface-2); color: var(--text); }
+  .th-act.del:hover { background: var(--critical-soft); color: var(--critical); }
+  :root.mono-heads h1, :root.mono-heads h2, :root.mono-heads h3, :root.mono-heads .th-h { font-family: var(--mono); letter-spacing: 0; }
+  /* Theme studio: a modal dialog, so the native color picker never closes it. On wide screens it sits
+     at the right edge and the page behind (the live preview) stays visible. */
+  .dlg.th-studio { width: min(920px, calc(100vw - 24px)); max-height: calc(100vh - 24px); padding: 0; overflow: hidden; margin: auto; }
+  .dlg.th-studio[open] { display: flex; flex-direction: column; }
+  @media (min-width: 1200px) { .dlg.th-studio { margin: 12px 12px 12px auto; } }
+  .dlg.th-studio::backdrop { background: rgba(0, 0, 0, .12); }
+  .th-s-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 16px 6px; }
+  .th-s-head h3 { margin: 0; }
+  .th-s-top { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; padding: 0 16px 10px; border-bottom: 1px solid var(--line); }
+  .th-name { display: grid; gap: 2px; font-size: 12px; color: var(--text-2); flex: 1; min-width: 180px; }
+  .th-s-top input[type=text], .th-s-top select { height: 30px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); padding: 0 8px; min-width: 0; }
+  .th-s-body { flex: 1; min-height: 0; overflow: auto; padding: 4px 16px 12px; }
+  .th-s-foot { border-top: 1px solid var(--line); padding: 6px 16px 12px; }
+  .th-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 330px); gap: 16px; align-items: start; }
+  .th-right { position: sticky; top: 0; }
+  @media (max-width: 760px) { .th-cols { grid-template-columns: minmax(0, 1fr); } .th-right { position: static; } .dlg.th-studio { max-height: calc(100vh - 12px); } }
+  .th-fs { border: 1px solid var(--line); border-radius: 8px; margin: 8px 0 0; padding: 4px 10px 10px; min-width: 0; }
+  .th-fs legend { font-size: 11px; font-weight: 650; letter-spacing: .4px; text-transform: uppercase; color: var(--text-3); padding: 0 4px; }
+  .th-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 6px 14px; }
+  .th-tok { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--text-2); min-width: 0; }
+  .th-lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .th-ctl { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+  .th-ctl input[type=color] { width: 36px; height: 26px; padding: 0 2px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface); }
+  .th-hex { width: 86px; height: 26px; font: 12px var(--mono); border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface); color: var(--text); padding: 0 6px; }
+  .th-hex[aria-invalid="true"] { border-color: var(--critical); }
+  .th-ctl .th-act { width: 22px; height: 22px; }
+  .th-chk { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-2); margin-top: 8px; grid-column: 1 / -1; }
+  .th-rng { display: grid; grid-template-columns: 80px 1fr 34px; align-items: center; gap: 8px; font-size: 12px; color: var(--text-2); grid-column: 1 / -1; margin-top: 6px; }
+  .th-tabs { margin-top: 8px; }
+  .th-ct { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
+  .th-ct th { text-align: left; color: var(--text-3); font-weight: 600; padding: 3px 4px; border-bottom: 1px solid var(--line); }
+  .th-ct td { padding: 3px 4px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  .th-ct tr.bad td { background: var(--critical-soft); }
+  .th-aa { display: inline-block; min-width: 28px; text-align: center; border: 1px solid var(--line-strong); border-radius: 4px; font-weight: 700; padding: 0 3px; }
+  .th-grade { font-weight: 600; white-space: nowrap; }
+  .th-grade.ok { color: var(--good-ink); } .th-grade.bad { color: var(--critical); }
+  .icon-btn[hidden] { display: none; }
+  .th-foot-row { align-items: center; } .th-foot-row .grow { flex: 1; }
   .th-empty { font-size: 12px; color: var(--text-3); padding: 2px; }
-  .th-gen { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
-  .th-gen label { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--text-2); }
-  .th-gen label.wide { grid-column: 1 / -1; }
-  .th-gen label.wide input { flex: 1; }
-  .th-gen label.chk { grid-column: 1 / -1; justify-content: flex-start; }
-  .th-gen input[type=color] { width: 40px; height: 26px; padding: 0 2px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface); }
   .th-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
   .th-row input[type=text] { flex: 1; min-width: 120px; height: 30px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); padding: 0 8px; }
   .th-row .badge { white-space: normal; }
@@ -305,7 +339,7 @@
   .th-io { margin-top: 6px; font-size: 12px; }
   .th-io summary { cursor: pointer; color: var(--text-2); }
   .th-io textarea { width: 100%; margin-top: 6px; font: 11px/1.4 var(--mono); border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-2); color: var(--text); padding: 6px; resize: vertical; }
-  .icon-btn.primary { background: var(--accent-ink); border-color: var(--accent-ink); color: var(--surface); }
+  .icon-btn.primary { background: var(--accent-ink); border-color: var(--accent-ink); color: var(--on-accent, var(--surface)); }
   .icon-btn.secondary-danger { color: var(--critical); border-color: color-mix(in srgb, var(--critical) 45%, var(--line)); background: var(--surface); }
   .icon-btn.secondary-danger:hover { background: var(--critical-soft); color: var(--critical); border-color: var(--critical); }
   .icon-btn.primary:hover { background: var(--text); border-color: var(--text); color: var(--surface); }
@@ -804,10 +838,6 @@
   .sum-chip.c-ref { --chip-bg: var(--sum-ref); --chip-line: var(--sum-ref-line); --chip-ink: var(--sum-ref-ink); }
   .sum-chip.c-dep { --chip-bg: var(--sum-dep); --chip-line: var(--sum-dep-line); --chip-ink: var(--sum-dep-ink); }
   .sum-chip.off { --chip-bg: var(--sum-off); --chip-line: var(--sum-off-line); --chip-ink: var(--sum-off-ink); text-decoration: line-through; }
-  .th-pal { margin-top: 8px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
-  .th-pal summary { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--text-2); }
-  .th-pal .th-gen { margin-top: 8px; }
-  .th-pal .sum-chips { margin-top: 8px; }
   .dlg .dlg-status { min-height: 18px; font-size: 13px; color: var(--critical); margin: 0 0 10px; overflow-wrap: anywhere; }
   .dlg-actions .grow { flex: 1; }
   .mem-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
@@ -847,11 +877,7 @@
 <header class="top">
   <div class="top-inner">
     <div class="brand">
-      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
-        <circle cx="16" cy="16" r="15" fill="var(--accent)" opacity=".14"/>
-        <g class="ring"><circle cx="16" cy="16" r="11" fill="none" stroke="var(--accent)" stroke-width="2" stroke-dasharray="14 6" stroke-linecap="round"/></g>
-        <circle cx="16" cy="16" r="5" fill="var(--accent)"/>
-      </svg>
+      <img class="logo" alt="" width="30" height="30" src="data:image/png;base64,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">
       <h1>Auspex Augur</h1>
       <div class="dbsel" id="dbsel">
         <button id="dbBtn" aria-haspopup="listbox" aria-expanded="false" data-i18n-title="Choose the database for every tab (d)">
@@ -937,6 +963,13 @@
 <dialog class="dlg" id="stageDlg" aria-labelledby="stageDlgTitle"></dialog>
 <dialog class="dlg" id="archiveDlg" aria-labelledby="archiveDlgTitle"></dialog>
 <dialog class="dlg" id="scoreDlg" aria-labelledby="scoreDlgTitle"></dialog>
+<dialog class="dlg th-studio" id="themeDlg" aria-labelledby="themeDlgTitle">
+  <div class="th-s-head" id="studioHead"></div>
+  <div class="th-s-top" id="studioTop"></div>
+  <div class="th-s-body" id="studioBody"></div>
+  <div class="th-s-foot" id="studioFoot"></div>
+</dialog>
+<dialog class="dlg" id="themeConfirmDlg" aria-labelledby="themeConfirmTitle"></dialog>
 
 <script>
 'use strict';
@@ -1083,6 +1116,22 @@ const TR = {
   'Give the theme a name.': 'Temaya bir ad verin.', 'Invalid color': 'Geçersiz renk', 'Could not save themes in this browser': 'Temalar bu tarayıcıda kaydedilemedi',
   'Export / import': 'Dışa / içe aktar', 'Export': 'Dışa aktar', 'Import': 'İçe aktar', 'Theme JSON': 'Tema JSON', 'Paste theme JSON here to import': 'İçe aktarmak için tema JSON metnini buraya yapıştırın',
   'Import failed: not valid JSON': 'İçe aktarılamadı: geçerli JSON değil', '{a} imported, {s} skipped': '{a} içe aktarıldı, {s} atlandı',
+  'Auspex themes': 'Auspex temaları', 'Auspex': 'Auspex', 'Forge': 'Dökümhane', 'Phosphor': 'Fosfor', 'Verdigris': 'Bakır yeşili', 'Ivory': 'Fildişi',
+  'Theme studio': 'Tema stüdyosu', 'New theme': 'Yeni tema', 'Duplicate and edit': 'Çoğalt ve düzenle', 'Edit': 'Düzenle', 'Delete': 'Sil', 'Close': 'Kapat', 'Duplicate from…': 'Şundan çoğalt…', 'Duplicate from': 'Şundan çoğalt',
+  '{n} copy': '{n} kopyası', 'Surfaces': 'Yüzeyler', 'Text': 'Metin', 'Border': 'Kenarlık', 'Status': 'Durum', 'Surface': 'Yüzey', 'Raised surface': 'Yükseltilmiş yüzey', 'Secondary text': 'İkincil metin', 'Muted text': 'Soluk metin',
+  'Strong border': 'Güçlü kenarlık', 'Accent text': 'Vurgu metni', 'Text on accent': 'Vurgu üstü metin', 'Secondary accent': 'İkincil vurgu', 'Success': 'Başarı', 'Warning': 'Uyarı', 'Danger': 'Tehlike', 'Info': 'Bilgi',
+  'Side-panel tints': 'Yan panel tonları', 'Score ramp base': 'Skor rampası tabanı', 'Strength': 'Güç', 'Options': 'Seçenekler', 'Monospace headings': 'Eş aralıklı başlıklar',
+  'This theme has a light and a dark variant': 'Bu temanın açık ve koyu bir varyantı var', 'Light variant': 'Açık varyant', 'Dark variant': 'Koyu varyant', 'Variant being edited': 'Düzenlenen varyant',
+  'Hex color, for example #1a2b3c': 'Hex renk, örneğin #1a2b3c', '{n} (hex)': '{n} (hex)', 'Reset to derived': 'Türetilene sıfırla', 'Reset {n} to derived': '{n} rengini türetilene sıfırla',
+  'Contrast': 'Kontrast', 'Pair': 'Çift', 'Ratio': 'Oran', 'Level': 'Seviye', 'Fail': 'Başarısız', 'Auto-fix': 'Otomatik düzelt', 'Nothing to fix': 'Düzeltilecek bir şey yok',
+  '{n} of {m} pairs below target': '{m} çiftten {n} tanesi hedefin altında', 'All {m} pairs pass': '{m} çiftin hepsi geçiyor',
+  'Text on background': 'Arka planda metin', 'Text on surface': 'Yüzeyde metin', 'Text on raised surface': 'Yükseltilmiş yüzeyde metin', 'Text on side panels': 'Yan panellerde metin',
+  'Secondary text on surface': 'Yüzeyde ikincil metin', 'Secondary text on side panels': 'Yan panellerde ikincil metin', 'Muted text on surface': 'Yüzeyde soluk metin', 'Muted text on raised surface': 'Yükseltilmiş yüzeyde soluk metin',
+  'Accent text on surface': 'Yüzeyde vurgu metni', 'Accent text on accent tint': 'Vurgu tonunda vurgu metni', 'Accent on surface (UI part)': 'Yüzeyde vurgu (arayüz öğesi)',
+  'Success text on surface': 'Yüzeyde başarı metni', 'Warning text on surface': 'Yüzeyde uyarı metni', 'Danger text on surface': 'Yüzeyde tehlike metni', 'Info text on surface': 'Yüzeyde bilgi metni',
+  'Revert': 'Geri al', 'Edits reverted': 'Düzenlemeler geri alındı', 'Saved': 'Kaydedildi', 'Discard changes?': 'Değişiklikler silinsin mi?', 'Your edits to this theme will be lost.': 'Bu temadaki düzenlemeler kaybolacak.', 'Discard': 'Sil',
+  'Delete theme {n}?': '{n} teması silinsin mi?', 'This cannot be undone.': 'Bu işlem geri alınamaz.', 'A theme with this name already exists.': 'Bu adda bir tema zaten var.', 'Too many saved themes.': 'Çok fazla kayıtlı tema var.',
+  'Import failed: {e}': 'İçe aktarılamadı: {e}', 'not valid JSON': 'geçerli JSON değil', 'too large': 'çok büyük', 'unsupported version': 'desteklenmeyen sürüm', 'nothing to import': 'içe aktarılacak bir şey yok',
   'Delete theme {n}': '{n} temasını sil', 'Contrast below target for {n} colors': '{n} renkte kontrast hedefin altında', 'Text contrast ≥ {r}:1': 'Metin kontrastı ≥ {r}:1',
   '{n} colors adjusted for contrast': 'Kontrast için {n} renk ayarlandı', '{n} adjusted': '{n} ayarlandı',
 'Non-FK relations': 'FK dışı ilişkiler', 'Used and suggested relations (not foreign keys)': 'Kullanılan ve önerilen ilişkiler (yabancı anahtar olmayan)',
@@ -1258,8 +1307,9 @@ const state = {
   memory: null, memView: null, memMode: 'graph', memSelBy: {}, memFocusBy: {}, memShowAll: false, memTimeline: false,
   memSchema: '', memErAll: false, memPos: new Map(), schemaKey: null,
 };
+state.themeMode = 'auto';
 try { Object.assign(state, JSON.parse(localStorage.getItem('auspex.viewer') || '{}'), { all: [], seen: new Set(), firstLoad: true, open: null, reports: null, reportDoc: null, memory: null, memView: null, memPos: new Map() }); } catch {}
-const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy, memHideFaint: state.memHideFaint, memGraph3d: state.memGraph3d, memGraphSoft: state.memGraphSoft, memExpand: state.memExpand, repListCollapsed: state.repListCollapsed, repTreeOpen: state.repTreeOpen, repFavOpen: state.repFavOpen, repRecentOpen: state.repRecentOpen, sqlWrap: state.sqlWrap, perfOpen: state.perfOpen, tpView: state.tpView, tpGroup: state.tpGroup })); } catch {} };
+const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, themeMode: state.themeMode, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy, memHideFaint: state.memHideFaint, memGraph3d: state.memGraph3d, memGraphSoft: state.memGraphSoft, memExpand: state.memExpand, repListCollapsed: state.repListCollapsed, repTreeOpen: state.repTreeOpen, repFavOpen: state.repFavOpen, repRecentOpen: state.repRecentOpen, sqlWrap: state.sqlWrap, perfOpen: state.perfOpen, tpView: state.tpView, tpGroup: state.tpGroup })); } catch {} };
 
 // In the Tauri desktop app the same routes are served by the Rust `api` command.
 const tauriCore = window.__TAURI__?.core;
@@ -5500,7 +5550,12 @@ for (const k of ['source', 'tool', 'status', 'text']) F[k].addEventListener(F[k]
 // on; the accent reaches 3:1 as a UI color. A check that cannot be reached
 // is returned in warnings. Pure and deterministic: the same input gives the
 // same tokens.
+// A theme body is { bg, accent, contrast, colors?, palette?, glass?, tints?, mono? };
+// colors holds explicit values for every other token (themeColorKeys), which are
+// kept as given and only checked. A theme record adds { id, name, pair? }; pair is
+// the body of the opposite (light or dark) variant.
 const themeMinText = 4.5, themeMinHigh = 7, themeMinUi = 3;
+const themeVersion = 2, themeMaxCount = 100, themeMaxImportChars = 200000, themeMaxImportItems = 50;
 function hexRgb(v) {
   const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(v ?? '').trim());
   if (!m) return null;
@@ -5517,6 +5572,20 @@ function contrastRatio(a, b) {
   const x = luminance(a), y = luminance(b);
   return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
 }
+const bgIsDark = bg => { const c = hexRgb(bg); return !!c && contrastRatio([255, 255, 255], c) > contrastRatio([0, 0, 0], c); };
+function rgbHsl([r, g, b]) {
+  r /= 255; g /= 255; b /= 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
+  if (d === 0) return [0, 0, l];
+  const s = d / (1 - Math.abs(2 * l - 1));
+  const hh = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [((hh * 60) + 360) % 360, s, l];
+}
+function hslRgb(hh, s, l) {
+  const k = n => (n + hh / 30) % 12, a = s * Math.min(l, 1 - l);
+  const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1));
+  return [f(0), f(8), f(4)].map(x => Math.round(x * 255));
+}
 // fg moved in 5 % steps toward black or white (whichever contrasts more with
 // the backgrounds) until it reaches min against all of them.
 function withContrast(fg, bgs, min) {
@@ -5529,6 +5598,16 @@ function withContrast(fg, bgs, min) {
     if (r >= min) return { color: c, ratio: r, adjusted: true, ok: true };
   }
   return { color: target, ratio: worst(target), adjusted: true, ok: false };
+}
+// Lightness-only fix (hue and saturation stay): the color moves toward the
+// lighter or darker end, whichever contrasts more, in 1 % steps.
+function lightnessFit(c, bgs, min) {
+  const worst = x => Math.min(...bgs.map(b => contrastRatio(x, b)));
+  if (worst(c) >= min) return c;
+  const [hh, s, l] = rgbHsl(c), at = L => hslRgb(hh, s, Math.min(1, Math.max(0, L)));
+  const dir = worst(at(1)) >= worst(at(0)) ? 1 : -1;
+  for (let i = 1; i <= 100; i++) { const x = at(l + dir * i / 100); if (worst(x) >= min) return x; }
+  return at(dir > 0 ? 1 : 0);
 }
 // Summary palette (table page, Summary view): one color per group; the score
 // group is one base color that gives the 5-step ramp (s5 strongest, s1 faintest).
@@ -5547,23 +5626,47 @@ const summaryDefaults = accent => ({
   pk: '#d4a017', fk: '#7c5cd6', score: rgbHex(hexRgb(accent) || [42, 120, 214]), trigger: '#c2478b', fn: '#1baf7a',
   report: '#0f9aa8', ref: '#2a78d6', dep: '#d9601f', off: '#8a8f98',
 });
+const own = (x, k) => !!x && typeof x === 'object' && Object.hasOwn(x, k);
 // Only known groups with valid colors survive (no prototype keys).
 function summaryPaletteRecord(x) {
   const out = {};
   if (!x || typeof x !== 'object') return out;
-  for (const k of summaryGroups) { const c = Object.hasOwn(x, k) ? hexRgb(x[k]) : null; if (c) out[k] = rgbHex(c); }
+  for (const k of summaryGroups) { const c = own(x, k) ? hexRgb(x[k]) : null; if (c) out[k] = rgbHex(c); }
   return out;
 }
-// Glass look: blur 0-40 px and panel opacity 20-95 %, numbers clamped and
-// anything else replaced by the defaults. Region tints (left references panel,
-// right referenced-by panel) are hex colors only; unknown keys are dropped.
-const glassDefaults = { blur: 16, opacity: 68 };
-const glassLimits = { blur: [0, 40], opacity: [20, 95] };
+// Explicit token colors: bg and accent are the body's own fields, everything
+// else is listed here. Groups and labels (English keys of the i18n table) drive
+// the generator.
+const themeColorKeys = ['surface', 'raised', 'text', 'text2', 'muted', 'line', 'lineStrong', 'accentInk', 'onAccent', 'accent2', 'success', 'warning', 'danger', 'info'];
+const themeColorGroups = [
+  { id: 'surfaces', label: 'Surfaces', keys: ['bg', 'surface', 'raised'] },
+  { id: 'text', label: 'Text', keys: ['text', 'text2', 'muted'] },
+  { id: 'border', label: 'Border', keys: ['line', 'lineStrong'] },
+  { id: 'accent', label: 'Accent', keys: ['accent', 'accentInk', 'onAccent', 'accent2'] },
+  { id: 'status', label: 'Status', keys: ['success', 'warning', 'danger', 'info'] },
+];
+const themeColorLabels = {
+  bg: 'Background', surface: 'Surface', raised: 'Raised surface', text: 'Text', text2: 'Secondary text', muted: 'Muted text',
+  line: 'Border', lineStrong: 'Strong border', accent: 'Accent', accentInk: 'Accent text', onAccent: 'Text on accent', accent2: 'Secondary accent',
+  success: 'Success', warning: 'Warning', danger: 'Danger', info: 'Info',
+};
+function colorsRecord(x) {
+  const out = {};
+  if (!x || typeof x !== 'object') return out;
+  for (const k of themeColorKeys) { const c = own(x, k) ? hexRgb(x[k]) : null; if (c) out[k] = rgbHex(c); }
+  return out;
+}
+// Glass look: strength 0-100, blur 0-40 px and panel opacity 20-95 %, numbers
+// clamped and anything else replaced by the defaults. Region tints (left
+// references panel, right referenced-by panel) are hex colors only; unknown
+// keys are dropped.
+const glassDefaults = { blur: 16, opacity: 68, strength: 50 };
+const glassLimits = { blur: [0, 40], opacity: [20, 95], strength: [0, 100] };
 function glassRecord(x) {
   if (!x || typeof x !== 'object') return null;
   const out = {};
   for (const k of Object.keys(glassDefaults)) {
-    const v = Object.hasOwn(x, k) ? x[k] : null, n = typeof v === 'number' || (typeof v === 'string' && v.trim() !== '') ? Number(v) : NaN, [lo, hi] = glassLimits[k];
+    const v = own(x, k) ? x[k] : null, n = typeof v === 'number' || (typeof v === 'string' && v.trim() !== '') ? Number(v) : NaN, [lo, hi] = glassLimits[k];
     out[k] = Number.isFinite(n) ? Math.round(Math.min(hi, Math.max(lo, n))) : glassDefaults[k];
   }
   return out;
@@ -5571,7 +5674,7 @@ function glassRecord(x) {
 function tintsRecord(x) {
   const out = {};
   if (!x || typeof x !== 'object') return out;
-  for (const k of ['ref', 'dep']) { const c = Object.hasOwn(x, k) ? hexRgb(x[k]) : null; if (c) out[k] = rgbHex(c); }
+  for (const k of ['ref', 'dep']) { const c = own(x, k) ? hexRgb(x[k]) : null; if (c) out[k] = rgbHex(c); }
   return out;
 }
 // True when panels must stay opaque: the user prefers reduced transparency or
@@ -5580,9 +5683,10 @@ function glassFallback(env) {
   try { if (env?.matchMedia?.('(prefers-reduced-transparency: reduce)')?.matches) return true; } catch { /* unsupported query */ }
   try { const c = env?.CSS; return !(c?.supports?.('backdrop-filter', 'blur(1px)') || c?.supports?.('-webkit-backdrop-filter', 'blur(1px)')); } catch { return true; }
 }
-// spec: { bg, accent, contrast: 'high' | 'normal', glass?, tints? } with #rgb or #rrggbb colors.
-// Returns { ok, base: 'light' | 'dark', tokens, checks, warnings } or
-// { ok: false, error } for invalid input.
+// spec: a theme body with #rgb or #rrggbb colors.
+// Returns { ok, base: 'light' | 'dark', tokens, summary, glass, edit, tintBacks, checks, warnings }
+// or { ok: false, error } for invalid input. edit holds the effective value of every
+// key in themeColorKeys (explicit or derived).
 function themeTokens(spec) {
   const bg = hexRgb(spec?.bg), accent = hexRgb(spec?.accent);
   if (!bg || !accent) return { ok: false, error: 'invalid color' };
@@ -5590,36 +5694,53 @@ function themeTokens(spec) {
   const dark = contrastRatio([255, 255, 255], bg) > contrastRatio([0, 0, 0], bg);
   const white = [255, 255, 255], black = [0, 0, 0];
   const ink = dark ? white : [11, 11, 11];
-  const surface = dark ? mixRgb(bg, white, 0.035) : mixRgb(bg, white, 0.6);
-  const surface2 = dark ? mixRgb(bg, white, 0.07) : mixRgb(bg, black, 0.025);
+  const col = colorsRecord(spec.colors);
+  const pick = k => (col[k] ? hexRgb(col[k]) : null);
+  const surface = pick('surface') || (dark ? mixRgb(bg, white, 0.035) : mixRgb(bg, white, 0.6));
+  const surface2 = pick('raised') || (pick('surface') ? (dark ? mixRgb(surface, white, 0.04) : mixRgb(surface, black, 0.03)) : dark ? mixRgb(bg, white, 0.07) : mixRgb(bg, black, 0.025));
   const minText = high ? themeMinHigh : themeMinText;
   const checks = [];
+  const round2 = x => Math.round(x * 100) / 100;
   const fit = (token, c, against, min) => {
     const r = withContrast(c, against, min);
-    checks.push({ token, ratio: Math.round(r.ratio * 100) / 100, min, ok: r.ok, adjusted: r.adjusted });
+    checks.push({ token, ratio: round2(r.ratio), min, ok: r.ok, adjusted: r.adjusted });
     return r.color;
   };
-  const hue = { ref: [42, 120, 214], dep: [217, 96, 31], good: [12, 163, 12], critical: [208, 59, 59], warn: [176, 120, 0], amber: [250, 178, 25], s3: [27, 175, 122] };
+  // An explicit color is kept as given and only checked.
+  const keep = (token, c, against, min) => {
+    const w = Math.min(...against.map(b => contrastRatio(c, b)));
+    checks.push({ token, ratio: round2(w), min, ok: w >= min, adjusted: false });
+    return c;
+  };
+  const place = (key, token, dflt, against, min) => (pick(key) ? keep(token, pick(key), against, min) : fit(token, dflt, against, min));
+  const amber = pick('warning') || [250, 178, 25];
+  const hue = { ref: pick('info') || [42, 120, 214], dep: [217, 96, 31], good: pick('success') || [12, 163, 12], critical: pick('danger') || [208, 59, 59], warn: mixRgb(amber, black, 0.3), amber, s3: [27, 175, 122] };
+  const series2 = pick('accent2') || hue.dep;
   // Region tints sit on the side panels (7 % plain, 12 % glass); text on them,
   // and on the glass panel over each backdrop color, must reach the target too.
   const tints = tintsRecord(spec.tints), glass = glassRecord(spec.glass);
   const tintC = { ref: hexRgb(tints.ref) || hue.ref, dep: hexRgb(tints.dep) || hue.dep };
-  const stops = [mixRgb(bg, accent, 0.35), mixRgb(bg, hue.dep, 0.3), mixRgb(bg, hue.ref, 0.35)];
+  const gk = glass ? glass.strength / 50 : 1, gw = w => Math.min(0.8, w * gk);
+  const stops = [mixRgb(bg, accent, gw(0.35)), mixRgb(bg, hue.dep, gw(0.3)), mixRgb(bg, hue.ref, gw(0.35))];
   const glassBacks = glass ? stops.flatMap(st => { const e = mixRgb(st, surface, glass.opacity / 100); return [e, mixRgb(e, tintC.ref, 0.12), mixRgb(e, tintC.dep, 0.12)]; }) : [];
   const tintBacks = [0.07, 0.12].flatMap(p => [mixRgb(surface, tintC.ref, p), mixRgb(surface, tintC.dep, p)]);
   const panelBacks = [surface, surface2, ...tintBacks, ...glassBacks];
   const backs = [bg, ...panelBacks];
-  const text = fit('--text', ink, backs, minText);
-  const text2 = fit('--text-2', high ? ink : mixRgb(ink, surface, 0.3), backs, minText);
-  const text3 = fit('--text-3', mixRgb(ink, surface, high ? 0.2 : 0.45), backs, minText);
+  const text = place('text', '--text', ink, backs, minText);
+  const text2 = place('text2', '--text-2', high ? ink : mixRgb(ink, surface, 0.3), backs, minText);
+  const text3 = place('muted', '--text-3', mixRgb(ink, surface, high ? 0.2 : 0.45), backs, minText);
   const acc = fit('--accent', accent, [surface], themeMinUi);
   const accentSoft = mixRgb(surface, acc, dark ? 0.22 : 0.12);
-  const accentInk = fit('--accent-ink', dark ? mixRgb(acc, white, 0.35) : mixRgb(acc, black, 0.2), [surface, surface2, accentSoft], minText);
+  const accentInk = place('accentInk', '--accent-ink', dark ? mixRgb(acc, white, 0.35) : mixRgb(acc, black, 0.2), [surface, surface2, accentSoft], minText);
+  const onAccent = pick('onAccent') || surface;
+  keep('--on-accent', onAccent, [accentInk], minText);
   const strong = (token, c) => fit(token, dark ? mixRgb(c, white, 0.4) : mixRgb(c, black, 0.3), panelBacks, minText);
   const ref1 = strong('--role-ref-1', hue.ref), dep1 = strong('--role-dep-1', hue.dep);
   const goodInk = strong('--good-ink', hue.good), warnInk = strong('--warn-ink', hue.warn);
   const critical = fit('--critical', hue.critical, panelBacks, minText);
   const soft = (c, w) => rgbHex(mixRgb(surface, c, dark ? w * 1.6 : w));
+  const line = pick('line') || mixRgb(surface, ink, high ? 0.45 : dark ? 0.1 : 0.09);
+  const lineStrong = pick('lineStrong') || (pick('line') ? mixRgb(line, ink, high ? 0.3 : 0.2) : mixRgb(surface, ink, high ? 0.7 : dark ? 0.17 : 0.15));
   const pal = { ...summaryDefaults(spec.accent), ...summaryPaletteRecord(spec.palette) };
   const summary = {};
   const chip = (key, color, w, start) => {
@@ -5661,36 +5782,97 @@ function themeTokens(spec) {
   chip('off', hexRgb(pal.off), 0.12, mixRgb(ink, surface, 0.35));
   const tokens = {
     '--bg': rgbHex(bg), '--surface': rgbHex(surface), '--surface-2': rgbHex(surface2),
-    '--line': rgbHex(mixRgb(surface, ink, high ? 0.45 : dark ? 0.1 : 0.09)), '--line-strong': rgbHex(mixRgb(surface, ink, high ? 0.7 : dark ? 0.17 : 0.15)),
+    '--line': rgbHex(line), '--line-strong': rgbHex(lineStrong),
     '--text': rgbHex(text), '--text-2': rgbHex(text2), '--text-3': rgbHex(text3),
-    '--accent': rgbHex(acc), '--accent-soft': rgbHex(accentSoft), '--accent-ink': rgbHex(accentInk),
-    '--series-1': rgbHex(acc), '--series-2': rgbHex(hue.dep),
+    '--accent': rgbHex(acc), '--accent-soft': rgbHex(accentSoft), '--accent-ink': rgbHex(accentInk), '--on-accent': rgbHex(onAccent),
+    '--series-1': rgbHex(acc), '--series-2': rgbHex(series2),
     '--good': rgbHex(hue.good), '--good-ink': rgbHex(goodInk), '--good-soft': soft(hue.good, 0.12),
     '--critical': rgbHex(critical), '--critical-soft': soft(hue.critical, 0.12),
     '--warn': rgbHex(hue.amber), '--warn-ink': rgbHex(warnInk), '--warn-soft': soft(hue.amber, 0.16),
+    '--info': rgbHex(hue.ref),
     '--role-ref-1': rgbHex(ref1), '--role-ref-10': soft(hue.ref, 0.25), '--role-dep-1': rgbHex(dep1), '--role-dep-10': soft(hue.dep, 0.25),
     '--role-other': rgbHex(mixRgb(surface, ink, 0.38)),
     '--tint-ref-hue': rgbHex(tintC.ref), '--tint-dep-hue': rgbHex(tintC.dep),
     '--lane-ref': soft(hue.ref, 0.06), '--lane-center': rgbHex(surface2), '--lane-dep': soft(hue.dep, 0.06),
-    '--s1': rgbHex(acc), '--s2': rgbHex(hue.dep), '--s3': rgbHex(hue.s3),
+    '--s1': rgbHex(acc), '--s2': rgbHex(series2), '--s3': rgbHex(hue.s3),
     '--code': rgbHex(dark ? mixRgb(bg, black, 0.25) : mixRgb(bg, white, 0.4)),
     '--shadow': dark ? '0 1px 2px rgba(0, 0, 0, .4)' : '0 1px 2px rgba(16, 24, 40, .06), 0 1px 3px rgba(16, 24, 40, .08)',
     '--shadow-lg': dark ? '0 12px 32px rgba(0, 0, 0, .5)' : '0 12px 32px rgba(16, 24, 40, .16)',
   };
   // Glass tokens stay apart from tokens: embedded reports do not receive them.
   const glassTokens = glass ? {
-    '--glass-blur': `${glass.blur}px`, '--glass-bg': `color-mix(in srgb, ${rgbHex(surface)} ${glass.opacity}%, transparent)`,
+    '--glass-blur': `${glass.blur}px`, '--glass-sat': String(Math.round((1 + glass.strength / 100) * 100) / 100), '--glass-bg': `color-mix(in srgb, ${rgbHex(surface)} ${glass.opacity}%, transparent)`,
     '--glass-line': dark ? 'rgba(255, 255, 255, .16)' : 'rgba(255, 255, 255, .75)',
     '--glass-hi': dark ? 'rgba(255, 255, 255, .10)' : 'rgba(255, 255, 255, .8)',
     '--page-bg': `radial-gradient(56rem 38rem at 8% -8%, ${rgbHex(stops[0])}, transparent 62%), radial-gradient(48rem 34rem at 100% 4%, ${rgbHex(stops[1])}, transparent 60%), radial-gradient(60rem 40rem at 48% 108%, ${rgbHex(stops[2])}, transparent 62%), ${rgbHex(bg)}`,
   } : null;
-  return { ok: true, base: dark ? 'dark' : 'light', tokens, summary, glass: glassTokens, checks, warnings: checks.filter(c => !c.ok) };
+  const edit = {
+    surface: rgbHex(surface), raised: rgbHex(surface2), text: rgbHex(text), text2: rgbHex(text2), muted: rgbHex(text3), line: rgbHex(line), lineStrong: rgbHex(lineStrong),
+    accentInk: rgbHex(accentInk), onAccent: rgbHex(onAccent), accent2: rgbHex(series2), success: rgbHex(hue.good), warning: rgbHex(hue.amber), danger: rgbHex(hue.critical), info: rgbHex(hue.ref),
+  };
+  return { ok: true, base: dark ? 'dark' : 'light', tokens, summary, glass: glassTokens, edit, tintBacks: tintBacks.map(rgbHex), checks, warnings: checks.filter(c => !c.ok) };
+}
+// Text and background pairs shown in the generator, with the color key an
+// auto-fix may change (lightness only). grade: AAA from 7:1, AA from 4.5:1,
+// "AA large" from 3:1 (large text and UI parts), otherwise fail; pass compares
+// with the pair's own target (3:1 for UI parts, 4.5:1 or 7:1 for text).
+function themeGrade(ratio) { return ratio >= 7 ? 'AAA' : ratio >= 4.5 ? 'AA' : ratio >= 3 ? 'AA large' : 'Fail'; }
+function themeContrast(body) {
+  const res = themeTokens(body);
+  if (!res.ok) return [];
+  const T = res.tokens, rgb = hexRgb, min = body.contrast === 'high' ? themeMinHigh : themeMinText;
+  const sides = res.tintBacks;
+  const pairs = [];
+  const add = (id, label, fgHex, bgHexes, need, fixKey) => {
+    const worstBg = bgHexes.reduce((w, b) => (contrastRatio(rgb(fgHex), rgb(b)) < contrastRatio(rgb(fgHex), rgb(w)) ? b : w), bgHexes[0]);
+    const ratio = contrastRatio(rgb(fgHex), rgb(worstBg));
+    pairs.push({ id, label, fg: fgHex, bg: worstBg, ratio: Math.round(ratio * 100) / 100, min: need, pass: ratio >= need, grade: themeGrade(ratio), fixKey });
+  };
+  add('text-bg', 'Text on background', T['--text'], [T['--bg']], min, 'text');
+  add('text-surface', 'Text on surface', T['--text'], [T['--surface']], min, 'text');
+  add('text-raised', 'Text on raised surface', T['--text'], [T['--surface-2']], min, 'text');
+  add('text-side', 'Text on side panels', T['--text'], sides, min, 'text');
+  add('text2-surface', 'Secondary text on surface', T['--text-2'], [T['--surface'], T['--bg']], min, 'text2');
+  add('text2-side', 'Secondary text on side panels', T['--text-2'], sides, min, 'text2');
+  add('muted-surface', 'Muted text on surface', T['--text-3'], [T['--surface'], T['--bg']], min, 'muted');
+  add('muted-raised', 'Muted text on raised surface', T['--text-3'], [T['--surface-2']], min, 'muted');
+  add('accentInk-surface', 'Accent text on surface', T['--accent-ink'], [T['--surface'], T['--surface-2']], min, 'accentInk');
+  add('accentInk-soft', 'Accent text on accent tint', T['--accent-ink'], [T['--accent-soft']], min, 'accentInk');
+  add('onAccent', 'Text on accent', T['--on-accent'], [T['--accent-ink']], min, 'onAccent');
+  add('accent-ui', 'Accent on surface (UI part)', T['--accent'], [T['--surface']], themeMinUi, null);
+  add('success', 'Success text on surface', T['--good-ink'], [T['--surface']], min, null);
+  add('warning', 'Warning text on surface', T['--warn-ink'], [T['--surface']], min, null);
+  add('danger', 'Danger text on surface', T['--critical'], [T['--surface']], min, null);
+  add('info', 'Info text on surface', T['--role-ref-1'], [T['--surface']], min, null);
+  return pairs;
+}
+// Backgrounds the auto-fix measures a color key against (the same sets the pairs use).
+function themeFixBacks(res, key) {
+  const T = res.tokens;
+  if (key === 'accentInk') return [T['--surface'], T['--surface-2'], T['--accent-soft']].map(hexRgb);
+  if (key === 'onAccent') return [hexRgb(T['--accent-ink'])];
+  return [T['--bg'], T['--surface'], T['--surface-2'], ...res.tintBacks].map(hexRgb);
+}
+// Returns a new body with every text color that fails its target moved in
+// lightness until it passes (other colors stay); { body, changed: [keys] }.
+function themeAutoFix(body) {
+  let b = themeMaterialize(body);
+  const changed = [];
+  for (const key of ['accentInk', 'onAccent', 'text', 'text2', 'muted']) {
+    const res = themeTokens(b);
+    if (!res.ok) break;
+    const need = b.contrast === 'high' ? themeMinHigh : themeMinText, cur = hexRgb(b.colors[key]);
+    const fixed = lightnessFit(cur, themeFixBacks(res, key), need);
+    if (rgbHex(fixed) !== rgbHex(cur)) { b = { ...b, colors: { ...b.colors, [key]: rgbHex(fixed) } }; changed.push(key); }
+  }
+  return { body: b, changed };
 }
 // Background for the light/dark slider (0 black ... 100 white), tinted 6 %
 // toward the accent so the surfaces belong to it.
 const themeBgFrom = (level, accent) => rgbHex(mixRgb(mixRgb([0, 0, 0], [255, 255, 255], Math.min(100, Math.max(0, Number(level) || 0)) / 100), hexRgb(accent) || [128, 128, 128], 0.06));
 // Ready themes: light and dark are the built-in token sets, the others are
-// generated. Names are English keys of the i18n table.
+// generated. Names are English keys of the i18n table. The Auspex themes are
+// listed first in the menu (auspex: true).
 const themePresets = [
   { id: 'light', name: 'Light', builtin: true, bg: '#f4f5f7', accent: '#2a78d6' },
   { id: 'dark', name: 'Dark', builtin: true, bg: '#121211', accent: '#3987e5' },
@@ -5702,22 +5884,70 @@ const themePresets = [
   { id: 'glassDark', name: 'Glass dark', bg: '#0d1122', accent: '#8a98ff', glass: { blur: 16, opacity: 60 } },
   // Plain is the flat look of the default, kept as an explicit choice (follows the system like Auto).
   { id: 'plain', name: 'Plain', builtin: true, bg: '#f4f5f7', accent: '#2a78d6' },
+  { id: 'auspex', name: 'Auspex', auspex: true, bg: '#14110e', accent: '#2fbf71',
+    colors: { surface: '#1f1a15', text: '#ede6da', muted: '#a89c8a', accent2: '#c9a04f', warning: '#e0a33a', danger: '#e05a4a' },
+    palette: { pk: '#c9a04f', fk: '#9a7bd6', score: '#2fbf71', trigger: '#d0638f', fn: '#3bb3a0', report: '#4a9fb0', ref: '#5b9bd5', dep: '#e0a33a', off: '#8a8070' } },
+  { id: 'forge', name: 'Forge', auspex: true, bg: '#17110d', accent: '#d7783a',
+    colors: { surface: '#22180f', text: '#f1e4d6', muted: '#b09a86', accent2: '#b8894a', success: '#7fbf6a', danger: '#d9534a' },
+    palette: { pk: '#b8894a', fk: '#a07acb', score: '#d7783a', trigger: '#d0638f', fn: '#7fbf6a', report: '#4a9fb0', ref: '#6aa6c9', dep: '#d9534a', off: '#8a7a6a' } },
+  { id: 'phosphor', name: 'Phosphor', auspex: true, mono: true, bg: '#060b07', accent: '#3ddc84',
+    colors: { surface: '#0b150e', text: '#b8f5c8', muted: '#6fa67f', accent2: '#8fcb9b', warning: '#e8c547', danger: '#ff6b57' },
+    palette: { pk: '#e8c547', fk: '#8fcb9b', score: '#3ddc84', trigger: '#ff6b57', fn: '#6fe0c8', report: '#59c2d9', ref: '#5fb0e0', dep: '#e8a247', off: '#6a8a74' } },
+  { id: 'verdigris', name: 'Verdigris', auspex: true, bg: '#0e1716', accent: '#3bb3a0',
+    colors: { surface: '#152221', text: '#e3efec', muted: '#93aba6', accent2: '#c2a15a', warning: '#e0a33a', danger: '#e06a5a' },
+    palette: { pk: '#c2a15a', fk: '#8f86d6', score: '#3bb3a0', trigger: '#d9688f', fn: '#6bbf8a', report: '#4aa6c0', ref: '#5aa0d0', dep: '#e0a33a', off: '#7a908c' } },
+  { id: 'ivory', name: 'Ivory', auspex: true, bg: '#f4eee2', accent: '#1e8a55',
+    colors: { surface: '#fffbf3', text: '#2a231b', muted: '#6e6252', accent2: '#9a7330', warning: '#b7791f', danger: '#b83a2e' },
+    palette: { pk: '#9a7330', fk: '#6a50b0', score: '#1e8a55', trigger: '#b03a78', fn: '#1a8a6a', report: '#1a7f90', ref: '#2a6fb0', dep: '#b8561f', off: '#7a7060' } },
 ];
-// Custom themes are { id, name, bg, accent, contrast, palette?, glass?, tints? }; the id derives from
-// the name (case-insensitive), so a name is unique.
+const themeDefaultId = saved => (typeof saved === 'string' && saved ? saved : 'auspex');
+// Custom themes are records { id, name, bg, accent, contrast, colors?, palette?, glass?, tints?, mono?, pair? };
+// the id derives from the name (case-insensitive), so a name is unique.
 function themeIdOf(name) {
   let h = 2166136261;
   for (const ch of String(name).trim().toLowerCase()) { h ^= ch.codePointAt(0); h = Math.imul(h, 16777619) >>> 0; }
   return 'custom:' + h.toString(36);
 }
+// Validated body: bg and accent are required; every other field is optional, clamped or dropped.
+function themeBodyRecord(x) {
+  if (!x || typeof x !== 'object') return null;
+  const bg = own(x, 'bg') ? hexRgb(x.bg) : null, accent = own(x, 'accent') ? hexRgb(x.accent) : null;
+  if (!bg || !accent) return null;
+  const colors = colorsRecord(own(x, 'colors') ? x.colors : null), palette = summaryPaletteRecord(own(x, 'palette') ? x.palette : null);
+  const glass = glassRecord(own(x, 'glass') ? x.glass : null), tints = tintsRecord(own(x, 'tints') ? x.tints : null);
+  return {
+    bg: rgbHex(bg), accent: rgbHex(accent), contrast: own(x, 'contrast') && x.contrast === 'high' ? 'high' : 'normal',
+    ...(Object.keys(colors).length ? { colors } : {}), ...(Object.keys(palette).length ? { palette } : {}), ...(glass ? { glass } : {}),
+    ...(Object.keys(tints).length ? { tints } : {}), ...(own(x, 'mono') && x.mono === true ? { mono: true } : {}),
+  };
+}
 function themeRecord(x) {
   if (!x || typeof x !== 'object') return null;
-  const name = typeof x.name === 'string' ? x.name.trim().slice(0, 40) : '';
-  const bg = hexRgb(x.bg), accent = hexRgb(x.accent);
-  if (!name || !bg || !accent) return null;
-  const palette = summaryPaletteRecord(x.palette);
-  const glass = glassRecord(x.glass), tints = tintsRecord(x.tints);
-  return { id: themeIdOf(name), name, bg: rgbHex(bg), accent: rgbHex(accent), contrast: x.contrast === 'high' ? 'high' : 'normal', ...(Object.keys(palette).length ? { palette } : {}), ...(glass ? { glass } : {}), ...(Object.keys(tints).length ? { tints } : {}) };
+  const name = own(x, 'name') && typeof x.name === 'string' ? x.name.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 40) : '';
+  const body = themeBodyRecord(x);
+  if (!name || !body) return null;
+  const pair = own(x, 'pair') ? themeBodyRecord(x.pair) : null;
+  return { id: themeIdOf(name), name, ...body, ...(pair ? { pair } : {}) };
+}
+// Every editable color written out, so a copy looks exactly like its source.
+function themeMaterialize(body) {
+  const rec = themeBodyRecord(body);
+  const r = rec ? themeTokens(rec) : null;
+  if (!rec || !r?.ok) return rec;
+  return { ...rec, colors: Object.fromEntries(themeColorKeys.map(k => [k, r.edit[k]])) };
+}
+// Draft for "Duplicate and edit": a deep copy of any preset or saved theme with all colors written out.
+function themeDuplicate(spec, name) {
+  const main = themeMaterialize(spec), pair = spec?.pair ? themeMaterialize(spec.pair) : null;
+  if (!main) return null;
+  return { name: String(name ?? '').slice(0, 40), ...main, ...(pair ? { pair } : {}) };
+}
+// The body that applies for the light or dark choice; a theme without a pair is its own body.
+function themeResolve(spec, wantDark) {
+  if (!spec) return spec;
+  const { pair, ...main } = spec;
+  if (!pair || bgIsDark(main.bg) === !!wantDark) return main;
+  return bgIsDark(pair.bg) === !!wantDark ? { id: spec.id, name: spec.name, ...pair } : main;
 }
 // Adds or replaces (same name) one theme; returns a new list.
 function themeUpsert(list, theme) {
@@ -5725,15 +5955,25 @@ function themeUpsert(list, theme) {
   if (!rec) return list;
   return [...list.filter(x => x.id !== rec.id), rec];
 }
-const themeExport = list => JSON.stringify({ auspexThemes: 1, themes: list.map(({ name, bg, accent, contrast, palette, glass, tints }) => ({ name, bg, accent, contrast, ...(palette && Object.keys(palette).length ? { palette } : {}), ...(glass ? { glass } : {}), ...(tints && Object.keys(tints).length ? { tints } : {}) })) }, null, 2);
-// Import text: the export format, an array of themes or one theme. Returns
-// { list, added, skipped } or { error } when the text is not JSON.
+const themeExport = list => JSON.stringify({ auspexThemes: themeVersion, themes: list.map(({ id, ...rest }) => rest) }, null, 2);
+// Import text: the export format (version 1 or 2), an array of themes or one theme.
+// Every value is validated and clamped by themeRecord; unknown keys are ignored.
+// Returns { list, added, skipped } or { error } (not valid JSON, too large,
+// unsupported version, nothing to import).
 function themeImport(text, list) {
+  const raw = String(text ?? '');
+  if (raw.length > themeMaxImportChars) return { error: 'too large' };
   let data;
-  try { data = JSON.parse(String(text ?? '')); } catch { return { error: 'not valid JSON' }; }
-  const items = Array.isArray(data) ? data : Array.isArray(data?.themes) ? data.themes : [data];
-  let next = list, added = 0, skipped = 0;
-  for (const it of items) { const rec = themeRecord(it); if (rec) { next = themeUpsert(next, rec); added++; } else skipped++; }
+  try { data = JSON.parse(raw); } catch { return { error: 'not valid JSON' }; }
+  if (!data || typeof data !== 'object') return { error: 'nothing to import' };
+  if (!Array.isArray(data) && own(data, 'auspexThemes') && !(Number.isInteger(data.auspexThemes) && data.auspexThemes >= 1 && data.auspexThemes <= themeVersion)) return { error: 'unsupported version' };
+  const items = Array.isArray(data) ? data : own(data, 'themes') && Array.isArray(data.themes) ? data.themes : [data];
+  if (!items.length) return { error: 'nothing to import' };
+  let next = list, added = 0, skipped = Math.max(0, items.length - themeMaxImportItems);
+  for (const it of items.slice(0, themeMaxImportItems)) {
+    const rec = themeRecord(it);
+    if (rec && (next.length < themeMaxCount || next.some(x => x.id === rec.id))) { next = themeUpsert(next, rec); added++; } else skipped++;
+  }
   return { list: next, added, skipped };
 }
 // Spec of a theme id (preset or custom); null for auto, light, dark and unknown ids.
@@ -5746,17 +5986,20 @@ function themeSpecOf(id, customs) {
 // Custom themes live in localStorage (auspex.viewer.themes). A generated
 // theme sets data-theme to its base (light or dark, for color-scheme) and its
 // tokens as inline properties on <html>; reports get the same through
-// themedReport, the 3D graph through recolor().
+// themedReport, the 3D graph through recolor(). A theme with a light and a dark
+// variant follows the Auto, Light and Dark switch (state.themeMode).
 const themeBuiltinIds = ['auto', 'light', 'dark', 'plain'];
 let customThemes = [];
-try { customThemes = (JSON.parse(localStorage.getItem('auspex.viewer.themes') || '[]') || []).map(themeRecord).filter(Boolean); } catch { customThemes = []; }
+try { customThemes = (JSON.parse(localStorage.getItem('auspex.viewer.themes') || '[]') || []).map(themeRecord).filter(Boolean).slice(0, themeMaxCount); } catch { customThemes = []; }
 const saveCustomThemes = () => { try { localStorage.setItem('auspex.viewer.themes', JSON.stringify(customThemes)); return true; } catch { return false; } };
-// Generator draft while the Theme menu is open: { name, bg, accent, contrast, level }.
-let themeDraft = null;
-let themePalOpen = false;
-let themePreview = false;
+// Open generator session (the theme studio dialog), or null:
+// { draft, snapshot, prevSpec, editing: 'main' | 'pair', origId, dirty }. The draft is a theme
+// record (name, body fields, optional pair); while the studio is open the body being edited is applied live.
+let studio = null;
 let themeAppliedKeys = [];
-const themeSpecNow = () => (themePreview && themeDraft ? themeDraft : themeSpecOf(state.theme, customThemes));
+const studioBody = () => (studio.editing === 'pair' && studio.draft.pair ? studio.draft.pair : studio.draft);
+const themeWantsDark = () => state.themeMode === 'dark' || (state.themeMode !== 'light' && !!matchMedia('(prefers-color-scheme: dark)').matches);
+const themeSpecNow = () => (studio ? studioBody() : themeResolve(themeSpecOf(state.theme, customThemes), themeWantsDark()));
 function themeNow() {
   const spec = themeSpecNow();
   const res = spec ? themeTokens(spec) : null;
@@ -5764,6 +6007,7 @@ function themeNow() {
 }
 const themeKey = () => (state.theme || 'auto') + JSON.stringify(themeSpecNow() || '');
 const themeName = th => (th.builtin || themePresets.includes(th) ? t(th.name) : th.name);
+const themeHasPair = () => !studio && !!themeSpecOf(state.theme, customThemes)?.pair;
 function summaryBuiltIn(th) {
   const light = themeTokens(themePresets[0]).summary, dark = themeTokens(themePresets[1]).summary;
   if (th === 'light') return light;
@@ -5772,6 +6016,7 @@ function summaryBuiltIn(th) {
 }
 function applyTheme() {
   if (!themeBuiltinIds.includes(state.theme || 'auto') && !themeSpecOf(state.theme, customThemes)) state.theme = 'auto';
+  if (!['auto', 'light', 'dark'].includes(state.themeMode)) state.themeMode = 'auto';
   const th = state.theme || 'auto', root = document.documentElement;
   for (const k of themeAppliedKeys) root.style.removeProperty(k);
   themeAppliedKeys = [];
@@ -5791,26 +6036,33 @@ function applyTheme() {
   // browser has no backdrop-filter or the user prefers reduced transparency.
   const gl = res?.glass || null;
   root.classList.toggle('glass', !!gl);
-  root.classList.toggle('plain', th === 'plain' && !themePreview);
+  root.classList.toggle('plain', th === 'plain' && !studio);
+  root.classList.toggle('mono-heads', !!themeSpecNow()?.mono);
   root.classList.toggle('glass-flat', !!gl && glassFallback(window));
   if (gl) { for (const [k, v] of Object.entries(gl)) root.style.setProperty(k, v); themeAppliedKeys.push(...Object.keys(gl)); }
-  document.querySelectorAll('#theme button').forEach(b => b.classList.toggle('on', !themePreview && b.dataset.v === th));
-  const custom = !themePreview && !['auto', 'light', 'dark', 'plain'].includes(th);
-  $('themeMenuBtn').classList.toggle('on', custom || (th === 'plain' && !themePreview));
+  // A theme with a light and a dark variant shows the mode choice; the others show the theme itself.
+  const pairMode = themeHasPair() ? state.themeMode : null;
+  document.querySelectorAll('#theme button').forEach(b => b.classList.toggle('on', !studio && b.dataset.v === (pairMode || th)));
+  const custom = !studio && !['auto', 'light', 'dark', 'plain'].includes(th);
+  $('themeMenuBtn').classList.toggle('on', custom || (th === 'plain' && !studio));
   const spec = themeSpecOf(th, customThemes);
-  $('themeMenuName').textContent = th === 'plain' && !themePreview ? t('Plain') : custom && spec ? themeName(spec) : t('Theme');
+  $('themeMenuName').textContent = th === 'plain' && !studio ? t('Plain') : custom && spec ? themeName(spec) : t('Theme');
 }
 try { matchMedia('(prefers-reduced-transparency: reduce)').addEventListener('change', () => applyTheme()); } catch { /* unsupported query */ }
+try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (themeHasPair()) themeChanged(); }); } catch { /* unsupported query */ }
 function themeChanged() {
   applyTheme();
   graph3d?.recolor();
   if (state.tab === 'reports') renderReports();
 }
 function setTheme(id) {
-  state.theme = id; themePreview = false; persist(); themeChanged();
+  state.theme = id; persist(); themeChanged();
   if ($('thsel').classList.contains('open')) renderThemeMenu();
 }
-document.querySelectorAll('#theme button').forEach(b => b.addEventListener('click', () => setTheme(b.dataset.v)));
+// Auto, Light and Dark: with a light/dark theme active they pick its variant, otherwise they are themes.
+document.querySelectorAll('#theme button').forEach(b => b.addEventListener('click', () => {
+  if (themeHasPair()) { state.themeMode = b.dataset.v; persist(); themeChanged(); } else setTheme(b.dataset.v);
+}));
 
 function themeSwatch(spec) {
   if (spec.id === 'plain') {
@@ -5823,111 +6075,299 @@ function themeSwatch(spec) {
   return h('span', { class: 'th-sw', style: `background:${tk['--surface']};border-color:${tk['--line-strong']}` },
     h('i', { style: `background:${tk['--accent']}` }), h('i', { style: `background:${tk['--text']}` }));
 }
-// Contrast result of the draft: OK, or the checks below their target.
-function themeBadge(res) {
-  if (!res.ok) return h('span', { class: 'badge critical' }, t('Invalid color'));
-  const adjusted = res.checks.filter(c => c.adjusted && c.ok).length;
-  if (res.warnings.length) {
-    return h('span', { class: 'badge th-warn', title: res.warnings.map(c => `${c.token} ${c.ratio}:1 < ${c.min}:1`).join('\n') },
-      '⚠ ', t('Contrast below target for {n} colors', { n: res.warnings.length }));
-  }
-  const min = res.checks.find(c => c.token === '--text')?.min ?? themeMinText;
-  return h('span', { class: 'badge th-ok', title: adjusted ? t('{n} colors adjusted for contrast', { n: adjusted }) : null },
-    '✓ ', t('Text contrast ≥ {r}:1', { r: min }), adjusted ? ` · ${t('{n} adjusted', { n: adjusted })}` : '');
-}
+// ---------- theme menu: pick a theme, start the studio ----------
 function renderThemeMenu() {
   const menu = $('themeMenu');
-  themeDraft ??= { name: '', bg: '#f4f5f7', accent: '#2a78d6', contrast: 'normal', level: 96 };
-  const item = (spec, id, removable) => h('div', { class: 'th-item' + (!themePreview && state.theme === id ? ' on' : ''), role: 'option', 'aria-selected': String(!themePreview && state.theme === id) },
-    h('button', { class: 'th-pick', onclick: () => setTheme(id) }, themeSwatch(spec), h('span', {}, themeName(spec))),
-    removable ? h('button', { class: 'th-del', title: t('Delete theme {n}', { n: spec.name }), 'aria-label': t('Delete theme {n}', { n: spec.name }), onclick: () => {
-      customThemes = customThemes.filter(x => x.id !== id);
-      if (!saveCustomThemes()) toast(t('Could not save themes in this browser'));
-      if (state.theme === id) setTheme('auto'); else renderThemeMenu();
-    } }, '×') : null);
-  const res = themeTokens(themeDraft);
-  const preview = () => { themePreview = true; themeChanged(); renderThemeMenu(); };
-  const bgIn = h('input', { type: 'color', value: hexRgb(themeDraft.bg) ? rgbHex(hexRgb(themeDraft.bg)) : '#ffffff', 'aria-label': t('Background'),
-    onchange: ev => { themeDraft.bg = ev.target.value; preview(); } });
-  const level = h('input', { type: 'range', min: 0, max: 100, value: themeDraft.level ?? 50, 'aria-label': t('Dark ↔ light'),
-    onchange: ev => { themeDraft.level = Number(ev.target.value); themeDraft.bg = themeBgFrom(themeDraft.level, themeDraft.accent); preview(); } });
-  const accIn = h('input', { type: 'color', value: hexRgb(themeDraft.accent) ? rgbHex(hexRgb(themeDraft.accent)) : '#2a78d6', 'aria-label': t('Accent'),
-    onchange: ev => { themeDraft.accent = ev.target.value; preview(); } });
-  const hc = h('input', { type: 'checkbox', onchange: ev => { themeDraft.contrast = ev.target.checked ? 'high' : 'normal'; preview(); } });
-  hc.checked = themeDraft.contrast === 'high';
-  const gl = themeDraft.glass || null;
-  const glassOn = h('input', { type: 'checkbox', onchange: ev => { if (ev.target.checked) themeDraft.glass = { ...glassDefaults }; else delete themeDraft.glass; preview(); } });
-  glassOn.checked = !!gl;
-  const glassRange = k => h('label', { class: 'wide' }, h('span', {}, t(k === 'blur' ? 'Blur' : 'Opacity')),
-    h('input', { type: 'range', min: glassLimits[k][0], max: glassLimits[k][1], value: gl[k], 'aria-label': t(k === 'blur' ? 'Blur' : 'Opacity'),
-      onchange: ev => { themeDraft.glass = glassRecord({ ...themeDraft.glass, [k]: ev.target.value }); preview(); } }));
-  const tintIn = k => h('label', {}, h('span', {}, t(k === 'ref' ? 'Tint, references' : 'Tint, referenced by')),
-    h('input', { type: 'color', value: (themeDraft.tints && themeDraft.tints[k]) || (k === 'ref' ? '#2a78d6' : '#d9601f'), 'aria-label': t(k === 'ref' ? 'Tint, references' : 'Tint, referenced by'),
-      onchange: ev => { themeDraft.tints = { ...themeDraft.tints, [k]: ev.target.value }; preview(); } }));
-  const defaults = summaryDefaults(themeDraft.accent);
-  const palIn = k => h('label', {}, h('span', {}, t(summaryLabels[k])), h('input', { type: 'color', value: (themeDraft.palette && themeDraft.palette[k]) || defaults[k], 'aria-label': t(summaryLabels[k]),
-    onchange: ev => { themeDraft.palette = { ...themeDraft.palette, [k]: ev.target.value }; preview(); } }));
-  const sample = res.ok ? summaryKeys.map(k => h('span', { class: 'sum-chip' + (k === 'off' ? ' off' : ''), style: `background:${res.summary[`--sum-${k}`]};border-color:${res.summary[`--sum-${k}-line`]};color:${res.summary[`--sum-${k}-ink`]}` }, k)) : [];
-  const palette = h('details', { class: 'th-pal', open: themePalOpen ? true : null, ontoggle: ev => { themePalOpen = ev.target.open; } },
-    h('summary', {}, t('Summary palette')),
-    h('div', { class: 'th-gen' }, summaryGroups.map(palIn)),
-    h('div', { class: 'sum-chips', role: 'img', 'aria-label': t('Preview of the summary chips') }, sample),
-    h('div', { class: 'th-row' }, h('button', { type: 'button', class: 'icon-btn', onclick: () => { themeDraft.palette = {}; preview(); } }, t('Reset palette'))));
-  const nameIn = h('input', { type: 'text', maxlength: 40, value: themeDraft.name, placeholder: t('Theme name'), 'aria-label': t('Theme name'), oninput: ev => { themeDraft.name = ev.target.value; } });
-  const msg = h('div', { class: 'th-msg', role: 'status' });
-  const io = h('textarea', { rows: 4, spellcheck: 'false', 'aria-label': t('Theme JSON'), placeholder: t('Paste theme JSON here to import') });
+  const act = (cls, label, fn, text) => h('button', { type: 'button', class: 'th-act ' + cls, title: label, 'aria-label': label, onclick: fn }, text);
+  const item = (spec, id, custom) => h('div', { class: 'th-item' + (state.theme === id ? ' on' : ''), role: 'option', 'aria-selected': String(state.theme === id) },
+    h('button', { type: 'button', class: 'th-pick', onclick: () => setTheme(id) }, themeSwatch(spec), h('span', {}, themeName(spec))),
+    act('', t('Duplicate and edit'), () => openStudio({ from: spec }), '⧉'),
+    custom ? act('', t('Edit'), () => openStudio({ edit: spec }), '✎') : null,
+    custom ? act('del', t('Delete theme {n}', { n: spec.name }), () => askDeleteTheme(spec), '×') : null);
+  const mine = themePresets.filter(p => p.auspex), ready = themePresets.filter(p => !p.auspex);
   put(menu,
+    h('div', { class: 'th-h' }, t('Auspex themes')),
+    h('div', { class: 'th-list', role: 'listbox' }, mine.map(p => item(p, p.id, false))),
     h('div', { class: 'th-h' }, t('Ready themes')),
-    h('div', { class: 'th-list', role: 'listbox' }, themePresets.map(p => item(p, p.id, false))),
+    h('div', { class: 'th-list', role: 'listbox' }, ready.map(p => item(p, p.id, false))),
     h('div', { class: 'th-h' }, t('My themes')),
-    customThemes.length ? h('div', { class: 'th-list', role: 'listbox' }, customThemes.map(c => item(c, c.id, true))) : h('div', { class: 'th-empty' }, t('No saved themes yet.')),
-    h('div', { class: 'th-h' }, t('Create a theme')),
-    h('div', { class: 'th-gen' },
-      h('label', {}, h('span', {}, t('Background')), bgIn),
-      h('label', { class: 'wide' }, h('span', {}, t('Dark ↔ light')), level),
-      h('label', {}, h('span', {}, t('Accent')), accIn),
-      h('label', { class: 'chk' }, hc, h('span', {}, t('High contrast (7:1)'))),
-      h('label', { class: 'chk' }, glassOn, h('span', {}, t('Glass look'))),
-      gl ? glassRange('blur') : null, gl ? glassRange('opacity') : null,
-      tintIn('ref'), tintIn('dep')),
-    palette,
-    h('div', { class: 'th-row' }, themeBadge(res), themePreview ? h('button', { class: 'icon-btn', onclick: () => { themePreview = false; themeChanged(); renderThemeMenu(); } }, t('Stop preview')) : h('button', { class: 'icon-btn', onclick: preview }, t('Preview'))),
-    h('div', { class: 'th-row' }, nameIn, h('button', { class: 'icon-btn primary', onclick: () => {
-      const rec = themeRecord(themeDraft);
-      if (!rec) { msg.textContent = themeDraft.name.trim() ? t('Invalid color') : t('Give the theme a name.'); return; }
-      customThemes = themeUpsert(customThemes, rec);
-      if (!saveCustomThemes()) toast(t('Could not save themes in this browser'));
-      themeDraft.name = '';
-      setTheme(rec.id);
-    } }, t('Save'))),
-    msg,
-    h('details', { class: 'th-io' }, h('summary', {}, t('Export / import')), io,
-      h('div', { class: 'th-row' },
-        h('button', { class: 'icon-btn', onclick: () => { io.value = themeExport(customThemes); io.select(); copy(io.value, 'JSON'); } }, t('Export')),
-        h('button', { class: 'icon-btn', onclick: () => {
-          const r = themeImport(io.value, customThemes);
-          if (r.error) { msg.textContent = t('Import failed: not valid JSON'); return; }
-          customThemes = r.list;
-          msg.textContent = saveCustomThemes() ? t('{a} imported, {s} skipped', { a: r.added, s: r.skipped }) : t('Could not save themes in this browser');
-          renderThemeMenu(); $('themeMenu').querySelector('.th-msg').textContent = msg.textContent;
-        } }, t('Import')))));
+    customThemes.length ? h('div', { class: 'th-list one', role: 'listbox' }, customThemes.map(c => item(c, c.id, true))) : h('div', { class: 'th-empty' }, t('No saved themes yet.')),
+    h('div', { class: 'th-row' }, h('button', { type: 'button', class: 'icon-btn primary', onclick: () => openStudio({}) }, t('New theme')),
+      h('button', { type: 'button', class: 'icon-btn', onclick: () => openStudio({ io: true }) }, t('Export / import'))));
 }
 function openThemeMenu() { $('thsel').classList.add('open'); $('themeMenuBtn').setAttribute('aria-expanded', 'true'); renderThemeMenu(); }
 // Returns true when the menu was open; focusButton moves focus back to its button.
 function closeThemeMenu(focusButton = false) {
   if (!$('thsel').classList.contains('open')) return false;
   $('thsel').classList.remove('open'); $('themeMenuBtn').setAttribute('aria-expanded', 'false');
-  if (themePreview) { themePreview = false; themeChanged(); }
   if (focusButton) $('themeMenuBtn').focus();
   return true;
 }
-// Escape inside the menu (also from a focused native color input) closes only the menu.
+// Escape inside the menu closes only the menu.
 $('themeMenu').addEventListener('keydown', ev => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); closeThemeMenu(true); } });
 $('themeMenuBtn').addEventListener('click', ev => { ev.stopPropagation(); $('thsel').classList.contains('open') ? closeThemeMenu() : openThemeMenu(); });
 document.addEventListener('pointerdown', ev => { if (!$('thsel').contains(ev.target)) closeThemeMenu(); });
 document.addEventListener('click', ev => { if (!$('thsel').contains(ev.target) && ev.target.isConnected) closeThemeMenu(); });
 // Clicks in a report frame never reach this document: focus moving into it closes the menu.
 addEventListener('blur', () => setTimeout(() => { if (document.activeElement?.tagName === 'IFRAME') closeThemeMenu(); }, 0));
+
+// ---------- in-app confirm (window.confirm is blocked in the desktop app) ----------
+// Resolves true when the user accepts; Esc and Cancel resolve false.
+function themeConfirm({ title, text, ok, danger }) {
+  return new Promise(resolve => {
+    const dlg = $('themeConfirmDlg');
+    const cancel = h('button', { type: 'button', class: 'icon-btn', value: 'cancel' }, t('Cancel'));
+    put(dlg, h('form', { method: 'dialog' },
+      h('h3', { id: 'themeConfirmTitle' }, title),
+      h('p', {}, text),
+      h('div', { class: 'dlg-actions' }, cancel, h('button', { class: 'icon-btn ' + (danger ? 'secondary-danger' : 'primary'), value: 'ok' }, ok))));
+    cancel.addEventListener('click', () => dlg.close('cancel'));
+    dlg.returnValue = '';
+    dlg.onclose = () => resolve(dlg.returnValue === 'ok');
+    dlg.showModal();
+    cancel.focus();
+  });
+}
+async function askDeleteTheme(spec) {
+  closeThemeMenu();
+  if (!await themeConfirm({ title: t('Delete theme {n}?', { n: spec.name }), text: t('This cannot be undone.'), ok: t('Delete'), danger: true })) return;
+  customThemes = customThemes.filter(x => x.id !== spec.id);
+  if (!saveCustomThemes()) toast(t('Could not save themes in this browser'));
+  if (studio && studio.origId === spec.id) { studio.dirty = false; closeStudio(); }
+  if (state.theme === spec.id) setTheme('auto');
+}
+
+// ---------- theme studio: duplicate, edit, save, import and export ----------
+const studioName = (base, taken) => {
+  let n = t('{n} copy', { n: base }).slice(0, 40), i = 2;
+  while (taken.some(x => x.id === themeIdOf(n))) n = (t('{n} copy', { n: base }).slice(0, 34) + ' ' + i++);
+  return n;
+};
+// opts: { from: spec } duplicates a preset or saved theme, { edit: record } edits a saved theme,
+// {} starts from the active theme (or Light), { io: true } opens the export/import section.
+function openStudio(opts = {}) {
+  closeThemeMenu();
+  const active = themePresets.find(p => p.id === state.theme) || themeSpecOf(state.theme, customThemes) || themePresets[0];
+  let draft, origId = null;
+  if (opts.edit) { draft = { name: opts.edit.name, ...themeMaterialize(opts.edit), ...(opts.edit.pair ? { pair: themeMaterialize(opts.edit.pair) } : {}) }; origId = opts.edit.id; }
+  else { const src = opts.from || active; draft = themeDuplicate(src, studioName(src.name === undefined ? '' : (src.builtin || themePresets.includes(src) ? t(src.name) : src.name), customThemes)); }
+  const dark = themeWantsDark();
+  const prevSpec = themeResolve(themeSpecOf(state.theme, customThemes), dark) || themePresets[state.theme === 'dark' || (state.theme !== 'light' && dark) ? 1 : 0];
+  studio = { draft, snapshot: structuredClone(draft), prevSpec, editing: 'main', origId, dirty: false, ioOpen: !!opts.io };
+  studioChrome(true);
+  renderStudio();
+  const dlg = $('themeDlg');
+  if (!dlg.open) dlg.showModal();
+  themeChanged();
+  dlg.querySelector('#studioName')?.focus();
+}
+// The studio dialogs keep the look of the theme that was active when they opened, so the controls stay
+// readable while the page behind previews a draft.
+function studioChrome(on) {
+  for (const d of [$('themeDlg'), $('themeConfirmDlg')]) {
+    for (const k of d.chromeKeys || []) d.style.removeProperty(k);
+    d.chromeKeys = []; d.style.colorScheme = '';
+    const res = on ? themeTokens(studio.prevSpec) : null;
+    if (!res?.ok) continue;
+    for (const [k, v] of Object.entries(res.tokens)) { d.style.setProperty(k, v); d.chromeKeys.push(k); }
+    d.style.colorScheme = res.base;
+  }
+}
+// Closes the studio and shows the theme that was active before (a saved theme stays active).
+function closeStudio() {
+  if (!studio) return;
+  const dlg = $('themeDlg');
+  studio = null;
+  studioChrome(false);
+  clearTimeout(studioTimer);
+  if (dlg.open) dlg.close();
+  themeChanged();
+}
+async function requestCloseStudio() {
+  if (!studio) return;
+  if (studio.dirty && !await themeConfirm({ title: t('Discard changes?'), text: t('Your edits to this theme will be lost.'), ok: t('Discard'), danger: true })) return;
+  closeStudio();
+  $('themeMenuBtn').focus();
+}
+// Live preview: the whole UI follows the draft; heavy parts (reports, 3D graph) are throttled.
+let studioTimer = null;
+function studioChanged() {
+  studio.dirty = true;
+  applyTheme();
+  updateContrast();
+  clearTimeout(studioTimer);
+  studioTimer = setTimeout(() => { if (studio) { graph3d?.recolor(); if (state.tab === 'reports') renderReports(); } }, 160);
+}
+// One color token: a color input and a hex field that stay in sync. Editing never rebuilds the
+// row, so the native color picker keeps its element and focus while it is open.
+function studioColorRow(label, value, set, reset) {
+  const pickIn = h('input', { type: 'color', value, 'aria-label': label });
+  const hex = h('input', { type: 'text', class: 'th-hex', value, maxlength: 9, spellcheck: 'false', autocomplete: 'off', 'aria-label': t('{n} (hex)', { n: label }), title: t('Hex color, for example #1a2b3c') });
+  const resetBtn = reset ? h('button', { type: 'button', class: 'th-act', title: t('Reset to derived'), 'aria-label': t('Reset {n} to derived', { n: label }), onclick: () => { reset(); studioChanged(); renderStudioBody(); } }, '↺') : null;
+  pickIn.addEventListener('input', () => { hex.value = pickIn.value; hex.removeAttribute('aria-invalid'); set(pickIn.value); studioChanged(); });
+  hex.addEventListener('input', () => {
+    const c = hexRgb(hex.value);
+    if (!c) { hex.setAttribute('aria-invalid', 'true'); return; }
+    hex.removeAttribute('aria-invalid'); pickIn.value = rgbHex(c); set(rgbHex(c)); studioChanged();
+  });
+  hex.addEventListener('blur', () => { if (!hexRgb(hex.value)) { hex.value = pickIn.value; hex.removeAttribute('aria-invalid'); } else hex.value = rgbHex(hexRgb(hex.value)); });
+  return h('div', { class: 'th-tok' }, h('span', { class: 'th-lbl' }, label), h('span', { class: 'th-ctl' }, pickIn, hex, resetBtn));
+}
+function studioRange(label, min, max, value, set) {
+  const out = h('output', {}, String(value));
+  const input = h('input', { type: 'range', min, max, value, 'aria-label': label });
+  input.addEventListener('input', () => { out.textContent = input.value; set(Number(input.value)); studioChanged(); });
+  return h('label', { class: 'th-rng' }, h('span', {}, label), input, out);
+}
+const studioCheck = (label, checked, onchange) => {
+  const box = h('input', { type: 'checkbox' });
+  box.checked = checked;
+  box.addEventListener('change', () => onchange(box.checked));
+  return h('label', { class: 'th-chk' }, box, h('span', {}, label));
+};
+function studioFieldset(title, ...kids) { return h('fieldset', { class: 'th-fs' }, h('legend', {}, title), h('div', { class: 'th-grid' }, kids)); }
+function renderStudioBody() {
+  const body = studioBody(), res = themeTokens(body), edit = res.ok ? res.edit : {};
+  const label = k => t(themeColorLabels[k]);
+  const colorRow = k => {
+    if (k === 'bg') return studioColorRow(label(k), body.bg, v => { body.bg = v; });
+    if (k === 'accent') return studioColorRow(label(k), body.accent, v => { body.accent = v; });
+    return studioColorRow(label(k), edit[k] || '#000000', v => { body.colors = { ...body.colors, [k]: v }; },
+      body.colors && body.colors[k] ? () => { const c = { ...body.colors }; delete c[k]; body.colors = c; } : null);
+  };
+  const defaults = summaryDefaults(body.accent);
+  const tintDefault = { ref: edit.info || '#2a78d6', dep: '#d9601f' };
+  const tintRow = k => studioColorRow(t(k === 'ref' ? 'Tint, references' : 'Tint, referenced by'), (body.tints && body.tints[k]) || tintDefault[k], v => { body.tints = { ...body.tints, [k]: v }; },
+    body.tints && body.tints[k] ? () => { const c = { ...body.tints }; delete c[k]; body.tints = c; } : null);
+  const palRow = (k, lbl) => studioColorRow(lbl, (body.palette && body.palette[k]) || defaults[k], v => { body.palette = { ...body.palette, [k]: v }; },
+    body.palette && body.palette[k] ? () => { const c = { ...body.palette }; delete c[k]; body.palette = c; } : null);
+  const gl = body.glass ? glassRecord(body.glass) : null;
+  const setGlass = (k, v) => { body.glass = glassRecord({ ...body.glass, [k]: v }); };
+  const draft = studio.draft;
+  const variantTabs = draft.pair ? h('div', { class: 'seg th-tabs', role: 'group', 'aria-label': t('Variant being edited') },
+    [['main', draft], ['pair', draft.pair]].map(([id, b]) => h('button', { type: 'button', 'aria-pressed': String(studio.editing === id), class: studio.editing === id ? 'on' : '',
+      onclick: () => { studio.editing = id; applyTheme(); renderStudioBody(); } }, t(bgIsDark(b.bg) ? 'Dark variant' : 'Light variant')))) : null;
+  put($('studioBody'),
+    h('div', { class: 'th-cols' },
+      h('div', { class: 'th-left' },
+        studioCheck(t('This theme has a light and a dark variant'), !!draft.pair, on => {
+          if (on) { const dark = bgIsDark(draft.bg); draft.pair = themeMaterialize({ bg: dark ? '#f4f5f7' : '#121211', accent: draft.accent, contrast: draft.contrast, palette: draft.palette, tints: draft.tints }); }
+          else { delete draft.pair; studio.editing = 'main'; }
+          studioChanged(); renderStudioBody();
+        }),
+        variantTabs,
+        themeColorGroups.map(g => studioFieldset(t(g.label), g.keys.map(colorRow))),
+        studioFieldset(t('Side-panel tints'), tintRow('ref'), tintRow('dep')),
+        studioFieldset(t('Score ramp base'), palRow('score', t(summaryLabels.score))),
+        studioFieldset(t('Summary palette'), summaryGroups.filter(k => k !== 'score').map(k => palRow(k, t(summaryLabels[k]))),
+          h('div', { class: 'sum-chips', role: 'img', 'aria-label': t('Preview of the summary chips'), id: 'studioChips' })),
+        h('fieldset', { class: 'th-fs' }, h('legend', {}, t('Glass look')),
+          studioCheck(t('Glass look'), !!gl, on => { if (on) body.glass = { ...glassDefaults }; else delete body.glass; studioChanged(); renderStudioBody(); }),
+          gl ? [studioRange(t('Strength'), glassLimits.strength[0], glassLimits.strength[1], gl.strength, v => setGlass('strength', v)),
+            studioRange(t('Blur'), glassLimits.blur[0], glassLimits.blur[1], gl.blur, v => setGlass('blur', v)),
+            studioRange(t('Opacity'), glassLimits.opacity[0], glassLimits.opacity[1], gl.opacity, v => setGlass('opacity', v))] : null),
+        h('fieldset', { class: 'th-fs' }, h('legend', {}, t('Options')),
+          studioCheck(t('High contrast (7:1)'), body.contrast === 'high', on => { body.contrast = on ? 'high' : 'normal'; studioChanged(); }),
+          studioCheck(t('Monospace headings'), !!body.mono, on => { if (on) body.mono = true; else delete body.mono; studioChanged(); }))),
+      h('div', { class: 'th-right' },
+        h('div', { class: 'th-h' }, t('Contrast')),
+        h('div', { class: 'th-cs', id: 'studioContrast' }))));
+  updateContrast();
+}
+// Contrast panel and the Summary chip sample follow every change.
+function updateContrast() {
+  const box = $('studioContrast');
+  if (!box) return;
+  const body = studioBody(), res = themeTokens(body);
+  const pairs = themeContrast(body), fails = pairs.filter(p => !p.pass);
+  const fix = h('button', { type: 'button', class: 'icon-btn', disabled: fails.every(p => !p.fixKey) ? true : null, onclick: () => {
+    const r = themeAutoFix(body);
+    Object.assign(body, r.body);
+    studioChanged(); renderStudioBody();
+    $('studioMsg').textContent = r.changed.length ? t('{n} colors adjusted for contrast', { n: r.changed.length }) : t('Nothing to fix');
+  } }, t('Auto-fix'));
+  put(box,
+    h('div', { class: 'th-row' }, h('span', { class: 'badge ' + (fails.length ? 'th-warn' : 'th-ok'), role: 'status' },
+      fails.length ? '⚠ ' + t('{n} of {m} pairs below target', { n: fails.length, m: pairs.length }) : '✓ ' + t('All {m} pairs pass', { m: pairs.length })), fix),
+    h('table', { class: 'th-ct' }, h('thead', {}, h('tr', {}, h('th', {}, t('Pair')), h('th', {}, t('Ratio')), h('th', {}, t('Level')))),
+      h('tbody', {}, pairs.map(p => h('tr', { class: p.pass ? '' : 'bad' },
+        h('td', {}, h('span', { class: 'th-aa', style: `color:${p.fg};background:${p.bg}` }, 'Aa'), ' ', t(p.label)),
+        h('td', {}, p.ratio.toFixed(2) + ':1'),
+        h('td', {}, h('span', { class: 'th-grade ' + (p.pass ? 'ok' : 'bad') }, p.pass ? p.grade : t('Fail'), p.pass && p.min === themeMinUi && p.grade === 'AA large' ? ' (UI)' : '')))))));
+  const chips = $('studioChips');
+  if (chips && res.ok) put(chips, summaryKeys.map(k => h('span', { class: 'sum-chip' + (k === 'off' ? ' off' : ''), style: `background:${res.summary[`--sum-${k}`]};border-color:${res.summary[`--sum-${k}-line`]};color:${res.summary[`--sum-${k}-ink`]}` }, k)));
+}
+function renderStudio() {
+  const draft = studio.draft;
+  const nameIn = h('input', { type: 'text', id: 'studioName', maxlength: 40, value: draft.name, placeholder: t('Theme name'), 'aria-label': t('Theme name'), autocomplete: 'off',
+    oninput: ev => { draft.name = ev.target.value; studio.dirty = true; } });
+  const sources = h('select', { 'aria-label': t('Duplicate from'), onchange: ev => {
+    const v = ev.target.value; if (!v) return;
+    const src = themePresets.find(p => p.id === v) || customThemes.find(c => c.id === v);
+    if (src) { studio.draft = themeDuplicate(src, studioName(themeName(src), customThemes)); studio.editing = 'main'; studio.origId = null; studio.dirty = true; renderStudio(); applyTheme(); }
+  } },
+    h('option', { value: '' }, t('Duplicate from…')),
+    h('optgroup', { label: t('Auspex themes') }, themePresets.filter(p => p.auspex).map(p => h('option', { value: p.id }, themeName(p)))),
+    h('optgroup', { label: t('Ready themes') }, themePresets.filter(p => !p.auspex).map(p => h('option', { value: p.id }, themeName(p)))),
+    customThemes.length ? h('optgroup', { label: t('My themes') }, customThemes.map(c => h('option', { value: c.id }, c.name))) : null);
+  const io = h('textarea', { rows: 5, spellcheck: 'false', id: 'studioIo', 'aria-label': t('Theme JSON'), placeholder: t('Paste theme JSON here to import') });
+  const importErrors = { 'not valid JSON': 'not valid JSON', 'too large': 'too large', 'unsupported version': 'unsupported version', 'nothing to import': 'nothing to import' };
+  const doSave = () => {
+    const msg = $('studioMsg');
+    const rec = themeRecord(draft);
+    if (!rec) { msg.textContent = draft.name.trim() ? t('Invalid color') : t('Give the theme a name.'); return; }
+    if (rec.id !== studio.origId && customThemes.some(x => x.id === rec.id)) { msg.textContent = t('A theme with this name already exists.'); return; }
+    if (!studio.origId && customThemes.length >= themeMaxCount) { msg.textContent = t('Too many saved themes.'); return; }
+    customThemes = themeUpsert(customThemes.filter(x => x.id !== studio.origId), rec);
+    const stored = saveCustomThemes();
+    studio.origId = rec.id; studio.snapshot = structuredClone(draft); studio.dirty = false;
+    state.theme = rec.id; persist();
+    msg.textContent = stored ? t('Saved') : t('Could not save themes in this browser');
+    updateStudioButtons();
+    applyTheme();
+  };
+  put($('studioHead'),
+    h('h3', { id: 'themeDlgTitle' }, t('Theme studio')),
+    h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('Close'), onclick: requestCloseStudio }, '✕'));
+  put($('studioTop'), h('label', { class: 'th-name' }, h('span', {}, t('Theme name')), nameIn), sources);
+  const revert = h('button', { type: 'button', class: 'icon-btn', onclick: () => {
+    studio.draft = structuredClone(studio.snapshot); studio.editing = 'main'; studio.dirty = false; renderStudio(); applyTheme(); $('studioMsg').textContent = t('Edits reverted');
+  } }, t('Revert'));
+  const del = h('button', { type: 'button', class: 'icon-btn secondary-danger', id: 'studioDelete', onclick: () => { const rec = customThemes.find(x => x.id === studio.origId); if (rec) askDeleteTheme(rec); } }, t('Delete'));
+  put($('studioFoot'),
+    h('details', { class: 'th-io', open: studio.ioOpen ? true : null },
+      h('summary', {}, t('Export / import')), io,
+      h('div', { class: 'th-row' },
+        h('button', { type: 'button', class: 'icon-btn', onclick: () => { io.value = themeExport(customThemes); io.focus(); io.select(); copy(io.value, 'JSON'); } }, t('Export')),
+        h('button', { type: 'button', class: 'icon-btn', onclick: () => {
+          const r = themeImport(io.value, customThemes), msg = $('studioMsg');
+          if (r.error) { msg.textContent = t('Import failed: {e}', { e: t(importErrors[r.error] || r.error) }); return; }
+          customThemes = r.list;
+          msg.textContent = saveCustomThemes() ? t('{a} imported, {s} skipped', { a: r.added, s: r.skipped }) : t('Could not save themes in this browser');
+        } }, t('Import')))),
+    h('div', { class: 'th-row th-foot-row' }, h('span', { class: 'th-msg', id: 'studioMsg', role: 'status' }), h('span', { class: 'grow' }), del, revert,
+      h('button', { type: 'button', class: 'icon-btn', onclick: requestCloseStudio }, t('Close')),
+      h('button', { type: 'button', class: 'icon-btn primary', onclick: doSave }, t('Save'))));
+  updateStudioButtons();
+  renderStudioBody();
+}
+function updateStudioButtons() { const d = $('studioDelete'); if (d) d.hidden = !studio?.origId; }
+// Dialog behavior: Esc asks before discarding edits; Tab stays inside; keys never reach the page shortcuts.
+{
+  const dlg = $('themeDlg');
+  dlg.addEventListener('cancel', ev => { ev.preventDefault(); requestCloseStudio(); });
+  dlg.addEventListener('keydown', ev => {
+    if (ev.key === 'Tab') {
+      const f = [...dlg.querySelectorAll('button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])')].filter(n => !n.disabled && !n.hidden && n.offsetParent !== null);
+      if (f.length) {
+        const first = f[0], last = f[f.length - 1], at = document.activeElement;
+        if (ev.shiftKey && (at === first || !dlg.contains(at))) { ev.preventDefault(); last.focus(); }
+        else if (!ev.shiftKey && (at === last || !dlg.contains(at))) { ev.preventDefault(); first.focus(); }
+      }
+    }
+    ev.stopPropagation();
+  });
+}
 
 let liveTimer = null;
 function applyLive() {
@@ -5954,6 +6394,7 @@ addEventListener('scroll', hideTip, { passive: true });
 state.memExpand = roleMigrated(state.memExpand);
 document.querySelectorAll('#lang button').forEach(b => b.addEventListener('click', () => setLang(b.dataset.v)));
 applyStaticI18n();
+state.theme = themeDefaultId(state.theme);
 applyTheme();
 syncRangeButtons();
 applyLive();
