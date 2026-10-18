@@ -12,6 +12,7 @@ export const promptSkills = [
   { prompt: 'explore', skill: 'auspex-explore' },
   { prompt: 'report', skill: 'auspex-report' },
   { prompt: 'ddl', skill: 'auspex-ddl' },
+  { prompt: 'columns', skill: 'auspex-columns' },
 ];
 
 export class SkillError extends Error {}
