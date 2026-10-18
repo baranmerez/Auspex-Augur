@@ -11,7 +11,7 @@ const block = page.match(/\/\/ themes:start[\s\S]*?\/\/ themes:end/)?.[0];
 function load() {
   assert.ok(block, 'themes block found in viewer.html');
   const context = vm.createContext({});
-  vm.runInContext(`${block}\nObject.assign(this, { themeTokens, themePresets, themeRecord, themeUpsert, themeExport, themeImport, themeSpecOf, themeBgFrom, contrastRatio, hexRgb, themeIdOf, summaryDefaults, summaryPaletteRecord, summaryGroups, summaryKeys, summaryMinStep, glassRecord, tintsRecord, glassFallback, glassDefaults, themeDuplicate, themeMaterialize, themeAutoFix, themeContrast, themeResolve, themeDefaultId, themeColorKeys, themeColorGroups, themeBodyRecord, bgIsDark, themeMaxCount });`, context);
+  vm.runInContext(`${block}\nObject.assign(this, { themeTokens, themePresets, themeRecord, themeUpsert, themeExport, themeImport, themeSpecOf, themeBgFrom, contrastRatio, hexRgb, themeIdOf, summaryDefaults, summaryPaletteRecord, summaryGroups, summaryKeys, summaryMinStep, glassRecord, tintsRecord, glassFallback, glassDefaults, themeDuplicate, themeMaterialize, themeAutoFix, themeContrast, themeResolve, themeDefaultId, themeColorKeys, themeColorGroups, themeBodyRecord, bgIsDark, themeMaxCount, themeDialogRecover });`, context);
   return context;
 }
 const plain = v => JSON.parse(JSON.stringify(v));
@@ -560,4 +560,30 @@ test('studio dialog: modal, Esc handled, Tab trapped, colors edited in place and
   // The popover menu has no color controls any more.
   const menu = page.match(/function renderThemeMenu\(\) \{[\s\S]*?\n\}/)[0];
   assert.doesNotMatch(menu, /type: 'color'/);
+});
+
+test('studio lifecycle: a native close while the session is active re-shows the dialog', () => {
+  const { themeDialogRecover } = load();
+  const dlg = { open: false, shown: 0, showModal() { this.open = true; this.shown++; } };
+  assert.equal(themeDialogRecover(true, dlg), true);
+  assert.equal(dlg.shown, 1);
+  assert.equal(themeDialogRecover(true, dlg), false, 'already open');
+  dlg.open = false;
+  assert.equal(themeDialogRecover(false, dlg), false, 'no session: stays closed');
+  assert.ok(page.includes("dlg.addEventListener('close', () => { themeDialogRecover(!!studio, dlg); });"));
+  assert.ok(page.includes("$('themeConfirmDlg').addEventListener('keydown', ev => ev.stopPropagation());"));
+  assert.ok(page.includes('studio.origId = studio.snapshotOrigId;'));
+});
+
+test('auspex presets: side-panel tints come from each palette and keep contrast', () => {
+  const { themePresets, themeTokens, themeContrast } = load();
+  const want = { auspex: ['#c9a04f', '#2fbf71'], forge: ['#b8894a', '#d7783a'], phosphor: ['#4f9a67', '#e8c547'], verdigris: ['#3bb3a0', '#c2a15a'], ivory: ['#9a7330', '#1e8a55'] };
+  for (const [id, [r, d]] of Object.entries(want)) {
+    const spec = themePresets.find(p => p.id === id);
+    assert.deepEqual(plain(spec.tints), { ref: r, dep: d });
+    const res = themeTokens(spec);
+    assert.equal(res.tokens['--tint-ref-hue'], r);
+    assert.equal(res.warnings.length, 0, id);
+    for (const p of themeContrast(spec)) assert.ok(p.pass, id + ' ' + p.id);
+  }
 });
