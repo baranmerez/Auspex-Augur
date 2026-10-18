@@ -220,7 +220,10 @@ profile, schema, table, column, score and role names; there is no free text.
 
 `desktop/` wraps the same viewer in a small native app (about 3 MB) that reads
 `~/.auspex` directly through a Rust command, so no Node server is needed
-(approve/revoke need Node 20+ and the Auspex checkout, see below).
+(approve/revoke, archiving notes, user column scores and the schedules and
+trend of approved reports need Node 20+ and the Auspex checkout, see below;
+schedules and trends come from the same Node code as in the browser viewer and
+are only read when a schedules file exists).
 Closing the window keeps it in the tray; the tray menu has *Open*, *Show log
 folder*, *Start with Windows* (starts hidden in the tray) and *Quit*.
 

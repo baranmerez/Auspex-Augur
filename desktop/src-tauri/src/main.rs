@@ -9,7 +9,9 @@
 // runs its archive-note command, which archives one schema-memory note like
 // the viewer's POST /api/memory/archive, and `score_column` runs its
 // score-column command, which sets or removes one user column score like the
-// viewer's POST /api/memory/column-score.
+// viewer's POST /api/memory/column-score. Reads through the same CLI: the
+// schedules of approved reports and their trend points (`schedules`, `trend`),
+// so both viewers share one schedule implementation.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::collections::HashMap;
@@ -179,7 +181,11 @@ fn sub_dirs(p: &std::path::Path) -> Vec<String> {
 }
 
 fn list_reports() -> Value {
-    list_reports_in(library_dir())
+    let mut list = list_reports_in(library_dir());
+    if schedules_file().is_file() {
+        apply_schedules(&mut list, run_read_cli(&["schedules".to_string()]));
+    }
+    list
 }
 
 fn list_reports_in(root: PathBuf) -> Value {
@@ -497,9 +503,14 @@ fn profiles() -> Value {
     })
 }
 
+// Runs off the main thread: a route may start the Node CLI (schedules, trend).
 #[tauri::command]
-fn api(path: String, query: HashMap<String, String>) -> Result<Value, String> {
-    match path.as_str() {
+async fn api(path: String, query: HashMap<String, String>) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || api_route(&path, &query)).await.map_err(|e| e.to_string())?
+}
+
+fn api_route(path: &str, query: &HashMap<String, String>) -> Result<Value, String> {
+    match path {
         "/api/days" => Ok(json!(list_days().into_iter().map(|(day, count)| json!({ "day": day, "count": count })).collect::<Vec<_>>())),
         "/api/health" => {
             let days = list_days();
@@ -507,7 +518,8 @@ fn api(path: String, query: HashMap<String, String>) -> Result<Value, String> {
         }
         "/api/profiles" => Ok(profiles()),
         "/api/reports" => Ok(list_reports()),
-        "/api/report" => report_content(&query),
+        "/api/reports/trend" => report_trend(query),
+        "/api/report" => report_content(query),
         "/api/memory" => Ok(memory_summary()),
         "/api/memory/graph" => read_json(&memory_profile(&query)?.join("graph.json")),
         "/api/memory/table" => {
@@ -692,10 +704,15 @@ fn run_stage_cli(action: &str, parts: &[String; 4], expected_hash: Option<&str>)
     run_cli(&args, &stage_audit_base(action, parts))
 }
 
-// Runs `node <auspexRoot>/src/stageCli.js <args>` (already validated) and maps
-// its one-line JSON result; an unknown outcome (timeout, no result) is audited
-// with `audit` (tool, profile and target of the change) as the base entry.
-fn run_cli(args: &[String], audit: &Value) -> Result<Value, Value> {
+// Runs `node <auspexRoot>/src/stageCli.js <args>` (already validated) without a
+// shell and collects its output, or reports that it ran out of time (then it
+// was stopped).
+enum CliRun {
+    Done { stdout: String, stderr: String, code: Option<i32> },
+    TimedOut,
+}
+
+fn exec_cli(args: &[String], timeout: Duration) -> Result<(CliRun, Duration), Value> {
     let node = node_program()?;
     let root = auspex_root()?;
     let mut cmd = Command::new(&node);
@@ -713,29 +730,112 @@ fn run_cli(args: &[String], audit: &Value) -> Result<Value, Value> {
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status,
-            Ok(None) if started.elapsed() >= STAGE_TIMEOUT => {
+            Ok(None) if started.elapsed() >= timeout => {
                 let _ = child.kill();
                 let _ = child.wait();
-                let e = stage_error(
-                    "TIMEOUT",
-                    format!("src/stageCli.js did not finish within {} s and was stopped; the change may or may not have been applied. Reload the list.", STAGE_TIMEOUT.as_secs()),
-                );
-                audit_uncertain(audit, started.elapsed(), &e);
-                return Err(e);
+                return Ok((CliRun::TimedOut, started.elapsed()));
             }
-            Ok(None) => std::thread::sleep(Duration::from_millis(50)),
+            Ok(None) => std::thread::sleep(Duration::from_millis(20)),
             Err(e) => return Err(stage_error("INTERNAL", e.to_string())),
         }
     };
-    let stdout = out.join().unwrap_or_default();
-    let stderr = err.join().unwrap_or_default();
-    let result = parse_cli_output(&stdout, &stderr, status.code());
+    let run = CliRun::Done { stdout: out.join().unwrap_or_default(), stderr: err.join().unwrap_or_default(), code: status.code() };
+    Ok((run, started.elapsed()))
+}
+
+// A change through the CLI, mapped from its one-line JSON result; an unknown
+// outcome (timeout, no result) is audited with `audit` (tool, profile and
+// target of the change) as the base entry.
+fn run_cli(args: &[String], audit: &Value) -> Result<Value, Value> {
+    let (run, elapsed) = exec_cli(args, STAGE_TIMEOUT)?;
+    let CliRun::Done { stdout, stderr, code } = run else {
+        let e = stage_error(
+            "TIMEOUT",
+            format!("src/stageCli.js did not finish within {} s and was stopped; the change may or may not have been applied. Reload the list.", STAGE_TIMEOUT.as_secs()),
+        );
+        audit_uncertain(audit, elapsed, &e);
+        return Err(e);
+    };
+    let result = parse_cli_output(&stdout, &stderr, code);
     if let Err(e) = &result {
         if e["code"] == json!("CLI_FAILED") {
-            audit_uncertain(audit, started.elapsed(), e);
+            audit_uncertain(audit, elapsed, e);
         }
     }
     result
+}
+
+// A read through the CLI (schedules, trend): nothing to audit, and a missing
+// result only means the data is not shown.
+const READ_TIMEOUT: Duration = Duration::from_secs(10);
+
+fn run_read_cli(args: &[String]) -> Result<Value, Value> {
+    let (run, _) = exec_cli(args, READ_TIMEOUT)?;
+    let CliRun::Done { stdout, stderr, code } = run else {
+        return Err(stage_error("TIMEOUT", format!("src/stageCli.js did not answer within {} s.", READ_TIMEOUT.as_secs())));
+    };
+    parse_cli_output(&stdout, &stderr, code).map_err(|e| {
+        if e["code"] == json!("CLI_FAILED") {
+            let detail: String = stderr.trim().chars().take(300).collect();
+            let exit = code.map_or_else(|| "none".to_string(), |c| c.to_string());
+            stage_error("CLI_FAILED", format!("src/stageCli.js gave no result (exit code {exit}). {detail}").trim_end().to_string())
+        } else {
+            e
+        }
+    })
+}
+
+// ---------- schedules and trends (read through the Node checkout) ----------
+// Same data as the browser viewer (src/schedule/viewerData.js): cadences and
+// next slots need the local clock and the Node schedule rules, so they are
+// not re-implemented here. Without a schedules file nothing is started.
+
+fn schedules_file() -> PathBuf {
+    auspex_home().join("schedules.json")
+}
+
+// Adds each approved report's schedules from the `stageCli.js schedules`
+// result (byReport: [key, schedules] pairs, key db|schema|category|name) and
+// the error of a broken schedules file, like GET /api/reports.
+fn apply_schedules(list: &mut Value, result: Result<Value, Value>) {
+    let data = match result {
+        Ok(v) => v,
+        Err(e) => {
+            list["schedulesError"] = json!(format!("{} (schedules need Node and the Auspex folder)", e["message"].as_str().unwrap_or("not available")));
+            return;
+        }
+    };
+    if let Some(err) = data.get("error").and_then(Value::as_str) {
+        list["schedulesError"] = json!(err);
+    }
+    let by: HashMap<String, Value> = data
+        .get("byReport")
+        .and_then(Value::as_array)
+        .map(|pairs| pairs.iter().filter_map(|p| Some((p.get(0)?.as_str()?.to_string(), p.get(1)?.clone()))).collect())
+        .unwrap_or_default();
+    if let Some(reports) = list.get_mut("reports").and_then(Value::as_array_mut) {
+        for r in reports.iter_mut().filter(|r| r["stage"] == json!("approved")) {
+            let key = REF_KEYS.iter().map(|k| r[*k].as_str().unwrap_or("")).collect::<Vec<_>>().join("|");
+            if let Some(s) = by.get(&key).filter(|s| s.is_array()) {
+                r["schedules"] = s.clone();
+            }
+        }
+    }
+}
+
+// Trend points of one report, like GET /api/reports/trend: the location is
+// checked here first, then again by Node (trendFile).
+fn report_trend(query: &HashMap<String, String>) -> Result<Value, String> {
+    let mut args = vec!["trend".to_string()];
+    for key in REF_KEYS {
+        let value = query.get(key).map(String::as_str).unwrap_or("");
+        if !valid_ref_part(key, value) {
+            return Err("Invalid report".into());
+        }
+        args.push(format!("--{key}={value}"));
+    }
+    let v = run_read_cli(&args).map_err(|e| e["message"].as_str().unwrap_or("Trend not available").to_string())?;
+    Ok(json!({ "points": v.get("points").filter(|p| p.is_array()).cloned().unwrap_or(json!([])) }))
 }
 
 // Days since 1970-01-01 -> (year, month, day), proleptic Gregorian (H. Hinnant's civil_from_days).
@@ -973,6 +1073,34 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn schedules_attach_to_approved_reports_only_like_the_browser_viewer() {
+        let report = |stage: &str, name: &str| json!({ "stage": stage, "db": "exampledb", "schema": "example", "category": "Orders/Delivery", "name": name });
+        let mut list = json!({ "reports": [report("approved", "weekly"), report("draft", "weekly"), report("approved", "other")] });
+        let item = json!([{ "id": "weekly-example", "enabled": true, "cadence": "weekly monday 08:00", "next": "2026-10-26T08:00", "last": null }]);
+        apply_schedules(&mut list, Ok(json!({ "ok": true, "error": null, "byReport": [["exampledb|example|Orders/Delivery|weekly", item], ["broken"], [1, []]] })));
+        assert_eq!(list["reports"][0]["schedules"], item);
+        assert!(list["reports"][1].get("schedules").is_none(), "drafts carry no schedules");
+        assert!(list["reports"][2].get("schedules").is_none());
+        assert!(list.get("schedulesError").is_none());
+
+        let mut broken = json!({ "reports": [report("approved", "weekly")] });
+        apply_schedules(&mut broken, Ok(json!({ "ok": true, "error": "schedules.json is not valid JSON", "byReport": [] })));
+        assert_eq!(broken["schedulesError"], json!("schedules.json is not valid JSON"));
+
+        let mut no_node = json!({ "reports": [] });
+        apply_schedules(&mut no_node, Err(stage_error("NODE_NOT_FOUND", "Node was not found on PATH")));
+        assert!(no_node["schedulesError"].as_str().unwrap().starts_with("Node was not found on PATH"));
+    }
+
+    #[test]
+    fn trend_requests_with_a_bad_report_location_start_nothing() {
+        let q = |db: &str, name: &str| HashMap::from([("db", db), ("schema", "example"), ("category", "Orders"), ("name", name)].map(|(k, v)| (k.to_string(), v.to_string())));
+        for (db, name) in [("../x", "weekly"), ("Exampledb", "weekly"), ("exampledb", "Weekly Report"), ("exampledb", "")] {
+            assert_eq!(report_trend(&q(db, name)), Err("Invalid report".to_string()), "{db} {name}");
+        }
+    }
 
     #[test]
     fn memory_paths_stay_inside_the_memory_folder() {

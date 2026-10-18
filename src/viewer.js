@@ -21,8 +21,7 @@ import { validateArchiveInput, archiveNoteFor } from './memory/noteArchive.js';
 import { validateUserScoreInput, userScoreAudit, setUserScoreFor } from './memory/userScore.js';
 import { createAuditLog } from './auditLog.js';
 import { classifyError } from './errors.js';
-import { loadSchedules, schedulesFile, nextSlot, cadenceText } from './schedule/config.js';
-import { stateFile, trendsDir, readState, scheduleState, trendFile, readTrend } from './schedule/store.js';
+import { scheduleIndex, scheduleKey, reportTrend } from './schedule/viewerData.js';
 
 const port = Number.parseInt(process.env.AUSPEX_VIEWER_PORT || '4719', 10);
 const host = '127.0.0.1';
@@ -174,43 +173,9 @@ function reportContent(params) {
   return { kind: 'html', content, sqlHash: reportHtmlHash(content) };
 }
 
-// Schedules of approved reports (schedules.json) with their last result and
-// next slot, keyed like the report list: db|schema|category|name. Read-only;
-// a broken schedules file is reported, not fatal.
-const scheduleKey = r => [r.db, r.schema, r.category, r.name].join('|');
-function scheduleIndex() {
-  let loaded;
-  try {
-    loaded = loadSchedules(schedulesFile());
-  } catch (err) {
-    return { error: err.message, byReport: new Map() };
-  }
-  const state = readState(stateFile());
-  const now = new Date();
-  const byReport = new Map();
-  for (const s of loaded.schedules) {
-    const own = scheduleState(state, s.id);
-    const last = own?.last;
-    const item = {
-      id: s.id, enabled: s.enabled, cadence: cadenceText(s.cadence), preset: s.preset,
-      next: s.enabled ? nextSlot(s.cadence, now)?.key ?? null : null,
-      last: last ? { status: last.status, slot: last.slot ?? null, at: last.at ?? null, ...(last.errorCode ? { errorCode: last.errorCode } : {}), ...(last.manual ? { manual: true } : {}) } : null,
-    };
-    const key = scheduleKey(s.report);
-    byReport.set(key, [...(byReport.get(key) || []), item]);
-  }
-  return { error: null, byReport };
-}
-
-// Trend points of one report (aggregates only: slot, run time, preset, row
-// count and column totals; parameter values are left out). The db segment is
-// the profile; trendFile validates every segment.
-const trendFields = ['slot', 'ranAt', 'preset', 'rows', 'estimatedRows', 'previewComplete', 'totals', 'version'];
-function reportTrend(params) {
-  const ref = { db: params.get('db'), schema: params.get('schema'), category: params.get('category'), name: params.get('name') };
-  const points = readTrend(trendFile(trendsDir(), ref)).map(p => Object.fromEntries(trendFields.filter(k => Object.hasOwn(p, k)).map(k => [k, p[k]])));
-  return { points };
-}
+// Schedules and trend points: src/schedule/viewerData.js (shared with the
+// desktop app through src/stageCli.js).
+const reportTrendOf = params => reportTrend({ db: params.get('db'), schema: params.get('schema'), category: params.get('category'), name: params.get('name') });
 
 function send(res, status, body, type = 'application/json; charset=utf-8', extra = {}) {
   res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...extra });
@@ -418,7 +383,7 @@ function handle(req, res) {
     }
     if (url.pathname === '/api/reports/trend') {
       try {
-        return send(res, 200, reportTrend(url.searchParams));
+        return send(res, 200, reportTrendOf(url.searchParams));
       } catch (err) {
         return send(res, 400, { error: err instanceof LibraryError ? err.message : 'Invalid report' });
       }
