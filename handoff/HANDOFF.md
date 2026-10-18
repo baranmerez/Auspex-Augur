@@ -75,7 +75,7 @@ auspex/
 | `save_execute_script` | Writes a change script into `EXECUTE/`; never executed by Auspex |
 | `table_knowledge` | Answers from the schema memory without database access |
 | `remember` | Adds, confirms or archives a note (rule, observation, inference) |
-| `score_columns` | Saves the agent's 1-5 column scores (roles, one-line reason, sources; history of 5), one-line trigger summaries and scanned script files (relative path + sha256); local only, audited without reasons, summaries or paths |
+| `score_columns` | Saves 1-5 column scores in two layers, agent (roles, one-line reason, sources) and user (stated by the user, wins; usage note as a `remember` rule), each with a history of 5; one-line trigger summaries and scanned script files (relative path + sha256); local only, audited without reasons, summaries or paths |
 | `scanned_files` | Lists the scanned script files of a profile so later runs read only new or changed files |
 
 `describe_table` also records the table in the schema memory and reports
@@ -433,7 +433,7 @@ Merged work:
   viewer header shows them read-only, Favorites/Recent sit above the report
   tree (local browser storage), and *Ask Claude* copies a prompt without row values.
 - 2026-10-18: Rules tab lists all schema-memory notes with filters and archives an active note with a required reason (`POST /api/memory/archive`, desktop `archive_note` -> `stageCli.js archive-note`, same store logic and lock as `remember`); Schema tab downloads a data dictionary (HTML/Markdown) built from memory only.
-- 2026-10-18: column importance (PR 1): `score_columns` stores the agent's 1-5 score per column with roles, reason, sources and a 5-entry history in the table record (`columnScores`, `scoredAt`), trigger summaries (`triggerSummaries`, stale when the definition hash changes) and scanned script files (`scanned-files.json`); `describe_table` now records triggers and diffs them (added, dropped, changed, enabled-changed; legacy records without the field report nothing); `table_knowledge` and graph.json carry scores and triggers; skill `auspex-columns` (prompt `columns`). Viewer UI for scores follows in PR 2; the viewer's change text for `trigger-enabled-changed` uses its generic fallback until then.
+- 2026-10-18: column importance (PR 1): `score_columns` stores 1-5 scores per column in two layers in the table record (`columnScores.<column>.agent` / `.user`, each with a 5-entry history; effective = user when present; `scoredAt`), `scanned-files.json` capped at 20000 entries per root, trigger summaries (`triggerSummaries`, stale when the definition hash changes) and scanned script files (`scanned-files.json`); `describe_table` now records triggers and diffs them (added, dropped, changed, enabled-changed; legacy records without the field report nothing); `table_knowledge` and graph.json carry scores and triggers; skill `auspex-columns` (prompt `columns`). Viewer UI for scores follows in PR 2; the viewer's change text for `trigger-enabled-changed` uses its generic fallback until then.
 
 Working agreements:
 

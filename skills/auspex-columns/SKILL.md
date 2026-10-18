@@ -1,6 +1,6 @@
 ---
 name: auspex-columns
-description: "Score how important each column of a PostgreSQL table is (1-5) by reading the SQL that uses it - the Auspex report library and the user's own script files - and save the scores with roles and a one-line reason in the Auspex schema memory through score_columns, together with a one-line summary of each table trigger. No database queries are needed for scores. Use when the user asks which columns matter, which columns reports use, which columns are unused, or wants column importance for a table."
+description: "Score how important each column of a PostgreSQL table is (1-5) by reading the SQL that uses it - the Auspex report library and the user's own script files - and save the scores with roles and a one-line reason in the Auspex schema memory through score_columns (next to scores the user states), together with a one-line summary of each table trigger. No database queries are needed for scores. Use when the user asks which columns matter, which columns reports use, which columns are unused, or wants column importance for a table."
 ---
 
 # Auspex columns
@@ -20,7 +20,9 @@ column appears.
    `scriptRoots` in `list_profiles` and confirm with the user which root (and
    which folders inside it) hold SQL for this database. If there is no root or
    the user names another folder, ask for the exact path. Never assume a folder
-   layout or naming convention.
+   layout or naming convention. Record `scannedFiles` only for files under a
+   configured script root; for any other folder leave `scannedFiles` out (the
+   call would be rejected) and read every file again next time.
 3. **Read, never copy.** User script files are read only. Never save them as
    reports (`save_report`), never copy them into the library, never modify
    them. Only the file path relative to its root and its sha256 are recorded.
@@ -33,7 +35,15 @@ column appears.
    catalog facts, use memory first (`table_knowledge`) and keep any query to
    the minimum, announced to the user. Trigger summaries need one
    `describe_functions` call (catalog only).
-6. **Never invent business meaning.** A reason states where and how the
+6. **User scores only from the user.** Write a `by: "user"` entry only for a
+   score the user stated in this conversation, never your own guess. When
+   the user gives a score, ask for the roles and a short usage note ("mostly
+   in WHERE, sometimes in SELECT"), write the score with `score_columns`
+   `by: "user"` and the usage note with `remember` kind=rule on that
+   schema.table.column, in the user's own words and language. Never
+   overwrite or clear a user score unless the user asks (`clearUser: true`).
+   A rescan writes agent scores only; both layers stay visible.
+7. **Never invent business meaning.** A reason states where and how the
    column is used ("joined to example.customers in 6 reports, shown in all"),
    not what the business means by it.
 
@@ -41,7 +51,8 @@ column appears.
 
 1. **Profile and targets.** Profile check (rule 1). Ask which tables to
    score if the user did not say. `table_knowledge` on each: structure,
-   existing `columnScores`, `unscoredColumns` and notes.
+   existing `columnScores` (effective `score` and `scoreBy`, `agent` and
+   `user` layers, `noteIds`), `unscoredColumns` and notes.
 2. **Sources.**
    - Report library: `list_reports` for the profile, then read the current
      SQL of each report from the library folder (`libraryDir`). Several
@@ -73,15 +84,18 @@ column appears.
    Count `sources` per column: distinct reports plus distinct script files
    that use it (report versions once, rule in step 2). Worked examples:
    [sql-attribution.md](references/sql-attribution.md).
-4. **Decide the score, relative within the table.**
-   - 5: the columns the reports revolve around - keys joined almost
-     everywhere, the main display and filter fields.
-   - 4: used in most sources or in several roles.
-   - 3: used regularly in one role.
-   - 2: used in one or two sources only.
-   - 1: never used in any read SQL that was read.
+4. **Decide the agent score, relative within the table.**
+
+   | Score | Meaning |
+   |---|---|
+   | 5 core | most reports revolve around it: main join key, period filter, primary display field |
+   | 4 frequent | used regularly in many reports |
+   | 3 topical | appears in the reports of one topic |
+   | 2 rare | one report, or only in an old version |
+   | 1 unused | appears in no SQL |
+
    A column used on application screens but in no report or script gets a
-   low score here; say so in the summary so the user can ask for a review.
+   low score here; that is what the question in step 8 is for.
    Write the reason as one sentence (at most 200 characters) in the
    `notesLanguage` from `list_profiles` (ask once if null).
 5. **Triggers.** `table_knowledge` lists the recorded triggers of the table
@@ -91,22 +105,30 @@ column appears.
    for all of them (1 statement) and write a one-line summary of what it does
    (at most 200 characters, `notesLanguage`), for example "Rejects
    example.orders rows whose status_code is not in example.status_codes".
-   Describe the effect, never paste or store the function source.
+   Describe the effect, never paste or store the function source. A summary
+   is marked stale only when the trigger definition changes, not when only
+   the function body changes; when the user asks, read the functions again
+   and rewrite the summaries.
 6. **Save.** One `score_columns` call per table with every column you
-   scored (unlisted columns keep their earlier score), the trigger summaries
+   scored as `by: "agent"` (the default; unlisted columns keep their earlier
+   score, user scores are never touched), the trigger summaries
    in `triggers` (`name`, `summary`) and, on one of the calls,
    `scannedFiles` with `root`, the path relative to that root and the
    sha256 of each file you read. A rejected call saves nothing: fix the input
    (for example describe the table again if a column was renamed) and retry
    once.
-7. **Report to the user.** Per table: the top columns (score, roles,
-   sources), how many columns scored 1 (unused), the trigger summaries, how
-   many files and reports were read and how many were skipped as unchanged. Offer to review any
-   column the user knows is used elsewhere (application screens, exports).
+7. **Report to the user.** Per table: the top columns (effective score,
+   roles, sources; show both when the user and agent scores differ, for
+   example "user 5, agent 2"), how many columns scored 1 (unused), the
+   trigger summaries, how many files and reports were read and how many were
+   skipped as unchanged.
+8. **Ask once.** "Is there any column you consider important that scored low
+   because no report uses it?" Each answer becomes a user entry (rule 6:
+   score, roles, and the usage note as a `remember` rule).
 
 ## Answer shape
 
 Short: profile, tables scored, sources read (reports, files, skipped),
 top columns per table with roles, unused column count, trigger summaries,
-columns that need the user's review, statements used (usually 0, plus 1 for
+user scores written, statements used (usually 0, plus 1 for
 trigger functions).
