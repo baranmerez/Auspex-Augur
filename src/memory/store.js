@@ -27,6 +27,9 @@ const profilePattern = /^[a-z][a-z0-9_-]{0,39}$/;
 // computed here. Only the input is validated.
 export const columnRoles = ['key', 'join', 'filter', 'display', 'aggregate', 'sort/group'];
 export const scoreHistoryLimit = 5;
+// agent: decided from read SQL; user: stated by the user, wins when present.
+export const scoreLayers = ['agent', 'user'];
+export const maxScannedFilesPerRoot = 20000;
 export const maxScoreReason = 200;
 export const maxScoredColumns = 2000;
 export const maxScannedFiles = 1000;
@@ -179,7 +182,8 @@ function noteLine(n) {
 export class SchemaMemory {
   // approvedJoins(profile) -> [{ left: 'schema.table.column', right: ... }] from
   // approved reports: the "used" relation level.
-  constructor(root, { now = () => new Date().toISOString(), approvedJoins = () => [] } = {}) {
+  constructor(root, { now = () => new Date().toISOString(), approvedJoins = () => [], scannedFilesPerRoot = maxScannedFilesPerRoot } = {}) {
+    this.scannedFilesPerRoot = scannedFilesPerRoot;
     this.root = path.resolve(root);
     this.now = now;
     this.approvedJoins = approvedJoins;
@@ -514,11 +518,13 @@ export class SchemaMemory {
   }
 
   // ---------- column scores ----------
-  // score_columns: the agent's 1-5 importance of columns of one described
-  // table, relative within the table, with roles, a one-line reason and the
-  // number of reports/scripts it appears in. A new score replaces the current
-  // one; the replaced ones are kept newest first (scoreHistoryLimit). Columns
-  // not listed keep their score. scannedFiles records which script files were
+  // score_columns: 1-5 importance of columns of one described table, relative
+  // within the table, in two layers per column: agent (decided from read SQL:
+  // roles, one-line reason, number of reports/scripts) and user (stated by the
+  // user: score, optional roles; clearUser removes it). The effective score is
+  // the user score when present. A new score replaces the current one of its
+  // layer only; the replaced states are kept newest first (scoreHistoryLimit).
+  // Columns and layers not listed keep their score. scannedFiles records which script files were
   // read (path relative to its script root, sha256, lastReadAt), never their
   // contents. scriptRoots: names the root of a scanned file must be one of.
   scoreColumns(profile, input, { scriptRoots = null } = {}) {
@@ -534,13 +540,20 @@ export class SchemaMemory {
       const recorded = new Map((rec.triggers ?? []).map(t => [t.name, t]));
       const unknownTriggers = triggers.map(t => t.name).filter(name => !recorded.has(name));
       if (unknownTriggers.length) throw new MemoryError(`Not triggers of ${tableKey(schema, table)} in the recorded structure: ${unknownTriggers.join(', ')}. Nothing was saved; describe the table again if it changed.`);
-      const at = this.now();
       const scores = {};
       for (const [name, value] of Object.entries(rec.columnScores ?? {})) setOwn(scores, name, value);
+      const noUser = columns.filter(c => c.clearUser && !activeUser(Object.hasOwn(scores, c.name) ? scores[c.name] : null)).map(c => c.name);
+      if (noUser.length) throw new MemoryError(`No user score to clear on: ${noUser.join(', ')}. Nothing was saved.`, 'PRECONDITION_FAILED');
+      const at = this.now();
       for (const c of columns) {
-        const prev = Object.hasOwn(scores, c.name) ? scores[c.name] : null;
-        const history = prev ? [{ score: prev.score, reason: prev.reason, at: prev.at }, ...(prev.history ?? [])].slice(0, scoreHistoryLimit) : [];
-        setOwn(scores, c.name, { score: c.score, roles: c.roles, reason: c.reason, sources: c.sources, at, history });
+        const entry = { ...(Object.hasOwn(scores, c.name) ? scores[c.name] : {}) };
+        const prev = entry[c.by] ?? null;
+        // The previous state of this layer goes to its own history, newest first.
+        const history = prev ? [layerHistoryItem(prev), ...(prev.history ?? [])].slice(0, scoreHistoryLimit) : [];
+        if (c.clearUser) entry.user = { cleared: true, at, history };
+        else if (c.by === 'user') entry.user = { score: c.score, ...(c.roles ? { roles: c.roles } : {}), at, history };
+        else entry.agent = { score: c.score, roles: c.roles, reason: c.reason, sources: c.sources, at, history };
+        setOwn(scores, c.name, entry);
       }
       if (columns.length) Object.assign(rec, { columnScores: scores, scoredAt: at });
       if (triggers.length) {
@@ -558,7 +571,7 @@ export class SchemaMemory {
         scoredAt: at,
         scored: columns.length,
         ...(triggers.length ? { triggersSummarized: triggers.length } : {}),
-        unscoredColumns: rec.columns.filter(c => !Object.hasOwn(scores, c.name)).map(c => c.name),
+        unscoredColumns: rec.columns.filter(c => !effectiveScore(Object.hasOwn(scores, c.name) ? scores[c.name] : null)).map(c => c.name),
         ...(scanned ? { scannedFiles: scanned } : {}),
       };
     });
@@ -574,13 +587,23 @@ export class SchemaMemory {
     return root ? files.filter(f => f.root === root) : files;
   }
 
+  // Each root keeps at most scannedFilesPerRoot entries; beyond that the
+  // entries read longest ago are pruned (they are only re-read next time).
   recordScannedUnlocked(profile, scannedFiles, at) {
     const byKey = new Map(this.readScannedFiles(profile).map(f => [`${f.root}\n${f.path}`, f]));
     for (const f of scannedFiles) byKey.set(`${f.root}\n${f.path}`, { root: f.root, path: f.path, sha256: f.sha256, lastReadAt: at });
     const cmp = (x, y) => (x < y ? -1 : x > y ? 1 : 0); // code-point order, locale independent
-    const files = [...byKey.values()].sort((a, b) => cmp(a.root, b.root) || cmp(a.path, b.path));
+    const byRoot = new Map();
+    for (const f of byKey.values()) byRoot.set(f.root, [...(byRoot.get(f.root) ?? []), f]);
+    let pruned = 0;
+    const kept = [...byRoot.values()].flatMap(list => {
+      if (list.length <= this.scannedFilesPerRoot) return list;
+      pruned += list.length - this.scannedFilesPerRoot;
+      return list.sort((a, b) => cmp(b.lastReadAt, a.lastReadAt) || cmp(a.path, b.path)).slice(0, this.scannedFilesPerRoot);
+    });
+    const files = kept.sort((a, b) => cmp(a.root, b.root) || cmp(a.path, b.path));
     this.writeJson(this.scannedFilesPath(profile), { files });
-    return { recorded: scannedFiles.length, total: files.length };
+    return { recorded: scannedFiles.length, total: files.length, ...(pruned ? { pruned } : {}) };
   }
 
   // ---------- relations ----------
@@ -681,7 +704,7 @@ export class SchemaMemory {
       },
       notes: notes.map(n => ({ id: n.id, kind: n.kind, column: n.column, text: n.text, ...(n.asOf ? { asOf: n.asOf } : {}), ...(n.evidence?.figures ? { figures: n.evidence.figures } : {}) })),
       recentChanges: (rec.history || []).slice(-5).map(h => `${h.at.slice(0, 10)}: ${h.changes.map(changeText).join('; ')}`),
-      ...columnScoresSection(rec),
+      ...columnScoresSection(rec, notes),
       ...(Array.isArray(rec.triggers) ? { triggers: triggersWithSummaries(rec) } : {}),
       ...this.databaseNotesSection(profile),
       ...this.neighborsSection(profile, [rec], tables),
@@ -701,7 +724,7 @@ export class SchemaMemory {
       columnCount: t.columns.length, changes: (t.history || []).length,
       notes: notes.filter(n => n.schema === t.schema && n.table === t.table).length,
       ...(t.estRows !== undefined ? { estRows: t.estRows } : {}),
-      ...(t.columnScores ? { scoredAt: t.scoredAt, columnScores: t.columnScores } : {}),
+      ...(t.columnScores ? { scoredAt: t.scoredAt, columnScores: columnScoresView(t.columnScores) } : {}),
       ...(t.triggers?.length ? { triggers: triggersWithSummaries(t) } : {}),
     }]));
     for (const e of edges) {
@@ -802,23 +825,43 @@ export function validateScoreInput(input, scriptRoots = null) {
   if (!columns.length && !triggers.length) throw new MemoryError('Give at least one entry in columns or triggers.');
   if (columns.length > maxScoredColumns) throw new MemoryError(`At most ${maxScoredColumns} columns per call.`);
   const seen = new Set();
+  const roleList = (roles, where) => {
+    if (!Array.isArray(roles)) throw new MemoryError(`${where}.roles must be an array (may be empty).`);
+    const badRole = roles.find(r => !columnRoles.includes(r));
+    if (badRole !== undefined) throw new MemoryError(`${where}.roles: "${badRole}" is not one of ${columnRoles.join(', ')}.`);
+    if (new Set(roles).size !== roles.length) throw new MemoryError(`${where}.roles lists a role twice.`);
+    return columnRoles.filter(r => roles.includes(r));
+  };
+  const checkScore = (score, where) => {
+    if (!Number.isInteger(score) || score < 1 || score > 5) throw new MemoryError(`${where}.score must be an integer from 1 to 5.`);
+  };
   const outColumns = columns.map((c, i) => {
     const where = `columns[${i}]`;
-    rejectUnknownKeys(c, ['name', 'score', 'roles', 'reason', 'sources'], where);
+    if (!c || typeof c !== 'object' || Array.isArray(c)) throw new MemoryError(`${where} must be an object.`);
+    const by = c.by ?? (c.clearUser !== undefined ? 'user' : 'agent');
+    if (!scoreLayers.includes(by)) throw new MemoryError(`${where}.by must be one of ${scoreLayers.join(', ')}.`);
+    if (c.clearUser !== undefined) {
+      rejectUnknownKeys(c, ['name', 'by', 'clearUser'], where);
+      if (c.clearUser !== true || by !== 'user') throw new MemoryError(`${where}.clearUser must be true and only removes the user score.`);
+    } else if (by === 'user') {
+      rejectUnknownKeys(c, ['name', 'by', 'score', 'roles'], where);
+    } else {
+      rejectUnknownKeys(c, ['name', 'by', 'score', 'roles', 'reason', 'sources'], where);
+    }
     if (typeof c.name !== 'string' || !c.name) throw new MemoryError(`${where}.name must be a non-empty string.`);
-    if (seen.has(c.name)) throw new MemoryError(`Column ${c.name} is listed twice.`);
-    seen.add(c.name);
-    if (!Number.isInteger(c.score) || c.score < 1 || c.score > 5) throw new MemoryError(`${where}.score must be an integer from 1 to 5.`);
-    if (!Array.isArray(c.roles)) throw new MemoryError(`${where}.roles must be an array (may be empty).`);
-    const badRole = c.roles.find(r => !columnRoles.includes(r));
-    if (badRole !== undefined) throw new MemoryError(`${where}.roles: "${badRole}" is not one of ${columnRoles.join(', ')}.`);
-    if (new Set(c.roles).size !== c.roles.length) throw new MemoryError(`${where}.roles lists a role twice.`);
+    // One agent and one user entry per column and call.
+    if (seen.has(`${by}\n${c.name}`)) throw new MemoryError(`Column ${c.name} is listed twice for ${by}.`);
+    seen.add(`${by}\n${c.name}`);
+    if (c.clearUser) return { name: c.name, by, clearUser: true };
+    checkScore(c.score, where);
+    if (by === 'user') return { name: c.name, by, score: c.score, ...(c.roles !== undefined ? { roles: roleList(c.roles, where) } : {}) };
+    const roles = roleList(c.roles, where);
     if (typeof c.reason !== 'string' || !c.reason.trim()) throw new MemoryError(`${where}.reason must be a non-empty string.`);
     const reason = c.reason.trim();
     if (/[\r\n]/.test(reason)) throw new MemoryError(`${where}.reason must be one line.`);
     if (reason.length > maxScoreReason) throw new MemoryError(`${where}.reason is longer than ${maxScoreReason} characters.`);
     if (!Number.isInteger(c.sources) || c.sources < 0) throw new MemoryError(`${where}.sources must be an integer >= 0.`);
-    return { name: c.name, score: c.score, roles: columnRoles.filter(r => c.roles.includes(r)), reason, sources: c.sources };
+    return { name: c.name, by, score: c.score, roles, reason, sources: c.sources };
   });
   if (triggers.length > maxTriggerSummaries) throw new MemoryError(`At most ${maxTriggerSummaries} triggers per call.`);
   const seenTriggers = new Set();
@@ -840,7 +883,7 @@ export function validateScoreInput(input, scriptRoots = null) {
   const outFiles = scannedFiles.map((f, i) => {
     const where = `scannedFiles[${i}]`;
     rejectUnknownKeys(f, ['root', 'path', 'sha256'], where);
-    if (typeof f.root !== 'string' || !f.root) throw new MemoryError(`${where}.root must be the name of a script root.`);
+    if (typeof f.root !== 'string' || !profilePattern.test(f.root)) throw new MemoryError(`${where}.root must be the name of a configured script root (list_profiles), not a path.`);
     if (scriptRoots && !scriptRoots.includes(f.root)) throw new MemoryError(`${where}.root "${f.root}" is not a configured script root (list_profiles).`);
     const rel = normalizeScannedPath(f.path, where);
     if (typeof f.sha256 !== 'string' || !sha256Pattern.test(f.sha256.toLowerCase())) throw new MemoryError(`${where}.sha256 must be 64 hex characters.`);
@@ -852,22 +895,55 @@ export function validateScoreInput(input, scriptRoots = null) {
   return { schema, table, columns: outColumns, triggers: outTriggers, scannedFiles: outFiles };
 }
 
-// table_knowledge: scores highest first, columns that left the structure
-// marked, and the columns of the structure that have no score yet.
-function columnScoresSection(rec) {
+// A layer's state before it is replaced, for its history.
+function layerHistoryItem(layer) {
+  if (layer.cleared) return { cleared: true, at: layer.at };
+  return { score: layer.score, ...(layer.reason !== undefined ? { reason: layer.reason } : {}), ...(layer.roles ? { roles: layer.roles } : {}), at: layer.at };
+}
+
+const activeUser = entry => (entry?.user && !entry.user.cleared ? entry.user : null);
+
+// The user score wins over the agent score; null when neither is set.
+export function effectiveScore(entry) {
+  const user = activeUser(entry);
+  if (user) return { score: user.score, by: 'user' };
+  if (entry?.agent) return { score: entry.agent.score, by: 'agent' };
+  return null;
+}
+
+// graph.json: the stored layers plus the effective score per column.
+function columnScoresView(columnScores) {
+  const out = {};
+  for (const [column, entry] of Object.entries(columnScores)) {
+    const effective = effectiveScore(entry);
+    setOwn(out, column, { ...(effective ? { score: effective.score, scoreBy: effective.by } : { score: null }), ...entry });
+  }
+  return out;
+}
+
+// table_knowledge: effective score highest first with both layers, the ids of
+// active notes on the column (rules such as the user's usage note), columns
+// that left the structure marked, and the columns without any score.
+function columnScoresSection(rec, notes = []) {
   if (!rec.columnScores) return {};
   const inStructure = new Set(rec.columns.map(c => c.name));
   const entries = Object.entries(rec.columnScores)
-    .sort(([a, x], [b, y]) => y.score - x.score || a.localeCompare(b))
-    .map(([column, s]) => ({
-      column, score: s.score, roles: s.roles, reason: s.reason, sources: s.sources, at: s.at,
-      ...(s.history?.length ? { history: s.history } : {}),
-      ...(inStructure.has(column) ? {} : { inStructure: false }),
-    }));
+    .map(([column, entry]) => [column, entry, effectiveScore(entry)])
+    .sort(([a, , x], [b, , y]) => (y?.score ?? 0) - (x?.score ?? 0) || (a < b ? -1 : a > b ? 1 : 0))
+    .map(([column, entry, effective]) => {
+      const noteIds = notes.filter(n => n.column === column).map(n => n.id);
+      return {
+        column, score: effective?.score ?? null, scoreBy: effective?.by ?? null,
+        ...(entry.agent ? { agent: entry.agent } : {}),
+        ...(entry.user ? { user: entry.user } : {}),
+        ...(noteIds.length ? { noteIds } : {}),
+        ...(inStructure.has(column) ? {} : { inStructure: false }),
+      };
+    });
   return {
     scoredAt: rec.scoredAt,
     columnScores: entries,
-    unscoredColumns: rec.columns.filter(c => !Object.hasOwn(rec.columnScores, c.name)).map(c => c.name),
+    unscoredColumns: rec.columns.filter(c => !effectiveScore(Object.hasOwn(rec.columnScores, c.name) ? rec.columnScores[c.name] : null)).map(c => c.name),
   };
 }
 
