@@ -254,7 +254,8 @@ const writeLock = (body, ageMs = 0) => {
   if (ageMs) { const t = new Date(Date.now() - ageMs); fs.utimesSync(lockFile(), t, t); }
 };
 const liveLock = () => JSON.stringify({ pid: process.pid, host: os.hostname(), token: '0123456789abcdef', at: new Date().toISOString() });
-const runLocked = (argv, now) => main(argv, env, { db: makeDb(), notifyFn: async m => { notes.push(m); return 'log'; }, now: () => now, lockWaitMs: 50 });
+// lockWaitMs 0: no wait window, so the outcome never depends on how fast the disk is.
+const runLocked = (argv, now) => main(argv, env, { db: makeDb(), notifyFn: async m => { notes.push(m); return 'log'; }, now: () => now, lockWaitMs: 0 });
 
 test('exit 3 while another run holds the lock; nothing runs and the lock stays', async () => {
   approveReport();
