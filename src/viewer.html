@@ -4322,7 +4322,8 @@ function tablePageModel(data, id, rec) {
   const column = (c, inStructure) => {
     const entry = tpOwn(scores, c.name);
     const eff = tpEffective(entry);
-    const roles = eff.by === 'user' && Array.isArray(eff.user.roles) ? eff.user.roles : Array.isArray(entry?.agent?.roles) ? entry.agent.roles : [];
+    // A user score shows its own roles (none when it has none), never the agent's.
+    const roles = eff.by === 'user' ? (Array.isArray(eff.user.roles) ? eff.user.roles : []) : Array.isArray(entry?.agent?.roles) ? entry.agent.roles : [];
     return {
       name: c.name, type: c.type ?? null, notNull: !!c.notNull, default: c.default ?? null, comment: c.comment ?? null, inStructure,
       score: eff.score, scoreBy: eff.by, user: eff.user, agent: entry?.agent ?? null, roles: tpRoles.filter(r => roles.includes(r)),
@@ -4335,7 +4336,7 @@ function tablePageModel(data, id, rec) {
   const known = new Set(structure.map(c => c.name));
   const columns = [...structure.map(c => column(c, true)),
     ...Object.keys(scores || {}).filter(name => !known.has(name) && described).map(name => column({ name }, false))]
-    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0) || tpCmp(a.name, b.name));
+    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0) || (b.sources ?? -1) - (a.sources ?? -1) || tpCmp(a.name, b.name));
   const scored = columns.some(c => c.score !== null);
   const sourcesMax = columns.reduce((m, c) => Math.max(m, c.sources ?? 0), 0);
   const last = described && Array.isArray(rec.history) ? rec.history.at(-1) : null;
@@ -4370,6 +4371,17 @@ function tablePageModel(data, id, rec) {
     triggers,
     neighbours: { refs: group(e => e.from === id, e => e.to), deps: group(e => e.to === id, e => e.from) },
   };
+}
+// The table file of the page: a successful read is cached by key; a failed
+// read is thrown and never cached, so Retry reads again (an explored table
+// whose file could not be read is not shown as "not described").
+async function tpLoadRec(fetchRec, cache, key) {
+  if (cache.has(key)) return cache.get(key);
+  const rec = await fetchRec();
+  if (!rec || typeof rec !== 'object') throw new Error('The table file could not be read.');
+  if (cache.size > 50) cache.clear();
+  cache.set(key, rec);
+  return rec;
 }
 // Default filter: scores 4-5 only (when the table is scored at all).
 const tpTop = c => (c.score ?? 0) >= 4;
@@ -4528,6 +4540,12 @@ function tpCrumbs(trail, ctx) {
     trail.map((id, i) => [h('span', { 'aria-hidden': 'true' }, '›'),
       i === trail.length - 1 ? h('span', { class: 'crumb cur', 'aria-current': 'page' }, id) : h('button', { type: 'button', class: 'crumb', onclick: () => ctx.onCrumb(i) }, id)]));
 }
+function tpLoadError(id, message, trail, ctx) {
+  return h('div', { class: 'tp' }, tpCrumbs(trail, ctx),
+    h('div', { class: 'panel' }, h('div', { class: 'error-box', role: 'alert', style: 'margin:16px' },
+      t('The table file of {id} could not be loaded: {m}', { id, m: message }), ' ',
+      h('button', { type: 'button', class: 'icon-btn sm', onclick: ctx.onRetry }, t('Retry')))));
+}
 function tablePageView(model, trail, ctx) {
   return h('div', { class: 'tp' }, tpCrumbs(trail, ctx), tpHeader(model, ctx),
     h('div', { class: 'tp-body' },
@@ -4567,6 +4585,7 @@ const tablePageTr = {
   'Est. rows': 'Tahmini satır', 'Last scored': 'Son puanlama', 'Sources': 'Kaynak', 'Most reports and scripts found for one column': 'Tek bir kolon için bulunan en çok rapor ve betik',
   'explored': 'keşfedildi', 'seen in a plan': 'planda görüldü', 'not explored': 'keşfedilmedi',
   '1 change at the last describe': 'son tanımlamada 1 değişiklik', '{n} changes at the last describe': 'son tanımlamada {n} değişiklik',
+  'The table file of {id} could not be loaded: {m}': '{id} tablo dosyası yüklenemedi: {m}', 'Retry': 'Yeniden dene',
   'Breadcrumb': 'Gezinti yolu', 'Back': 'Geri', 'Schema': 'Şema', 'rule': 'kural', 'observation': 'gözlem', 'inference': 'çıkarım',
 };
 // table-page:end
@@ -4578,12 +4597,13 @@ const tablePageTr = {
 // (src/stageCli.js score-column). Both write the user layer only
 // (src/memory/userScore.js checks again).
 const userScoreRoles = ['key', 'join', 'filter', 'display', 'aggregate', 'sort/group'];
-// choice: { score, roles } or { clear: true }; roles left out when none is picked.
+// choice: { score, roles } or { clear: true }; roles always go with a score,
+// [] when none is picked, so unticking every role is saved.
 function userScoreRequest(profile, schema, table, column, choice) {
   const base = { profile, schema, table, column };
   if (choice?.clear) return { ...base, clear: true };
   const roles = userScoreRoles.filter(r => Array.isArray(choice?.roles) && choice.roles.includes(r));
-  return { ...base, score: choice?.score, ...(roles.length ? { roles } : {}) };
+  return { ...base, score: choice?.score, roles };
 }
 const userScoreProblem = choice => (choice?.clear || (Number.isInteger(choice?.score) && choice.score >= 1 && choice.score <= 5) ? null : 'Choose a score from 1 to 5.');
 async function postColumnScore(fetchFn, token, req) {
@@ -4651,14 +4671,23 @@ function renderTablePage(view, data) {
   const tp = state.tablePage, id = tp.trail.at(-1);
   const node = data.nodes.find(n => n.id === id) || null;
   const recKey = node?.file && node.state !== 'unexplored' ? `${tp.db}|${node.file}|${data.generatedAt}` : null;
+  const crumbCtx = {
+    onBack: tablePageBack, onClose: closeTablePage,
+    onCrumb: i => { state.tablePage = { ...tp, trail: tp.trail.slice(0, i + 1), open: null, showAll: false }; renderSchema(); },
+    onRetry: () => { state.tablePageError = null; state.tablePageKey = null; renderSchema(); },
+  };
+  if (recKey && state.tablePageError?.key === recKey) {
+    state.tablePageKey = null;
+    put(view, tpLoadError(id, state.tablePageError.message, tp.trail, crumbCtx));
+    return;
+  }
   if (recKey && !tpRecCache.has(recKey)) {
     if (!view.querySelector('.tp')) put(view, h('div', { class: 'panel' }, h('div', { class: 'rep-empty' }, t('Loading…'))));
-    memTable(tp.db, node.file, data.generatedAt).then(rec => {
-      if (tpRecCache.size > 50) tpRecCache.clear();
-      tpRecCache.set(recKey, rec);
-      state.tablePageKey = null;
-      renderSchema();
-    });
+    if (state.tablePageLoading === recKey) return;
+    state.tablePageLoading = recKey;
+    tpLoadRec(() => getJson(`/api/memory/table?profile=${encodeURIComponent(tp.db)}&file=${encodeURIComponent(node.file)}`), tpRecCache, recKey)
+      .catch(err => { state.tablePageError = { key: recKey, message: err?.message || String(err) }; })
+      .finally(() => { state.tablePageLoading = null; state.tablePageKey = null; renderSchema(); });
     return;
   }
   const key = JSON.stringify([tp.db, data.generatedAt, tp.trail, tp.open, tp.showAll, lang, state.scorePending ?? null]);
@@ -4669,8 +4698,7 @@ function renderTablePage(view, data) {
   put(view, tablePageView(model, tp.trail, {
     open: tp.open, showAll: tp.showAll, canScore: model.described && !state.scorePending,
     onOpen: next => openTablePage(tp.db, next), onToggle: name => set({ open: name }), onShowAll: v => set({ showAll: v }),
-    onScore: c => confirmColumnScore(model, c), onBack: tablePageBack, onClose: closeTablePage,
-    onCrumb: i => { state.tablePage = { ...tp, trail: tp.trail.slice(0, i + 1), open: null, showAll: false }; renderSchema(); },
+    onScore: c => confirmColumnScore(model, c), ...crumbCtx,
   }));
 }
 // Schema search: matching tables as links to their table page.
