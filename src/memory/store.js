@@ -65,6 +65,14 @@ export function fileSegment(name) {
   return reservedFileName.test(encoded) ? `~${encoded}` : encoded;
 }
 
+// fileSegment as it was before the u flag: each half of a surrogate pair
+// became ~efbfbd. Only used to find and move such older table files.
+const astralChar = /[\u{10000}-\u{10FFFF}]/u;
+function legacySegment(name) {
+  const encoded = String(name).replace(/[^a-z0-9_-]/g, ch => `~${Buffer.from(ch, 'utf8').toString('hex')}`);
+  return reservedFileName.test(encoded) ? `~${encoded}` : encoded;
+}
+
 const tableKey = (schema, table) => `${schema}.${table}`;
 const sameTable = (a, b) => a.schema === b.schema && a.table === b.table;
 
@@ -228,12 +236,35 @@ export class SchemaMemory {
     this.cache.delete(file);
   }
 
-  readTable(profile, schema, table) {
-    return this.readJson(this.tablePath(profile, schema, table), null);
+  // Where an older Auspex wrote a table whose schema or table name holds a
+  // character outside the Basic Multilingual Plane (see legacySegment), or
+  // null when the name has none and the path did not change.
+  legacyTablePath(profile, schema, table) {
+    if (!astralChar.test(`${schema}${table}`)) return null;
+    return path.join(this.profileDir(profile), 'tables', legacySegment(schema), `${legacySegment(table)}.json`);
   }
 
+  // A record under an old file name counts only when it is this very table:
+  // two such names used to share one file, and the later one overwrote it.
+  readTable(profile, schema, table) {
+    const record = this.readJson(this.tablePath(profile, schema, table), null);
+    if (record) return record;
+    const legacy = this.legacyTablePath(profile, schema, table);
+    const old = legacy ? this.readJson(legacy, null) : null;
+    return old && old.schema === schema && old.table === table ? old : null;
+  }
+
+  // Writing under the current file name also removes this table's record
+  // under the old one, so it is not listed twice.
   writeTable(profile, record) {
     this.writeJson(this.tablePath(profile, record.schema, record.table), record);
+    const legacy = this.legacyTablePath(profile, record.schema, record.table);
+    if (!legacy) return;
+    const old = this.readJson(legacy, null);
+    if (old && old.schema === record.schema && old.table === record.table) {
+      fs.rmSync(legacy, { force: true });
+      this.cache.delete(legacy);
+    }
   }
 
   listTables(profile) {

@@ -227,3 +227,18 @@ test('names outside the Basic Multilingual Plane get their own memory file and r
   assert.equal(mem.readTable('example', 'sales', '😁')?.table, '😁');
   assert.deepEqual(mem.listTables('example').map(t => t.table).filter(t => t.length === 2).sort(), ['😀', '😁']);
 });
+
+test('a table recorded under the old file name of an astral-character name is still found, then moved', () => {
+  const mem = tempMemory();
+  const describe = table => ordersDescribe({ relation: `sales.${table}`, table });
+  mem.recordDescribe(describe('😀'));
+  const current = mem.tablePath('example', 'sales', '😀');
+  const legacy = path.join(path.dirname(current), '~efbfbd~efbfbd.json');
+  fs.renameSync(current, legacy);
+  assert.equal(mem.readTable('example', 'sales', '😀')?.table, '😀', 'found under the old name');
+  assert.equal(mem.readTable('example', 'sales', '😁'), null, 'the old file belongs to one table only');
+  mem.recordDescribe(describe('😀'));
+  assert.ok(fs.existsSync(current));
+  assert.ok(!fs.existsSync(legacy), 'the old file is removed after the write');
+  assert.equal(mem.listTables('example').filter(t => t.table === '😀').length, 1, 'listed once');
+});

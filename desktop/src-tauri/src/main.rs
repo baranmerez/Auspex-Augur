@@ -604,6 +604,10 @@ fn api_route(path: &str, query: &HashMap<String, String>) -> Result<Value, Strin
 const AUSPEX_ROOT_KEY: &str = "auspexRoot";
 const STAGE_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_CLI_OUTPUT: u64 = 64 * 1024;
+// Reads (schedules, trend) return whole lists: up to 520 trend points with
+// several totals, or hundreds of schedules, well past the one-line results of
+// a change.
+const MAX_READ_OUTPUT: u64 = 4 * 1024 * 1024;
 const REF_KEYS: [&str; 4] = ["db", "schema", "category", "name"];
 
 fn stage_error(code: &str, message: impl Into<String>) -> Value {
@@ -695,10 +699,10 @@ fn auspex_root() -> Result<PathBuf, Value> {
     Ok(dir)
 }
 
-fn read_capped<R: Read + Send + 'static>(r: R) -> std::thread::JoinHandle<String> {
+fn read_capped<R: Read + Send + 'static>(r: R, cap: u64) -> std::thread::JoinHandle<String> {
     std::thread::spawn(move || {
         let mut buf = Vec::new();
-        let _ = r.take(MAX_CLI_OUTPUT).read_to_end(&mut buf);
+        let _ = r.take(cap).read_to_end(&mut buf);
         String::from_utf8_lossy(&buf).into_owned()
     })
 }
@@ -757,7 +761,7 @@ enum CliRun {
     TimedOut,
 }
 
-fn exec_cli(args: &[String], timeout: Duration) -> Result<(CliRun, Duration), Value> {
+fn exec_cli(args: &[String], timeout: Duration, stdout_cap: u64) -> Result<(CliRun, Duration), Value> {
     let node = node_program()?;
     let root = auspex_root()?;
     let mut cmd = Command::new(&node);
@@ -769,8 +773,8 @@ fn exec_cli(args: &[String], timeout: Duration) -> Result<(CliRun, Duration), Va
         cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW: no console window flashes up
     }
     let mut child = cmd.spawn().map_err(|e| stage_error("NODE_START_FAILED", format!("Could not start {}: {e}", node.display())))?;
-    let out = read_capped(child.stdout.take().expect("piped stdout"));
-    let err = read_capped(child.stderr.take().expect("piped stderr"));
+    let out = read_capped(child.stdout.take().expect("piped stdout"), stdout_cap);
+    let err = read_capped(child.stderr.take().expect("piped stderr"), MAX_CLI_OUTPUT);
     let started = Instant::now();
     let status = loop {
         match child.try_wait() {
@@ -792,7 +796,7 @@ fn exec_cli(args: &[String], timeout: Duration) -> Result<(CliRun, Duration), Va
 // outcome (timeout, no result) is audited with `audit` (tool, profile and
 // target of the change) as the base entry.
 fn run_cli(args: &[String], audit: &Value) -> Result<Value, Value> {
-    let (run, elapsed) = exec_cli(args, STAGE_TIMEOUT)?;
+    let (run, elapsed) = exec_cli(args, STAGE_TIMEOUT, MAX_CLI_OUTPUT)?;
     let CliRun::Done { stdout, stderr, code } = run else {
         let e = stage_error(
             "TIMEOUT",
@@ -815,7 +819,7 @@ fn run_cli(args: &[String], audit: &Value) -> Result<Value, Value> {
 const READ_TIMEOUT: Duration = Duration::from_secs(10);
 
 fn run_read_cli(args: &[String]) -> Result<Value, Value> {
-    let (run, _) = exec_cli(args, READ_TIMEOUT)?;
+    let (run, _) = exec_cli(args, READ_TIMEOUT, MAX_READ_OUTPUT)?;
     let CliRun::Done { stdout, stderr, code } = run else {
         return Err(stage_error("TIMEOUT", format!("src/stageCli.js did not answer within {} s.", READ_TIMEOUT.as_secs())));
     };
@@ -1118,6 +1122,13 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn read_results_may_be_far_larger_than_change_results() {
+        let big = vec![b'x'; 600 * 1024];
+        assert_eq!(read_capped(std::io::Cursor::new(big.clone()), MAX_READ_OUTPUT).join().unwrap().len(), big.len(), "a long trend list arrives whole");
+        assert_eq!(read_capped(std::io::Cursor::new(big), MAX_CLI_OUTPUT).join().unwrap().len(), MAX_CLI_OUTPUT as usize);
+    }
 
     #[test]
     fn schedules_attach_to_approved_reports_only_like_the_browser_viewer() {
