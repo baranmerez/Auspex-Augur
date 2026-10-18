@@ -75,6 +75,8 @@ auspex/
 | `save_execute_script` | Writes a change script into `EXECUTE/`; never executed by Auspex |
 | `table_knowledge` | Answers from the schema memory without database access |
 | `remember` | Adds, confirms or archives a note (rule, observation, inference) |
+| `score_columns` | Saves the agent's 1-5 column scores (roles, one-line reason, sources; history of 5), one-line trigger summaries and scanned script files (relative path + sha256); local only, audited without reasons, summaries or paths |
+| `scanned_files` | Lists the scanned script files of a profile so later runs read only new or changed files |
 
 `describe_table` also records the table in the schema memory and reports
 changes since the last time; `run_report` and `explain` record the tables and
@@ -83,7 +85,7 @@ columns their plans used. The memory never crawls the catalog on its own.
 Tool errors carry a structured envelope (`code`, `retryable`,
 `retryAfterSeconds`, `sqlState`, `correlationId`) next to the readable text;
 the correlation ID is also on every audit entry of that call. MCP prompts
-`explore`, `report` and `ddl` serve the workflow skills.
+`explore`, `report`, `ddl` and `columns` serve the workflow skills.
 
 **A profile is mandatory.** There is no default database. Every tool requires
 a profile name, and the server instructions tell the model to ask the user which
@@ -128,7 +130,7 @@ If `profiles.json` contains a password, Auspex refuses to start.
 ├── logs\           YYYY-MM-DD.jsonl audit log (file name is the UTC day)
 ├── exports\        CSV exports
 ├── library\        Report library: _drafts\, SELECT\, EXECUTE\ by db\schema\category
-├── memory\         Schema memory per profile: tables\, notes.json, changelog.jsonl, graph.json
+├── memory\         Schema memory per profile: tables\, notes.json, changelog.jsonl, scanned-files.json, graph.json
 ├── schedules.json  Report schedules, edited by the user (optional)
 ├── schedule-state.json  Last scheduled result per schedule (written by scheduleCli.js)
 ├── scheduler.lock  Held while scheduleCli.js runs schedules (one run at a time)
@@ -431,6 +433,7 @@ Merged work:
   viewer header shows them read-only, Favorites/Recent sit above the report
   tree (local browser storage), and *Ask Claude* copies a prompt without row values.
 - 2026-10-18: Rules tab lists all schema-memory notes with filters and archives an active note with a required reason (`POST /api/memory/archive`, desktop `archive_note` -> `stageCli.js archive-note`, same store logic and lock as `remember`); Schema tab downloads a data dictionary (HTML/Markdown) built from memory only.
+- 2026-10-18: column importance (PR 1): `score_columns` stores the agent's 1-5 score per column with roles, reason, sources and a 5-entry history in the table record (`columnScores`, `scoredAt`), trigger summaries (`triggerSummaries`, stale when the definition hash changes) and scanned script files (`scanned-files.json`); `describe_table` now records triggers and diffs them (added, dropped, changed, enabled-changed; legacy records without the field report nothing); `table_knowledge` and graph.json carry scores and triggers; skill `auspex-columns` (prompt `columns`). Viewer UI for scores follows in PR 2; the viewer's change text for `trigger-enabled-changed` uses its generic fallback until then.
 
 Working agreements:
 

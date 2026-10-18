@@ -1,6 +1,6 @@
 ---
 name: auspex-columns
-description: "Score how important each column of a PostgreSQL table is (1-5) by reading the SQL that uses it - the Auspex report library and the user's own script files - and save the scores with roles and a one-line reason in the Auspex schema memory through score_columns. No database queries are needed. Use when the user asks which columns matter, which columns reports use, which columns are unused, or wants column importance for a table."
+description: "Score how important each column of a PostgreSQL table is (1-5) by reading the SQL that uses it - the Auspex report library and the user's own script files - and save the scores with roles and a one-line reason in the Auspex schema memory through score_columns, together with a one-line summary of each table trigger. No database queries are needed for scores. Use when the user asks which columns matter, which columns reports use, which columns are unused, or wants column importance for a table."
 ---
 
 # Auspex columns
@@ -31,7 +31,8 @@ column appears.
    statement count).
 5. **No database queries for scoring.** Scores come from SQL text. If you need
    catalog facts, use memory first (`table_knowledge`) and keep any query to
-   the minimum, announced to the user.
+   the minimum, announced to the user. Trigger summaries need one
+   `describe_functions` call (catalog only).
 6. **Never invent business meaning.** A reason states where and how the
    column is used ("joined to example.customers in 6 reports, shown in all"),
    not what the business means by it.
@@ -70,7 +71,8 @@ column appears.
    | `GROUP BY`, `ORDER BY`, window `PARTITION BY`/`ORDER BY` | `sort/group` |
 
    Count `sources` per column: distinct reports plus distinct script files
-   that use it (report versions once, rule in step 2).
+   that use it (report versions once, rule in step 2). Worked examples:
+   [sql-attribution.md](references/sql-attribution.md).
 4. **Decide the score, relative within the table.**
    - 5: the columns the reports revolve around - keys joined almost
      everywhere, the main display and filter fields.
@@ -82,19 +84,29 @@ column appears.
    low score here; say so in the summary so the user can ask for a review.
    Write the reason as one sentence (at most 200 characters) in the
    `notesLanguage` from `list_profiles` (ask once if null).
-5. **Save.** One `score_columns` call per table with every column you
-   scored (unlisted columns keep their earlier score) and, on one of the
-   calls, `scannedFiles` with `root`, the path relative to that root and the
+5. **Triggers.** `table_knowledge` lists the recorded triggers of the table
+   (an older record without a `triggers` field needs one more
+   `describe_tables` call). For each trigger without a summary, or with
+   `summaryStale: true`, read its function with one `describe_functions` call
+   for all of them (1 statement) and write a one-line summary of what it does
+   (at most 200 characters, `notesLanguage`), for example "Rejects
+   example.orders rows whose status_code is not in example.status_codes".
+   Describe the effect, never paste or store the function source.
+6. **Save.** One `score_columns` call per table with every column you
+   scored (unlisted columns keep their earlier score), the trigger summaries
+   in `triggers` (`name`, `summary`) and, on one of the calls,
+   `scannedFiles` with `root`, the path relative to that root and the
    sha256 of each file you read. A rejected call saves nothing: fix the input
    (for example describe the table again if a column was renamed) and retry
    once.
-6. **Report to the user.** Per table: the top columns (score, roles,
-   sources), how many columns scored 1 (unused), how many files and reports
-   were read and how many were skipped as unchanged. Offer to review any
+7. **Report to the user.** Per table: the top columns (score, roles,
+   sources), how many columns scored 1 (unused), the trigger summaries, how
+   many files and reports were read and how many were skipped as unchanged. Offer to review any
    column the user knows is used elsewhere (application screens, exports).
 
 ## Answer shape
 
 Short: profile, tables scored, sources read (reports, files, skipped),
-top columns per table with roles, unused column count, columns that need the
-user's review, statements used (usually 0).
+top columns per table with roles, unused column count, trigger summaries,
+columns that need the user's review, statements used (usually 0, plus 1 for
+trigger functions).
