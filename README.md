@@ -188,7 +188,7 @@ flowchart LR
 | 🧾 `save_execute_script` | Writes a change script into `EXECUTE/` for a human to run — never executed by Auspex; with `root`, `folder` and `fileName` also as a new file in a configured script root (for example a folder of saved SQL scripts) |
 | 🧠 `table_knowledge` | What the schema memory knows about a table — key and used columns, relations, table notes, database-wide notes, recent changes, column importance scores, triggers with their summaries, unexplored neighbors — without touching the database |
 | 📌 `remember` | Adds, confirms or archives a note: a rule the user stated, an observation backed by evidence, or an unconfirmed inference |
-| 🏷️ `score_columns` | Saves the agent's 1-5 importance score per column of a described table (roles, one-line reason, number of sources), one-line trigger summaries and the script files it read (path relative to the script root and sha256 only); local memory only, no database access |
+| 🏷️ `score_columns` | Saves 1-5 importance scores per column of a described table in two layers: the agent's (roles, one-line reason, number of sources) and the user's (stated by the user; wins when present), one-line trigger summaries and the script files it read (path relative to the script root and sha256 only); local memory only, no database access |
 | 🗃️ `scanned_files` | Lists the script files `score_columns` recorded (root, relative path, sha256, last read), so the next run reads only new or changed files |
 
 ### Choosing the database
@@ -768,7 +768,9 @@ node: { id: "schema.table", schema, table, file?, state: "explored" | "seen" | "
         kind, estimatedRows, columnCount, changes, notes,
         estRows?: number | null,        // relation_stats row estimate; null = never analyzed
         scoredAt?: "ISO time",          // score_columns, see Column importance
-        columnScores?: { [column]: { score, roles, reason, sources, at, history: [{ score, reason, at }] } },
+        columnScores?: { [column]: { score: 1-5 | null, scoreBy?: "user" | "agent",   // effective score
+                                     agent?: { score, roles, reason, sources, at, history },
+                                     user?: { score, roles?, at, history } | { cleared: true, at, history } } },
         triggers?: [{ name, timing, events, level, enabled, function, when, definition, constraintTrigger,
                       summary?, summaryAt?, summaryStale? }] }
 edge: { level: "fk" | "used" | "suggested", from: "schema.table", to: "schema.table",
@@ -784,37 +786,64 @@ records keep the measurement (`estRows`, `estRowsAt`, and for centers
 
 ### Column importance
 
-Which columns of a table matter is decided by the agent, not computed: the
-`auspex-columns` skill (prompt `columns`) reads the SQL that uses a table -
-the report library and the script files in a script root the user confirms -
-attributes every column use to its table (aliases and CTEs resolved), and
-saves with `score_columns`:
+Which columns of a table matter is decided by people and the agent, not
+computed. The `auspex-columns` skill (prompt `columns`) reads the SQL that
+uses a table - the report library and the script files in a configured
+script root the user confirms - attributes every column use to its table
+(aliases and CTEs resolved), and saves with `score_columns`. Each column
+has two layers:
 
-- `score` 1-5, relative within the table: 5 for the columns the reports
-  revolve around (keys joined everywhere, main display and filter fields),
-  1 for columns no read SQL uses.
-- `roles`: any of `key`, `join`, `filter`, `display`, `aggregate`,
-  `sort/group`; `reason`: one line (at most 200 characters) in the
-  `notesLanguage`; `sources`: distinct reports and scripts (versions of one
-  report count once).
+- `agent` (`by: "agent"`, the default): `score` 1-5, `roles` (any of `key`,
+  `join`, `filter`, `display`, `aggregate`, `sort/group`), `reason` (one
+  line, at most 200 characters, in the `notesLanguage`) and `sources`
+  (distinct reports and scripts; versions of one report count once).
+- `user` (`by: "user"`): a score the user stated in the conversation, with
+  optional `roles`. The user's usage note ("mostly in WHERE, sometimes in
+  SELECT") is saved as an ordinary column rule with `remember`, so it shows on
+  the Rules tab and can be archived. `clearUser: true` removes the user score.
+
+The effective score is the user score when present, otherwise the agent
+score. An agent rescan updates only the agent layer, so both stay visible
+("user 5, agent 2"). Each layer keeps its previous 5 states as history
+(newest first, a removal included); columns and layers not listed keep their
+score.
+
+| Score | Meaning (relative within the table) |
+|---|---|
+| 5 core | most reports revolve around it: main join key, period filter, primary display field |
+| 4 frequent | used regularly in many reports |
+| 3 topical | appears in the reports of one topic |
+| 2 rare | one report, or only in an old version |
+| 1 unused | appears in no SQL |
+
+A column used only on application screens and in no report or script scores
+low; after a scan the skill asks once which such columns matter and saves the
+answers as user scores.
+
 - Optional `triggers`: one-line summary per trigger of what its function does
-  (the source is never stored); marked `summaryStale` once the trigger
-  definition changes.
-- Optional `scannedFiles`: `root`, path relative to it and sha256 of each
-  script file read. `scanned_files` lists them, so later runs skip unchanged
-  files. Script files are never copied, saved as reports or modified.
+  (the source is never stored). A summary is marked `summaryStale` when the
+  trigger definition changes; a change of only the function body is not
+  detected, so ask the agent to re-read the functions when they changed.
+- Optional `scannedFiles`: `root` (a configured script root name), path
+  relative to it and sha256 of each script file read. `scanned_files` lists
+  them, so later runs skip unchanged files. Each root keeps at most 20000
+  entries; the ones read longest ago are pruned first. Files outside a
+  configured root are not recorded. Script files are never copied, saved as
+  reports or modified.
 
 The table must be described first and every column and trigger must exist in
 its recorded structure; otherwise the whole call is rejected and nothing is
-saved. A new score replaces the current one, the previous 5 per column stay
-as history (newest first) and columns not listed keep their score. There is
-no manual override and no viewer write path. A column used only on
-application screens and in no report or script scores low; ask the agent to
-review it.
+saved. `table_knowledge` returns per column the effective `score` and
+`scoreBy`, both layers and `noteIds` (active notes on that column, such as the
+user's usage rule). The viewer write path for user scores is not part of this
+release.
 
 ```json
 { "profile": "example", "schema": "example", "table": "orders",
-  "columns": [{ "name": "order_id", "score": 5, "roles": ["key", "join"], "reason": "Joined to example.order_items in every report.", "sources": 7 }],
+  "columns": [
+    { "name": "order_id", "score": 5, "roles": ["key", "join"], "reason": "Joined to example.order_items in every report.", "sources": 7 },
+    { "name": "created_at", "by": "user", "score": 5, "roles": ["filter"] }
+  ],
   "triggers": [{ "name": "orders_check", "summary": "Rejects rows whose status_code is not in example.status_codes." }],
   "scannedFiles": [{ "root": "scripts", "path": "example/reports/orders_by_day.sql", "sha256": "<64 hex>" }] }
 ```
@@ -908,7 +937,7 @@ server from the same files at startup).
 |---|---|---|
 | [`auspex-explore`](skills/auspex-explore/SKILL.md) | `explore` | Finding tables, reading structure and relations, fill rates and fan-out, recording findings in the schema memory with few statements |
 | [`auspex-report`](skills/auspex-report/SKILL.md) | `report` | A combined report: one round of at most 3 questions, remembered rules as defaults, status codes from their source (lookup table, enum, check or comment), fan-out/duplicate/NULL checks, and whether cancelled or deleted rows count asked within the 3 questions when no rule is remembered, then save, run and approve in the report library |
-| [`auspex-columns`](skills/auspex-columns/SKILL.md) | `columns` | Scoring column importance 1-5 from the SQL of the report library and the user's script files (roles, reason, sources), plus one-line trigger summaries, saved with `score_columns`; no database queries for the scores |
+| [`auspex-columns`](skills/auspex-columns/SKILL.md) | `columns` | Scoring column importance 1-5 from the SQL of the report library and the user's script files (roles, reason, sources) next to scores the user states, plus one-line trigger summaries, saved with `score_columns`; no database queries for the scores |
 | [`auspex-ddl`](skills/auspex-ddl/SKILL.md) | `ddl` | Studying an existing table family (tables, functions, triggers) and designing a similar one: analysis note plus a `BEGIN ... ROLLBACK` script via `save_execute_script`, never executed by Auspex |
 
 Each `SKILL.md` holds the core rules and workflow; longer checklists live in
