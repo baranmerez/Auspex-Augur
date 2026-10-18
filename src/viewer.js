@@ -3,6 +3,8 @@
 // memory, with report schedules and trends. Read-only except for three POST routes that approve a draft report,
 // revoke an approval in the local library (stage moves) or archive one
 // schema-memory note; all three are audited.
+// A fourth POST route sets or removes one user column score (user layer only,
+// audited like score_columns).
 // Listens on 127.0.0.1 only, never connects to a database, never shows
 // passwords. Run with: npm run viewer (port: AUSPEX_VIEWER_PORT, default 4719).
 import http from 'node:http';
@@ -16,6 +18,7 @@ import { approvedJoinPairs, reportHtmlHash } from './reports/service.js';
 import { StageError as HttpError, stageActions as actions, validateStageInput, applyStageChange, statusOf } from './reports/stageChange.js';
 import { SchemaMemory } from './memory/store.js';
 import { validateArchiveInput, archiveNoteFor } from './memory/noteArchive.js';
+import { validateUserScoreInput, userScoreAudit, setUserScoreFor } from './memory/userScore.js';
 import { createAuditLog } from './auditLog.js';
 import { classifyError } from './errors.js';
 import { loadSchedules, schedulesFile, nextSlot, cadenceText } from './schedule/config.js';
@@ -39,6 +42,7 @@ const maxBodyBytes = 4096;
 // Stage changes the page may request (src/reports/stageChange.js).
 const stageActions = new Map([['/api/reports/approve', actions.approve], ['/api/reports/revoke', actions.revoke]]);
 const archiveRoute = '/api/memory/archive';
+const columnScoreRoute = '/api/memory/column-score';
 
 // Re-read on every request so edits to profiles.json show up without restart.
 function readConfig() {
@@ -297,6 +301,30 @@ async function archiveNote(req, res) {
   }
 }
 
+// Set or remove one user column score (src/memory/userScore.js): same origin,
+// token, content-type and body-size checks as the archive route. Audited as
+// score_columns with layer user: names, score and role names only.
+async function scoreColumn(req, res) {
+  checkWriteRequest(req);
+  const started = Date.now();
+  const entry = { source: 'viewer', tool: 'score_columns', actor: 'viewer', layer: 'user', correlationId: crypto.randomUUID() };
+  const audit = createAuditLog(logDir());
+  try {
+    if (!/^application\/json\s*(;|$)/i.test(req.headers['content-type'] || '')) throw new HttpError(415, 'Content-Type must be application/json');
+    let body;
+    try { body = JSON.parse(await readBody(req)); } catch (err) { throw err instanceof HttpError ? err : new HttpError(400, 'Body must be JSON'); }
+    const input = validateUserScoreInput(body);
+    Object.assign(entry, userScoreAudit(input));
+    const result = setUserScoreFor(schemaMemory(library()), input);
+    audit({ ...entry, ms: Date.now() - started, scored: 1 });
+    return send(res, 200, { ...result, correlationId: entry.correlationId });
+  } catch (err) {
+    const { code } = classifyError(err);
+    audit({ ...entry, ms: Date.now() - started, error: err.message, errorCode: code });
+    return send(res, statusOf(err), { error: err.message, code, correlationId: entry.correlationId });
+  }
+}
+
 // The request target as a URL, or null when it is not origin-form: exactly one
 // leading "/" (no "//authority", no "/\authority" since URL parsing treats a
 // backslash as "/", no absolute-form, no "*"), parsed against a fixed base so the Host
@@ -343,9 +371,9 @@ function handle(req, res) {
       }
     });
   }
-  if (url.pathname === archiveRoute) {
+  if (url.pathname === archiveRoute || url.pathname === columnScoreRoute) {
     if (req.method !== 'POST') return send(res, 405, { error: 'Use POST' }, undefined, { Allow: 'POST' });
-    return archiveNote(req, res).catch(err => {
+    return (url.pathname === archiveRoute ? archiveNote : scoreColumn)(req, res).catch(err => {
       try {
         if (!res.headersSent) send(res, statusOf(err), { error: err.message, ...(err.errorCode ? { code: err.errorCode } : {}) });
       } catch (e) {
