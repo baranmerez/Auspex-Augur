@@ -149,3 +149,16 @@ test('a broken schedules.json is reported, the report list still loads', async (
   assert.match(body.schedulesError, /profile|report|schedule/);
   assert.equal(body.reports.find(x => x.name === 'example-report').schedules, undefined);
 });
+
+test('day counts follow a log file that grows (cached by size and modification time)', async () => {
+  const dir = path.join(home, 'logs');
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, '2026-10-19.jsonl');
+  const entry = JSON.stringify({ ts: '2026-10-19T08:00:00.000Z', tool: 'query', profile: 'exampledb' }) + '\n';
+  fs.writeFileSync(file, entry + entry);
+  const count = async () => JSON.parse((await request('GET', '/api/days')).body).find(d => d.day === '2026-10-19')?.count;
+  assert.equal(await count(), 2);
+  assert.equal(await count(), 2, 'unchanged file, same count');
+  fs.appendFileSync(file, entry);
+  assert.equal(await count(), 3, 'a grown file is counted again');
+});

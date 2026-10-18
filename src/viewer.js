@@ -57,15 +57,25 @@ function logDir() {
   return config?.logDir ?? path.join(auspexHome(), 'logs');
 }
 
+// Line count of a log file, reused while its size and modification time stay
+// the same: past days never change, so a refresh (every 5 s in live mode)
+// reads only the file that grew instead of the whole log folder.
+const dayCounts = new Map();
+function countLines(file) {
+  const st = fs.statSync(file);
+  const hit = dayCounts.get(file);
+  if (hit && hit.size === st.size && hit.mtimeMs === st.mtimeMs) return hit.count;
+  const count = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).length;
+  dayCounts.set(file, { size: st.size, mtimeMs: st.mtimeMs, count });
+  return count;
+}
+
 function listDays() {
   const dir = logDir();
   if (!fs.existsSync(dir)) return [];
   return fs.readdirSync(dir)
     .filter(f => /^\d{4}-\d{2}-\d{2}\.jsonl$/.test(f))
-    .map(f => {
-      const text = fs.readFileSync(path.join(dir, f), 'utf8');
-      return { day: f.slice(0, 10), count: text.split('\n').filter(Boolean).length };
-    })
+    .map(f => ({ day: f.slice(0, 10), count: countLines(path.join(dir, f)) }))
     .sort((a, b) => b.day.localeCompare(a.day));
 }
 
