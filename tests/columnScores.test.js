@@ -75,26 +75,59 @@ test('unknown, undescribed or mismatched tables reject the whole call and save n
   assert.throws(() => mem.scoreColumns('Bad Profile', input([entry('order_id', 5)])), err => err.errorCode === 'PROFILE_INVALID');
 });
 
-test('a new score replaces the current one, history keeps the newest 5 first, unlisted columns keep theirs', () => {
+test('a new agent score replaces the current one, history keeps the newest 5 first, unlisted columns keep theirs', () => {
   const mem = describedMemory();
   mem.scoreColumns('example', input([entry('order_id', 5, { roles: ['key', 'join'] }), entry('amount', 4, { roles: ['aggregate'] })]));
   for (let i = 1; i <= 6; i++) mem.scoreColumns('example', input([entry('order_id', (i % 5) + 1, { reason: `round ${i}` })]));
   const rec = mem.readTable('example', 'example', 'orders');
-  const order = rec.columnScores.order_id;
+  const order = rec.columnScores.order_id.agent;
   assert.equal(order.score, (6 % 5) + 1);
   assert.equal(order.reason, 'round 6');
   assert.equal(order.history.length, scoreHistoryLimit);
   assert.deepEqual(order.history.map(h => h.reason), ['round 5', 'round 4', 'round 3', 'round 2', 'round 1']);
   assert.ok(order.history[0].at > order.history[1].at, 'newest first');
-  assert.deepEqual(rec.columnScores.amount, { score: 4, roles: ['aggregate'], reason: 'amount shown in reports', sources: 2, at: rec.columnScores.amount.at, history: [] });
+  assert.deepEqual(rec.columnScores.amount, { agent: { score: 4, roles: ['aggregate'], reason: 'amount shown in reports', sources: 2, at: rec.columnScores.amount.agent.at, history: [] } });
   assert.equal(rec.scoredAt, order.at);
 
   // Describing the table again keeps the scores.
   mem.recordDescribe(ordersDescribe());
-  assert.equal(mem.readTable('example', 'example', 'orders').columnScores.amount.score, 4);
+  assert.equal(mem.readTable('example', 'example', 'orders').columnScores.amount.agent.score, 4);
 });
 
-test('table_knowledge and graph.json carry the scores', () => {
+test('user and agent layers: the user score wins, a rescan never touches it, clearUser keeps the removal in history', () => {
+  const mem = describedMemory();
+  mem.scoreColumns('example', input([entry('status_code', 2, { roles: ['filter'] })]));
+  mem.scoreColumns('example', input([{ name: 'status_code', by: 'user', score: 5, roles: ['filter', 'display'] }]));
+  mem.scoreColumns('example', input([entry('status_code', 1, { roles: [], reason: 'rescan: no report uses it' })]));
+  let entry0 = mem.readTable('example', 'example', 'orders').columnScores.status_code;
+  assert.equal(entry0.user.score, 5, 'agent rescan leaves the user layer');
+  assert.deepEqual(entry0.user.roles, ['filter', 'display']);
+  assert.equal('note' in entry0.user, false);
+  assert.equal(entry0.agent.score, 1);
+  assert.deepEqual(entry0.agent.history.map(h => h.score), [2]);
+  let k = mem.knowledge('example', 'example', 'orders');
+  assert.deepEqual([k.columnScores[0].score, k.columnScores[0].scoreBy, k.columnScores[0].agent.score, k.columnScores[0].user.score], [5, 'user', 1, 5]);
+
+  mem.scoreColumns('example', input([{ name: 'status_code', clearUser: true }]));
+  entry0 = mem.readTable('example', 'example', 'orders').columnScores.status_code;
+  assert.equal(entry0.user.cleared, true);
+  assert.deepEqual(entry0.user.history.map(h => h.score), [5]);
+  k = mem.knowledge('example', 'example', 'orders');
+  assert.deepEqual([k.columnScores[0].score, k.columnScores[0].scoreBy], [1, 'agent']);
+  mem.scoreColumns('example', input([{ name: 'status_code', by: 'user', score: 4 }]));
+  assert.deepEqual(mem.readTable('example', 'example', 'orders').columnScores.status_code.user.history.map(h => h.cleared ?? h.score), [true, 5]);
+
+  assert.throws(() => mem.scoreColumns('example', input([{ name: 'amount', clearUser: true }])), err => err.errorCode === 'PRECONDITION_FAILED');
+  assert.throws(() => validateScoreInput(input([{ name: 'amount', by: 'user', score: 3, note: 'mostly in WHERE' }])), /unknown keys: note/);
+  assert.throws(() => validateScoreInput(input([{ name: 'amount', by: 'user', score: 3, reason: 'x' }])), /unknown keys: reason/);
+  assert.throws(() => validateScoreInput(input([{ name: 'amount', by: 'agent', clearUser: true }])), /only removes the user score/);
+  assert.throws(() => validateScoreInput(input([{ name: 'amount', by: 'owner', score: 3 }])), /by must be one of/);
+  assert.throws(() => validateScoreInput(input([{ name: 'amount', by: 'user' }])), /score must be an integer/);
+  const both = validateScoreInput(input([entry('amount', 3), { name: 'amount', by: 'user', score: 5 }]));
+  assert.equal(both.columns.length, 2, 'one agent and one user entry per column are allowed');
+});
+
+test('table_knowledge and graph.json carry both layers, the effective score and the ids of notes on the column', () => {
   const mem = describedMemory();
   const result = mem.scoreColumns('example', input([
     entry('amount', 3, { roles: ['aggregate'] }),
@@ -102,22 +135,64 @@ test('table_knowledge and graph.json carry the scores', () => {
     entry('delivered_at', 1, { roles: [], sources: 0, reason: 'not used in any read SQL' }),
   ]));
   assert.deepEqual(result.unscoredColumns, ['customer_id', 'status_code', 'created_at']);
-  mem.scoreColumns('example', input([entry('amount', 4, { roles: ['aggregate'] })]));
+  mem.scoreColumns('example', input([entry('amount', 4, { roles: ['aggregate'] }), { name: 'created_at', by: 'user', score: 5 }]));
+  const rule = mem.addNote('example', { kind: 'rule', schema: 'example', table: 'orders', column: 'created_at', text: 'Mostly in WHERE, sometimes in SELECT.' });
 
   const k = mem.knowledge('example', 'example', 'orders');
-  assert.deepEqual(k.columnScores.map(c => [c.column, c.score]), [['order_id', 5], ['amount', 4], ['delivered_at', 1]]);
-  assert.deepEqual(k.columnScores[0].roles, ['key', 'join', 'filter']);
-  assert.equal(k.columnScores[0].sources, 9);
-  assert.deepEqual(k.columnScores[1].history.map(h => h.score), [3]);
-  assert.deepEqual(k.unscoredColumns, ['customer_id', 'status_code', 'created_at']);
+  assert.deepEqual(k.columnScores.map(c => [c.column, c.score, c.scoreBy]), [['created_at', 5, 'user'], ['order_id', 5, 'agent'], ['amount', 4, 'agent'], ['delivered_at', 1, 'agent']]);
+  assert.deepEqual(k.columnScores[1].agent.roles, ['key', 'join', 'filter']);
+  assert.equal(k.columnScores[1].agent.sources, 9);
+  assert.deepEqual(k.columnScores[2].agent.history.map(h => h.score), [3]);
+  assert.deepEqual(k.columnScores[0].noteIds, [rule.id]);
+  assert.ok(k.notes.some(n => n.id === rule.id && n.column === 'created_at'), 'the usage rule comes with the table notes');
+  assert.deepEqual(k.unscoredColumns, ['customer_id', 'status_code']);
   assert.ok(k.scoredAt);
 
   const view = JSON.parse(fs.readFileSync(path.join(mem.root, 'example', 'graph.json'), 'utf8'));
   const node = view.nodes.find(n => n.id === 'example.orders');
-  assert.equal(node.columnScores.order_id.score, 5);
-  assert.equal(node.columnScores.amount.history[0].score, 3);
+  assert.deepEqual([node.columnScores.order_id.score, node.columnScores.order_id.scoreBy], [5, 'agent']);
+  assert.deepEqual([node.columnScores.created_at.score, node.columnScores.created_at.scoreBy, node.columnScores.created_at.user.score], [5, 'user', 5]);
+  assert.equal(node.columnScores.amount.agent.history[0].score, 3);
   assert.equal(node.scoredAt, k.scoredAt);
+  assert.ok(view.notes.some(n => n.id === rule.id && n.table === 'orders' && n.column === 'created_at'), 'graph.json notes carry the column');
   assert.equal(fs.readdirSync(path.join(mem.root, 'example')).some(f => f.endsWith('.tmp')), false, 'atomic writes leave no temp files');
+});
+
+test('a column named __proto__ is stored as an own key', () => {
+  const mem = new SchemaMemory(tempDir('auspex-scores-proto-'), { now });
+  const desc = ordersDescribe();
+  desc.columns.push(col('__proto__', 7, 'text'));
+  mem.recordDescribe(desc);
+  mem.scoreColumns('example', input([entry('__proto__', 2), { name: '__proto__', by: 'user', score: 4 }]));
+  const raw = JSON.parse(fs.readFileSync(mem.tablePath('example', 'example', 'orders'), 'utf8'));
+  assert.ok(Object.hasOwn(raw.columnScores, '__proto__'));
+  assert.equal(Object.getPrototypeOf(raw.columnScores), Object.prototype);
+  const k = mem.knowledge('example', 'example', 'orders');
+  assert.deepEqual(k.columnScores.find(c => c.column === '__proto__').score, 4);
+  const node = JSON.parse(fs.readFileSync(path.join(mem.root, 'example', 'graph.json'), 'utf8')).nodes.find(n => n.id === 'example.orders');
+  assert.equal(node.columnScores.__proto__.scoreBy, 'user');
+});
+
+test('UNC, drive-relative and path-like roots or paths are rejected', () => {
+  const file = (root, p) => input([entry('order_id', 3)], { scannedFiles: [{ root, path: p, sha256: sha('a') }] });
+  for (const p of ['\\\\server\\share\\x.sql', '//server/share/x.sql', 'C:x.sql', 'c:\\x.sql']) {
+    assert.throws(() => validateScoreInput(file('scripts', p)), /relative/, p);
+  }
+  for (const root of ['\\\\server\\share', 'C:x', 'C:\\scripts', '../scripts', 'Scripts']) {
+    assert.throws(() => validateScoreInput(file(root, 'x.sql')), /not a path/, root);
+  }
+});
+
+test('scanned files are capped per root, oldest lastReadAt pruned first', () => {
+  const mem = new SchemaMemory(tempDir('auspex-scores-cap-'), { now, scannedFilesPerRoot: 3 });
+  mem.recordDescribe(ordersDescribe());
+  const files = names => names.map(n => ({ root: 'scripts', path: `${n}.sql`, sha256: sha('a') }));
+  mem.scoreColumns('example', input([entry('order_id', 5)], { scannedFiles: files(['a', 'b']) }));
+  mem.scoreColumns('example', input([entry('order_id', 5)], { scannedFiles: [...files(['c']), { root: 'other', path: 'z.sql', sha256: sha('b') }] }));
+  const result = mem.scoreColumns('example', input([entry('order_id', 5)], { scannedFiles: files(['d', 'e']) }));
+  assert.deepEqual(result.scannedFiles, { recorded: 2, total: 4, pruned: 2 });
+  assert.deepEqual(mem.readScannedFiles('example', 'scripts').map(f => f.path), ['c.sql', 'd.sql', 'e.sql']);
+  assert.deepEqual(mem.readScannedFiles('example', 'other').map(f => f.path), ['z.sql'], 'other roots are not pruned');
 });
 
 test('a dropped column keeps its score, marked as no longer in the structure', () => {
@@ -169,9 +244,9 @@ test('scoring runs under the profile lock: two processes scoring different colum
   const results = await Promise.all([run(writer('order_id', 15)), run(writer('amount', 15))]);
   for (const r of results) assert.equal(r.exit, 0, r.err);
   const scores = new SchemaMemory(mem.root).readTable('example', 'example', 'orders').columnScores;
-  assert.equal(scores.order_id.sources, 15);
-  assert.equal(scores.amount.sources, 15);
-  assert.equal(scores.order_id.history.length, scoreHistoryLimit);
+  assert.equal(scores.order_id.agent.sources, 15);
+  assert.equal(scores.amount.agent.sources, 15);
+  assert.equal(scores.order_id.agent.history.length, scoreHistoryLimit);
   assert.equal(fs.existsSync(path.join(mem.root, 'example', '.lock')), false, 'lock released');
 });
 
@@ -209,9 +284,11 @@ test('score_columns over MCP: saved, returned by table_knowledge and scanned_fil
   assert.ok(!saved.isError, saved.content[0].text);
   assert.equal(JSON.parse(saved.content[0].text).scored, 1);
 
+  const user = await call('score_columns', { profile: 'example', schema: 'example', table: 'orders', columns: [{ name: 'amount', by: 'user', score: 4, roles: ['aggregate'] }] });
+  assert.ok(!user.isError, user.content[0].text);
   const k = JSON.parse((await call('table_knowledge', { profile: 'example', schema: 'example', table: 'orders' })).content[0].text);
   assert.equal(k.columnScores[0].column, 'order_id');
-  assert.equal(k.columnScores[0].reason, reason);
+  assert.equal(k.columnScores[0].agent.reason, reason);
   const listed = JSON.parse((await call('scanned_files', { profile: 'example' })).content[0].text);
   assert.deepEqual(listed.files.map(f => f.path), ['example/pathmarker.sql']);
 
@@ -228,9 +305,9 @@ test('score_columns over MCP: saved, returned by table_knowledge and scanned_fil
   assert.ok(badRoot.isError);
 
   const logged = auditEntries().filter(e => e.tool === 'score_columns');
-  assert.equal(logged.length, 3, 'success, missing column and unknown root (SDK-rejected calls are not audited)');
+  assert.equal(logged.length, 4, 'agent and user success, missing column and unknown root (SDK-rejected calls are not audited)');
   assert.deepEqual([logged[0].profile, logged[0].schema, logged[0].table, logged[0].columns, logged[0].scannedFiles, logged[0].scored], ['example', 'example', 'orders', 1, 1, 1]);
-  assert.match(logged[1].error, /missing_column/);
+  assert.match(logged[2].error, /missing_column/);
   const raw = JSON.stringify(logged);
   for (const marker of ['REASONMARKER', 'pathmarker']) assert.ok(!raw.includes(marker), `${marker} is not logged`);
 });

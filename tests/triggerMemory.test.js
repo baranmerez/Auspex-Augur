@@ -102,3 +102,10 @@ test('summaries need recorded triggers, are kept across describes, marked stale 
   const stored = fs.readFileSync(mem.tablePath('example', 'example', 'orders'), 'utf8');
   assert.ok(!/\$\$|BEGIN|RETURN NEW/i.test(stored), 'no function source in the record');
 });
+
+test('a trigger change recorded through describe_tables shows in changesSinceLast', () => {
+  const mem = memory();
+  mem.recordDescribeMany('example', [ordersDescribe([trigger('orders_check')])]);
+  const [result] = mem.recordDescribeMany('example', [ordersDescribe([trigger('orders_check', { enabled: 'disabled' }), trigger('orders_audit')])]);
+  assert.deepEqual(result.changesSinceLast.sort(), ['trigger orders_audit added', 'trigger orders_check enabled -> disabled']);
+});
