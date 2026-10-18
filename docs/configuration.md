@@ -22,7 +22,7 @@ Windows; override with `AUSPEX_PROFILES_FILE`):
 
 | Field | Required | Meaning |
 |---|---|---|
-| `url` | yes | `postgresql://user@host:port/db`; a password here (user-info or query option) is rejected. Host and port go only in the URL authority (IPv6 in brackets, a Unix socket directory percent-encoded); `host` and `port` query options are rejected. Query options are limited to `ssl`, `sslmode`, `sslcert`, `sslkey`, `sslrootcert`, `sslnegotiation`, `uselibpqcompat`, `application_name`, `fallback_application_name`, `connect_timeout`, `keepalives`, `keepalives_idle`; anything else (for example `options=-c ...`, `replication`, `client_encoding`, `user`, `db`) stops the server at startup, as does the same URL in `AUSPEX_DB_<NAME>` |
+| `url` | yes | `postgresql://user@host:port/db`; host, user and database are required, and a URL without a port connects to 5432 (written out explicitly, so the endpoint shown is the one used); a password here (user-info or query option) is rejected. Host and port go only in the URL authority (IPv6 in brackets, a Unix socket directory percent-encoded); `host` and `port` query options are rejected. Query options are limited to `ssl`, `sslmode`, `sslcert`, `sslkey`, `sslrootcert`, `sslnegotiation`, `uselibpqcompat`, `application_name`, `fallback_application_name`, `connect_timeout`, `keepalives`, `keepalives_idle`; anything else (for example `options=-c ...`, `replication`, `client_encoding`, `user`, `db`) stops the server at startup, as does the same URL in `AUSPEX_DB_<NAME>` |
 | `description` | no | Shown by `list_profiles` when the model asks which database to use; mark production clearly |
 | `maxTimeoutSeconds` | no | Ceiling for `timeoutSeconds` on this profile (1-3600) |
 | `maxQueriesPerMinute` | no | Query budget for this profile (1-10000); overrides `AUSPEX_MAX_QUERIES_PER_MINUTE` |
@@ -133,6 +133,13 @@ into a hidden per-package folder.
 **Passwords live in pgpass**, which node-postgres reads automatically:
 `%APPDATA%\postgresql\pgpass.conf` on Windows, `~/.pgpass` (mode 600)
 elsewhere. Line format: `host:port:database:user:password`.
+
+**The profile URL alone decides where Auspex connects.** node-postgres would
+fill missing parts from `PGHOST`, `PGPORT`, `PGDATABASE` and `PGUSER` and read
+`PGOPTIONS`, `PGREPLICATION`, `PGCLIENT_ENCODING`, `PGBINARY` and `PGPASSWORD`
+even for a complete URL; Auspex removes these from its own environment before
+it connects and says so once on stderr (names only). `PGPASSFILE` and the
+`PGSSL*` settings keep working.
 
 If the server is behind a VPN, calls fail fast (10 s connect timeout) with a
 hint to check the VPN.

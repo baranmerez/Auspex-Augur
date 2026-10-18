@@ -57,8 +57,12 @@ export const allowedQueryOptions = new Set([
 ]);
 
 // One policy for profiles from the file and from AUSPEX_DB_<NAME>: a
-// postgresql:// URL with no password anywhere in it and only allowlisted
-// query options. Errors name the profile, the field and the option, never a value.
+// postgresql:// URL with host, user and database, no password anywhere in it
+// and only allowlisted query options. Errors name the profile, the field and
+// the option, never a value. Returns the URL to connect with: the text as
+// given, or with an explicit :5432 when it has no port, so the endpoint shown
+// (describeConnection) is the one node-postgres uses and a PGPORT (or PGUSER,
+// PGDATABASE, PGHOST) in the environment can never pick the target.
 function validateProfileUrl(text, where, field) {
   let url;
   try {
@@ -78,7 +82,17 @@ function validateProfileUrl(text, where, field) {
   if (other.length) {
     throw new Error(`Invalid ${where}: option(s) "${other.join('", "')}" are not allowed in ${field}. Allowed: ${[...allowedQueryOptions].join(', ')}.`);
   }
-  return url;
+  const missing = [
+    !url.hostname && 'host',
+    !url.username && 'user',
+    !url.pathname.replace(/^\//, '') && 'database',
+  ].filter(Boolean);
+  if (missing.length) {
+    throw new Error(`Invalid ${where}: ${field} needs ${missing.join(', ')} (postgresql://user@host:port/db); Auspex never takes them from the environment.`);
+  }
+  if (url.port) return text;
+  url.port = '5432';
+  return url.href;
 }
 
 function intFromEnv(env, name, fallback, min, max) {
@@ -147,7 +161,7 @@ export function readProfilesFile(file) {
     const unknown = Object.keys(profile).filter(k => !profileKeys.has(k));
     if (unknown.length) throw new Error(`Invalid ${where}: unknown field(s) ${unknown.join(', ')}.`);
     if (typeof profile.url !== 'string' || !profile.url) throw new Error(`Invalid ${where}: "url" is required.`);
-    validateProfileUrl(profile.url, where, '"url"');
+    const url = validateProfileUrl(profile.url, where, '"url"');
     if (profile.description !== undefined && typeof profile.description !== 'string') throw new Error(`Invalid ${where}: "description" must be text.`);
     const max = profile.maxTimeoutSeconds;
     if (max !== undefined && (!Number.isInteger(max) || max < 1 || max > 3600)) {
@@ -158,7 +172,7 @@ export function readProfilesFile(file) {
       throw new Error(`Invalid ${where}: "maxQueriesPerMinute" must be an integer between 1 and ${maxQueriesLimit}.`);
     }
     return {
-      name, url: profile.url, description: profile.description || null,
+      name, url, description: profile.description || null,
       maxTimeoutMs: max === undefined ? null : max * 1000,
       maxQueriesPerMinute: queries ?? null,
     };
@@ -264,11 +278,11 @@ export function loadConfig(env = process.env) {
     const name = key.slice(profilePrefix.length).toLowerCase();
     const where = `profile "${name}" in ${key}`;
     if (!profileNamePattern.test(name)) throw new Error(`Invalid ${key}: profile names use a-z, 0-9, - and _ and start with a letter.`);
-    validateProfileUrl(value, where, 'the value');
+    const url = validateProfileUrl(value, where, 'the value');
     if (profiles.has(name)) {
       throw new Error(`Profile "${name}" is defined both in ${profilesFile} and in ${key}; keep only one.`);
     }
-    profiles.set(name, value);
+    profiles.set(name, url);
     profileInfo.set(name, { source: 'env', description: null });
   }
 
