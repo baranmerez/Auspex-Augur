@@ -211,6 +211,12 @@ has a hole in that schema.
   labels, depth 2. Colors are theme tokens at the top of `viewer.html`
   (`--role-ref-*`, `--role-dep-*`, `--lane-*`); ready themes and a
   contrast-checked theme generator (custom themes saved, exported, imported).
+  Glass / Glass dark presets (`glass`, `glassDark`; classes `glass` and
+  `glass-flat` on `<html>`, tokens `--glass-*` and `--page-bg` come from
+  `themeTokens().glass`, not from `tokens`), the built-in `plain` choice,
+  region tints (`--tint-ref-hue`, `--tint-dep-hue`) on `.tp-refs` and
+  `.tp-deps`, and `glass` { blur, opacity } and `tints` { ref, dep } on
+  custom themes (clamped / hex only, exported and imported).
 - After viewer changes rebuild the desktop app (app closed) and run
   `render_reports` so library HTML uses the current template.
 - Table page (in the Schema tab, `table-page` block in `viewer.html`): opened
@@ -460,6 +466,7 @@ Merged work:
 - 2026-10-18: column importance (PR 1): `score_columns` stores 1-5 scores per column in two layers in the table record (`columnScores.<column>.agent` / `.user`, each with a 5-entry history; effective = user when present; `scoredAt`), `scanned-files.json` capped at 20000 entries per root, trigger summaries (`triggerSummaries`, stale when the definition hash changes) and scanned script files (`scanned-files.json`); `describe_table` now records triggers and diffs them (added, dropped, changed, enabled-changed; legacy records without the field report nothing); `table_knowledge` and graph.json carry scores and triggers; skill `auspex-columns` (prompt `columns`). Viewer UI for scores follows in PR 2; the viewer's change text for `trigger-enabled-changed` uses its generic fallback until then.
 - 2026-10-18: column importance (PR 2): table page in the viewer and desktop app (columns ranked by score, keys, triggers, neighbours, breadcrumb) and user scoring from the score chip (`POST /api/memory/column-score`, desktop `score_column` -> `stageCli.js score-column`, user layer only, audited as `score_columns`).
 - 2026-10-18: table page Summary view (chips by group, report mention match, remembered choice), Summary palette in the theme generator (saved, exported and imported with custom themes) and links from the Rules tab to the table page. Next: glass theme and coloured side panels.
+- 2026-10-18: Glass and Glass dark presets, Plain, tinted references / referenced-by panels with stronger name hierarchy, glass strength and tints in the generator (saved, exported, imported); opaque fallback without backdrop-filter or with reduced transparency.
 
 Working agreements:
 

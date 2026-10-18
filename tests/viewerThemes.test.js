@@ -11,7 +11,7 @@ const block = page.match(/\/\/ themes:start[\s\S]*?\/\/ themes:end/)?.[0];
 function load() {
   assert.ok(block, 'themes block found in viewer.html');
   const context = vm.createContext({});
-  vm.runInContext(`${block}\nObject.assign(this, { themeTokens, themePresets, themeRecord, themeUpsert, themeExport, themeImport, themeSpecOf, themeBgFrom, contrastRatio, hexRgb, themeIdOf, summaryDefaults, summaryPaletteRecord, summaryGroups, summaryKeys, summaryMinStep });`, context);
+  vm.runInContext(`${block}\nObject.assign(this, { themeTokens, themePresets, themeRecord, themeUpsert, themeExport, themeImport, themeSpecOf, themeBgFrom, contrastRatio, hexRgb, themeIdOf, summaryDefaults, summaryPaletteRecord, summaryGroups, summaryKeys, summaryMinStep, glassRecord, tintsRecord, glassFallback, glassDefaults });`, context);
   return context;
 }
 const plain = v => JSON.parse(JSON.stringify(v));
@@ -69,9 +69,11 @@ test('invalid input is refused, never thrown', () => {
   }
 });
 
-test('ready themes: light and dark are built in, six in all', () => {
+test('ready themes: light, dark and plain are built in, nine in all', () => {
   const { themePresets, themeSpecOf } = load();
-  assert.equal(themePresets.length, 6);
+  assert.equal(themePresets.length, 9);
+  assert.equal(themeSpecOf('plain', []), null);
+  assert.deepEqual(plain(themePresets.filter(p => p.glass).map(p => p.id)), ['glass', 'glassDark']);
   assert.equal(themeSpecOf('light', []), null);
   assert.equal(themeSpecOf('auto', []), null);
   assert.equal(themeSpecOf('midnight', []).bg, '#0e1a2f');
@@ -207,4 +209,99 @@ test('summary palette: score steps are clearly apart in light and dark, for defa
     assert.equal(r.warnings.length, 0);
   }
   assert.ok(summaryMinStep >= 1.4);
+});
+
+// Glass and Plain presets, region tints, glass strength.
+test('glass presets: light and dark variants load and pass the contrast check on the glass panel', () => {
+  const { themeTokens, themePresets, contrastRatio, hexRgb } = load();
+  const variants = themePresets.filter(p => p.glass);
+  assert.deepEqual(plain(variants.map(v => themeTokens(v).base)), ['light', 'dark']);
+  for (const spec of variants) {
+    const r = themeTokens(spec);
+    assert.equal(r.ok, true);
+    assert.equal(r.warnings.length, 0, JSON.stringify(plain(r.warnings)));
+    assert.deepEqual(plain(Object.keys(r.glass).sort()), ['--glass-bg', '--glass-blur', '--glass-hi', '--glass-line', '--page-bg']);
+    assert.match(r.glass['--glass-blur'], /^\d+px$/);
+    // Glass tokens stay out of the tokens that embedded reports receive.
+    assert.ok(Object.keys(r.tokens).every(k => !k.startsWith('--glass') && k !== '--page-bg'));
+    for (const tk of ['--text', '--text-2', '--text-3', '--accent-ink', '--role-ref-1', '--role-dep-1']) {
+      assert.ok(contrastRatio(hexRgb(r.tokens[tk]), hexRgb(r.tokens['--surface'])) >= 4.5, spec.id + ' ' + tk);
+    }
+  }
+  // Worst case: the panel at its lowest opacity over strong backdrop colors.
+  const low = themeTokens({ bg: '#e8ecf7', accent: '#ff00aa', glass: { opacity: 20 } });
+  assert.ok(low.checks.some(c => c.token === '--text' && c.ok));
+  assert.equal(themeTokens({ bg: '#e8ecf7', accent: '#4f5fe0' }).glass, null);
+});
+
+test('plain is a built-in choice and has no glass', () => {
+  const { themePresets, themeTokens } = load();
+  const plainSpec = themePresets.find(p => p.id === 'plain');
+  assert.equal(plainSpec.builtin, true);
+  assert.equal(themeTokens(plainSpec).glass, null);
+});
+
+test('glass strength: numbers clamped, junk replaced by defaults', () => {
+  const { glassRecord, glassDefaults } = load();
+  assert.equal(glassRecord(null), null);
+  assert.equal(glassRecord('x'), null);
+  assert.deepEqual(plain(glassRecord({ blur: 500, opacity: -4 })), { blur: 40, opacity: 20 });
+  assert.deepEqual(plain(glassRecord({ blur: -1, opacity: 999 })), { blur: 0, opacity: 95 });
+  assert.deepEqual(plain(glassRecord({ blur: 'abc', opacity: '30.4' })), { blur: glassDefaults.blur, opacity: 30 });
+  assert.deepEqual(plain(glassRecord({ blur: null, opacity: true })), plain(glassDefaults));
+  assert.deepEqual(plain(glassRecord({})), plain(glassDefaults));
+  assert.deepEqual(plain(glassRecord({ blur: 8, opacity: 50, extra: 1 })), { blur: 8, opacity: 50 });
+});
+
+test('region tints: hex only, known keys only', () => {
+  const { tintsRecord } = load();
+  assert.deepEqual(plain(tintsRecord({ ref: '#ABC', dep: 'url(x)', other: '#000000' })), { ref: '#aabbcc' });
+  assert.deepEqual(plain(tintsRecord({ dep: '#112233; color: red' })), {});
+  assert.deepEqual(plain(tintsRecord(null)), {});
+  assert.deepEqual(plain(tintsRecord(JSON.parse('{"__proto__": "#fff"}'))), {});
+});
+
+test('custom themes: glass strength and tints round trip through export and import with validation', () => {
+  const { themeRecord, themeUpsert, themeExport, themeImport } = load();
+  const rec = plain(themeRecord({ name: 'Example glass', bg: '#e8ecf7', accent: '#4f5fe0', glass: { blur: 99, opacity: 10 }, tints: { ref: '#112233', dep: 'red' } }));
+  assert.deepEqual(rec.glass, { blur: 40, opacity: 20 });
+  assert.deepEqual(rec.tints, { ref: '#112233' });
+  assert.equal('glass' in plain(themeRecord({ name: 'Flat', bg: '#fff', accent: '#00f' })), false);
+  const list = themeUpsert(themeUpsert([], rec), { name: 'Test flat', bg: '#fafafa', accent: '#2a78d6' });
+  const back = themeImport(themeExport(list), []);
+  assert.deepEqual(plain(back.list), plain(list));
+  const hostile = themeImport(JSON.stringify({ themes: [{ name: 'Bad', bg: '#000', accent: '#fff', glass: { blur: '1e9', opacity: null }, tints: { ref: '#zzz' } }] }), []);
+  assert.deepEqual(plain(hostile.list[0].glass), { blur: 40, opacity: 68 });
+  assert.equal('tints' in hostile.list[0], false);
+});
+
+test('tints change the side panel colors and stay readable', () => {
+  const { themeTokens, contrastRatio, hexRgb } = load();
+  const a = themeTokens({ bg: '#f4f5f7', accent: '#2a78d6' }), b = themeTokens({ bg: '#f4f5f7', accent: '#2a78d6', tints: { ref: '#00aa00', dep: '#aa00aa' } });
+  assert.notEqual(a.tokens['--tint-ref-hue'], b.tokens['--tint-ref-hue']);
+  assert.equal(b.tokens['--tint-ref-hue'], '#00aa00');
+  assert.equal(b.warnings.length, 0);
+  assert.ok(contrastRatio(hexRgb(b.tokens['--role-ref-1']), hexRgb(b.tokens['--surface'])) >= 4.5);
+});
+
+test('fallback to opaque panels when reduced transparency is requested or backdrop-filter is missing', () => {
+  const { glassFallback } = load();
+  const cssYes = { supports: () => true }, cssNo = { supports: () => false };
+  const mm = reduce => q => ({ matches: reduce && q.includes('prefers-reduced-transparency') });
+  assert.equal(glassFallback({ matchMedia: mm(false), CSS: cssYes }), false);
+  assert.equal(glassFallback({ matchMedia: mm(true), CSS: cssYes }), true);
+  assert.equal(glassFallback({ matchMedia: mm(false), CSS: cssNo }), true);
+  assert.equal(glassFallback({ matchMedia: () => { throw new Error('unsupported'); }, CSS: cssYes }), false);
+  assert.equal(glassFallback({}), true);
+  assert.equal(glassFallback(undefined), true);
+});
+
+test('page: glass classes, fallback hook, region tints and generator controls exist', () => {
+  assert.ok(page.includes("root.classList.toggle('glass-flat', !!gl && glassFallback(window))"));
+  assert.ok(page.includes('prefers-reduced-transparency: reduce'));
+  assert.match(page, /:root\.glass:not\(\.glass-flat\) \.panel \{[^}]*backdrop-filter: blur\(var\(--glass-blur\)\)/);
+  assert.ok(page.includes('.tp-refs { --tint-hue: var(--tint-ref-hue, var(--role-ref-1)); }'));
+  assert.match(page, /'Glass': 'Cam'[\s\S]*'Plain': 'Sade'/);
+  assert.ok(page.includes("t(k === 'blur' ? 'Blur' : 'Opacity')"));
+  assert.ok(page.includes("themeBuiltinIds = ['auto', 'light', 'dark', 'plain']"));
 });
