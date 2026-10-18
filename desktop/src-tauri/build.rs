@@ -1,6 +1,8 @@
 // The app's own commands get allow-/deny- permissions, so the window can only
 // call those its capability lists (capabilities/default.json).
 fn main() {
+    // tauri-build embeds the icons into the Windows resource; rerun when they change.
+    println!("cargo:rerun-if-changed=icons");
     tauri_build::try_build(
         tauri_build::Attributes::new()
             .app_manifest(tauri_build::AppManifest::new().commands(&["api", "approve_report", "revoke_report", "archive_note", "score_column"])),
