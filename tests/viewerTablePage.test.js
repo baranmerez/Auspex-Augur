@@ -48,7 +48,7 @@ for (const [k, v] of Object.entries(tablePageTr)) if (!Object.hasOwn(TR, k)) TR[
 const t = (en, vars = {}) => String(${JSON.stringify(lang)} === 'tr' && TR[en] !== undefined ? TR[en] : en).replace(/\\{(\\w+)\\}/g, (_, k) => vars[k] ?? '');
 ${blockOf('stage-change')}
 ${blockOf('column-score')}
-Object.assign(this, { tablePageModel, tpVisibleColumns, tablePageView, tpLegend, tablePageTr, scoreStepLabels, scoreStepTexts, tpRoleTexts, TR, t,
+Object.assign(this, { tablePageModel, tpVisibleColumns, tablePageView, tpLegend, tpLoadRec, tpLoadError, tablePageTr, scoreStepLabels, scoreStepTexts, tpRoleTexts, TR, t,
   userScoreRequest, userScoreProblem, postColumnScore, invokeColumnScore });`, context);
   return context;
 }
@@ -60,7 +60,47 @@ const viewCtx = (extra = {}) => ({ open: null, showAll: false, canScore: true, o
 const render = (ctx, id, extra) => ctx.tablePageView(model(ctx, id), ['example.customers', id], viewCtx(extra));
 const rowNames = view => byClass(view, 'tp-cname').map(textOf);
 
-test('columns are sorted by effective score, then name; unscored last', () => {
+test('ties in score are ranked by sources (desc), then name', () => {
+  const ctx = load();
+  const agent = (score, sources) => ({ agent: { score, roles: ['join'], reason: 'r', sources, at: '2026-10-01T00:00:00Z', history: [] } });
+  const g = { profile: 'exampledb', nodes: [{ id: 'example.orders', schema: 'example', table: 'orders', state: 'explored',
+    columnScores: { amount: agent(5, 14), order_id: agent(5, 25), created_at: agent(5, 14), status_code: agent(3, 40) } }], edges: [], notes: [] };
+  const rec = { describedAt: '2026-10-01T00:00:00Z', columns: ['amount', 'order_id', 'created_at', 'status_code'].map(name => ({ name, type: 'text' })), constraints: [], history: [] };
+  assert.deepEqual(plain(ctx.tablePageModel(g, 'example.orders', rec).columns.map(c => c.name)), ['order_id', 'amount', 'created_at', 'status_code']);
+});
+
+test('a user score shows its own roles, never the agent roles, even when it has none', () => {
+  const ctx = load();
+  const g = { profile: 'exampledb', nodes: [{ id: 'example.orders', schema: 'example', table: 'orders', state: 'explored', columnScores: {
+    amount: { agent: { score: 2, roles: ['aggregate', 'display'], reason: 'r', sources: 1, at: 'a', history: [] }, user: { score: 4, roles: [], at: 'b', history: [] } },
+    order_id: { agent: { score: 2, roles: ['key'], reason: 'r', sources: 1, at: 'a', history: [] }, user: { score: 3, at: 'b', history: [] } } } }], edges: [], notes: [] };
+  const rec = { describedAt: 'x', columns: [{ name: 'amount' }, { name: 'order_id' }], constraints: [], history: [] };
+  const cols = ctx.tablePageModel(g, 'example.orders', rec).columns;
+  assert.deepEqual(plain(cols.map(c => [c.name, c.scoreBy, c.roles])), [['amount', 'user', []], ['order_id', 'user', []]]);
+});
+
+test('a table file that fails to load is not cached and shows an error with Retry, not "not described"', async () => {
+  const ctx = load();
+  const cache = new Map();
+  let calls = 0;
+  await assert.rejects(ctx.tpLoadRec(async () => { calls++; throw new Error('File not found'); }, cache, 'k'), /File not found/);
+  await assert.rejects(ctx.tpLoadRec(async () => { calls++; return null; }, cache, 'k'), /could not be read/);
+  assert.equal(cache.size, 0, 'failures are never cached');
+  const rec = await ctx.tpLoadRec(async () => { calls++; return recs['example.orders']; }, cache, 'k');
+  assert.equal(rec.table, 'orders');
+  assert.equal(await ctx.tpLoadRec(async () => { throw new Error('not called'); }, cache, 'k'), rec, 'a success is cached');
+  assert.equal(calls, 3);
+  const retry = [];
+  const view = ctx.tpLoadError('example.orders', 'File not found', ['example.orders'], viewCtx({ onRetry: () => retry.push(1) }));
+  assert.match(textOf(view), /The table file of example\.orders could not be loaded: File not found/);
+  assert.doesNotMatch(textOf(view), /Not described yet/);
+  assert.equal(all(view, n => n.attrs.role === 'alert').length, 1);
+  all(view, n => n.tag === 'button' && textOf(n) === 'Retry')[0].attrs.onclick();
+  assert.equal(retry.length, 1);
+  assert.match(blockOf('table-page'), /never\s+cached|never cached/);
+});
+
+test('columns are sorted by effective score, then sources, then name; unscored last', () => {
   const m = model(load(), 'example.orders');
   assert.deepEqual(plain(m.columns.map(c => [c.name, c.score])), [
     ['created_at', 5], ['order_id', 5], ['status_code', 5], ['customer_id', 4], ['amount', 3], ['delivered_at', 1], ['<script>x</script>', null], ['teslim_durum_kodu', null],
@@ -251,7 +291,8 @@ test('the user score request: exact keys, roles in order, clear without roles', 
   assert.deepEqual(plain(ctx.userScoreRequest('exampledb', 'example', 'orders', 'amount', { score: 4, roles: ['display', 'join'] })),
     { profile: 'exampledb', schema: 'example', table: 'orders', column: 'amount', score: 4, roles: ['join', 'display'] });
   assert.deepEqual(plain(ctx.userScoreRequest('exampledb', 'example', 'orders', 'amount', { score: 2, roles: [] })),
-    { profile: 'exampledb', schema: 'example', table: 'orders', column: 'amount', score: 2 });
+    { profile: 'exampledb', schema: 'example', table: 'orders', column: 'amount', score: 2, roles: [] }, 'unticking every role is sent as []');
+  assert.deepEqual(plain(ctx.userScoreRequest('exampledb', 'example', 'orders', 'amount', { score: 2 })).roles, []);
   assert.deepEqual(plain(ctx.userScoreRequest('exampledb', 'example', 'orders', 'amount', { clear: true, roles: ['join'] })),
     { profile: 'exampledb', schema: 'example', table: 'orders', column: 'amount', clear: true });
   assert.equal(ctx.userScoreProblem({ score: 3 }), null);
