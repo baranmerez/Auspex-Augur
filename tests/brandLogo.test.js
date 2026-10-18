@@ -4,7 +4,7 @@ import fs from 'node:fs';
 
 const read = rel => fs.readFileSync(new URL(rel, import.meta.url), 'utf8');
 const page = read('../src/viewer.html');
-const svgUrl = new URL('../docs/assets/auspex-logo-animated.svg', import.meta.url);
+const svgUrl = new URL('../docs/assets/banner.svg', import.meta.url);
 const svg = fs.readFileSync(svgUrl, 'utf8');
 
 test('header logo has a decorative radar overlay with a reduced-motion rule', () => {
@@ -16,15 +16,17 @@ test('header logo has a decorative radar overlay with a reduced-motion rule', ()
   assert.match(page, /visibilitychange/);
 });
 
-test('animated README logo is self-contained and small', () => {
-  assert.ok(fs.statSync(svgUrl).size < 15 * 1024);
+test('animated README banner is self-contained and small', () => {
+  assert.ok(fs.statSync(svgUrl).size < 64 * 1024);
   assert.doesNotMatch(svg, /<script/i);
   assert.doesNotMatch(svg, /foreignObject/i);
   assert.doesNotMatch(svg, /href\s*=\s*["']\s*(https?:)?\/\//i);
-  assert.match(svg, /viewBox="0 0 160 160"/);
+  assert.match(svg, /viewBox="0 0 1200 340"/);
+  assert.match(svg, /href="data:image\/png;base64,/);
+  assert.match(svg, /<animateTransform/);
   assert.ok(fs.existsSync(new URL('../docs/assets/auspex-icon.png', import.meta.url)));
 });
 
-test('README references the animated logo', () => {
-  assert.match(read('../README.md'), /docs\/assets\/auspex-logo-animated\.svg/);
+test('README references the animated banner', () => {
+  assert.match(read('../README.md'), /docs\/assets\/banner\.svg/);
 });
