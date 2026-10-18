@@ -40,7 +40,8 @@ column appears.
    the user gives a score, ask for the roles and a short usage note ("mostly
    in WHERE, sometimes in SELECT"), write the score with `score_columns`
    `by: "user"` and the usage note with `remember` kind=rule on that
-   schema.table.column, in the user's own words and language. Never
+   schema.table.column, keeping the user's meaning and wording as closely
+   as possible, written in the `notesLanguage`. Never
    overwrite or clear a user score unless the user asks (`clearUser: true`).
    A rescan writes agent scores only; both layers stay visible.
 7. **Never invent business meaning.** A reason states where and how the
