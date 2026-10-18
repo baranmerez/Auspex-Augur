@@ -16,7 +16,7 @@ import {
 import { ReportService } from './reports/service.js';
 import { sqlHash, sqlHashPattern } from './reports/library.js';
 import { builtInPresetKeys, maxPresetName, maxPresets } from './reports/presets.js';
-import { SchemaMemory, noteKinds } from './memory/store.js';
+import { SchemaMemory, noteKinds, columnRoles, scoreHistoryLimit, maxScoreReason, maxScoredColumns, maxScannedFiles } from './memory/store.js';
 import { relationsFromTextPlan } from './memory/planUsage.js';
 import { loadPromptSkills, promptText } from './skills.js';
 
@@ -64,6 +64,7 @@ const instructions = [
   'When the user states a business rule, save it with remember kind=rule. Save a finding from data as kind=observation with evidence (the SQL and aggregate figures only, never row values or personal data). Your own interpretations are kind=inference; never present them as fact, and confirm one only after the user agreed.',
   'Write every user-facing text you save into Auspex files in the notesLanguage from list_profiles: remember note text, save_report title, description and note, and save_execute_script title and purpose (and comments inside the script). Identifiers, SQL, column aliases and the script step markers (BEGIN, DEFINE, PROCESS, MATCH, CORRECT/FAIL, ROLLBACK) are not translated; only the text after a marker follows notesLanguage. If notesLanguage is null, ask the user once "Which language should notes and report texts be saved in?" (in the user language), use the answer for this conversation and suggest adding "notesLanguage": "<code>" to profiles.json. Do not translate existing notes.',
   'Results may carry notes for the tables they touched; take them into account.',
+  'Column importance: score_columns saves your own 1-5 score per column after you read the SQL that uses a table (report library and the user script files); it never queries the database. Never save user script files as reports.',
   'When a report or analysis is finished and results listed unexploredNeighbors, name them and ask the user whether to explore them. Only after a yes, call describe_tables on them (structure only); do not query their data unless asked.',
 ].join(' ');
 
@@ -456,7 +457,7 @@ tool('save_execute_script', {
 // ---------- schema memory ----------
 tool('table_knowledge', {
   title: 'Table knowledge from memory',
-  description: 'Answers from the local schema memory, without touching the database: structure summary (key, used and noted columns first), foreign keys, relations used in approved reports, name-based suggestions (unconfirmed), notes on the table, database-wide notes (databaseNotes: rules always in full, then observations and unconfirmed inferences; follow the rules), recent schema changes and unexplored neighbors. If the table is not in memory, describe_table records it; database-wide notes are returned either way.',
+  description: 'Answers from the local schema memory, without touching the database: structure summary (key, used and noted columns first), foreign keys, relations used in approved reports, name-based suggestions (unconfirmed), notes on the table, database-wide notes (databaseNotes: rules always in full, then observations and unconfirmed inferences; follow the rules), recent schema changes, column importance scores saved with score_columns (columnScores, highest first, with roles, reason, sources and history; unscoredColumns) and unexplored neighbors. If the table is not in memory, describe_table records it; database-wide notes are returned either way.',
   inputSchema: {
     profile: profileArg,
     schema: z.string(),
@@ -493,6 +494,45 @@ tool('remember', {
     if (action === 'confirm') return { note: memory.confirmNote(name, id, kind) };
     return { note: memory.archiveNote(name, id, reason) };
   }, r => ({ noteId: r.note.id, noteKind: r.note.kind, noteStatus: r.note.status })));
+
+tool('score_columns', {
+  title: 'Save column importance scores',
+  description: `Saves your importance score for columns of one table in the local schema memory of a profile (no database access). Decide each score yourself after reading the SQL that uses the table (report library and the user's script files); Auspex computes nothing. score 1-5 is relative within the table: 5 = the columns the reports revolve around (keys joined everywhere, main display and filter fields), 1 = never used in any read SQL. roles: any of ${columnRoles.join(', ')}. reason: one line, at most ${maxScoreReason} characters, in the notesLanguage from list_profiles. sources: number of distinct reports/scripts the column appears in (versions of one report count once). The table must already be described (describe_table or describe_tables) and every column must exist in its recorded structure, otherwise nothing is saved. A new score replaces the current one and the previous ${scoreHistoryLimit} are kept as history; columns not listed keep their score. scannedFiles records which script files you read (root = script root name from list_profiles, path relative to that root, sha256 of the content) so later runs can skip unchanged files (see scanned_files); file contents are never stored. Scores come back with table_knowledge.`,
+  inputSchema: z.object({
+    profile: profileArg,
+    schema: z.string().min(1),
+    table: z.string().min(1),
+    columns: z.array(z.object({
+      name: z.string().min(1).describe('Column name as recorded by describe_table.'),
+      score: z.number().int().min(1).max(5).describe('1 (never used in read SQL) to 5 (the reports revolve around it), relative within the table.'),
+      roles: z.array(z.enum(columnRoles)).describe('Where it appears: key, join (JOIN ... ON), filter (WHERE/HAVING), display (SELECT list), aggregate (sum/count/...), sort/group (ORDER BY/GROUP BY). Empty when unused.'),
+      reason: z.string().min(1).max(maxScoreReason).describe('One sentence why, in the notesLanguage from list_profiles.'),
+      sources: z.number().int().min(0).describe('Distinct reports/scripts using the column; versions of one report count once.'),
+    }).strict()).min(1).max(maxScoredColumns),
+    scannedFiles: z.array(z.object({
+      root: z.string().min(1).describe('Script root name (list_profiles).'),
+      path: z.string().min(1).describe('File path relative to that root, e.g. example/reports/orders_by_day.sql.'),
+      sha256: z.string().describe('SHA-256 of the file content, 64 hex characters.'),
+    }).strict()).max(maxScannedFiles).optional().describe('Script files read for this scoring run. Bookkeeping only; contents are never stored.'),
+  }).strict(),
+}, async ({ profile, schema, table, columns, scannedFiles }) =>
+  // Logged without reasons or file paths: which table and how many entries.
+  db.audited('score_columns', { profile: profile ?? null, schema, table, columns: columns?.length ?? 0, scannedFiles: scannedFiles?.length ?? 0 }, async () => {
+    const name = db.resolveProfile(profile);
+    return memory.scoreColumns(name, { schema, table, columns, ...(scannedFiles ? { scannedFiles } : {}) }, { scriptRoots: [...config.scriptRoots.keys()] });
+  }, r => ({ scored: r.scored })));
+
+tool('scanned_files', {
+  title: 'Script files read for column scores',
+  description: 'Lists the script files recorded by score_columns for a profile (root, path relative to it, sha256, lastReadAt), from the local schema memory without database access. Compare the sha256 of each file with this list and read only new or changed files.',
+  inputSchema: {
+    profile: profileArg,
+    root: z.string().min(1).optional().describe('Only this script root.'),
+  },
+}, async ({ profile, root }) => {
+  const name = db.resolveProfile(profile);
+  return { profile: name, files: memory.readScannedFiles(name, root ?? null) };
+});
 
 // ---------- workflow prompts (text from skills/<name>/SKILL.md) ----------
 for (const skill of promptSkills) {

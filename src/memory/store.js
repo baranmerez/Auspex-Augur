@@ -6,6 +6,9 @@
 //   tables/<schema>/<table>.json   structure, used columns, change history
 //   notes.json                     rules, observations and inferences
 //   changelog.jsonl                explored tables and schema changes, for timelines
+//   scanned-files.json             script files read for column scores: path
+//                                  relative to its script root, sha256 and
+//                                  lastReadAt (never the file contents)
 //   graph.json                     derived view for the viewer and desktop app;
 //                                  rebuilt after every change, safe to delete
 import crypto from 'node:crypto';
@@ -20,6 +23,15 @@ const neighborLimit = 10;
 const noteLineLimit = 10;
 const databaseNoteLimit = 10;
 const profilePattern = /^[a-z][a-z0-9_-]{0,39}$/;
+// Column scores (score_columns): decided by the agent from read SQL, never
+// computed here. Only the input is validated.
+export const columnRoles = ['key', 'join', 'filter', 'display', 'aggregate', 'sort/group'];
+export const scoreHistoryLimit = 5;
+export const maxScoreReason = 200;
+export const maxScoredColumns = 2000;
+export const maxScannedFiles = 1000;
+const maxScannedPath = 500;
+const sha256Pattern = /^[0-9a-f]{64}$/;
 const reservedFileName = /^(con|prn|aux|nul|com\d|lpt\d)$/;
 
 // errorCode (src/errors.js): INVALID_INPUT unless the throw site says otherwise.
@@ -266,6 +278,7 @@ export class SchemaMemory {
       history: [...(prev?.history ?? []), ...(changes.length ? [{ at, changes }] : [])].slice(-historyLimit),
       ...(prev && 'estRows' in prev ? { estRows: prev.estRows, estRowsAt: prev.estRowsAt } : {}), // relation_stats
       ...(prev?.relationStats ? { relationStats: prev.relationStats } : {}),
+      ...(prev?.columnScores ? { columnScores: prev.columnScores, scoredAt: prev.scoredAt } : {}), // score_columns
     };
     this.writeTable(profile, record);
     if (firstTime) this.appendChangelog(profile, { at, schema: next.schema, table: next.table, event: 'explored' });
@@ -475,6 +488,64 @@ export class SchemaMemory {
     return touched.length ? this.notesSection(profile, touched) : {};
   }
 
+  // ---------- column scores ----------
+  // score_columns: the agent's 1-5 importance of columns of one described
+  // table, relative within the table, with roles, a one-line reason and the
+  // number of reports/scripts it appears in. A new score replaces the current
+  // one; the replaced ones are kept newest first (scoreHistoryLimit). Columns
+  // not listed keep their score. scannedFiles records which script files were
+  // read (path relative to its script root, sha256, lastReadAt), never their
+  // contents. scriptRoots: names the root of a scanned file must be one of.
+  scoreColumns(profile, input, { scriptRoots = null } = {}) {
+    const { schema, table, columns, scannedFiles } = validateScoreInput(input, scriptRoots);
+    return this.locked(profile, () => {
+      const rec = this.readTable(profile, schema, table);
+      if (!rec) throw new MemoryError(`${tableKey(schema, table)} is not in memory. Describe it first (describe_table or describe_tables).`, 'NOT_FOUND');
+      if (!rec.describedAt) throw new MemoryError(`${tableKey(schema, table)} was only seen in a plan; its structure is not recorded. Describe it first (describe_table or describe_tables).`, 'PRECONDITION_FAILED');
+      const known = new Set(rec.columns.map(c => c.name));
+      const unknown = columns.map(c => c.name).filter(name => !known.has(name));
+      if (unknown.length) throw new MemoryError(`Not columns of ${tableKey(schema, table)} in the recorded structure: ${unknown.join(', ')}. Nothing was saved; describe the table again if it changed.`);
+      const at = this.now();
+      const scores = {};
+      for (const [name, value] of Object.entries(rec.columnScores ?? {})) setOwn(scores, name, value);
+      for (const c of columns) {
+        const prev = Object.hasOwn(scores, c.name) ? scores[c.name] : null;
+        const history = prev ? [{ score: prev.score, reason: prev.reason, at: prev.at }, ...(prev.history ?? [])].slice(0, scoreHistoryLimit) : [];
+        setOwn(scores, c.name, { score: c.score, roles: c.roles, reason: c.reason, sources: c.sources, at, history });
+      }
+      Object.assign(rec, { columnScores: scores, scoredAt: at });
+      this.writeTable(profile, rec);
+      const scanned = scannedFiles.length ? this.recordScannedUnlocked(profile, scannedFiles, at) : null;
+      this.rebuildViewUnlocked(profile);
+      return {
+        relation: tableKey(schema, table),
+        scoredAt: at,
+        scored: columns.length,
+        unscoredColumns: rec.columns.filter(c => !Object.hasOwn(scores, c.name)).map(c => c.name),
+        ...(scanned ? { scannedFiles: scanned } : {}),
+      };
+    });
+  }
+
+  scannedFilesPath(profile) {
+    return path.join(this.profileDir(profile), 'scanned-files.json');
+  }
+
+  // { files: [{ root, path, sha256, lastReadAt }] }, sorted by root and path.
+  readScannedFiles(profile, root = null) {
+    const files = this.readJson(this.scannedFilesPath(profile), { files: [] }).files;
+    return root ? files.filter(f => f.root === root) : files;
+  }
+
+  recordScannedUnlocked(profile, scannedFiles, at) {
+    const byKey = new Map(this.readScannedFiles(profile).map(f => [`${f.root}\n${f.path}`, f]));
+    for (const f of scannedFiles) byKey.set(`${f.root}\n${f.path}`, { root: f.root, path: f.path, sha256: f.sha256, lastReadAt: at });
+    const cmp = (x, y) => (x < y ? -1 : x > y ? 1 : 0); // code-point order, locale independent
+    const files = [...byKey.values()].sort((a, b) => cmp(a.root, b.root) || cmp(a.path, b.path));
+    this.writeJson(this.scannedFilesPath(profile), { files });
+    return { recorded: scannedFiles.length, total: files.length };
+  }
+
   // ---------- relations ----------
   // Every relation edge known for a profile: fk (declared), used (joined in an
   // approved report), suggested (same name as another table's primary key).
@@ -573,6 +644,7 @@ export class SchemaMemory {
       },
       notes: notes.map(n => ({ id: n.id, kind: n.kind, column: n.column, text: n.text, ...(n.asOf ? { asOf: n.asOf } : {}), ...(n.evidence?.figures ? { figures: n.evidence.figures } : {}) })),
       recentChanges: (rec.history || []).slice(-5).map(h => `${h.at.slice(0, 10)}: ${h.changes.map(changeText).join('; ')}`),
+      ...columnScoresSection(rec),
       ...this.databaseNotesSection(profile),
       ...this.neighborsSection(profile, [rec], tables),
     };
@@ -591,6 +663,7 @@ export class SchemaMemory {
       columnCount: t.columns.length, changes: (t.history || []).length,
       notes: notes.filter(n => n.schema === t.schema && n.table === t.table).length,
       ...(t.estRows !== undefined ? { estRows: t.estRows } : {}),
+      ...(t.columnScores ? { scoredAt: t.scoredAt, columnScores: t.columnScores } : {}),
     }]));
     for (const e of edges) {
       for (const id of [e.from, e.to]) {
@@ -651,4 +724,94 @@ function suggestedEdges(tables, existing) {
     }
   }
   return out;
+}
+
+// Own property even for names like "__proto__" (column names come from the
+// database).
+function setOwn(obj, key, value) {
+  Object.defineProperty(obj, key, { value, enumerable: true, writable: true, configurable: true });
+}
+
+function rejectUnknownKeys(obj, allowed, what) {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) throw new MemoryError(`${what} must be an object.`);
+  const extra = Object.keys(obj).filter(k => !allowed.includes(k));
+  if (extra.length) throw new MemoryError(`${what} has unknown keys: ${extra.join(', ')}.`);
+}
+
+// A script path relative to its script root, with / separators; never
+// absolute, never leaving the root.
+function normalizeScannedPath(value, where) {
+  if (typeof value !== 'string' || !value.trim()) throw new MemoryError(`${where}.path must be a non-empty string.`);
+  const rel = value.trim().replace(/\\/g, '/');
+  if (rel.length > maxScannedPath) throw new MemoryError(`${where}.path is longer than ${maxScannedPath} characters.`);
+  if (/[\x00-\x1f]/.test(rel)) throw new MemoryError(`${where}.path contains control characters.`);
+  if (rel.startsWith('/') || /^[A-Za-z]:/.test(rel)) throw new MemoryError(`${where}.path must be relative to its script root, not absolute.`);
+  if (rel.split('/').some(s => s === '' || s === '.' || s === '..')) throw new MemoryError(`${where}.path must not contain empty, "." or ".." segments.`);
+  return rel;
+}
+
+// Strict check of a score_columns input; the whole call is rejected on the
+// first problem. Returns the normalized input.
+export function validateScoreInput(input, scriptRoots = null) {
+  rejectUnknownKeys(input, ['schema', 'table', 'columns', 'scannedFiles'], 'Input');
+  const { schema, table, columns, scannedFiles = [] } = input;
+  for (const [key, value] of [['schema', schema], ['table', table]]) {
+    if (typeof value !== 'string' || !value) throw new MemoryError(`${key} must be a non-empty string.`);
+  }
+  if (!Array.isArray(columns) || !columns.length) throw new MemoryError('columns must be a non-empty array.');
+  if (columns.length > maxScoredColumns) throw new MemoryError(`At most ${maxScoredColumns} columns per call.`);
+  const seen = new Set();
+  const outColumns = columns.map((c, i) => {
+    const where = `columns[${i}]`;
+    rejectUnknownKeys(c, ['name', 'score', 'roles', 'reason', 'sources'], where);
+    if (typeof c.name !== 'string' || !c.name) throw new MemoryError(`${where}.name must be a non-empty string.`);
+    if (seen.has(c.name)) throw new MemoryError(`Column ${c.name} is listed twice.`);
+    seen.add(c.name);
+    if (!Number.isInteger(c.score) || c.score < 1 || c.score > 5) throw new MemoryError(`${where}.score must be an integer from 1 to 5.`);
+    if (!Array.isArray(c.roles)) throw new MemoryError(`${where}.roles must be an array (may be empty).`);
+    const badRole = c.roles.find(r => !columnRoles.includes(r));
+    if (badRole !== undefined) throw new MemoryError(`${where}.roles: "${badRole}" is not one of ${columnRoles.join(', ')}.`);
+    if (new Set(c.roles).size !== c.roles.length) throw new MemoryError(`${where}.roles lists a role twice.`);
+    if (typeof c.reason !== 'string' || !c.reason.trim()) throw new MemoryError(`${where}.reason must be a non-empty string.`);
+    const reason = c.reason.trim();
+    if (/[\r\n]/.test(reason)) throw new MemoryError(`${where}.reason must be one line.`);
+    if (reason.length > maxScoreReason) throw new MemoryError(`${where}.reason is longer than ${maxScoreReason} characters.`);
+    if (!Number.isInteger(c.sources) || c.sources < 0) throw new MemoryError(`${where}.sources must be an integer >= 0.`);
+    return { name: c.name, score: c.score, roles: columnRoles.filter(r => c.roles.includes(r)), reason, sources: c.sources };
+  });
+  if (!Array.isArray(scannedFiles)) throw new MemoryError('scannedFiles must be an array.');
+  if (scannedFiles.length > maxScannedFiles) throw new MemoryError(`At most ${maxScannedFiles} scannedFiles per call.`);
+  const seenFiles = new Set();
+  const outFiles = scannedFiles.map((f, i) => {
+    const where = `scannedFiles[${i}]`;
+    rejectUnknownKeys(f, ['root', 'path', 'sha256'], where);
+    if (typeof f.root !== 'string' || !f.root) throw new MemoryError(`${where}.root must be the name of a script root.`);
+    if (scriptRoots && !scriptRoots.includes(f.root)) throw new MemoryError(`${where}.root "${f.root}" is not a configured script root (list_profiles).`);
+    const rel = normalizeScannedPath(f.path, where);
+    if (typeof f.sha256 !== 'string' || !sha256Pattern.test(f.sha256.toLowerCase())) throw new MemoryError(`${where}.sha256 must be 64 hex characters.`);
+    const key = `${f.root}\n${rel}`;
+    if (seenFiles.has(key)) throw new MemoryError(`${where} is listed twice.`);
+    seenFiles.add(key);
+    return { root: f.root, path: rel, sha256: f.sha256.toLowerCase() };
+  });
+  return { schema, table, columns: outColumns, scannedFiles: outFiles };
+}
+
+// table_knowledge: scores highest first, columns that left the structure
+// marked, and the columns of the structure that have no score yet.
+function columnScoresSection(rec) {
+  if (!rec.columnScores) return {};
+  const inStructure = new Set(rec.columns.map(c => c.name));
+  const entries = Object.entries(rec.columnScores)
+    .sort(([a, x], [b, y]) => y.score - x.score || a.localeCompare(b))
+    .map(([column, s]) => ({
+      column, score: s.score, roles: s.roles, reason: s.reason, sources: s.sources, at: s.at,
+      ...(s.history?.length ? { history: s.history } : {}),
+      ...(inStructure.has(column) ? {} : { inStructure: false }),
+    }));
+  return {
+    scoredAt: rec.scoredAt,
+    columnScores: entries,
+    unscoredColumns: rec.columns.filter(c => !Object.hasOwn(rec.columnScores, c.name)).map(c => c.name),
+  };
 }
