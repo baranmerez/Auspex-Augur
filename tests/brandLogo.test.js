@@ -16,17 +16,29 @@ test('header logo has a decorative radar overlay with a reduced-motion rule', ()
   assert.match(page, /visibilitychange/);
 });
 
-test('animated README banner is self-contained and small', () => {
-  assert.ok(fs.statSync(svgUrl).size < 64 * 1024);
-  assert.doesNotMatch(svg, /<script/i);
-  assert.doesNotMatch(svg, /foreignObject/i);
-  assert.doesNotMatch(svg, /href\s*=\s*["']\s*(https?:)?\/\//i);
-  assert.match(svg, /viewBox="0 0 1200 340"/);
+const readmeSvgs = ['banner.svg', 'stats.svg', 'divider.svg', 'how-it-works.svg', 'safety-layers.svg', 'handoff.svg', 'example-session.svg', 'desktop-app.svg'];
+
+test('animated README graphics are self-contained, small and respect reduced motion', () => {
+  for (const name of readmeSvgs) {
+    const url = new URL(`../docs/assets/${name}`, import.meta.url);
+    const text = fs.readFileSync(url, 'utf8');
+    assert.ok(fs.statSync(url).size < 64 * 1024, name);
+    assert.doesNotMatch(text, /<script/i, name);
+    assert.doesNotMatch(text, /foreignObject/i, name);
+    assert.doesNotMatch(text, /href\s*=\s*["']\s*(https?:)?\/\//i, name);
+    assert.match(text, /@keyframes/, name);
+    assert.match(text, /@media \(prefers-reduced-motion: reduce\)/, name);
+  }
+  assert.match(svg, /viewBox="0 0 1200 420"/);
   assert.match(svg, /href="data:image\/png;base64,/);
-  assert.match(svg, /<animateTransform/);
   assert.ok(fs.existsSync(new URL('../docs/assets/auspex-icon.png', import.meta.url)));
 });
 
-test('README references the animated banner', () => {
-  assert.match(read('../README.md'), /docs\/assets\/banner\.svg/);
+test('README references the animated graphics and every docs page', () => {
+  const readme = read('../README.md');
+  for (const name of readmeSvgs) assert.match(readme, new RegExp(`docs/assets/${name.replace('.', '\\.')}`), name);
+  for (const page of ['safety', 'tools', 'reports', 'schema-memory', 'clients', 'viewer', 'configuration', 'testing']) {
+    assert.match(readme, new RegExp(`\\(docs/${page}\\.md\\)`), page);
+    assert.ok(fs.existsSync(new URL(`../docs/${page}.md`, import.meta.url)), page);
+  }
 });

@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="440" viewBox="0 0 1200 440" role="img" aria-label="How it works: the agent calls Auspex over MCP; Auspex checks the SQL, runs it read-only on PostgreSQL, refuses writes, and writes every call to the audit log">
+<title>How it works: the agent calls Auspex over MCP; Auspex checks the SQL, runs it read-only on PostgreSQL, refuses writes, and writes every call to the audit log</title>
+<style>
+.pg, .pa, .pr, .lg, .lr, .mm { opacity: 0; animation: 8s linear infinite; }
+.pg { animation-name: pg; } .pa { animation-name: pa; } .pr { animation-name: pr; }
+.lg { animation-name: lg; } .lr { animation-name: lr; } .mm { animation-name: mm; }
+@keyframes pg {
+  0.00% { transform: translate(270px, 182px); opacity: 0; }
+  1.25% { transform: translate(270px, 182px); opacity: 1; }
+  13.75% { transform: translate(430px, 182px); opacity: 1; }
+  14.00% { transform: translate(430px, 182px); opacity: 0; }
+  23.75% { transform: translate(770px, 182px); opacity: 0; }
+  24.00% { transform: translate(770px, 182px); opacity: 1; }
+  35.00% { transform: translate(930px, 182px); opacity: 1; }
+  35.63% { transform: translate(930px, 182px); opacity: 0; }
+  100.00% { transform: translate(930px, 182px); opacity: 0; }
+}
+@keyframes pa {
+  0.00% { transform: translate(930px, 182px); opacity: 0; }
+  36.25% { transform: translate(930px, 182px); opacity: 0; }
+  36.88% { transform: translate(930px, 182px); opacity: 1; }
+  45.00% { transform: translate(770px, 182px); opacity: 1; }
+  45.25% { transform: translate(770px, 182px); opacity: 0; }
+  45.50% { transform: translate(430px, 182px); opacity: 0; }
+  45.75% { transform: translate(430px, 182px); opacity: 1; }
+  53.75% { transform: translate(270px, 182px); opacity: 1; }
+  55.00% { transform: translate(270px, 182px); opacity: 0; }
+  100.00% { transform: translate(270px, 182px); opacity: 0; }
+}
+@keyframes pr {
+  0.00% { transform: translate(270px, 182px); opacity: 0; }
+  58.75% { transform: translate(270px, 182px); opacity: 0; }
+  60.00% { transform: translate(270px, 182px); opacity: 1; }
+  70.00% { transform: translate(440px, 182px); opacity: 1; }
+  73.75% { transform: translate(400px, 182px); opacity: 1; }
+  76.25% { transform: translate(400px, 182px); opacity: 0; }
+  100.00% { transform: translate(400px, 182px); opacity: 0; }
+}
+@keyframes lg {
+  0.00% { transform: translate(600px, 262px); opacity: 0; }
+  23.75% { transform: translate(600px, 262px); opacity: 0; }
+  24.38% { transform: translate(600px, 262px); opacity: 1; }
+  28.75% { transform: translate(600px, 300px); opacity: 1; }
+  36.25% { transform: translate(415px, 300px); opacity: 1; }
+  40.00% { transform: translate(415px, 330px); opacity: 1; }
+  41.25% { transform: translate(415px, 330px); opacity: 0; }
+  100.00% { transform: translate(415px, 330px); opacity: 0; }
+}
+@keyframes mm {
+  0.00% { transform: translate(600px, 262px); opacity: 0; }
+  37.50% { transform: translate(600px, 262px); opacity: 0; }
+  38.13% { transform: translate(600px, 262px); opacity: 1; }
+  42.50% { transform: translate(600px, 300px); opacity: 1; }
+  43.75% { transform: translate(605px, 300px); opacity: 1; }
+  47.50% { transform: translate(605px, 330px); opacity: 1; }
+  48.75% { transform: translate(605px, 330px); opacity: 0; }
+  100.00% { transform: translate(605px, 330px); opacity: 0; }
+}
+@keyframes lr {
+  0.00% { transform: translate(600px, 262px); opacity: 0; }
+  75.00% { transform: translate(600px, 262px); opacity: 0; }
+  75.63% { transform: translate(600px, 262px); opacity: 1; }
+  80.00% { transform: translate(600px, 300px); opacity: 1; }
+  87.50% { transform: translate(415px, 300px); opacity: 1; }
+  91.25% { transform: translate(415px, 330px); opacity: 1; }
+  92.50% { transform: translate(415px, 330px); opacity: 0; }
+  100.00% { transform: translate(415px, 330px); opacity: 0; }
+}
+.c1 rect, .c2 rect, .c3 rect { animation: 8s linear infinite; }
+.c1 rect { animation-name: c1; } .c2 rect { animation-name: c2; } .c3 rect { animation-name: c3; }
+@keyframes c1 { 0%, 13.75% { fill: #0E1A13; } 15.00%, 18.75% { fill: #1F5A36; } 21.25%, 68.75% { fill: #0E1A13; } 70.00%, 78.75% { fill: #5A1A14; } 82.50%, 100% { fill: #0E1A13; } }
+@keyframes c2 { 0%, 16.25% { fill: #0E1A13; } 17.50%, 21.25% { fill: #1F5A36; } 23.75%, 100% { fill: #0E1A13; } }
+@keyframes c3 { 0%, 18.75% { fill: #0E1A13; } 20.00%, 23.75% { fill: #1F5A36; } 26.25%, 100% { fill: #0E1A13; } }
+.nope { opacity: 0; animation: nope 8s linear infinite; }
+@keyframes nope { 0%, 70.00% { opacity: 0; transform: translateY(6px); } 71.88%, 90.00% { opacity: 1; transform: none; } 93.75%, 100% { opacity: 0; } }
+.core { animation: core 8s ease-in-out infinite; }
+@keyframes core { 0%, 100% { stroke-opacity: .55; } 18.75% { stroke-opacity: 1; } 37.50% { stroke-opacity: .55; } }
+.logbox rect { animation: logb 8s linear infinite; }
+@keyframes logb { 0%, 38.75% { stroke: #C9A04F; } 40.63%, 47.50% { stroke: #5CFF9E; } 50.00%, 90.00% { stroke: #C9A04F; } 91.88%, 98.75% { stroke: #FF5A4A; } 100% { stroke: #C9A04F; } }
+.membox rect { animation: memb 8s linear infinite; }
+@keyframes memb { 0%, 46.25% { stroke: #C9A04F; } 48.13%, 56.25% { stroke: #FFB347; } 58.75%, 100% { stroke: #C9A04F; } }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+</style>
+<defs>
+<linearGradient id="fbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#17120E"/><stop offset=".55" stop-color="#121310"/><stop offset="1" stop-color="#0D1A13"/></linearGradient>
+<pattern id="fgrid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#C9A04F" stroke-opacity=".06" stroke-width="1"/></pattern>
+</defs>
+<rect x="1" y="1" width="1198" height="438" rx="24" fill="url(#fbg)"/>
+<rect x="1" y="1" width="1198" height="438" rx="24" fill="url(#fgrid)"/>
+<rect x="1" y="1" width="1198" height="438" rx="24" fill="none" stroke="#C9A04F" stroke-opacity=".38" stroke-width="1.5"/>
+<g stroke="#C9A04F" stroke-opacity=".45" stroke-width="1.5" fill="none" stroke-dasharray="5 6">
+<path d="M270 182H430"/><path d="M770 182H930"/>
+<path d="M600 262V300M415 300H795M415 300V322M605 300V322M795 300V322"/>
+<path d="M880 357H930"/>
+</g>
+<g><rect x="40" y="127" width="230" height="110" rx="16" fill="#15120E" stroke="#C9A04F" stroke-opacity="0.55" stroke-width="1.5"/>
+<text x="155" y="165" text-anchor="middle" font-family="'Segoe UI', -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="20" font-weight="700" fill="#EDE6DA">AI agent</text>
+<text x="155" y="189" text-anchor="middle" font-family="'Segoe UI', -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="13" fill="#B8AC98">Claude Code · Codex · Cursor · …</text></g>
+<rect class="core" x="430" y="92" width="340" height="170" rx="18" fill="#141A12" stroke="#2FBF71" stroke-width="1.8"/>
+<text x="600" y="132" text-anchor="middle" font-family="'Segoe UI', -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="22" font-weight="700" fill="#EDE6DA">Auspex Augur</text>
+<text x="600" y="152" text-anchor="middle" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="12" fill="#B8AC98">MCP over stdio · explicit profile</text>
+<g class="c1"><rect x="445" y="166" width="100" height="32" rx="10" fill="#0E1A13" stroke="#2FBF71" stroke-opacity=".6"/><text x="495" y="187" text-anchor="middle" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="12.5" fill="#7DE3A9">SQL guard</text></g><g class="c2"><rect x="550" y="166" width="100" height="32" rx="10" fill="#0E1A13" stroke="#2FBF71" stroke-opacity=".6"/><text x="600" y="187" text-anchor="middle" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="12.5" fill="#7DE3A9">READ ONLY</text></g><g class="c3"><rect x="655" y="166" width="100" height="32" rx="10" fill="#0E1A13" stroke="#2FBF71" stroke-opacity=".6"/><text x="705" y="187" text-anchor="middle" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="12.5" fill="#7DE3A9">cursor</text></g>
+<text x="600" y="236" text-anchor="middle" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="12" fill="#7E7466">every call ends in ROLLBACK</text>
+<g>
+<path d="M935 120v94a110 18 0 0 0 220 0v-94" fill="#121A15" stroke="#C9A04F" stroke-opacity=".55" stroke-width="1.5"/>
+<ellipse cx="1045" cy="120" rx="110" ry="18" fill="#1A2A20" stroke="#C9A04F" stroke-opacity=".55" stroke-width="1.5"/>
+<text x="1045" y="175" text-anchor="middle" font-family="'Segoe UI', -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="20" font-weight="700" fill="#EDE6DA">PostgreSQL</text>
+<text x="1045" y="199" text-anchor="middle" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="13" fill="#B8AC98">role: SELECT only</text>
+</g>
+<g class="logbox"><rect x="330" y="322" width="170" height="70" rx="16" fill="#15120E" stroke="#C9A04F" stroke-opacity="0.55" stroke-width="1.5"/>
+<text x="415" y="352" text-anchor="middle" font-family="'Segoe UI', -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="16" font-weight="700" fill="#EDE6DA">Audit log</text>
+<text x="415" y="374" text-anchor="middle" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="13" fill="#B8AC98">~/.auspex/logs</text></g>
+<g class="membox"><rect x="520" y="322" width="170" height="70" rx="16" fill="#15120E" stroke="#C9A04F" stroke-opacity="0.55" stroke-width="1.5"/>
+<text x="605" y="352" text-anchor="middle" font-family="'Segoe UI', -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="16" font-weight="700" fill="#EDE6DA">Schema memory</text>
+<text x="605" y="374" text-anchor="middle" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="13" fill="#B8AC98">~/.auspex/memory</text></g>
+<g><rect x="710" y="322" width="170" height="70" rx="16" fill="#15120E" stroke="#C9A04F" stroke-opacity="0.55" stroke-width="1.5"/>
+<text x="795" y="352" text-anchor="middle" font-family="'Segoe UI', -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="16" font-weight="700" fill="#EDE6DA">Report library</text>
+<text x="795" y="374" text-anchor="middle" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="13" fill="#B8AC98">~/.auspex/library</text></g>
+<g><rect x="930" y="322" width="230" height="70" rx="16" fill="#15120E" stroke="#D7783A" stroke-opacity="0.55" stroke-width="1.5"/>
+<text x="1045" y="352" text-anchor="middle" font-family="'Segoe UI', -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="16" font-weight="700" fill="#EDE6DA">Viewer · desktop app</text>
+<text x="1045" y="374" text-anchor="middle" font-family="'Segoe UI', -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="13" fill="#B8AC98">reads local files only</text></g>
+<g class="nope"><rect x="395" y="54" width="200" height="30" rx="15" fill="#3A1410" stroke="#FF5A4A" stroke-opacity=".8"/><text x="495" y="74" text-anchor="middle" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="13" fill="#FF9C90">✗ DELETE refused</text></g>
+<g class="pg"><circle r="13" fill="#5CFF9E" fill-opacity=".22"/><circle r="6.5" fill="#5CFF9E"/></g><g class="pa"><circle r="13" fill="#FFB347" fill-opacity=".22"/><circle r="6.5" fill="#FFB347"/></g><g class="pr"><circle r="13" fill="#FF5A4A" fill-opacity=".22"/><circle r="6.5" fill="#FF5A4A"/></g><g class="lg"><circle r="13" fill="#5CFF9E" fill-opacity=".22"/><circle r="6.5" fill="#5CFF9E"/></g><g class="lr"><circle r="13" fill="#FF5A4A" fill-opacity=".22"/><circle r="6.5" fill="#FF5A4A"/></g><g class="mm"><circle r="13" fill="#FFB347" fill-opacity=".22"/><circle r="6.5" fill="#FFB347"/></g>
+<text x="40" y="70" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="12" letter-spacing="1.5" fill="#7E7466">ONE CALL, END TO END</text>
+
+</svg>

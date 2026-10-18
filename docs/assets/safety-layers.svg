@@ -1,75 +1,66 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="960" height="520" viewBox="0 0 960 520" role="img" aria-label="Five safety layers between an AI agent and PostgreSQL">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#0f1726"/>
-      <stop offset="1" stop-color="#16243b"/>
-    </linearGradient>
-    <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M0 0 L10 5 L0 10 Z" fill="#b7d3f6"/>
-    </marker>
-    <style>
-      text { font-family: "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif; }
-      .title { font-size: 22px; font-weight: 700; fill: #ffffff; }
-      .sub { font-size: 14px; fill: #98a2b3; }
-      .name { font-size: 18px; font-weight: 700; fill: #ffffff; }
-      .desc { font-size: 14px; fill: #c3c8d2; }
-      .num { font-size: 16px; font-weight: 700; fill: #0b1220; }
-      .end { font-size: 15px; font-weight: 700; fill: #e6e9ee; }
-      .flow { stroke-dasharray: 6 8; animation: flow 1.2s linear infinite; }
-      @keyframes flow { to { stroke-dashoffset: -14; } }
-      @media (prefers-reduced-motion: reduce) { .flow { animation: none; } }
-    </style>
-  </defs>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="380" viewBox="0 0 1200 380" role="img" aria-label="Five safety layers: SQL guard, READ ONLY transaction, cursor and extended protocol, read-only database role, audit log">
+<title>Five safety layers: SQL guard, READ ONLY transaction, cursor and extended protocol, read-only database role, audit log</title>
+<style>
+.ok { opacity: 0; animation: ok 9s linear infinite; }
+@keyframes ok { 0% { transform: translate(110px, 171px); opacity: 0; } 2.22% { transform: translate(110px, 171px); opacity: 1; } 42.22% { transform: translate(870px, 171px); opacity: 1; } 48.89% { transform: translate(1000px, 171px); opacity: 1; } 51.11%, 100% { transform: translate(1000px, 171px); opacity: 0; } }
+.bad { opacity: 0; animation: bad 9s linear infinite; }
+@keyframes bad { 0%, 51.11% { transform: translate(110px, 171px); opacity: 0; } 52.22% { transform: translate(110px, 171px); opacity: 1; } 60.00% { transform: translate(190px, 171px); opacity: 1; } 64.44% { transform: translate(160px, 171px); opacity: 1; } 70.00%, 100% { transform: translate(160px, 171px); opacity: 0; } }
+.msg0, .msg1, .msg2 { opacity: 0; animation: 9s linear infinite; }
+.msg0 { animation-name: m0; } .msg1 { animation-name: m1; } .msg2 { animation-name: m2; }
+@keyframes m0 { 0%, 11.11% { opacity: 0; } 14.44%, 46.67% { opacity: 1; } 50.00%, 100% { opacity: 0; } }
+@keyframes m1 { 0%, 60.00% { opacity: 0; } 62.22%, 91.11% { opacity: 1; } 94.44%, 100% { opacity: 0; } }
+@keyframes m2 { 0%, 72.22% { opacity: 0; } 74.44%, 91.11% { opacity: 1; } 94.44%, 100% { opacity: 0; } }
+.g0 rect { animation: g0 9s linear infinite; }
+@keyframes g0 { 0%, 7.98% { fill: #121A15; stroke: #C9A04F; } 9.09%, 15.20% { fill: #1F5A36; stroke: #5CFF9E; } 19.65% { fill: #121A15; stroke: #C9A04F; } 60.00% { fill: #121A15; stroke: #C9A04F; } 61.11%, 73.33% { fill: #5A1A14; stroke: #FF5A4A; } 76.67% { fill: #121A15; stroke: #C9A04F; } 100% { fill: #121A15; stroke: #C9A04F; } }
+.g1 rect { animation: g1 9s linear infinite; }
+@keyframes g1 { 0%, 16.40% { fill: #121A15; stroke: #C9A04F; } 17.51%, 23.63% { fill: #1F5A36; stroke: #5CFF9E; } 28.07% { fill: #121A15; stroke: #C9A04F; } 100% { fill: #121A15; stroke: #C9A04F; } }
+.g2 rect { animation: g2 9s linear infinite; }
+@keyframes g2 { 0%, 24.82% { fill: #121A15; stroke: #C9A04F; } 25.94%, 32.05% { fill: #1F5A36; stroke: #5CFF9E; } 36.49% { fill: #121A15; stroke: #C9A04F; } 100% { fill: #121A15; stroke: #C9A04F; } }
+.g3 rect { animation: g3 9s linear infinite; }
+@keyframes g3 { 0%, 33.25% { fill: #121A15; stroke: #C9A04F; } 34.36%, 40.47% { fill: #1F5A36; stroke: #5CFF9E; } 44.91% { fill: #121A15; stroke: #C9A04F; } 100% { fill: #121A15; stroke: #C9A04F; } }
+.g4 rect { animation: g4 9s linear infinite; }
+@keyframes g4 { 0%, 41.67% { fill: #121A15; stroke: #C9A04F; } 42.78%, 48.89% { fill: #1F5A36; stroke: #5CFF9E; } 53.33% { fill: #121A15; stroke: #C9A04F; } 72.22% { fill: #121A15; stroke: #C9A04F; } 73.33%, 84.44% { fill: #4A3410; stroke: #FFB347; } 87.78% { fill: #121A15; stroke: #C9A04F; } 100% { fill: #121A15; stroke: #C9A04F; } }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+</style>
+<defs>
+<linearGradient id="sbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#17120E"/><stop offset=".55" stop-color="#121310"/><stop offset="1" stop-color="#0D1A13"/></linearGradient>
+<pattern id="sgrid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#C9A04F" stroke-opacity=".06" stroke-width="1"/></pattern>
+</defs>
+<rect x="1" y="1" width="1198" height="378" rx="24" fill="url(#sbg)"/>
+<rect x="1" y="1" width="1198" height="378" rx="24" fill="url(#sgrid)"/>
+<rect x="1" y="1" width="1198" height="378" rx="24" fill="none" stroke="#C9A04F" stroke-opacity=".38" stroke-width="1.5"/>
+<path d="M110 171H1000" stroke="#C9A04F" stroke-opacity=".35" stroke-width="1.5" stroke-dasharray="5 6" fill="none"/>
+<rect x="30" y="141" width="80" height="60" rx="14" fill="#15120E" stroke="#C9A04F" stroke-opacity=".55"/>
+<text x="70" y="168" text-anchor="middle" font-family="'Segoe UI', -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="700" fill="#EDE6DA">agent</text>
+<text x="70" y="187" text-anchor="middle" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="11" fill="#B8AC98">SQL</text>
+<path d="M1005 120v94a80 16 0 0 0 160 0v-94" fill="#121A15" stroke="#C9A04F" stroke-opacity=".55" stroke-width="1.5"/>
+<ellipse cx="1085" cy="120" rx="80" ry="16" fill="#1A2A20" stroke="#C9A04F" stroke-opacity=".55" stroke-width="1.5"/>
+<text x="1085" y="178" text-anchor="middle" font-family="'Segoe UI', -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="17" font-weight="700" fill="#EDE6DA">PostgreSQL</text>
+<g class="g g0"><rect x="220" y="96" width="20" height="150" rx="10" fill="#121A15" stroke="#C9A04F" stroke-opacity=".65" stroke-width="1.5"/>
+<text x="230" y="80" text-anchor="middle" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="13" fill="#C9A04F">1</text>
+<text x="230" y="280" text-anchor="middle" font-family="'Segoe UI', -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="16" font-weight="700" fill="#EDE6DA">SQL guard</text>
+<text x="230" y="300" text-anchor="middle" font-family="'Segoe UI', -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="13" fill="#B8AC98">lexical check</text></g>
+<g class="g g1"><rect x="380" y="96" width="20" height="150" rx="10" fill="#121A15" stroke="#C9A04F" stroke-opacity=".65" stroke-width="1.5"/>
+<text x="390" y="80" text-anchor="middle" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="13" fill="#C9A04F">2</text>
+<text x="390" y="280" text-anchor="middle" font-family="'Segoe UI', -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="16" font-weight="700" fill="#EDE6DA">READ ONLY</text>
+<text x="390" y="300" text-anchor="middle" font-family="'Segoe UI', -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="13" fill="#B8AC98">transaction</text></g>
+<g class="g g2"><rect x="540" y="96" width="20" height="150" rx="10" fill="#121A15" stroke="#C9A04F" stroke-opacity=".65" stroke-width="1.5"/>
+<text x="550" y="80" text-anchor="middle" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="13" fill="#C9A04F">3</text>
+<text x="550" y="280" text-anchor="middle" font-family="'Segoe UI', -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="16" font-weight="700" fill="#EDE6DA">Cursor</text>
+<text x="550" y="300" text-anchor="middle" font-family="'Segoe UI', -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="13" fill="#B8AC98">extended protocol</text></g>
+<g class="g g3"><rect x="700" y="96" width="20" height="150" rx="10" fill="#121A15" stroke="#C9A04F" stroke-opacity=".65" stroke-width="1.5"/>
+<text x="710" y="80" text-anchor="middle" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="13" fill="#C9A04F">4</text>
+<text x="710" y="280" text-anchor="middle" font-family="'Segoe UI', -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="16" font-weight="700" fill="#EDE6DA">Read-only</text>
+<text x="710" y="300" text-anchor="middle" font-family="'Segoe UI', -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="13" fill="#B8AC98">database role</text></g>
+<g class="g g4"><rect x="860" y="96" width="20" height="150" rx="10" fill="#121A15" stroke="#C9A04F" stroke-opacity=".65" stroke-width="1.5"/>
+<text x="870" y="80" text-anchor="middle" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="13" fill="#C9A04F">5</text>
+<text x="870" y="280" text-anchor="middle" font-family="'Segoe UI', -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="16" font-weight="700" fill="#EDE6DA">Audit log</text>
+<text x="870" y="300" text-anchor="middle" font-family="'Segoe UI', -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="13" fill="#B8AC98">every call</text></g>
+<g class="ok"><rect x="-34" y="-13" width="68" height="26" rx="13" fill="#13301F" stroke="#5CFF9E"/><text y="5" text-anchor="middle" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="12.5" font-weight="700" fill="#9DFFC6">SELECT</text></g>
+<g class="bad"><rect x="-36" y="-13" width="72" height="26" rx="13" fill="#3A1410" stroke="#FF5A4A"/><text y="5" text-anchor="middle" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="12.5" font-weight="700" fill="#FF9C90">UPDATE</text></g>
+<g class="msg1"><text x="230" y="350" text-anchor="middle" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="13" fill="#FF9C90">✗ refused before connecting</text></g>
+<g class="msg2"><text x="870" y="350" text-anchor="middle" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="13" fill="#FFB347">✎ still written to the log</text></g>
+<g class="msg0"><text x="550" y="350" text-anchor="middle" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="13" fill="#7DE3A9">✓ read-only, time-limited, rolled back</text></g>
+<text x="40" y="60" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="12" letter-spacing="1.5" fill="#7E7466">FIVE LAYERS · THE ROLE IS THE REAL GUARANTEE</text>
 
-  <rect width="960" height="520" rx="20" fill="url(#bg)"/>
-  <text x="40" y="48" class="title">Five layers between an AI agent and your data</text>
-  <text x="40" y="74" class="sub">Every query passes all of them. Writes are refused at every layer that can see them.</text>
-
-  <!-- request path -->
-  <rect x="40" y="96" width="104" height="34" rx="17" fill="#3987e5" fill-opacity="0.2" stroke="#3987e5"/>
-  <text x="92" y="118" class="end" text-anchor="middle">AI agent</text>
-  <line class="flow" x1="92" y1="134" x2="92" y2="466" stroke="#b7d3f6" stroke-width="2.5" marker-end="url(#arrow)"/>
-  <rect x="32" y="472" width="120" height="34" rx="17" fill="#1baf7a" fill-opacity="0.2" stroke="#1baf7a"/>
-  <text x="92" y="494" class="end" text-anchor="middle">PostgreSQL</text>
-
-  <!-- layer 1 -->
-  <g transform="translate(176 104)">
-    <rect width="744" height="62" rx="12" fill="#eb6834" fill-opacity="0.12" stroke="#eb6834" stroke-opacity="0.55"/>
-    <rect width="8" height="62" rx="4" fill="#eb6834"/>
-    <circle cx="40" cy="31" r="15" fill="#eb6834"/><text x="40" y="37" class="num" text-anchor="middle">1</text>
-    <text x="70" y="27" class="name">SQL guard</text>
-    <text x="70" y="48" class="desc">Before connecting: one statement, SELECT/WITH/VALUES/TABLE only, no side-effect functions</text>
-  </g>
-  <!-- layer 2 -->
-  <g transform="translate(176 176)">
-    <rect width="744" height="62" rx="12" fill="#1baf7a" fill-opacity="0.12" stroke="#1baf7a" stroke-opacity="0.55"/>
-    <rect width="8" height="62" rx="4" fill="#1baf7a"/>
-    <circle cx="40" cy="31" r="15" fill="#1baf7a"/><text x="40" y="37" class="num" text-anchor="middle">2</text>
-    <text x="70" y="27" class="name">READ ONLY transaction</text>
-    <text x="70" y="48" class="desc">Statement, lock and idle timeouts; every call ends with ROLLBACK</text>
-  </g>
-  <!-- layer 3 -->
-  <g transform="translate(176 248)">
-    <rect width="744" height="62" rx="12" fill="#9085e9" fill-opacity="0.14" stroke="#9085e9" stroke-opacity="0.6"/>
-    <rect width="8" height="62" rx="4" fill="#9085e9"/>
-    <circle cx="40" cy="31" r="15" fill="#9085e9"/><text x="40" y="37" class="num" text-anchor="middle">3</text>
-    <text x="70" y="27" class="name">Cursor + extended protocol</text>
-    <text x="70" y="48" class="desc">DECLARE CURSOR FOR the query; the server rejects stacked statements and data-modifying CTEs</text>
-  </g>
-  <!-- layer 4 -->
-  <g transform="translate(176 320)">
-    <rect width="744" height="62" rx="12" fill="#3987e5" fill-opacity="0.16" stroke="#3987e5" stroke-opacity="0.7"/>
-    <rect width="8" height="62" rx="4" fill="#3987e5"/>
-    <circle cx="40" cy="31" r="15" fill="#3987e5"/><text x="40" y="37" class="num" text-anchor="middle">4</text>
-    <text x="70" y="27" class="name">Read-only database role — the real guarantee</text>
-    <text x="70" y="48" class="desc">CONNECT, USAGE and SELECT only; default_transaction_read_only on; no superuser, no create</text>
-  </g>
-  <!-- layer 5 -->
-  <g transform="translate(176 392)">
-    <rect width="744" height="62" rx="12" fill="#e87ba4" fill-opacity="0.12" stroke="#e87ba4" stroke-opacity="0.55"/>
-    <rect width="8" height="62" rx="4" fill="#e87ba4"/>
-    <circle cx="40" cy="31" r="15" fill="#e87ba4"/><text x="40" y="37" class="num" text-anchor="middle">5</text>
-    <text x="70" y="27" class="name">Audit log</text>
-    <text x="70" y="48" class="desc">Every call recorded: time, source, tool, profile, SQL, params, duration, rows, error</text>
-  </g>
 </svg>

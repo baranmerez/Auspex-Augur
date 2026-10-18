@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Scheduled report runs (README: Scheduled runs). Schedules live in
+// Scheduled report runs (docs/reports.md: Scheduled runs). Schedules live in
 // <AUSPEX_HOME or ~/.auspex>/schedules.json, edited by the user.
 //   node src/scheduleCli.js run-due        run every schedule whose latest due
 //                                          slot has no successful run yet
