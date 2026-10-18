@@ -30,6 +30,8 @@ export const scoreHistoryLimit = 5;
 export const maxScoreReason = 200;
 export const maxScoredColumns = 2000;
 export const maxScannedFiles = 1000;
+export const maxTriggerSummary = 200;
+export const maxTriggerSummaries = 200;
 const maxScannedPath = 500;
 const sha256Pattern = /^[0-9a-f]{64}$/;
 const reservedFileName = /^(con|prn|aux|nul|com\d|lpt\d)$/;
@@ -83,8 +85,20 @@ export function recordFromDescribe(desc) {
       name: r.name, schema: r.from_schema, table: r.from_name, columns: r.columns ?? [], refColumns: r.ref_columns ?? [],
     })),
     viewHash: desc.viewDefinition ? crypto.createHash('sha256').update(desc.viewDefinition).digest('hex').slice(0, 16) : null,
+    // Triggers as describe_table read them (CREATE TRIGGER text, never the
+    // function source). Absent when the describe result had none.
+    ...(Array.isArray(desc.triggers) ? { triggers: desc.triggers.map(triggerRecord) } : {}),
   };
 }
+
+export function triggerRecord(t) {
+  return {
+    name: t.name, timing: t.timing ?? null, events: t.events ?? [], level: t.level ?? null, enabled: t.enabled ?? null,
+    function: t.function ?? null, when: t.whenCondition ?? t.when ?? null, definition: t.definition ?? null, constraintTrigger: !!t.constraintTrigger,
+  };
+}
+
+const definitionHash = text => crypto.createHash('sha256').update(String(text ?? '')).digest('hex').slice(0, 16);
 
 // Structural changes between two recordings of the same table. Row estimates,
 // defaults and comments are not changes. Same table (oid) and same attnum with
@@ -117,6 +131,15 @@ export function diffTable(prev, next) {
   diffNamed(changes, 'index', prev.indexes, next.indexes, i => i.name, i => i.definition);
   diffNamed(changes, 'incoming-fk', prev.referencedBy || [], next.referencedBy || [], r => `${r.schema}.${r.table}.${r.name}`, r => r.columns.join(','));
   if (prev.viewHash && next.viewHash && prev.viewHash !== next.viewHash) changes.push({ change: 'view-definition-changed' });
+  // Records from before triggers were stored have no field: no false "added".
+  if (Array.isArray(prev.triggers) && Array.isArray(next.triggers)) {
+    diffNamed(changes, 'trigger', prev.triggers, next.triggers, t => t.name, t => t.definition);
+    const before = new Map(prev.triggers.map(t => [t.name, t]));
+    for (const t of next.triggers) {
+      const old = before.get(t.name);
+      if (old && old.enabled !== t.enabled) changes.push({ change: 'trigger-enabled-changed', name: t.name, from: old.enabled, to: t.enabled });
+    }
+  }
   return changes;
 }
 
@@ -139,6 +162,7 @@ export function changeText(c) {
     case 'column-nullability-changed': return `column ${c.column} is now ${c.notNull ? 'NOT NULL' : 'nullable'}`;
     case 'kind-changed': return `relation kind ${c.from} -> ${c.to}`;
     case 'view-definition-changed': return 'view definition changed';
+    case 'trigger-enabled-changed': return `trigger ${c.name} ${c.from} -> ${c.to}`;
     default: {
       const [what, verb] = [c.change.slice(0, c.change.lastIndexOf('-')), c.change.slice(c.change.lastIndexOf('-') + 1)];
       return `${what.replace('-', ' ')} ${c.name} ${verb}`;
@@ -279,6 +303,7 @@ export class SchemaMemory {
       ...(prev && 'estRows' in prev ? { estRows: prev.estRows, estRowsAt: prev.estRowsAt } : {}), // relation_stats
       ...(prev?.relationStats ? { relationStats: prev.relationStats } : {}),
       ...(prev?.columnScores ? { columnScores: prev.columnScores, scoredAt: prev.scoredAt } : {}), // score_columns
+      ...(prev?.triggerSummaries ? { triggerSummaries: prev.triggerSummaries } : {}),
     };
     this.writeTable(profile, record);
     if (firstTime) this.appendChangelog(profile, { at, schema: next.schema, table: next.table, event: 'explored' });
@@ -497,7 +522,7 @@ export class SchemaMemory {
   // read (path relative to its script root, sha256, lastReadAt), never their
   // contents. scriptRoots: names the root of a scanned file must be one of.
   scoreColumns(profile, input, { scriptRoots = null } = {}) {
-    const { schema, table, columns, scannedFiles } = validateScoreInput(input, scriptRoots);
+    const { schema, table, columns, triggers, scannedFiles } = validateScoreInput(input, scriptRoots);
     return this.locked(profile, () => {
       const rec = this.readTable(profile, schema, table);
       if (!rec) throw new MemoryError(`${tableKey(schema, table)} is not in memory. Describe it first (describe_table or describe_tables).`, 'NOT_FOUND');
@@ -505,6 +530,10 @@ export class SchemaMemory {
       const known = new Set(rec.columns.map(c => c.name));
       const unknown = columns.map(c => c.name).filter(name => !known.has(name));
       if (unknown.length) throw new MemoryError(`Not columns of ${tableKey(schema, table)} in the recorded structure: ${unknown.join(', ')}. Nothing was saved; describe the table again if it changed.`);
+      if (triggers.length && !Array.isArray(rec.triggers)) throw new MemoryError(`The triggers of ${tableKey(schema, table)} are not recorded yet. Describe the table again (describe_table or describe_tables); nothing was saved.`, 'PRECONDITION_FAILED');
+      const recorded = new Map((rec.triggers ?? []).map(t => [t.name, t]));
+      const unknownTriggers = triggers.map(t => t.name).filter(name => !recorded.has(name));
+      if (unknownTriggers.length) throw new MemoryError(`Not triggers of ${tableKey(schema, table)} in the recorded structure: ${unknownTriggers.join(', ')}. Nothing was saved; describe the table again if it changed.`);
       const at = this.now();
       const scores = {};
       for (const [name, value] of Object.entries(rec.columnScores ?? {})) setOwn(scores, name, value);
@@ -513,7 +542,14 @@ export class SchemaMemory {
         const history = prev ? [{ score: prev.score, reason: prev.reason, at: prev.at }, ...(prev.history ?? [])].slice(0, scoreHistoryLimit) : [];
         setOwn(scores, c.name, { score: c.score, roles: c.roles, reason: c.reason, sources: c.sources, at, history });
       }
-      Object.assign(rec, { columnScores: scores, scoredAt: at });
+      if (columns.length) Object.assign(rec, { columnScores: scores, scoredAt: at });
+      if (triggers.length) {
+        const summaries = {};
+        for (const [name, value] of Object.entries(rec.triggerSummaries ?? {})) setOwn(summaries, name, value);
+        // definitionHash marks the summary stale when the trigger changes later.
+        for (const t of triggers) setOwn(summaries, t.name, { summary: t.summary, at, definitionHash: definitionHash(recorded.get(t.name).definition) });
+        rec.triggerSummaries = summaries;
+      }
       this.writeTable(profile, rec);
       const scanned = scannedFiles.length ? this.recordScannedUnlocked(profile, scannedFiles, at) : null;
       this.rebuildViewUnlocked(profile);
@@ -521,6 +557,7 @@ export class SchemaMemory {
         relation: tableKey(schema, table),
         scoredAt: at,
         scored: columns.length,
+        ...(triggers.length ? { triggersSummarized: triggers.length } : {}),
         unscoredColumns: rec.columns.filter(c => !Object.hasOwn(scores, c.name)).map(c => c.name),
         ...(scanned ? { scannedFiles: scanned } : {}),
       };
@@ -645,6 +682,7 @@ export class SchemaMemory {
       notes: notes.map(n => ({ id: n.id, kind: n.kind, column: n.column, text: n.text, ...(n.asOf ? { asOf: n.asOf } : {}), ...(n.evidence?.figures ? { figures: n.evidence.figures } : {}) })),
       recentChanges: (rec.history || []).slice(-5).map(h => `${h.at.slice(0, 10)}: ${h.changes.map(changeText).join('; ')}`),
       ...columnScoresSection(rec),
+      ...(Array.isArray(rec.triggers) ? { triggers: triggersWithSummaries(rec) } : {}),
       ...this.databaseNotesSection(profile),
       ...this.neighborsSection(profile, [rec], tables),
     };
@@ -664,6 +702,7 @@ export class SchemaMemory {
       notes: notes.filter(n => n.schema === t.schema && n.table === t.table).length,
       ...(t.estRows !== undefined ? { estRows: t.estRows } : {}),
       ...(t.columnScores ? { scoredAt: t.scoredAt, columnScores: t.columnScores } : {}),
+      ...(t.triggers?.length ? { triggers: triggersWithSummaries(t) } : {}),
     }]));
     for (const e of edges) {
       for (const id of [e.from, e.to]) {
@@ -753,12 +792,14 @@ function normalizeScannedPath(value, where) {
 // Strict check of a score_columns input; the whole call is rejected on the
 // first problem. Returns the normalized input.
 export function validateScoreInput(input, scriptRoots = null) {
-  rejectUnknownKeys(input, ['schema', 'table', 'columns', 'scannedFiles'], 'Input');
-  const { schema, table, columns, scannedFiles = [] } = input;
+  rejectUnknownKeys(input, ['schema', 'table', 'columns', 'triggers', 'scannedFiles'], 'Input');
+  const { schema, table, columns = [], triggers = [], scannedFiles = [] } = input;
   for (const [key, value] of [['schema', schema], ['table', table]]) {
     if (typeof value !== 'string' || !value) throw new MemoryError(`${key} must be a non-empty string.`);
   }
-  if (!Array.isArray(columns) || !columns.length) throw new MemoryError('columns must be a non-empty array.');
+  if (!Array.isArray(columns)) throw new MemoryError('columns must be an array.');
+  if (!Array.isArray(triggers)) throw new MemoryError('triggers must be an array.');
+  if (!columns.length && !triggers.length) throw new MemoryError('Give at least one entry in columns or triggers.');
   if (columns.length > maxScoredColumns) throw new MemoryError(`At most ${maxScoredColumns} columns per call.`);
   const seen = new Set();
   const outColumns = columns.map((c, i) => {
@@ -779,6 +820,20 @@ export function validateScoreInput(input, scriptRoots = null) {
     if (!Number.isInteger(c.sources) || c.sources < 0) throw new MemoryError(`${where}.sources must be an integer >= 0.`);
     return { name: c.name, score: c.score, roles: columnRoles.filter(r => c.roles.includes(r)), reason, sources: c.sources };
   });
+  if (triggers.length > maxTriggerSummaries) throw new MemoryError(`At most ${maxTriggerSummaries} triggers per call.`);
+  const seenTriggers = new Set();
+  const outTriggers = triggers.map((t, i) => {
+    const where = `triggers[${i}]`;
+    rejectUnknownKeys(t, ['name', 'summary'], where);
+    if (typeof t.name !== 'string' || !t.name) throw new MemoryError(`${where}.name must be a non-empty string.`);
+    if (seenTriggers.has(t.name)) throw new MemoryError(`Trigger ${t.name} is listed twice.`);
+    seenTriggers.add(t.name);
+    if (typeof t.summary !== 'string' || !t.summary.trim()) throw new MemoryError(`${where}.summary must be a non-empty string.`);
+    const summary = t.summary.trim();
+    if (/[\r\n]/.test(summary)) throw new MemoryError(`${where}.summary must be one line.`);
+    if (summary.length > maxTriggerSummary) throw new MemoryError(`${where}.summary is longer than ${maxTriggerSummary} characters.`);
+    return { name: t.name, summary };
+  });
   if (!Array.isArray(scannedFiles)) throw new MemoryError('scannedFiles must be an array.');
   if (scannedFiles.length > maxScannedFiles) throw new MemoryError(`At most ${maxScannedFiles} scannedFiles per call.`);
   const seenFiles = new Set();
@@ -794,7 +849,7 @@ export function validateScoreInput(input, scriptRoots = null) {
     seenFiles.add(key);
     return { root: f.root, path: rel, sha256: f.sha256.toLowerCase() };
   });
-  return { schema, table, columns: outColumns, scannedFiles: outFiles };
+  return { schema, table, columns: outColumns, triggers: outTriggers, scannedFiles: outFiles };
 }
 
 // table_knowledge: scores highest first, columns that left the structure
@@ -814,4 +869,17 @@ function columnScoresSection(rec) {
     columnScores: entries,
     unscoredColumns: rec.columns.filter(c => !Object.hasOwn(rec.columnScores, c.name)).map(c => c.name),
   };
+}
+
+// Recorded triggers with the agent's one-line summary (score_columns);
+// summaryStale when the trigger definition changed after the summary.
+function triggersWithSummaries(rec) {
+  const summaries = rec.triggerSummaries ?? {};
+  return (rec.triggers ?? []).map(t => {
+    const s = Object.hasOwn(summaries, t.name) ? summaries[t.name] : null;
+    return {
+      ...t,
+      ...(s ? { summary: s.summary, summaryAt: s.at, ...(s.definitionHash !== definitionHash(t.definition) ? { summaryStale: true } : {}) } : {}),
+    };
+  });
 }

@@ -49,7 +49,7 @@ test('validation rejects bad input and names the problem', () => {
     [input([entry('order_id', 3, { sources: -1 })]), /sources must be an integer >= 0/],
     [input([entry('order_id', 3, { weight: 1 })]), /unknown keys: weight/],
     [{ ...input([entry('order_id', 3)]), extra: true }, /Input has unknown keys: extra/],
-    [input([]), /non-empty array/],
+    [input([]), /at least one entry in columns or triggers/],
     [input([entry('order_id', 3), entry('order_id', 4)]), /listed twice/],
     [input([entry('order_id', 3)], { scannedFiles: [{ root: 'scripts', path: '/abs/x.sql', sha256: sha('a') }] }), /relative/],
     [input([entry('order_id', 3)], { scannedFiles: [{ root: 'scripts', path: 'C:\\x.sql', sha256: sha('a') }] }), /relative/],
