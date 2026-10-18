@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="330" viewBox="0 0 1200 330" role="img" aria-label="Auspex drafts a change script that starts with BEGIN and ends with ROLLBACK, never runs it, and hands it to you; you review it, run it and swap ROLLBACK for COMMIT">
+<title>Auspex drafts a change script that starts with BEGIN and ends with ROLLBACK, never runs it, and hands it to you; you review it, run it and swap ROLLBACK for COMMIT</title>
+<style>
+.l, .k1, .k2, .cm { opacity: 0; animation: 10s ease-out infinite; }
+.l0 { animation-name: l0; } .l1 { animation-name: l1; } .l2 { animation-name: l2; } .l3 { animation-name: l3; } .l4 { animation-name: l4; } .l5 { animation-name: l5; }
+.k1 { animation-name: k1; } .k2 { animation-name: k2; } .cm { animation-name: cm; }
+@keyframes l0 { 0%, 3.00% { opacity: 0; transform: translateY(8px); } 5.50%, 93.00% { opacity: 1; transform: none; } 95.50%, 100% { opacity: 0; } }
+@keyframes l1 { 0%, 7.50% { opacity: 0; transform: translateY(8px); } 10.00%, 93.00% { opacity: 1; transform: none; } 95.50%, 100% { opacity: 0; } }
+@keyframes l2 { 0%, 12.00% { opacity: 0; transform: translateY(8px); } 14.50%, 93.00% { opacity: 1; transform: none; } 95.50%, 100% { opacity: 0; } }
+@keyframes l3 { 0%, 16.50% { opacity: 0; transform: translateY(8px); } 19.00%, 93.00% { opacity: 1; transform: none; } 95.50%, 100% { opacity: 0; } }
+@keyframes l4 { 0%, 21.00% { opacity: 0; transform: translateY(8px); } 23.50%, 93.00% { opacity: 1; transform: none; } 95.50%, 100% { opacity: 0; } }
+@keyframes l5 { 0%, 25.50% { opacity: 0; transform: translateY(8px); } 28.00%, 93.00% { opacity: 1; transform: none; } 95.50%, 100% { opacity: 0; } }
+@keyframes k1 { 0%, 53.00% { opacity: 0; transform: translateY(8px); } 56.00%, 93.00% { opacity: 1; transform: none; } 96.00%, 100% { opacity: 0; } }
+@keyframes k2 { 0%, 61.00% { opacity: 0; transform: translateY(8px); } 64.00%, 93.00% { opacity: 1; transform: none; } 96.00%, 100% { opacity: 0; } }
+@keyframes cm { 0%, 72.00% { opacity: 0; transform: translateY(8px); } 74.00%, 93.00% { opacity: 1; transform: none; } 95.00%, 100% { opacity: 0; } }
+.rb { animation: rb 10s linear infinite; }
+@keyframes rb { 0%, 70.00% { opacity: 1; } 72.00%, 94.00% { opacity: 0; } 97.00%, 100% { opacity: 1; } }
+.file { opacity: 0; animation: file 10s ease-in-out infinite; }
+@keyframes file { 0%, 33.00% { transform: translate(590px, 152px); opacity: 0; } 35.00% { transform: translate(590px, 152px); opacity: 1; } 49.00% { transform: translate(715px, 152px); opacity: 1; } 52.00%, 100% { transform: translate(715px, 152px); opacity: 0; } }
+.you { animation: you 10s linear infinite; }
+@keyframes you { 0%, 71.00% { stroke: #D7783A; } 73.00%, 93.00% { stroke: #5CFF9E; } 96.00%, 100% { stroke: #D7783A; } }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+</style>
+<defs>
+<linearGradient id="hbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#17120E"/><stop offset=".55" stop-color="#121310"/><stop offset="1" stop-color="#0D1A13"/></linearGradient>
+<pattern id="hgrid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#C9A04F" stroke-opacity=".06" stroke-width="1"/></pattern>
+</defs>
+<rect x="1" y="1" width="1198" height="328" rx="24" fill="url(#hbg)"/>
+<rect x="1" y="1" width="1198" height="328" rx="24" fill="url(#hgrid)"/>
+<rect x="1" y="1" width="1198" height="328" rx="24" fill="none" stroke="#C9A04F" stroke-opacity=".38" stroke-width="1.5"/>
+<rect x="40" y="56" width="530" height="236" rx="16" fill="#0A140F" stroke="#2FBF71" stroke-opacity=".45"/>
+<text x="64" y="90" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="12" letter-spacing="1.5" fill="#7E7466">AUSPEX DRAFTS THE CHANGE</text>
+<g><rect x="388" y="73" width="160" height="26" rx="13" fill="#3A1410" stroke="#FF5A4A" stroke-opacity=".7"/><text x="468" y="91" text-anchor="middle" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="11.5" letter-spacing="1" fill="#FF9C90">NEVER EXECUTED</text></g>
+<text class="l l0" x="64" y="128" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="14.5" fill="#E7C77F" xml:space="preserve">BEGIN;</text>
+<text class="l l1" x="64" y="155" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="14.5" fill="#7E7466" xml:space="preserve">-- DEFINE   42 rows expected</text>
+<text class="l l2" x="64" y="182" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="14.5" fill="#EDE6DA" xml:space="preserve">UPDATE example.orders SET status_code = 'D'</text>
+<text class="l l3" x="64" y="209" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="14.5" fill="#EDE6DA" xml:space="preserve">  WHERE order_id IN (SELECT order_id FROM ids);</text>
+<text class="l l4" x="64" y="236" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="14.5" fill="#5CFF9E" xml:space="preserve">-- MATCH    expected 42 · actual 42 ✓</text>
+<text class="l l5" x="64" y="263" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="14.5" fill="#FFB347" xml:space="preserve">ROLLBACK;</text>
+<path d="M585 174H755" stroke="#C9A04F" stroke-opacity=".5" stroke-width="1.5" stroke-dasharray="5 6" fill="none"/>
+<path d="M748 167l9 7-9 7" stroke="#C9A04F" stroke-opacity=".7" stroke-width="1.5" fill="none"/>
+<text x="670" y="214" text-anchor="middle" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="12.5" fill="#B8AC98">handed over as a file</text>
+<g class="file"><path d="M0 0h24l10 10v32H0z" fill="#1A2A20" stroke="#5CFF9E" stroke-width="1.4"/><path d="M24 0v10h10" fill="none" stroke="#5CFF9E" stroke-width="1.4"/><text x="17" y="30" text-anchor="middle" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="10" font-weight="700" fill="#9DFFC6">.sql</text></g>
+<rect class="you" x="770" y="56" width="390" height="236" rx="16" fill="#15120E" stroke="#D7783A" stroke-opacity=".6" stroke-width="1.5"/>
+<text x="794" y="90" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="12" letter-spacing="1.5" fill="#7E7466">YOU KEEP THE RISKY STEP</text>
+<circle cx="812" cy="128" r="12" fill="none" stroke="#D7783A" stroke-width="1.8"/><path d="M790 160c3-13 12-18 22-18s19 5 22 18" fill="none" stroke="#D7783A" stroke-width="1.8"/>
+<text x="846" y="134" font-family="'Segoe UI', -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="18" font-weight="700" fill="#EDE6DA">You</text>
+<text class="k1" x="794" y="196" font-family="'Segoe UI', -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="15" fill="#EDE6DA"><tspan fill="#5CFF9E">✓ </tspan>review the script and its checks</text>
+<text class="k2" x="794" y="224" font-family="'Segoe UI', -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="15" fill="#EDE6DA"><tspan fill="#5CFF9E">✓ </tspan>run it in your SQL client</text>
+<text class="rb" x="794" y="264" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="16" font-weight="700" fill="#FFB347">ROLLBACK;</text>
+<text class="cm" x="794" y="264" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="16" font-weight="700" fill="#5CFF9E">COMMIT;</text>
+<text x="1136" y="264" text-anchor="end" font-family="Consolas, 'SFMono-Regular', Menlo, monospace" font-size="12.5" fill="#B8AC98">your call</text>
+
+</svg>

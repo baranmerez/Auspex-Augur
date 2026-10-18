@@ -16,7 +16,7 @@ for (const oid of [1082, 1083, 1114, 1184, 1266]) pg.types.setTypeParser(oid, va
 const cursorName = 'auspex_cursor';
 const exportBatchSize = 1000;
 // How long past exportMaxMs an export waits for a cancelled FETCH to come back
-// and, separately, for the file to close (README: CSV export budget).
+// and, separately, for the file to close (docs/tools.md: CSV export budget).
 const exportGraceMs = 2000;
 const connectTimeoutMs = 10000;
 const budgetWindowMs = 60000;

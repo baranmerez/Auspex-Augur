@@ -52,7 +52,8 @@ auspex/
 ├── tests/              Unit tests (*.test.js) + local integration test
 ├── profiles.example.json
 ├── handoff/            This file (+ environment.local.md, git-ignored)
-└── README.md           Technical reference
+├── README.md           Overview
+└── docs/               Technical reference (one page per topic)
 ```
 
 ## 3. MCP tools
@@ -152,7 +153,7 @@ npm test
 ```
 
 Register the stdio server `node <repo>/src/index.js` under the name `auspex`
-in your MCP client. The README has ready-made snippets for Claude Code, Codex
+in your MCP client. `docs/clients.md` has ready-made snippets for Claude Code, Codex
 CLI, Cursor and VS Code, plus the generic `mcpServers` JSON.
 
 Then create `~/.auspex/profiles.json` (see `profiles.example.json`) and the
@@ -167,7 +168,7 @@ pgpass lines. Profile changes are picked up when the client session restarts.
    SELECT + default privileges for `"Auspex"` only; no other role's
    privileges change. Do not open personal-data or identity schemas (e.g.
    user-account or identity schemas).
-3. Add the pgpass line (line format `host:port:database:user:password`, see the README).
+3. Add the pgpass line (line format `host:port:database:user:password`, see `docs/configuration.md`).
 4. Add a `profiles.json` entry: `url` (no password), `description` (write
    "PRODUCTION" for production), optional `maxTimeoutSeconds`.
 5. Start a new session and check with `list_profiles`.

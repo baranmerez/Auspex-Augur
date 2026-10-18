@@ -332,7 +332,7 @@ test('report notes: failed reads with Retry, and the cap', () => {
   all(groupOf(view, 'Reports'), n => n.tag === 'button' && textOf(n) === 'Retry')[0].attrs.onclick();
   assert.equal(retried.length, 1);
   assert.match(page, /const tpReportCap = 400/);
-  assert.match(fs.readFileSync(new URL('../README.md', import.meta.url), 'utf8'), /first 400 reports/);
+  assert.match(fs.readFileSync(new URL('../docs/viewer.md', import.meta.url), 'utf8'), /first 400 reports/);
 });
 
 test('report SQL loading: a failed read is not cached and is read again; the key changes with updatedAt', async () => {

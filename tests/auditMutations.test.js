@@ -107,13 +107,13 @@ test('local read-only tools add no entries; calls rejected by input validation a
   await call('table_knowledge', { profile: 'example', schema: 'sales', table: 'orders' });
   await call('list_reports', {});
   // Schema validation happens in the MCP SDK before any handler runs, so such
-  // a call never reaches the audit log (documented in the README).
+  // a call never reaches the audit log (documented in docs/safety.md).
   const invalid = await call('remember', { profile: 'example', action: 'delete' });
   assert.ok(invalid.isError);
   assert.equal(auditEntries().length, before);
 });
 
-// Error envelope (README: Errors): readable text first, then code, retryable
+// Error envelope (docs/tools.md: Errors): readable text first, then code, retryable
 // and correlationId in structuredContent and in a JSON text block.
 const envelope = result => {
   assert.ok(result.isError);

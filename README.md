@@ -4,1457 +4,173 @@
 
 <p align="center">
   <a href="https://github.com/baranmerez/Auspex-Augur/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/baranmerez/Auspex-Augur/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-2a78d6"></a>
-  <img alt="Node.js 20+" src="https://img.shields.io/badge/node-%E2%89%A520-1baf7a?logo=node.js&amp;logoColor=white">
-  <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-read--only-336791?logo=postgresql&amp;logoColor=white">
-  <img alt="MCP over stdio" src="https://img.shields.io/badge/MCP-stdio-eb6834">
-  <img alt="Desktop app: Tauri 2" src="https://img.shields.io/badge/desktop-Tauri%202-24c8db?logo=tauri&amp;logoColor=white">
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-C9A04F?labelColor=17120E"></a>
+  <img alt="Node.js 20+" src="https://img.shields.io/badge/node-%E2%89%A520-2FBF71?labelColor=17120E&amp;logo=node.js&amp;logoColor=white">
+  <img alt="PostgreSQL read-only" src="https://img.shields.io/badge/PostgreSQL-read--only-2FBF71?labelColor=17120E&amp;logo=postgresql&amp;logoColor=white">
+  <img alt="MCP over stdio" src="https://img.shields.io/badge/MCP-stdio-D7783A?labelColor=17120E">
+  <img alt="Desktop app: Tauri 2" src="https://img.shields.io/badge/desktop-Tauri%202-C9A04F?labelColor=17120E&amp;logo=tauri&amp;logoColor=white">
 </p>
 
 <p align="center">
-  <b>Let AI agents explore and analyze your PostgreSQL databases — without ever being able to write.</b><br>
-  Guarded queries · full audit log · local viewer · desktop app · works with any MCP client
+  <b>Let AI agents explore and analyze your PostgreSQL databases — without ever being able to write.</b>
 </p>
 
 <p align="center">
-  <a href="#-quick-start">Quick start</a> ·
+  <a href="#-what-you-get">Features</a> ·
   <a href="#-how-it-works">How it works</a> ·
-  <a href="#%EF%B8%8F-safety-layers">Safety</a> ·
+  <a href="#-example-session">Example</a> ·
+  <a href="#%EF%B8%8F-safety">Safety</a> ·
+  <a href="#%EF%B8%8F-desktop-app">Desktop app</a> ·
+  <a href="#-quick-start">Quick start</a> ·
   <a href="#-tools">Tools</a> ·
-  <a href="#-register-with-an-mcp-client">MCP clients</a> ·
-  <a href="#-viewer-and-desktop-app">Viewer</a> ·
-  <a href="#%EF%B8%8F-configuration">Configuration</a>
+  <a href="#-documentation">Docs</a>
 </p>
 
----
+<p align="center">
+  <img src="docs/assets/stats.svg" alt="24 MCP tools · 5 safety layers · 0 write paths · 5 agent skills" width="100%">
+</p>
 
-> [!IMPORTANT]
-> Auspex Augur is **read-only by design**. The guarantee comes from a database
-> role that only has `SELECT`; four code layers and an audit log sit on top of
-> it. Nothing in this project can insert, update, delete or change a schema.
+## 🎯 Analysis only, no changes
 
-## ✨ Features
+Auspex does one job: **reading and analyzing your data with SQL**. It runs read-only queries and never executes a change.
 
-<table>
-  <tr>
-    <td width="33%" valign="top"><h3>🛡️ Safe by construction</h3>Read-only role, SQL guard, <code>READ ONLY</code> transactions, cursor-only execution. Writes are refused at every layer that can see them.</td>
-    <td width="33%" valign="top"><h3>🔎 Built for exploration</h3>Search tables and columns across schemas, describe structure and relationships, sample data, read plans with <code>EXPLAIN ANALYZE</code>.</td>
-    <td width="33%" valign="top"><h3>📜 Everything audited</h3>Every database call — including ones the SQL guard rejects — and every report, script and memory-note change you ask for lands in a daily JSONL log with duration, row count and errors (see the audit log layer for what is not logged).</td>
-  </tr>
-  <tr>
-    <td valign="top"><h3>🗂️ Many databases</h3>Named profiles in one file, no default database: the agent must name the database, and is told to ask you first.</td>
-    <td valign="top"><h3>📊 Viewer &amp; desktop app</h3>Charts, filters and per-query details in a local web viewer or a 3 MB Tauri tray app.</td>
-    <td valign="top"><h3>🔌 Any MCP client</h3>Plain stdio MCP server: Claude Code, Codex, Cursor, VS Code or anything else that speaks the protocol.</td>
-  </tr>
-  <tr>
-    <td valign="top"><h3>📚 Report library</h3>Approved queries per database, schema and category, with plan, timings and history in a fixed HTML template that costs no tokens.</td>
-    <td valign="top"><h3>🧠 Schema memory</h3>Tables, keys, relations, business rules and schema changes are remembered as you explore, without crawling the catalog.</td>
-    <td valign="top"><h3>🗺️ Relation map</h3>A force-directed graph and an ER diagram of everything the memory knows, with unexplored neighbors to visit next.</td>
-  </tr>
-</table>
+> **Auspex does the work; the risky step stays with you.** It explores, analyzes and even drafts the change script, then hands it over. Running a change is always your call.
+
+<p align="center">
+  <img src="docs/assets/handoff.svg" alt="Auspex drafts a change script that starts with BEGIN and ends with ROLLBACK, never runs it, and hands it to you to review, run and commit" width="100%">
+</p>
+
+- ✅ **It does**: explore schemas, run `SELECT` queries, read query plans, build and schedule reports, remember what it learns.
+- 📝 **It drafts change scripts but never runs them**: `INSERT`, `UPDATE`, `DELETE` and DDL go into a file that starts with `BEGIN`, ends with `ROLLBACK`, has no `COMMIT` and needs a `WHERE` on every `UPDATE` and `DELETE`. You review it, run it in your SQL client, and swap `ROLLBACK` for `COMMIT` once the results look right.
+- 🚫 **It never guesses**: no default database, no passwords outside pgpass, and the viewer never touches a database.
+
+## ➕ Why Auspex
+
+- **Safe to hand to an agent**: safety comes from the database role, not from trusting the model.
+- **Light on tokens and on the database**: batch tools, a per-profile query budget, and reports rendered from a template.
+- **Accountable**: every call is in the audit log, so you see exactly what the agent did.
+- **Gets smarter with use**: schema memory lets each conversation pick up where the last one ended.
+- **Open and portable**: MIT licensed, works with any MCP client, and its logs, memory and reports stay in local files.
+
+## ✨ What you get
+
+- 🛡️ **Read-only by construction**: a `SELECT`-only role plus four code layers. Writes are refused everywhere.
+- 📜 **Every call audited**: a daily JSONL log with SQL, duration, row count and errors, including the calls that were refused.
+- 🔎 **Fast exploration**: search, describe up to 50 tables at once, and get fill rates, fan-out and related tables in a handful of statements.
+- 📚 **Report library**: versioned drafts, approval by you, presets, date ranges, and a fixed HTML template that costs no tokens.
+- ⏰ **Scheduled runs**: daily or weekly reports, with catch-up after downtime and an optional desktop notification.
+- 🧠 **Schema memory**: tables, relations, rules, column scores and meanings found in your code are remembered as you work.
+- 📊 **Viewer and desktop app**: audit charts, reports, relation map, table pages and themes. Neither ever connects to a database.
+- 🔌 **Any MCP client**: Claude Code, Codex, Cursor, VS Code and others, with five bundled skills and prompts.
+
+<img src="docs/assets/divider.svg" alt="" width="100%">
+
+## 🧭 How it works
+
+<p align="center">
+  <img src="docs/assets/how-it-works.svg" alt="The agent calls Auspex over MCP; Auspex checks the SQL, runs it read-only on PostgreSQL, refuses writes and logs every call" width="100%">
+</p>
+
+- The agent calls Auspex over MCP (stdio) and must name a profile. There is no default database.
+- Auspex checks the SQL, runs it in a `READ ONLY` transaction through a cursor, and always rolls back.
+- Logs, memory and reports are local files under `~/.auspex`. The viewer reads only those files.
+
+<img src="docs/assets/divider.svg" alt="" width="100%">
+
+## 💬 Example session
+
+<p align="center">
+  <img src="docs/assets/example-session.svg" alt="You ask for a weekly report; the agent reads its memory, describes three tables, saves and runs the report, and approves it after you agree" width="100%">
+</p>
+
+- You ask in plain words. The agent checks its memory first, so a known table costs no queries.
+- Every step is a tool call you can follow in the audit log.
+- Nothing is approved until you say so.
+
+<img src="docs/assets/divider.svg" alt="" width="100%">
+
+## 🛡️ Safety
+
+<p align="center">
+  <img src="docs/assets/safety-layers.svg" alt="Five safety layers: SQL guard, READ ONLY transaction, cursor and extended protocol, read-only database role, audit log" width="100%">
+</p>
+
+1. **SQL guard**: one statement only, read-only keywords, no side-effect functions.
+2. **READ ONLY transaction**: statement, lock and idle timeouts; every call ends with `ROLLBACK`.
+3. **Cursor and extended protocol**: stacked statements are rejected by the server.
+4. **Read-only role**: the real guarantee. It is checked on first use, and a role that can write blocks the profile.
+5. **Audit log**: every database call is logged, including the ones that were rejected.
+
+> [!WARNING]
+> Passwords live in pgpass only. Auspex refuses to start if it finds one in a connection string or in `profiles.json`.
+
+Details: [docs/safety.md](docs/safety.md)
+
+<img src="docs/assets/divider.svg" alt="" width="100%">
+
+## 🖥️ Desktop app
+
+A small native app (about 3 MB) that sits in the tray and reads `~/.auspex` directly, with no server to start.
+
+<p align="center">
+  <img src="docs/assets/desktop-app.svg" alt="Desktop app: overview charts, the report library, the relation map and a table page with switchable themes" width="100%">
+</p>
+
+- 📈 **Overview and operations**: activity charts, slowest queries, recent errors, and the full SQL log with filters and CSV export.
+- 📚 **Reports**: browse the library tree, preview results, approve or revoke drafts, pin favorites, and copy an *Ask Claude* prompt.
+- 🗺️ **Schema**: relation map, ER diagram and a timeline of schema changes.
+- 🧾 **Table pages**: columns by importance with their meanings, keys, triggers and the reports that use the table, plus search and grouping. You can give your own column scores here.
+- 📌 **Rules**: every business rule and note in one list, where you can archive outdated ones.
+- 🎨 **Themes**: five built-in themes and a theme studio, with an English or Turkish interface.
+- 🔒 **No database access**: the app only reads local files, and `Start with Windows` keeps it ready in the tray.
+
+The same screens run in the browser with `npm run viewer`. Details: [docs/viewer.md](docs/viewer.md)
+
+<img src="docs/assets/divider.svg" alt="" width="100%">
 
 ## 🚀 Quick start
+
+**You need** Node.js 20+ and a PostgreSQL server where you can create a role. Building the desktop app also needs Rust and WebView2.
 
 ```bash
 git clone https://github.com/baranmerez/Auspex-Augur.git auspex
 cd auspex && npm install && npm test
 ```
 
-1. **Create a read-only role** on your server with
-   [`scripts/create-auspex-role.sql`](scripts/create-auspex-role.sql), then grant
-   schemas with [`scripts/grant-schemas-readonly.sql`](scripts/grant-schemas-readonly.sql).
-2. **Store the password in pgpass** (`%APPDATA%\postgresql\pgpass.conf` on
-   Windows, `~/.pgpass` elsewhere): `host:port:database:Auspex:password`.
-3. **Add a profile** to `~/.auspex/profiles.json` (see
-   [`profiles.example.json`](profiles.example.json)).
-4. **Register the server** in your MCP client ([see below](#-register-with-an-mcp-client)).
+1. **Create the role** with [`scripts/create-auspex-role.sql`](scripts/create-auspex-role.sql), then grant schemas with [`scripts/grant-schemas-readonly.sql`](scripts/grant-schemas-readonly.sql).
+2. **Store the password in pgpass** as `host:port:database:Auspex:password`: `%APPDATA%\postgresql\pgpass.conf` on Windows, `~/.pgpass` elsewhere.
+3. **Add a profile** to `~/.auspex/profiles.json`. See [`profiles.example.json`](profiles.example.json).
+4. **Register the server** in your MCP client. See [docs/clients.md](docs/clients.md).
 
 > [!TIP]
-> Start the agent with "work on the `example` database" and it goes straight to
-> work. If you don't name one, it lists the profiles and asks.
+> Say "work on the `example` database" and the agent starts right away. If you don't name one, it lists the profiles and asks.
 
-## 🧭 How it works
-
-```mermaid
-flowchart LR
-    A["🤖 AI agent"] -->|MCP tool call| C["MCP client"]
-    C -->|stdio| S["Auspex Augur<br/>guard · read-only tx · cursor"]
-    S -->|role: Auspex, SELECT only| D[("🐘 PostgreSQL")]
-    S -->|database calls and changes| L["📜 Audit log<br/>~/.auspex/logs"]
-    S -->|tables, notes, changes| M["🧠 Schema memory<br/>~/.auspex/memory"]
-    L --> V["📊 Viewer / desktop app"]
-    M --> V
-    P["🗂️ profiles.json + pgpass"] -.-> S
-
-    classDef agent fill:#3987e5,stroke:#1c5cab,color:#fff
-    classDef core fill:#eb6834,stroke:#b84a1d,color:#fff
-    classDef db fill:#1baf7a,stroke:#127a55,color:#fff
-    classDef log fill:#9085e9,stroke:#4a3aa7,color:#fff
-    classDef cfg fill:#f0efec,stroke:#a7a59e,color:#222
-    class A,C agent
-    class S core
-    class D db
-    class L,V,M log
-    class P cfg
-```
-
-## 🛡️ Safety layers
-
-<p align="center">
-  <img src="docs/assets/safety-layers.svg" alt="Five safety layers: SQL guard, READ ONLY transaction, cursor and extended protocol, read-only database role, audit log" width="100%">
-</p>
-
-<details>
-<summary><b>Details of each layer</b></summary>
-
-1. **SQL guard** (`src/sqlGuard.js`): single statement only; must start with
-   `SELECT`/`WITH`/`VALUES`/`TABLE`; rejects data-modifying CTEs, `SELECT INTO`,
-   `FOR UPDATE` and side-effect functions (`set_config`, `pg_terminate_backend`,
-   `pg_sleep`, `lo_*`, `dblink*`, `pg_read_*`, `nextval`...), also when the
-   name is quoted, schema-qualified or Unicode-escaped (comments and a lone
-   carriage return are read the way PostgreSQL reads them), and built-ins that
-   run SQL given as text (`query_to_xml*`, `cursor_to_xml*`, `ts_stat`,
-   `ts_rewrite`). Runs before connecting. It is a lexical check only: functions
-   that call these internally are not seen, so what the role may EXECUTE is
-   limited by its grants.
-2. **Transaction wrapper** (`src/db.js`): every call runs in
-   `BEGIN ... READ ONLY` with `statement_timeout`, `lock_timeout` and
-   `idle_in_transaction_session_timeout`, and always ends with `ROLLBACK`.
-3. **Cursor + extended protocol:** queries run as `DECLARE CURSOR FOR <query>`
-   over the extended protocol, which rejects stacked statements and
-   data-modifying CTEs at the server.
-4. **Database role (the real guarantee):** the role only has `CONNECT`, `USAGE`
-   and `SELECT`. Everything else is defense in depth. Auspex checks this
-   instead of trusting it: on the first call to each profile it reads the
-   catalog (`src/roleCheck.js`). Superuser, `BYPASSRLS`, `REPLICATION`,
-   `CREATEROLE`, membership in `pg_write_all_data` or the server-file roles, or
-   any table it can write (table or column grants) **block** the profile: no
-   query runs on it until the role is fixed. CREATE on a schema or the
-   database, `CREATEDB` and `default_transaction_read_only` off are
-   **warnings** only, since the READ ONLY transaction already stops them. The
-   result is in `list_profiles`, `check_profile` runs it again, and the audit
-   log and the viewer's profile cards show it.
-5. **Audit log:** appended to `<data dir>/logs/YYYY-MM-DD.jsonl`.
-   - Database calls (`query`, `explain`, `export_csv`, `run_report`, catalog
-     tools): time, source, tool, profile, SQL, params, row count, duration,
-     error — also when the SQL guard rejects the query.
-   - Library and memory changes (`save_report`, `approve_report`,
-     `save_execute_script`, `render_reports`, `share_report`, `remember`,
-     `score_columns`): which report, note or table, the SQL hash and version,
-     note id and status or the number of scored columns, trigger summaries and
-     scanned files, and the error;
-     for a report or script saved into a script root also the root, folder
-     and file name and the written paths.
-     The SQL text, note text, evidence, reasons, trigger summaries and
-     scanned file paths are not logged.
-   - Not logged: tools that only read local files (`table_knowledge`,
-     `scanned_files`, `list_reports`, `list_profiles`) and calls the MCP SDK rejects for
-     invalid arguments before any handler runs.
-   - Writing is best effort: if the log cannot be written, the call still
-     runs and the failure goes to stderr. The file is plain appendable JSONL
-     on your disk, readable and editable by your user account; it is a record,
-     not tamper-proof evidence.
-
-</details>
-
-> [!WARNING]
-> Never put a password in a connection string or in `profiles.json` — Auspex
-> refuses to start if it finds one, whether in `user:password@` or as a
-> `?password=` / `?sslpassword=` option, in the file or in `AUSPEX_DB_<NAME>`.
-> Passwords belong in pgpass only.
+<img src="docs/assets/divider.svg" alt="" width="100%">
 
 ## 🧰 Tools
 
-| Tool | What it does |
+| Group | Tools |
 |---|---|
-| 🗂️ `list_profiles` | Configured profiles (description, host, database, user, timeout limit, role check; never passwords), script roots and code roots (name and folder) |
-| 🔐 `check_profile` | Checks that a profile's database role is read-only; a role that can write blocks the profile |
-| 🔎 `search` | Tables, views, columns, functions and triggers whose name or comment contains a text (always a case-insensitive contains-match), across all schemas, in one statement; with estimated rows and privileges; optionally function source text too (`searchSource`) |
-| 📁 `list_schemas` | Non-system schemas with owner, relation count, usage privilege, comment |
-| 📋 `list_tables` | Tables/views in a schema with estimated rows, size, SELECT privilege, comment; optional ILIKE filter |
-| 🧬 `describe_table` | Columns (with identity, generated and owned sequence), types, defaults, comments, constraints incl. checks, indexes, incoming FKs, triggers, row level security, partitioning, view definition; records the table in the schema memory and reports changes since the last time |
-| 🧬 `describe_tables` | The same structure for up to 50 tables in one call, with 6 catalog statements (7 with a view) however many tables; compact one-line-per-item summary by default, `detail: "full"` for every definition; unknown names are reported per table; each table is recorded in the schema memory |
-| 🧩 `describe_functions` | Up to 50 functions by `schema.name` (every overload) or by name pattern: signature, language, volatility, SECURITY DEFINER, owner, calling triggers and the `pg_get_functiondef` text (capped, `truncated` flag); 1 statement |
-| 📏 `profile_tables` | Up to 30 tables in one call: estimated rows, per-column fill rate and distinct count on a sample, and fan-out over a parent table (optionally in a window and with `parentFilter` conditions); at most 3 statements; counts and ratios only, never row values |
-| 🕸️ `relation_stats` | Up to 50 center tables in one call: their instance tables (referenced by foreign key) and dependent tables (referencing them), ranked by estimated linked rows from planner statistics; at most 2 statements; no table data is read |
-| ▶️ `query` | One read-only statement, max `AUSPEX_MAX_ROWS` rows, `$1..$n` params, optional `timeoutSeconds` |
-| 🧠 `explain` | Estimated plan by default; `analyze: true` runs `EXPLAIN (ANALYZE, BUFFERS)` read-only, under the timeout, rolled back |
-| 📤 `export_csv` | Streams the result to a new UTF-8 CSV file (`<time>_<random>_<name>.csv`, never overwrites) within a row, size and total-time budget; returns only path, columns, row count, size and `stopReason` when a limit cut it short |
-| 📝 `save_report` | Saves a read-only query as a versioned report draft in the library; with `root`, `folder` and `fileName` also as a new `.sql` file in a configured script root; optional `presets` (named parameter sets, see *Parameter presets*) |
-| 🏁 `run_report` | Runs a report: plan + timings + masked preview, history, regenerated HTML; returns a compact summary; parameters from `params` or from a `preset` (not both) |
-| ✅ `approve_report` | Moves a draft into `SELECT/` after the user approved it; optional `expectedHash` (the `sqlHash` from `save_report` / `run_report` of the version the user approved) refuses a draft that changed since then with `STALE_VERSION` |
-| 📚 `list_reports` / 🎨 `render_reports` | Lists the library; re-renders every report HTML from stored JSON |
-| 📨 `share_report` | Writes a copy of a report to send to someone: masked preview and figures only, no SQL, plan, parameters or history |
-| 🧾 `save_execute_script` | Writes a change script into `EXECUTE/` for a human to run — never executed by Auspex; with `root`, `folder` and `fileName` also as a new file in a configured script root (for example a folder of saved SQL scripts) |
-| 🧠 `table_knowledge` | What the schema memory knows about a table — key and used columns, relations, table notes, database-wide notes, recent changes, column importance scores, triggers with their summaries, unexplored neighbors — without touching the database |
-| 📌 `remember` | Adds, confirms or archives a note: a rule the user stated, an observation backed by evidence, or an unconfirmed inference; `evidenceCode` adds up to 5 references into a configured code root (see Code meanings) |
-| 🏷️ `score_columns` | Saves 1-5 importance scores per column of a described table in two layers: the agent's (roles, one-line reason, number of sources) and the user's (stated by the user; wins when present), one-line trigger summaries and the script files it read (path relative to the script root and sha256 only); local memory only, no database access |
-| 🗃️ `scanned_files` | Lists the script files `score_columns` recorded (root, relative path, sha256, last read), so the next run reads only new or changed files |
+| 🗂️ Profiles | `list_profiles` · `check_profile` |
+| 🔎 Explore | `search` · `list_schemas` · `list_tables` · `describe_table` · `describe_tables` · `describe_functions` · `profile_tables` · `relation_stats` |
+| ▶️ Query | `query` · `explain` · `export_csv` |
+| 📚 Reports | `save_report` · `run_report` · `approve_report` · `list_reports` · `render_reports` · `share_report` · `save_execute_script` |
+| 🧠 Memory | `table_knowledge` · `remember` · `score_columns` · `scanned_files` |
 
-### Choosing the database
+Every tool, with its limits and error codes: [docs/tools.md](docs/tools.md)
 
-There is no default profile. Every tool except `list_profiles` requires an
-explicit `profile`, and a call without one is rejected with the list of known
-profiles. The server instructions tell the model to ask the user which
-database to use unless the user named one in the current conversation, and to
-confirm before switching. The code guarantees the explicit choice; asking the
-user is model behavior.
+## 📖 Documentation
 
-### CSV for spreadsheets
-
-`export_csv` writes exact values by default (`mode: "raw"`), which is right
-for scripts and other tools. When a person will open the file in a
-spreadsheet, use `mode: "spreadsheet"`: text cells that start with `=`, `+`,
-`-`, `@`, a tab or a carriage return get a leading apostrophe so they are
-shown as text instead of being run as a formula. Number, date, time, boolean
-and uuid columns are never changed, so a real `-5` stays a number. Columns of
-any other type count as text, and column names get the same treatment. The
-viewer's Operations CSV download applies the same rule to every text cell
-(SQL, errors, profile, parameters); its JSON download stays exact. The rule
-follows the common CSV-injection guidance; it is covered by tests on the
-written file and the viewer download, not yet checked by opening the files in
-Excel, LibreOffice or Google Sheets. It is a mitigation, not a guarantee:
-spreadsheet behavior differs per application and the apostrophe can be lost
-when a file is saved and reopened (see the OWASP CSV Injection page).
-
-### CSV export budget
-
-Each `export_csv` call has a row cap, a size cap and a total time cap
-(`AUSPEX_EXPORT_MAX_ROWS`, `_BYTES`, `_MS`). The size cap counts every byte
-written: byte order mark, header line, quoting and CRLF. If the header alone
-does not fit, the call fails and no file is kept. The time budget starts once
-the read-only transaction is open and ends when the file is closed; it covers
-every FETCH, every write (including waits for a slow disk) and closing the
-file. Near the deadline each FETCH runs with `statement_timeout` lowered to
-the remaining time (never above the call's own timeout), so PostgreSQL cancels
-it at the deadline and the connection goes back to the pool clean. Hitting a
-cap ends the file at the last complete row with `stopReason` `rows`, `bytes`
-or `time`; a time stop before the first batch arrived fails without a file.
-
-Tolerance: a FETCH the server does not cancel is given 2 s past the deadline,
-then its connection is dropped (never reused); closing the file is given up to
-2 s past the deadline, after which the call fails and removes the file it
-created. So a call returns within about `AUSPEX_EXPORT_MAX_MS` + 4 s in the
-worst case, usually within milliseconds of the deadline.
-
-### Exploring many tables
-
-Exploring N tables one by one costs N round trips (a `describe_table` and a
-measuring query per table), all of them in the audit log. `describe_tables`
-and `profile_tables` take a list instead and use a constant number of
-statements in one READ ONLY transaction with one audit entry, whether the list
-has 1 table or 30: `describe_tables` sends 6 catalog statements (7 when a view
-or materialized view is listed); `profile_tables` sends 1 catalog lookup, 1
-column-statistics statement for all tables (`UNION ALL`) and, with `parent`,
-1 fan-out statement, so at most 3 (field `statements`). Column statistics are
-taken on a sample of `sampleRows` rows per table (default 20000, max 200000):
-`TABLESAMPLE SYSTEM` plus `LIMIT` when the estimate is larger, otherwise a
-plain `LIMIT` scan. Fan-out uses the child's single-column foreign key to
-`parent.key`, or a column given as `schema.table:column`. The parent rows can
-be narrowed by `window` (`from <= column < to`) and by `parentFilter`, up to 5
-conditions `{ column, op, value | values }` with `op` one of `=`, `<>`, `>`,
-`>=`, `<`, `<=` (one `value`), `in`, `not in` (`values`, 1 to 100) or
-`is null`, `is not null` (neither), e.g.
-`[{ "column": "status_code", "op": "in", "values": [1, 2] }]`. All conditions are
-ANDed; each column must exist in the parent table (otherwise
-`INVALID_INPUT`), and every value is a bound parameter, never SQL text. The
-fan-out stays one statement. Table and column
-names are checked against the catalog, quoted, and the generated SQL passes the
-same guard as user queries; there is no free SQL. The server instructions tell
-the model to prefer these two tools over per-table loops.
-
-`describe_tables` answers with `detail: "summary"` by default, because the
-full structure of a dozen real tables can run to well over 100k characters.
-Per table the summary has `estRows`, `comment`, one line per column
-(`name type [not null] [PK] [FK -> schema.table(column)] [identity]
-[generated] [default <value> | has default] [no SELECT]`; defaults longer
-than 30 characters are only flagged), one line per constraint other than
-single-column foreign keys (`name definition`), per index (`name [unique]
-[method] (columns)`) and per trigger (`name TIMING EVENTS`), each line cut at
-120 characters, `referencedBy: { count, tables }` with the first 10 incoming
-foreign keys by table name, and `viewDefinitionOmitted` instead of a view's
-definition; `rowLevelSecurity`, `partitioning` and `partitionOf` only when
-set. The field `note` repeats this format. `detail: "full"` returns exactly
-the earlier answer (column comments, check, index and trigger definitions,
-view definitions). Both modes send the same statements and record the schema
-memory from the full catalog data. On the test fixtures the summary is 59 %
-(10 plain tables) to 79 % (a table with checks, indexes, a trigger and 12
-incoming foreign keys, plus a view) smaller than the full answer.
-
-### Reading table DDL, triggers and functions
-
-For integration work (for example "show the import table for one customer and
-every function and trigger around it, then design the same for another customer")
-the catalog tools return the structure needed to rebuild it:
-
-- `describe_table` / `describe_tables` per table: columns with `identity`
-  (`always` / `by default`), `generated` (`stored`) and the owned `sequence`
-  (serial or identity) when set; for a generated column `default` holds its
-  expression. Constraints include check definitions. `triggers` lists user
-  triggers (internal foreign key triggers are left out) with `timing`,
-  `events`, `level`, `enabled` (`enabled`, `disabled`, `replica only`,
-  `always`), `function`, `whenCondition` and the full `definition`
-  (`pg_get_triggerdef`). `rowLevelSecurity` is `{ enabled, forced }`; a
-  partitioned table has `partitioning: { key, partitions }`, a partition
-  `partitionOf: { parent, bound }`. The table comment is `comment`. All of it
-  comes from the same 6 statements (7 with a view), one of them for triggers.
-  `describe_tables` returns these fields with `detail: "full"`; its default
-  summary keeps only trigger names, timing and events.
-- `describe_functions` reads functions, procedures and aggregates by
-  `schema.name` (all overloads) or by a name pattern (at most 50, `truncated`):
-  `arguments`, `returns`, `kind`, `language`, `volatility`, `securityDefiner`,
-  `strict`, `parallel`, `config` (`SET` options such as `search_path`),
-  `owner`, `canExecute`, `comment`, `usedByTriggers` and `definition`
-  (`pg_get_functiondef`, cut at `maxChars`, default 20000, with
-  `definitionLength` and `truncated`; null for aggregates). One statement.
-- `search` also matches function names and comments and trigger names
-  (`includeRoutines`, default true), and with `searchSource: true` the source
-  text of functions (`matchedIn: "source"`; the text itself is not returned).
-  Still one statement and at most 500 matches, relations first.
-
-Only the system catalog is read (no table data, no server files).
-
-### Ranking related tables
-
-`relation_stats` answers "which neighbours of this table matter most" without
-reading any table. For each center table it lists:
-
-- **instance** tables: tables the center references by foreign key (for
-  example `sales.orders -> sales.order_status`);
-- **dependent** tables: tables that reference the center (for example
-  `sales.order_lines -> sales.orders`).
-
-Each list is sorted by `linkedRows`, then by the table's estimated rows
-(`tableEstRows`), then by name; equal figures share a `rank`. An item is
-`{ relation, constraint, columns, refColumns, linkedRows, stats, tableEstRows,
-rank, explored }`; `columns` are the referencing side's key columns.
-
-`linkedRows` estimates the rows that link through the key, from statistics
-only: the referencing table's `reltuples` (the dependent table, or the center
-for an instance table) times `1 - null_frac` of its key column in `pg_stats`.
-For a multi-column key the largest `null_frac` is used, so it is an upper
-bound. When the referencing table was never analyzed (`reltuples < 0`) or
-`pg_stats` has no row for a key column, `linkedRows` is `null` and `stats` is
-`"missing"`; it is never reported as 0. `pg_stats` only shows columns the role
-may read and hides tables whose row security applies to the role, so missing
-statistics can also mean missing privileges. A partitioned table has
-statistics only after `ANALYZE` on the parent (autovacuum does not analyze
-partitioned parents). Relations without SELECT privilege are not listed, only
-counted in `hidden` (`{ instance, dependent }`); a center without SELECT
-privilege is reported with an error. Foreign keys cloned onto partitions are
-left out (the parent's key stands for them). `schema` limits the neighbours to
-one schema.
-
-All centers take at most 2 statements in one READ ONLY transaction (the
-relations with their foreign keys, then `pg_stats`), with one audit entry
-(field `statements`). The result is recorded in the schema memory: centers and
-neighbours are recorded as seen (never as explored), with their row estimates,
-and the edges in `graph.json` carry the linked-row figures (see below).
-
-### Large tables and long queries
-
-`query`, `explain`, `export_csv` and `profile_tables` accept `timeoutSeconds`. Without it the
-default (30 s) applies; with it the value may not exceed the global or
-per-profile ceiling, and a larger value is rejected before connecting. The
-server instructions tell the model to prefer estimated row counts over
-`count(*)`, check plans with `explain` first, and tell the user before running
-anything longer than the default.
-
-### Errors
-
-A failed tool call returns `isError: true` with the readable message as the
-first text block (unchanged), followed by a machine-readable envelope, both as
-`structuredContent` and as a second text block with the same JSON:
-
-```json
-{ "error": { "code": "QUERY_BUDGET_EXCEEDED", "retryable": true, "retryAfterSeconds": 42,
-             "budgetScope": "process", "correlationId": "5f0c…" } }
-```
-
-Decide from `code` and `retryable`, never from the English text. The envelope
-holds no message text, SQL, parameters, row values or connection details;
-`sqlState` is the PostgreSQL SQLSTATE when the database raised the error.
-
-| Code | Meaning | Retryable |
-|---|---|---|
-| `QUERY_BUDGET_EXCEEDED` | Query budget of the profile used up; `retryAfterSeconds` says when the next slot frees. The budget is per profile and per Auspex process (`budgetScope: "process"`), not a database-wide limit | yes, once, after the wait; better batch the work |
-| `LOCK_BUSY` | Another Auspex process is writing the report library or schema memory | yes, after a moment |
-| `ROLE_REJECTED` | The profile's database role is not read-only | no |
-| `SQL_REJECTED` | The SQL guard, or the READ ONLY transaction (SQLSTATE 25006), refused the statement | no |
-| `TIMEOUT` | Statement timeout (57014), idle-in-transaction timeout (25P03) or export time limit; lock timeout (55P03) is retryable | lock timeout only |
-| `INVALID_INPUT` | Invalid arguments, names or option values, including MCP schema validation | no |
-| `PROFILE_INVALID` | Missing or unknown profile | no |
-| `NOT_FOUND` | Report, note, relation or column not found | no |
-| `PRECONDITION_FAILED` | An earlier step is missing (for example run the current SQL version before approving or sharing) | no |
-| `STALE_VERSION` | Approve or revoke named the SQL hash of a version the report no longer stands for (a new version was saved after it was reviewed); reload and review again | no |
-| `PERMISSION_DENIED` | No privilege on the object (42501) | no |
-| `CONNECTION_FAILED` | Could not connect or authenticate (08xxx, 28xxx, 57P01-57P03, 53300, network errors, a connection dropped mid-query); authentication failures are not retryable | network/server only |
-| `DISK_ERROR` | A local file could not be written or read (ENOSPC, EEXIST, EACCES, ...) | no |
-| `DATABASE_ERROR` | Any other PostgreSQL error; see `sqlState` (serialization failure and deadlock are retryable) | 40001/40P01 only |
-| `INTERNAL` | Anything else | no |
-
-Auspex itself never retries. Every tool call gets a `correlationId` (a random
-UUID), returned in `_meta.correlationId` of both successful and failed results
-and in the error envelope. The audit log entries written by that call carry the
-same `correlationId` (including the first-use `role_check`), and failed entries
-also `errorCode` and `sqlState`, so a result can be matched to its audit entry
-without double counting. Calls rejected by the MCP SDK's schema validation get
-the envelope too but are not audited (the handler never ran).
-
-## 📚 Report library
-
-When an analysis query is worth keeping, the agent saves it as a report.
-Reports are grouped by database (profile), schema and category, and live in a
-user-specific folder outside any repository (`~/.auspex/library`, override
-with `AUSPEX_LIBRARY_DIR`):
-
-```
-library/
-├── _drafts/<db>/<schema>/<category>/<name>.sql|.report.json|.html   work in progress
-├── SELECT/<db>/<schema>/<category>/<name>.sql|.report.json|.html    approved reports
-└── EXECUTE/<db>/<schema>/<category>/<name>.sql|.execute.json        change scripts for a human (.execute.json: file in a script root)
-```
-
-A category is one folder or a topic path of up to three levels joined by
-`/`, for example `Orders` or `Orders/Delivery`; each level is a real folder
-(`SELECT/<db>/<schema>/Orders/Delivery/<name>.sql`). Every level follows the
-same rules (no `..`, no empty level, no leading or trailing spaces, no
-Windows device names such as `CON` or `NUL`, Unicode
-letters allowed). Existing single-level categories keep working; nothing is
-moved.
-
-- **The agent only writes SQL.** `run_report` executes it read-only in one
-  snapshot (`EXPLAIN (ANALYZE, BUFFERS, VERBOSE, SETTINGS, FORMAT JSON)` plus a
-  cursor preview), summarizes the plan, masks personal columns, appends the run
-  to the history and fills one fixed HTML template. Rendering costs no tokens.
-- **The HTML is self-contained** (data embedded, no external files): stat tiles,
-  plan warnings, a plan tree with time share and misestimates, joins read from
-  the plan (with the column pairs they use), tables touched, the masked preview,
-  run history with a duration chart, and a diff between SQL versions.
-- **Parameter presets:** a report saved with `dateRange: true` (its SQL
-  takes exactly two parameters, `$1` start inclusive and `$2` end exclusive)
-  can run with a built-in relative date range: `today`, `yesterday`,
-  `last_7_days` (the last seven days including today), `this_month`,
-  `last_month`, `this_year`, `last_year`. Built-in presets are opt-in:
-  reports saved without the flag (including every report saved before it
-  existed) offer none until they are saved again with `dateRange: true`.
-  The presets resolve when the report runs to ISO dates; day boundaries are
-  computed in the local time zone of the machine Auspex runs on, while a
-  comparison with a `timestamptz` column reads the date in the database
-  session time zone, so compare with `$1::date` / `$2::date` or a date
-  column. Any report can also keep named parameter sets
-  (`save_report` `presets`, e.g. `{ "name": "April 2023 trial", "params":
-  ["2023-04-01", "2023-05-01"] }`; names 1–60 characters, unique, one value
-  per SQL parameter; passing `presets` replaces the list). `run_report`
-  takes `preset` (a built-in key or a custom name) instead of `params`; the
-  run history and the audit log record the preset and the resolved values,
-  and `list_reports` shows the presets, the preset of the last run and the
-  custom presets that no longer fit the SQL (`mismatched`; refused by
-  `run_report` and shown struck through in the viewer). A shared copy never
-  contains presets.
-- **Develop a query like a car:** every saved SQL change becomes a new version,
-  every run is kept (last 100), so you can see what each change did to time,
-  cost and plan.
-- **Heavy reports:** with `analyze: "auto"` the plan is still read but
-  `EXPLAIN ANALYZE` is skipped when the previous run took more than 30 s, so a
-  slow query is not executed twice without asking.
-- **Approval:** drafts move to `SELECT/` only through `approve_report`, which
-  the server instructions restrict to an explicit user approval, or through
-  the user's own click in the viewer (see *Approving reports in the viewer*). Approval also
-  requires a successful run of the current SQL (`run_report`); an older
-  revision's run does not count, and a draft file changed outside Auspex
-  must be saved with `save_report` first. An approval is bound to the version
-  that was reviewed: the viewer and desktop app always send the SQL hash of
-  the report content the person opened, and
-  `approve_report` accepts it as the optional `expectedHash` (`save_report`
-  and `run_report` return it as `sqlHash`). If the draft SQL changed since
-  then, the request is refused with `STALE_VERSION` and nothing moves.
-- **Change scripts:** `save_execute_script` only writes files. A script must
-  start with `BEGIN`, end with `ROLLBACK`, contain no `COMMIT` and have `WHERE`
-  on every `UPDATE`/`DELETE`; whoever runs it with a privileged role swaps the
-  final `ROLLBACK` for `COMMIT` after checking the results. The check fails
-  closed: no other transaction statement (`END`, `ABORT`, an early `ROLLBACK`,
-  a second `BEGIN`, `PREPARE TRANSACTION`) is allowed in between, only
-  `SAVEPOINT` / `RELEASE` / `ROLLBACK TO`; `DO` blocks, `CALL`, `CREATE
-  PROCEDURE`, `MERGE` and psql backslash commands are rejected because their
-  bodies or branches cannot be checked; and each `UPDATE`/`DELETE`, also
-  inside a CTE, needs its own `WHERE` (one inside a subquery does not count).
-  It is a structural check, not a proof that the script is right: a `WHERE`
-  that matches everything (`WHERE true`) passes, and no script is rehearsed
-  against a database (Auspex's role cannot write). A human still reviews
-  every script. Inside the transaction, `DEFINE → PROCESS → MATCH → CORRECT
-  or FAIL` comments are the recommended step structure (scope, change,
-  verification, assertions); they are highlighted but not enforced.
-- **Functions and triggers in change scripts:** `CREATE [OR REPLACE]
-  FUNCTION` is allowed with `LANGUAGE plpgsql` or `LANGUAGE sql` (unquoted)
-  and exactly one dollar-quoted body (`AS $tag$ ... $tag$`, any tag);
-  `CREATE [OR REPLACE] [CONSTRAINT] TRIGGER` is allowed too, so a table
-  script and its trigger functions can be one script. The body is masked
-  like a string literal: creating a function does not run it, so its
-  statements are **not linted** (an `UPDATE` without `WHERE` inside a body
-  passes, the same statement outside is rejected). The saved file then
-  carries the header line `-- NOTE: function bodies are not linted by
-  Auspex; review them before COMMIT`. Other languages, quoted language
-  names, single-quoted or SQL-standard (`RETURN` / `BEGIN ATOMIC`) bodies
-  are rejected. Warnings: `SECURITY DEFINER`; a later statement that calls
-  a function created in the same script (quoted names included), since its
-  body runs there; and every `INSERT`/`UPDATE`/`DELETE` after a `CREATE
-  TRIGGER` or a function `RETURNS trigger`, since trigger bodies run during
-  the dry run.
-- **Script roots:** to keep change scripts where you run them (for example
-  a folder of saved SQL scripts in your SQL client), name the folder in
-  `scriptRoots` in the profiles file or as `AUSPEX_SCRIPT_ROOT_<NAME>` (see
-  Profiles file). `save_execute_script` with `root` (the name), `folder`
-  (one or two levels joined by `/`, for example `example` or
-  `example/reports`, created if missing) and `fileName` (ending
-  in `.sql`) writes the script to `<root>/<folder>/<fileName>` and keeps the
-  `EXECUTE/` copy as the library record (`list_reports` shows its
-  `externalFile`; the header names the file). Auspex assumes no folder layout
-  or naming convention; the limit of two levels is a safety limit, not a
-  layout. Each folder level and the
-  file name is one name of letters (any Unicode letter), digits, `_`, `-` and
-  `.`, at most 80 characters, without `..`, a leading or trailing dot or a
-  Windows device name; empty levels, absolute or drive paths and a third
-  level are refused. The root must exist; Auspex never creates it. A file
-  that already exists is never overwritten (when the folder's files start
-  with a number such as `03_`, the error proposes the next free one;
-  otherwise it asks for a new file name), and a folder level that resolves outside its parent
-  through a link or junction is refused. `replace` only applies to the
-  library copy. The lint runs before anything is written. This only writes
-  files; no database is touched.
-- **Report queries in a script root:** `save_report` takes the same `root`,
-  `folder` and `fileName` and writes the read-only query (checked by the SQL
-  guard, one statement) as a new `.sql` file with a comment header, for
-  running in your SQL client; the draft lists it under
-  `externalFiles`. The change-script lint is not involved. A read-only
-  check file with several SELECTs (for example a post-commit check) goes
-  through `save_execute_script` wrapped in `BEGIN; ... ROLLBACK;`, which the
-  lint already accepts.
-- **Several Auspex processes:** two MCP clients or a script can share one
-  library and memory folder. Every change runs under a lock file
-  (`<library>/.lock`, `<memory>/<profile>/.lock`), so concurrent writers do
-  not lose each other's updates and SQL, metadata and HTML stay in step. A
-  second writer waits up to 5 s, then gets a "try again" error. A lock whose
-  owner process is still alive on this machine is not taken over while it is
-  younger than 10 minutes (debugger, sleep); a lock left by a crashed process
-  is taken over automatically. Only when the owner cannot be checked
-  (unreadable lock file, another host) does a lock older than 30 s expire.
-  Past 10 minutes (`maxHoldMs` of `withFileLock`) any lock or leftover
-  takeover marker is reclaimed even when its pid looks alive, because the OS
-  may have reused the pid of an owner that died holding it; every guarded
-  section is short file work, far below that ceiling. Locks are same-host
-  only: sharing one library or memory folder between machines over a network
-  filesystem is not supported. A crash in the middle of an approval can leave
-  it half done.
-
-- **Private report, shared copy:** a report's own HTML is a private working
-  file: it embeds the raw SQL, parameters, query plan (with its filter
-  expressions) and run history, and says so at the top. To send a report to
-  someone, `share_report` writes a separate copy into `exports/` built from an
-  allowlist: title, description, category, the masked preview, the
-  timing/row figures and the result's SQL version number and run time. It is
-  refused when the last results come from a SQL version other than the
-  current one (saved but not run yet); run the current version first. SQL,
-  plan, parameters, warnings, history and database, schema and server names are left out, not redacted. The title and
-  description are kept as written, so keep secrets out of them.
-
-> [!NOTE]
-> Masking is a name-based safety net. The built-in name lists cover English
-> and Turkish column names (including Turkish compounds without separators);
-> add other names, and free-text or JSON columns that can contain personal
-> data, to a report's `mask` list. A shared copy is no
-> anonymization: its preview rows are exactly what the masking left, so check
-> them before sending.
-
-## ⏰ Scheduled runs
-
-An approved report can run on a schedule, for example every Monday at 08:00
-for the last seven days. Auspex itself never registers or changes a
-scheduled task: you edit the schedule file and register one daily task
-yourself with the command Auspex prints.
-
-**Schedule file:** `<AUSPEX_HOME or ~/.auspex>/schedules.json`, edited by you:
-
-```json
-{
-  "schedules": [
-    {
-      "id": "weekly-example",
-      "profile": "exampledb",
-      "report": { "db": "exampledb", "schema": "example", "category": "Orders/Delivery", "name": "example-report" },
-      "preset": "last_7_days",
-      "cadence": { "weekly": "monday", "at": "08:00" }
-    },
-    {
-      "id": "daily-example",
-      "profile": "exampledb",
-      "report": { "db": "exampledb", "schema": "example", "category": "Orders", "name": "example-daily" },
-      "preset": "yesterday",
-      "cadence": { "daily": true, "at": "07:30" }
-    }
-  ]
-}
-```
-
-- `id`: 1-60 characters `a-z`, `0-9`, `-`, `_`; unique.
-- `profile`: required, there is no default; it must be the report's `db`.
-- `report`: the location exactly as `list_reports` shows it. Only
-  **approved** reports run; a draft (or a report that is not found) is
-  recorded as `failed` without a database call. A newer draft of an approved
-  report does not change what runs: the scheduler always runs the approved
-  SQL.
-- `preset`: a built-in date preset (`today`, `yesterday`, `last_7_days`,
-  `this_month`, `last_month`, `this_year`, `last_year`; only for reports saved
-  with `dateRange: true`) or one of the report's custom presets. Leave it out
-  only for SQL without parameters.
-- `cadence`: `{ "weekly": "<weekday in English>", "at": "HH:MM" }` or
-  `{ "daily": true, "at": "HH:MM" }`, local time of the machine.
-- Optional: `"enabled": false` on a schedule; top-level `"taskTime": "HH:MM"`
-  (time of the daily task, default the latest `at` of the enabled schedules)
-  and `"notify": "all" | "failures" | "none"` (default `all`).
-
-Validation is strict: an unknown key, a missing profile or a malformed
-cadence rejects the whole file, so a typo never silently drops a schedule.
-
-**Commands** (`node src/scheduleCli.js ...`, no shell, prints JSON):
-
-| Command | What it does |
+| Page | What's inside |
 |---|---|
-| `run-due` | Runs every enabled schedule whose most recent due slot has passed and has no successful run yet (catch-up: a PC that was off on Monday runs Monday's slot on Tuesday). |
-| `run --id <id>` | Runs one schedule now (manual). Adds no trend point and leaves the due slot open. |
-| `status` | Lists the schedules with problems (not approved, preset not usable), last result and next slot, and warns about an enabled schedule due later than the task time (the daily task would run it only the next day). No database access. |
-| `task-command` | Prints the PowerShell commands that register the daily task. It does not run them. |
-
-Each command takes `--home <absolute folder>` to use that folder as
-`AUSPEX_HOME`.
-
-Exit codes: `0` every run succeeded or nothing was due, `1` at least one run
-was skipped or failed, `2` usage or schedule-file error, `3` another scheduler
-run is in progress. One scheduler runs at a time, under the same lock rules
-as the library (`<home>/scheduler.lock`; a lock left by a dead process is
-taken over). A lock held longer than the task's 2 h limit is reported with a
-notification, and one older than 3 h is taken over even when its process id
-looks alive (a process id reused after a reboot).
-
-**Period of a catch-up run:** the preset is resolved against the date of the
-due slot, not the time the run happens. A catch-up on Tuesday for Monday's
-08:00 slot gets the same `last_7_days` as a run on Monday would have.
-Slots are local wall-clock times computed with calendar arithmetic, so a
-daylight saving change does not move a slot to another day or hour.
-
-**Same path as `run_report`:** every scheduled run goes through the report
-service and `ReadOnlyDatabase` (SQL guard, `READ ONLY` transaction, role
-check, query budget, statement timeout), appends to the report's run history
-and regenerates its HTML. Its audit entries carry source and actor
-`scheduler`, plus one `schedule_run` entry per schedule with its status.
-
-**Unreachable database and retries:** when the database cannot be reached
-(connection refused or timed out, DNS failure, for example a VPN that is
-down) the slot is recorded as `skipped-unreachable`; other errors as `failed`
-with their error code. Both send a notification and end with exit code 1.
-The task retries 30 minutes later, and the next daily `run-due` catches up a
-slot that is still open.
-
-**Registering the task (Windows):**
-
-```bash
-node src/scheduleCli.js task-command
-```
-
-prints commands like these (paths and time from your setup); review them and
-run them yourself in PowerShell:
-
-```powershell
-$action = New-ScheduledTaskAction -Execute 'C:\Program Files\nodejs\node.exe' -Argument '"C:\example\auspex\src\scheduleCli.js" run-due --home "C:\example\auspex-home"' -WorkingDirectory 'C:\example\auspex'
-$triggers = @((New-ScheduledTaskTrigger -Daily -At '08:00'), (New-ScheduledTaskTrigger -Daily -At '08:30'))
-$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 1 -RestartInterval (New-TimeSpan -Minutes 30) -ExecutionTimeLimit (New-TimeSpan -Hours 2) -MultipleInstances IgnoreNew
-Register-ScheduledTask -TaskName 'Auspex scheduled reports' -Description 'Runs due Auspex report schedules (read-only).' -Action $action -Trigger $triggers -Settings $settings
-```
-
-The task restarts once after 30 minutes when it fails. Task Scheduler applies
-that setting when the task cannot start, not on a non-zero exit code, so the
-command adds a second daily trigger 30 minutes later: `run-due` is a no-op
-for slots that already succeeded and retries the ones that were skipped or
-failed. `-StartWhenAvailable` runs a missed task after the PC wakes up. The
-task runs as the current user and only while that user is signed in, which
-the notifications need. On other systems, use your own scheduler (for
-example cron) to run `run-due` once a day.
-
-**Re-register after changing times.** The task time is fixed when you
-register it: `taskTime`, or by default the latest `at` of the enabled
-schedules. After adding a schedule or changing a time, run `task-command`
-again and register the task again (`status` warns about a schedule due later
-than `taskTime`).
-
-**Environment of the task:** a scheduled task does not inherit settings made
-only in your MCP client's configuration or in your shell. When `AUSPEX_HOME`
-is set, the printed action passes it as `--home`. Every profile a schedule
-uses must be readable by the task: put it into `profiles.json` (passwords
-stay in pgpass), or set its `AUSPEX_DB_<NAME>` variable as a user environment
-variable. `task-command` names, never prints, the `AUSPEX_DB_*` and other
-`AUSPEX_*` variables of the current shell that the task will not see.
-
-**Notifications:** on Windows a toast with the report title and the status
-(`ok`, skipped because the database was unreachable, or failed with its error
-code). Never data values, SQL, parameters or error messages. The text is
-passed to PowerShell through environment variables and inserted as XML text
-nodes, never as script. Elsewhere, or when the toast fails, one line on
-stderr. A notification never fails a run.
-
-**Trend history:** after each successful scheduled run Auspex appends one
-point to `<home>/trends/<profile>/<schema>/<category>/<name>.jsonl`: slot,
-run time, preset, resolved parameters, SQL version, the row count (exact
-from `EXPLAIN ANALYZE` or a complete preview, otherwise `estimatedRows`) and
-the column totals the report page shows under its preview (identifier, code
-and masked columns excluded; kept only when the preview holds every row).
-Aggregates only, never row values. The newest 520 points are kept. There are
-no threshold alerts yet; the point format (one number per series, totals
-keyed by column) is ready for them.
-
-**State:** the last result per schedule is in
-`<home>/schedule-state.json` (status, slot, time, error code; no messages),
-which the viewer reads. The full error message is in the command output and
-the audit log.
-
-## 🧠 Schema memory
-
-Auspex remembers what it learned about each database in local JSON files
-(`~/.auspex/memory/<profile>/`, override with `AUSPEX_MEMORY_DIR`). It grows
-with the work and never crawls the catalog on its own:
-
-- **`describe_table`** records the full structure of a table (columns, keys,
-  indexes, incoming foreign keys). The next time the same table is described,
-  the answer lists what changed: added, dropped, renamed or retyped columns,
-  constraints and indexes. Row estimates and comments are not changes. Only the
-  system catalog is read, never table data.
-- **Plans teach it too:** tables and columns used by `run_report` and `explain`
-  are recorded as "seen", with the columns they actually used.
-- **Relations** have three levels: `fk` (declared), `used` (joined in an
-  approved report) and `suggested` (a column named like another table's
-  primary key; unconfirmed until you say so).
-- **Notes** are `rule` (stated by the user), `observation` (a finding with
-  evidence: the SQL and aggregate figures, dated, never row values) and
-  `inference` (the model's interpretation, shown as unconfirmed). Notes on a
-  table come back with `table_knowledge`, `describe_table`, `explain` and
-  `run_report`, and with `query` when its SQL names the table as
-  `schema.table`; database-wide notes come back with `table_knowledge`. They are
-  archived with a reason, never deleted.
-- **Triggers:** `describe_table` and `describe_tables` also record each
-  trigger (name, timing, events, level, enabled, function, WHEN condition,
-  `CREATE TRIGGER` definition, constraint trigger); added, dropped, changed
-  and enabled/disabled triggers show up in `changesSinceLast`. Records
-  written before triggers were stored report no trigger change the first
-  time. The function source is never stored.
-- **Exploring further:** after a report, `run_report` and `table_knowledge`
-  list neighbors that were never described. The server instructions tell the
-  model to ask you before looking at them, and then to read their structure
-  only.
-
-```
-memory/<profile>/
-├── tables/<schema>/<table>.json   structure, used columns, change history
-├── notes.json                     rules, observations, inferences
-├── changelog.jsonl                explored tables, notes and schema changes
-├── scanned-files.json             script files read for column scores (relative path, sha256, lastReadAt)
-└── graph.json                     derived view for the viewer (rebuilt on every change)
-```
-
-`graph.json` is `{ profile, generatedAt, summary, nodes, edges, notes,
-changelog }`. Nodes and edges, with the optional fields `relation_stats` adds
-(absent until it has measured them, so older readers are unaffected):
-
-```
-node: { id: "schema.table", schema, table, file?, state: "explored" | "seen" | "unexplored",
-        kind, estimatedRows, columnCount, changes, notes,
-        estRows?: number | null,        // relation_stats row estimate; null = never analyzed
-        scoredAt?: "ISO time",          // score_columns, see Column importance
-        columnScores?: { [column]: { score: 1-5 | null, scoreBy?: "user" | "agent",   // effective score
-                                     agent?: { score, roles, reason, sources, at, history },
-                                     user?: { score, roles?, at, history } | { cleared: true, at, history } } },
-        triggers?: [{ name, timing, events, level, enabled, function, when, definition, constraintTrigger,
-                      summary?, summaryAt?, summaryStale? }] }
-edge: { level: "fk" | "used" | "suggested", from: "schema.table", to: "schema.table",
-        columns: [...], refColumns: [...], // from(columns) references to(refColumns)
-        linkedRows?: number | null,      // rows of `from` with the key set; null = stats missing
-        estimated?: true,                // linkedRows comes from planner statistics
-        statsAt?: "ISO time" }           // when relation_stats measured it (latest wins)
-```
-
-`file` is only set for tables with a record (`explored` or `seen`). The table
-records keep the measurement (`estRows`, `estRowsAt`, and for centers
-`relationStats`), so describing a table again does not drop it.
-
-### Column importance
-
-Which columns of a table matter is decided by people and the agent, not
-computed. The `auspex-columns` skill (prompt `columns`) reads the SQL that
-uses a table - the report library and the script files in a configured
-script root the user confirms - attributes every column use to its table
-(aliases and CTEs resolved), and saves with `score_columns`. Each column
-has two layers:
-
-- `agent` (`by: "agent"`, the default): `score` 1-5, `roles` (any of `key`,
-  `join`, `filter`, `display`, `aggregate`, `sort/group`), `reason` (one
-  line, at most 200 characters, in the `notesLanguage`) and `sources`
-  (distinct reports and scripts; versions of one report count once).
-- `user` (`by: "user"`): a score the user stated in the conversation, with
-  optional `roles`. The user's usage note ("mostly in WHERE, sometimes in
-  SELECT") is saved as an ordinary column rule with `remember`, so it shows on
-  the Rules tab and can be archived. `clearUser: true` removes the user score.
-
-The effective score is the user score when present, otherwise the agent
-score. An agent rescan updates only the agent layer, so both stay visible
-("user 5, agent 2"). Each layer keeps its previous 5 states as history
-(newest first, a removal included); columns and layers not listed keep their
-score.
-
-### Code meanings
-
-What a column means is often visible only in the application that writes
-or shows it. The `auspex-code` skill (prompt `code`) has the agent read the
-source code in a configured **code root** with its own file tools - ORM
-mappings, computations, UI labels, permission flags, validation messages and
-enum names - and save one sentence per column with `remember` as an
-inference with `evidenceCode`:
-
-```json
-{ "action": "add", "kind": "inference", "schema": "example", "table": "orders", "column": "amount",
-  "text": "Appears to be the order total: net amount plus tax and shipping.",
-  "evidenceCode": [{ "root": "example_app", "path": "src/Orders/Order.cs", "line": 42, "symbol": "Order.Amount" }] }
-```
-
-- `evidenceCode` is accepted with `kind` `inference` or `observation` (not
-  `rule`) and only on `action=add`; at most 5 references.
-- `root` must be a configured code root name (see Configuration). `path` is
-  relative to it: absolute, drive (`C:\...`), drive-relative and UNC paths
-  and `.`/`..` segments are rejected; `\` becomes `/`. `line` (optional) is an
-  integer from 1 to 10000000; `symbol` (optional) is one line of at most 120
-  characters. Unknown keys are rejected.
-- Only the references are stored on the note (`evidenceCode` in
-  `notes.json`, `graph.json` and `table_knowledge`); Auspex never reads or
-  writes code files and never stores code text. The audit entry of `remember`
-  stays as before: no note text and no evidence.
-- Such a note is a code inference until the user agrees and the agent
-  confirms it (`action=confirm`, which keeps the references). The viewer shows
-  a *from code* badge (TR *koddan*) next to the kind on the Rules tab and in
-  the table page's column rows, and the references as
-  `root:path:line · symbol` text in the evidence (no links, nothing opens a
-  file). In the table page's Summary, a column chip's tooltip adds the meaning
-  of a confirmed note read from code.
-
-| Score | Meaning (relative within the table) |
-|---|---|
-| 5 core | most reports revolve around it: main join key, period filter, primary display field |
-| 4 frequent | used regularly in many reports |
-| 3 topical | appears in the reports of one topic |
-| 2 rare | one report, or only in an old version |
-| 1 unused | appears in no SQL |
-
-A column used only on application screens and in no report or script scores
-low; after a scan the skill asks once which such columns matter and saves the
-answers as user scores.
-
-- Optional `triggers`: one-line summary per trigger of what its function does
-  (the source is never stored). A summary is marked `summaryStale` when the
-  trigger definition changes; a change of only the function body is not
-  detected, so ask the agent to re-read the functions when they changed.
-- Optional `scannedFiles`: `root` (a configured script root name), path
-  relative to it and sha256 of each script file read. `scanned_files` lists
-  them, so later runs skip unchanged files. Each root keeps at most 20000
-  entries; the ones read longest ago are pruned first. Files outside a
-  configured root are not recorded. Script files are never copied, saved as
-  reports or modified.
-
-The table must be described first and every column and trigger must exist in
-its recorded structure; otherwise the whole call is rejected and nothing is
-saved. `table_knowledge` returns per column the effective `score` and
-`scoreBy`, both layers and `noteIds` (active notes on that column, such as the
-user's usage rule). The viewer write path for user scores is not part of this
-release.
-
-```json
-{ "profile": "example", "schema": "example", "table": "orders",
-  "columns": [
-    { "name": "order_id", "score": 5, "roles": ["key", "join"], "reason": "Joined to example.order_items in every report.", "sources": 7 },
-    { "name": "created_at", "by": "user", "score": 5, "roles": ["filter"] }
-  ],
-  "triggers": [{ "name": "orders_check", "summary": "Rejects rows whose status_code is not in example.status_codes." }],
-  "scannedFiles": [{ "root": "scripts", "path": "example/reports/orders_by_day.sql", "sha256": "<64 hex>" }] }
-```
-
-## 🔌 Register with an MCP client
-
-Auspex is a stdio MCP server. Register it once; databases are managed in the
-profiles file, not in the client. Most clients accept this shape:
-
-```json
-{
-  "mcpServers": {
-    "auspex": {
-      "command": "node",
-      "args": ["/path/to/auspex/src/index.js"]
-    }
-  }
-}
-```
-
-Use the server name `auspex` to get tool names like `mcp__auspex__query` in
-clients that prefix tools with the server name. Environment variables
-(`AUSPEX_HOME`, `AUSPEX_DB_<NAME>`, ...) can go in the client's `env` block.
-
-<details>
-<summary><b>Claude Code</b></summary>
-
-```bash
-claude mcp add auspex --scope user -- node /path/to/auspex/src/index.js
-```
-
-From PowerShell, where `--` is swallowed by the `claude.ps1` shim:
-
-```powershell
-claude mcp add-json auspex '{"type":"stdio","command":"node","args":["C:/path/to/auspex/src/index.js"]}' --scope user
-```
-
-</details>
-
-<details>
-<summary><b>Codex CLI</b></summary>
-
-In `~/.codex/config.toml`:
-
-```toml
-[mcp_servers.auspex]
-command = "node"
-args = ["/path/to/auspex/src/index.js"]
-```
-
-</details>
-
-<details>
-<summary><b>Cursor</b></summary>
-
-In `~/.cursor/mcp.json` (or `.cursor/mcp.json` in a project), use the
-`mcpServers` JSON shown above.
-
-</details>
-
-<details>
-<summary><b>VS Code</b></summary>
-
-In `.vscode/mcp.json`:
-
-```json
-{
-  "servers": {
-    "auspex": {
-      "type": "stdio",
-      "command": "node",
-      "args": ["/path/to/auspex/src/index.js"]
-    }
-  }
-}
-```
-
-</details>
-
-Other MCP clients work the same way: a stdio server started with
-`node src/index.js`.
-
-## 🧩 Skills and prompts
-
-Five workflow guides keep an agent on the cheap and safe path with Auspex.
-Each is written once, in [`skills/`](skills), and reaches the agent in two
-ways: as an agent skill (installed files) and as an MCP prompt (served by the
-server from the same files at startup).
-
-| Skill | Prompt | Use it for |
-|---|---|---|
-| [`auspex-explore`](skills/auspex-explore/SKILL.md) | `explore` | Finding tables, reading structure and relations, fill rates and fan-out, recording findings in the schema memory with few statements |
-| [`auspex-report`](skills/auspex-report/SKILL.md) | `report` | A combined report: one round of at most 3 questions, remembered rules as defaults, status codes from their source (lookup table, enum, check or comment), fan-out/duplicate/NULL checks, and whether cancelled or deleted rows count asked within the 3 questions when no rule is remembered, then save, run and approve in the report library |
-| [`auspex-columns`](skills/auspex-columns/SKILL.md) | `columns` | Scoring column importance 1-5 from the SQL of the report library and the user's script files (roles, reason, sources) next to scores the user states, plus one-line trigger summaries, saved with `score_columns`; no database queries for the scores |
-| [`auspex-code`](skills/auspex-code/SKILL.md) | `code` | Column meanings from the application source code in a configured code root (ORM mapping first, then computations, UI labels, permission flags, validation messages, enum names): one sentence per column saved as an inference with `evidenceCode` references, confirmed only after the user agrees; no database queries |
-| [`auspex-ddl`](skills/auspex-ddl/SKILL.md) | `ddl` | Studying an existing table family (tables, functions, triggers) and designing a similar one: analysis note plus a `BEGIN ... ROLLBACK` script via `save_execute_script`, never executed by Auspex |
-
-Each `SKILL.md` holds the core rules and workflow; longer checklists live in
-its `references/` folder and are read only when needed.
-
-**Prompts.** Both arguments are optional: `profile` (the database the user
-chose; without it the prompt tells the agent to ask) and `goal` (the request
-in the user's words). The prompt text is the skill body followed by its
-reference files. Clients that support MCP prompts usually offer them as slash
-commands, for example `/mcp__auspex__report`. If a skill file is missing or
-malformed, the server stops at startup with `auspex: skills error: ...` and
-the file path.
-
-**Install as skills:**
-
-```bash
-npm run skills:install                       # into ~/.claude/skills
-npm run skills:install -- --target <dir>     # or AUSPEX_SKILLS_TARGET=<dir>
-npm run skills:install -- --force            # replace skills you changed there
-```
-
-The script prints `installed`, `unchanged` or `replaced` per skill. When an
-installed skill differs from the repository copy (line endings aside), it
-lists the differing files, writes nothing and exits with code 1; compare the
-files, then rerun with `--force` to replace the whole skill folder.
-
-## 📊 Viewer and desktop app
-
-```bash
-npm run viewer
-```
-
-Opens a local page at http://127.0.0.1:4719 (port: `AUSPEX_VIEWER_PORT`):
-
-- **Overview** — stat tiles, activity over time, usage by profile, tool and table, slowest operations, recent errors
-- **Operations** — sortable, paged log with full SQL, parameters and errors (the status shows the error code, the detail the correlation ID); copy and CSV/JSON download
-- **Tables** — which tables were accessed, how often and by which profile; a schema-qualified name opens its table page when the database is known
-- **Reports** — the report library as a collapsible tree: topic → subtopic → report (database and schema come from the database picker and the report header; the list collapses to a rail; a filter box narrows it by name, category or stage and opens the matching branches; change scripts have their own tab and are not part of *All*), with each report's HTML: the title with its stage badge and the approve/revoke button in the viewer header (the report's own title, location chips and language/theme controls are hidden there and stay in the saved file and *Open in new tab*), the question it answers at the top (first sentence, *More* for the rest, parameters on their own line, last run time and parameters beside *Last run*), execution time, rows and the plan-warnings badge in one strip with the cost, buffer, temp and join figures behind a *Performance details* toggle (remembered), and sticky tabs that open on *Preview*. The preview table has readable headers (raw name in the tooltip), click-to-sort, a quick filter, a preview-only totals row for numeric columns and a spreadsheet-safe CSV export of the rows shown (Turkish exports use a decimal comma; identifier and code columns such as `order_id` or `status_code` are skipped in the totals row; the download needs a click in the report and is saved with a sanitized `.csv` file name and a UTF-8 BOM); masked columns stay masked. The header also shows the last run's preset with its parameter values and lists the presets the report offers (read-only: running stays an agent action, the viewer never runs SQL), a star to pin the report, and *Ask Claude*, which copies a ready prompt in the viewer language (report location, title, last run time, preset and parameters, row count and the first column names, never preview values) to the clipboard. Above the tree, *Favorites* lists the pinned reports and *Recent* the last 8 opened; both are local to this viewer or desktop app (browser storage, nothing is written to the library) and drop reports that no longer exist. SQL and change scripts are syntax-highlighted (step markers stand out, long lines soft-wrap), copy buttons inside a report work from the viewer, and drafts and approved reports can be approved or revoked (see below)
-- **Schema** — the schema memory of a database in three views, an inspector with notes, relations and history, and a timeline of schema changes. A schema picker moves the selection and the view center into the chosen schema. A badge in the header counts schema changes you have not seen yet. Around a selected table, foreign keys give two roles: **Reference** (TR *Instance*: tables it points to, such as status codes) and **Dependent** (TR *Beslenen*: tables that point to it, such as order lines). Each role is ranked by linked rows, then by the table's row estimate; both are planner estimates, and a relation without a linked-row figure falls back to the row estimate.
-  - *Graph* — a 3D graph (with a 2D fallback): click a table to focus it, and the focused table's Reference and Dependent tables are laid out in directed layers with always-visible labels; *+1 depth* adds the next ring and *Show all* shows everything. The focused table's FK edges are blue (Reference) or orange (Dependent), darkest at rank 1 and lightest at rank 10; edges beyond the top 10 are grey and dashed and can be hidden
-  - *ER diagram* — Reference tables on the left, Dependent tables on the right, with a per-side top-N picker (5, 10, 25, 50 or All), every card with its rank, linked rows and explored state; the rest stay in the inspector's Relations list
-  - *Flow* — Reference → Center → Dependent swimlanes around a center card, edge width by linked rows (log scale) and edges labelled with their join columns; the same top-N picker per side; a Dependent opens its own dependents as a further labelled lane (depth 2), clicking a table makes it the center and the trail leads back
-  - *Data dictionary* (TR *Veri sözlüğü*) — downloads a self-contained HTML or Markdown document of the database built from the schema memory only (no database access): the explored tables with their comment, key columns (primary key, foreign key, used, noted), relations (Reference/instance and Dependent), active rules and observations (observations with their aggregate figures), and the database-wide rules and observations, with the generation date. Unconfirmed inferences, archived notes and evidence SQL are left out; every name and text is escaped. The file is saved as `auspex-data-dictionary-<db>-<date>.html` or `.md` after a click (when loading the table files took too long, the next click downloads)
-- **Table page** (TR *Tablo sayfası*) — opened from a table name in the Tables tab, the Schema inspector (*Open table page*) or the Schema search (matching tables are listed under the bar); shown in the Schema tab with a breadcrumb (Back, Schema, each visited table). From `graph.json` and the table file only:
-  - header: `schema.table`, estimated rows, column count, note count, comment, last scored date, sources (most reports and scripts found for one column) and a badge when the last describe recorded changes
-  - columns sorted by effective score, then name: a 5-step single-hue score chip (the accent mixed into the surface, so it follows light, dark and custom themes), name and type, roles as icons with tooltips, the agent's one-line reason and its number of reports; "user 5 · agent 2" when both layers exist. By default only scores 4–5 are listed, with a counter and *Show all columns*; the legend explains the rubric (5 core, 4 frequent, 3 topical, 2 rare, 1 unused). A row expands to the score history of both layers (newest 5 each), the column's notes (a note read from code with a *from code* badge and its `root:path:line · symbol` references), its FK target, default and comment
-  - column tools above the column list, in Detailed and Summary: a **search box** (TR *Kolonlarda ara*; `/` focuses it while a table page is open, Esc clears it) matching the column name, its meaning, the agent's reason and any note text, Turkish-aware like the Rules tab, with an *N / total* counter and a clear button; while a query is active all columns are searched and the 4–5 filter is ignored. A **group switch** *Score / Type* (TR *Puan / Tür*, remembered): Type groups come only from catalog facts, so they work for any database: keys and links (primary key, foreign key or a column in a unique constraint), date and time, amounts and numbers, text, flags (boolean) and other (json, uuid, bytea, arrays), each with a count and ordered by score, sources, name. In Detailed, a column with a confirmed rule or observation shows its meaning as one muted line (two lines at most, full text in the tooltip); a note with code evidence is preferred, then the newest rule; unconfirmed inferences stay in the expanded row
-  - keys and structure (primary key, unique and check constraints with definitions, outgoing and incoming foreign keys, indexes), triggers (timing and events, level, enabled, function, WHEN, the agent summary; a stale summary is marked *may be out of date*), and neighbours: tables it references on the left, tables that reference it on the right (linking columns, estimated rows; not explored ones muted), each opening its own page
-  - an undescribed table explains that `describe_table` is needed; an unscored table points to the `auspex-columns` skill. Clicking a score chip sets your own score (see below)
-  - *Detailed / Summary* switch (TR *Ayrıntılı / Özet*). A first visit opens **Summary**: names only, as coloured, clickable chips in groups: primary key, foreign keys (`column → table`, best column score first; the first 12, the rest behind *+N more*, TR *+N daha*; the same for referenced and referencing tables), columns by effective score (coloured by score and grouped under a heading with a count, such as *5 · core (3)*; the five score steps are clearly apart in light and dark; score 1 columns collapse into a *+N unused* chip that expands; unscored columns are dashed), triggers (a disabled one is muted and struck through), trigger functions, reports whose SQL mentions the table (*Mentioned in SQL*, TR *SQL'inde geçiyor*), referenced tables (*Bağlı olduğu*) and referencing tables (*Ona bağlı olan*). A column chip opens its row in the Detailed view, a table chip opens that table's page, a report chip opens the report on the Reports tab. The last choice is remembered in browser storage (the page works without storage). The report match is a simple, case-insensitive name match over the SQL of the database's draft and approved reports (read once each through the existing `GET /api/report`, four at a time, again when the report changes); schema-qualified and bare names match, a longer name that shares a prefix (`example.orders` vs `example.orders_archive`) does not, and neither does the name after another schema (`test.orders`). The first 400 reports are checked (the page says *first 400 reports checked* when there are more); a report that cannot be read is counted as *could not be read* with *Retry*, not remembered as empty. It is a hint, not a hard link
-- **Rules** (TR *Kurallar*) — every schema-memory note of the chosen database: rules, observations and inferences with table and column, text, status, confirmed or unconfirmed, created/confirmed/archived dates, and the evidence (figures, SQL and code references) behind a collapsed *Evidence* toggle; a note with code references carries a *from code* badge (TR *koddan*) under its kind. Filters: status (active by default, archived, all), kind, table (part of `schema.table`) and text (case-insensitive, Turkish İ/I/ı/i match each other). An active note can be archived with a required reason (see below); adding or confirming notes stays an agent action (`remember`). The table header and the column sub-header of each group are links: a table opens its table page, a column opens its row in the Detailed view.
-- **Profiles** — configured databases with connection details (never passwords) and the latest role check; a `check_profile` that failed shows "unable to assess" with its code, never as a passed check
-
-Scheduled reports (see Scheduled runs): an approved report with a schedule
-carries a badge in the Reports list with its last scheduled result
-(*scheduled: ok*, *unreachable* or *failed*; the worst one when it has several
-schedules). Its header lists each schedule (cadence, preset, last result with
-its error code, next slot), and above the report a small trend chart shows the
-row count and up to four column totals per scheduled run (one line each with
-its own scale; hover a point for its slot and value). The viewer reads
-`schedules.json`, `schedule-state.json` and the trend files through GET routes
-only (`/api/reports` and `/api/reports/trend`, which leaves out parameter
-values); a broken schedule file is shown above the list. The desktop app does
-not show schedules or trends yet.
-
-The viewer uses the full window width with one page scroll, has an English
-and Turkish interface, and offers ready themes plus a theme studio that checks
-contrast (see Themes below); custom themes are saved in the browser and can be
-exported and imported as JSON. The generator has a *Summary palette* (TR *Özet paleti*)
-section: one colour for each chip group of the table page Summary (primary
-key, foreign keys, columns by score, triggers, trigger functions, reports,
-referenced, referencing, disabled; the score colour gives the five-step ramp).
-Each chip's text colour is derived and checked with the same contrast check as
-the other text colours. The palette is saved with a custom theme and included in
-its JSON export and import; groups left unset use the defaults, so every ready
-theme has a full palette. The chips use only the CSS variables `--sum-<group>`,
-`--sum-<group>-line` and `--sum-<group>-ink`.
-
-Ready themes also include *Glass* and *Glass dark* (TR *Cam*, *Cam koyu*):
-translucent panels with a backdrop blur over a soft multi-colour background,
-thin light borders and an inner highlight. The blur sits on panel containers
-only, not on rows of long lists. Text is checked with the same contrast check
-against the panel at its opacity over every backdrop colour. When the browser
-has no `backdrop-filter` or you prefer reduced transparency
-(`prefers-reduced-transparency`), the panels stay opaque and the page
-background flat (class `glass-flat` on `<html>`). *Plain* (TR *Sade*) is the
-flat, uncoloured look of the default kept as an explicit choice (no tints, no
-accent borders, no glass; it still follows the system light or dark); the
-default palette is unchanged. On the table page the left *references* and right
-*referenced by* panels have their own tinted surface and accent (from
-`--role-ref-*` and `--role-dep-*`) in every theme except Plain, the centre stays neutral,
-and column and table names are set heavier than types and meta text. The
-generator can switch *Glass look* on, tune blur (0-40 px) and opacity
-(20-95 %) and pick the two panel tints; they are saved with a custom theme and
-included in its JSON export and import (numbers clamped, colours hex only).
-
-Themes. The viewer and the desktop app start in the *Auspex* theme (dark) when
-nothing is saved; a saved choice (Auto, Light, Dark, Plain or any theme) is
-kept. The theme menu lists five *Auspex themes* (TR *Auspex temaları*):
-*Auspex*, *Forge*, *Phosphor* (monospace headings), *Verdigris* and *Ivory*
-(light), then the ready themes, then *My themes*. Every text and background
-pair of every ready theme passes the contrast check (4.5:1 for text, 3:1 for
-large text and interface parts).
-
-The *theme studio* (TR *tema stüdyosu*) is a modal dialog, opened with *New
-theme*, with the duplicate button next to any ready theme or saved theme
-(*Duplicate and edit*) or with the edit button of a saved theme. A duplicate
-carries every colour of its source. You can edit every token, each with a
-colour input and a hex field (`#rgb` or `#rrggbb`): surfaces (background,
-surface, raised), text (primary, secondary, muted), border, accent (accent,
-accent text, text on accent, secondary accent), status (success, warning,
-danger, info), the two side-panel tints, the score ramp base, the Summary
-palette and the glass look (strength, blur, opacity). A reset button next to a
-token returns it to the value derived from the background and accent. The whole
-page previews the draft while you edit; the dialog itself keeps the look of the
-theme that was active, so it stays readable. *Revert* restores the starting
-values, closing without saving restores the active theme (an in-app dialog
-asks before edits are discarded). The contrast panel lists each important pair
-with its ratio and an AAA, AA, AA large or Fail badge; *Auto-fix* moves failing
-text colours in lightness only until they pass. A theme can have a light and a
-dark variant; the Auto, Light and Dark switch then picks the variant. *Save*
-stores every field (colours, tints, palette, glass, variants, options) in the
-browser (`auspex.viewer.themes`) and makes the theme active; a name is unique;
-*Delete* asks first. *Export* writes JSON with every field and a version
-number (`auspexThemes: 2`); *Import* accepts versions 1 and 2, keeps hex
-colours only, clamps numbers, ignores unknown keys, takes at most 50 themes and
-200,000 characters per import (100 saved themes in all) and rejects anything
-else with a message. The viewer never uses `window.prompt`, `confirm` or
-`alert` (the desktop webview blocks them).
-
-The role colors and lane backgrounds are CSS variables at the top of
-`src/viewer.html` (`--role-ref-1`, `--role-ref-10`, `--role-dep-1`,
-`--role-dep-10`, `--role-other`, `--lane-ref`, `--lane-center`, `--lane-dep`),
-each written once as `light-dark(light theme, dark theme)`. Reports rendered
-before template v2 keep their old layout until `render_reports` re-renders them.
-
-It binds to 127.0.0.1 only, rejects other Host headers, never connects to a
-database and never shows passwords. Every route is GET-only except the two
-approval routes, the note archive route and the user column score route below.
-
-#### Approving reports in the viewer
-
-On the *Reports* tab a draft has an **Approve** (TR *Onayla*) button and an
-approved report a **Revoke approval** (TR *Onayı geri al*) button. Each opens a
-confirm dialog with the report name, SQL version, last run, rows and warnings.
-Approval moves the draft into `SELECT/` exactly like `approve_report` (it still
-needs a successful run of the current SQL); revoking moves it back into
-`_drafts/`, keeps its SQL versions and runs, and is refused while another
-draft of the same report exists. Both regenerate the report HTML and record
-the change in the report's `stageHistory`. Only local Auspex files change
-(report library and schema memory view); no database is touched.
-
-The two routes (`POST /api/reports/approve`, `POST /api/reports/revoke`) accept
-a request only when all of these hold:
-
-- the Host header is the viewer's own loopback address;
-- the `Origin` header is exactly the viewer's own origin (missing or foreign: 403);
-- the `X-Auspex-Token` header matches a random token created per viewer
-  process and embedded only in the served page (403 otherwise);
-- the body is `application/json`, at most 4 KB, and holds only `db`,
-  `schema`, `category` and `name` exactly as the library lists them (a
-  nested category as its `/`-joined path; no path tricks: 400), plus the required `expectedHash`: the SQL hash of the
-  report content the page opened (12 lower-case hex characters; 400
-  otherwise). `/api/report` returns it as `sqlHash` with the content it
-  served, taken from that HTML itself, so a live list refresh cannot change
-  it. A report saved by an older Auspex has none until it is run with
-  `run_report` or the library is re-rendered with `render_reports` (both add
-  the hash when the SQL file is a saved version; a file edited by hand is
-  saved with `save_report` first);
-- the report exists (404) and is in the right stage (409);
-- the report still stands for that version: the current draft SQL (approve)
-  or the approved SQL (revoke) has `expectedHash`. Otherwise the answer is
-  409 with code `STALE_VERSION` ("The report changed since you opened it (now
-  version N); reload and review again."), nothing moves, and the page
-  reloads the list and the report.
-
-When the list (live refresh) already stands for another version than the
-opened report, the page shows "This report changed since you opened it;
-reload it to review the new version." with a *Reload* button and disables
-Approve / Revoke until the report is reloaded.
-
-A malformed request target (anything but a path starting with a single `/`,
-including `/\host` forms that URL parsing reads as an authority) is answered
-with 400; no request can stop the viewer.
-
-There are no CORS headers, and the page cannot be framed by another site
-(`X-Frame-Options: DENY`). Every request that passed the origin and token
-checks is written to the audit log with `source` and `actor` `viewer`, the
-report, the from/to stage and the version, or the error. The Origin and token
-checks stop other web pages, but any local process on this machine could still
-call these routes, so the audit actor `viewer` is not proof of a human click.
-Approve and revoke also rebuild the schema memory view, since approved
-reports' joins are its "used" relations. The desktop app offers the same
-buttons (see below).
-
-#### Archiving notes in the viewer
-
-On the *Rules* tab an active note has an **Archive** (TR *Arşivle*) button. It
-opens a confirm dialog with the note and a required reason (one line, at most
-200 characters). Archiving runs the same store logic as `remember
-action=archive`, under the profile's memory lock, keeps the note with its
-reason, `archivedAt` and `status: archived` (notes are never deleted) and
-rebuilds the schema memory view. Restoring an archived note is not offered.
-
-`POST /api/memory/archive` has the same protections as the approval routes
-(loopback Host, exact `Origin`, per-process `X-Auspex-Token`, `application/json`
-of at most 4 KB) and accepts only `{ "profile", "id", "reason" }`: the profile
-name, a positive integer note id and the reason (400 otherwise). An unknown
-profile or note is answered with 404, a note that is already archived with
-409 (`PRECONDITION_FAILED`). Every request that passed the origin and token
-checks is audited like the `remember` tool (`tool` `remember`, `action`
-`archive`, `source` and `actor` `viewer`, profile and note id, never the note
-text or the reason).
-
-#### Scoring columns in the viewer
-
-On the table page, clicking a column's score chip opens a small dialog: choose
-a score from 1 to 5, optional roles, then *Save*; *Remove my score* (TR
-*Puanımı kaldır*) appears when you already gave one. Only the **user layer**
-changes, through the same store logic as `score_columns` with `by: "user"`
-(under the profile's memory lock, atomic writes, view rebuilt); the agent
-score, its reason and history stay. A usage note ("mostly in WHERE") is not
-taken here: tell your agent in chat and it is saved as a rule on the column.
-
-`POST /api/memory/column-score` has the same protections as the archive
-route (loopback Host, exact `Origin`, per-process `X-Auspex-Token`,
-`application/json` of at most 4 KB) and accepts exactly
-`{ "profile", "schema", "table", "column", "score" | "clear": true, "roles"? }`:
-a profile name, names of 1 to 63 bytes without control characters, a score
-from 1 to 5 or `clear: true` (not both), and roles only with a score (any of
-`key`, `join`, `filter`, `display`, `aggregate`, `sort/group`, each once).
-Anything else, including unknown keys, is 400. An unknown profile, table or
-column is 404; a table that is only seen in a plan (not described), or a
-`clear` without a user score, is 409 (`PRECONDITION_FAILED`). Every request
-that passed the origin and token checks is audited as `score_columns` with
-`layer` `user`, `action` `set` or `clear`, `source` and `actor` `viewer`,
-profile, schema, table, column, score and role names; there is no free text.
-
-### 🖥️ Desktop app (Tauri)
-
-`desktop/` wraps the same viewer in a small native app (about 3 MB) that reads
-`~/.auspex` directly through a Rust command, so no Node server is needed
-(approve/revoke need Node 20+ and the Auspex checkout, see below).
-Closing the window keeps it in the tray; the tray menu has *Open*, *Show log
-folder*, *Start with Windows* (starts hidden in the tray) and *Quit*.
-
-```bash
-cd desktop && npm install && npm run build
-```
-
-Needs Rust (MSVC toolchain on Windows), the platform C++ build tools and
-WebView2. Output: `desktop/src-tauri/target/release/auspex-augur.exe`.
-
-> [!NOTE]
-> Start the desktop app from Explorer. When it is launched from inside an
-> MSIX-packaged app, Windows may redirect its "Start with Windows" entry.
-
-#### Approving reports in the desktop app
-
-The *Reports* tab of the desktop app has the same **Approve** / **Revoke
-approval** (TR *Onayla* / *Onayı geri al*) buttons and confirm dialog as the
-browser viewer. The library logic is not duplicated in Rust: the app's
-`approve_report` / `revoke_report` commands run the Node stage CLI of your
-Auspex checkout,
-
-```bash
-node <auspexRoot>/src/stageCli.js approve|revoke --db=<db> --schema=<schema> --category=<category> --name=<name> --expected-hash=<sqlHash>
-```
-
-which applies the viewer's checks (the report location exactly as the library
-lists it, at most 200 characters per part, the required SQL hash of the
-opened report content, the report must exist, be in the right stage and
-still stand for that version, else `STALE_VERSION`). The app reads that hash
-only from the report metadata and the served HTML and computes none itself;
-a report without one is refused with `INVALID_INPUT` and a request to run it
-with `run_report` or re-render the library with `render_reports`. The CLI also takes the same library lock, records `stageHistory`,
-regenerates the HTML and rebuilds the schema memory view. Every run is written
-to the audit log with `source` and `actor` `desktop`. The CLI prints one
-JSON line (`{"ok":true,"stage":..,"version":..}` or
-`{"ok":false,"code":..,"message":..}`) and exits with 1 on errors. It honours
-`AUSPEX_HOME` and the folder overrides like the server, and never touches a
-database or the network.
-
-The *Rules* tab's **Archive** button works the same way: the app's
-`archive_note` command checks the profile name, the note id and the reason in
-Rust and runs
-
-```bash
-node <auspexRoot>/src/stageCli.js archive-note --profile=<profile> --id=<id> --reason=<reason>
-```
-
-which applies the viewer's checks and store logic (404 unknown note, 409
-already archived) and audits with `source` and `actor` `desktop`.
-
-The table page's score dialog works the same way: the app's `score_column`
-command checks the profile, the names, the score or clear and the roles in
-Rust (the same rules as the viewer route) and runs
-
-```bash
-node <auspexRoot>/src/stageCli.js score-column --profile=<profile> --schema=<schema> --table=<table> --column=<column> --score=<1-5> [--roles=<role,role>]
-node <auspexRoot>/src/stageCli.js score-column --profile=<profile> --schema=<schema> --table=<table> --column=<column> --clear=true
-```
-
-which writes the user layer only and audits like the viewer route with
-`source` and `actor` `desktop`.
-
-Requirements:
-
-- **Node 20+** on `PATH`, or `AUSPEX_NODE` set to the absolute path of
-  `node.exe`. Only absolute `PATH` entries are searched.
-- **The Auspex folder**: `AUSPEX_ROOT`, or a top-level `"auspexRoot"` in
-  `~/.auspex/profiles.json` (see Profiles file), pointing at the checkout that
-  holds `src/stageCli.js`. Without it the app shows "Auspex folder not found"
-  (TR "Auspex klasörü bulunamadı") with how to set it.
-
-The app starts only this fixed program and script, passes each part of the
-report location as its own argument (never through a shell), checks the parts
-in Rust first, and stops the CLI after 30 seconds. When the CLI times out or
-gives no result, the change may or may not have been applied: the app says so,
-reloads the list and writes an audit line (actor `desktop`, error code
-`TIMEOUT` or `CLI_FAILED`) itself. Only `api`,
-`approve_report`, `revoke_report`, `archive_note` and `score_column` are allowed in the
-window's capability; there is no shell plugin.
-
-## 🗂️ Profiles file
-
-Databases are listed in `~/.auspex/profiles.json` (`C:\Users\<you>\.auspex` on
-Windows; override with `AUSPEX_PROFILES_FILE`):
-
-```json
-{
-  "example": {
-    "url": "postgresql://Auspex@db.example.test:5432/exampledb",
-    "description": "Example PRODUCTION",
-    "maxTimeoutSeconds": 180,
-    "maxQueriesPerMinute": 30
-  }
-}
-```
-
-| Field | Required | Meaning |
-|---|---|---|
-| `url` | yes | `postgresql://user@host:port/db`; a password here (user-info or query option) is rejected. Host and port go only in the URL authority (IPv6 in brackets, a Unix socket directory percent-encoded); `host` and `port` query options are rejected. Query options are limited to `ssl`, `sslmode`, `sslcert`, `sslkey`, `sslrootcert`, `sslnegotiation`, `uselibpqcompat`, `application_name`, `fallback_application_name`, `connect_timeout`, `keepalives`, `keepalives_idle`; anything else (for example `options=-c ...`, `replication`, `client_encoding`, `user`, `db`) stops the server at startup, as does the same URL in `AUSPEX_DB_<NAME>` |
-| `description` | no | Shown by `list_profiles` when the model asks which database to use; mark production clearly |
-| `maxTimeoutSeconds` | no | Ceiling for `timeoutSeconds` on this profile (1-3600) |
-| `maxQueriesPerMinute` | no | Query budget for this profile (1-10000); overrides `AUSPEX_MAX_QUERIES_PER_MINUTE` |
-
-An optional top-level `scriptRoots` object names folders for change scripts
-(see Report library, Script roots); it is not a profile:
-
-```json
-{
-  "scriptRoots": {
-    "scripts": "/path/to/sql-scripts"
-  }
-}
-```
-
-The root name is only a label you pick (`scripts` here); use any name that
-follows the profile-name rules. Each value is an absolute directory path; a relative path, control
-characters, a URL or anything that looks like a password stops the server at
-startup. Root names follow the profile-name rules. If the folder is under
-AppData, check that saved scripts appear there: MSIX-packaged clients may
-redirect AppData writes (see Configuration).
-
-An optional top-level `codeRoots` object names source code folders the
-agent may read with its own file tools for column meanings (see Code
-meanings); it is not a profile and has the same shape and checks as
-`scriptRoots`:
-
-```json
-{
-  "codeRoots": {
-    "example_app": "/path/to/example_app"
-  }
-}
-```
-
-Auspex never reads or writes a code root; the name only scopes the
-`evidenceCode` references of `remember`, and `list_profiles` lists the roots
-as `codeRoots` (`name`, `path`, `source`). Code root names are a separate
-namespace from script root names.
-
-An optional top-level `notesLanguage` sets the language of schema-memory
-notes and of report titles, descriptions, version notes and change-script texts (save_execute_script title, purpose and comments; step markers such as BEGIN and MATCH stay as written) (a language code such as `tr`, `en`, `de` or `pt-BR`); it is not a
-profile and an invalid value stops the server at startup:
-
-```json
-{
-  "notesLanguage": "en"
-}
-```
-
-`list_profiles` returns it as `notesLanguage` (`null` when unset). When it is
-unset the model asks the user once which language notes, report texts and change-script texts should be saved in and
-suggests adding the key. Existing notes are not translated.
-
-An optional top-level `auspexRoot` is the absolute path of your Auspex
-checkout; the desktop app runs `src/stageCli.js` from it to approve or revoke
-reports (`AUSPEX_ROOT` takes precedence). It is not a profile; a value that is
-not an absolute, existing directory holding `src/stageCli.js` stops the server
-at startup:
-
-```json
-{
-  "auspexRoot": "/path/to/auspex"
-}
-```
-
-Profile names are case-insensitive and use `a-z`, `0-9`, `-`, `_`. Restart
-your MCP client session after editing (profiles are read at start). A missing
-file means no file profiles; an invalid file stops the server with a message
-naming the problem.
-
-## ⚙️ Configuration
-
-<details>
-<summary><b>Environment variables</b></summary>
-
-| Variable | Default | Meaning |
-|---|---|---|
-| `AUSPEX_HOME` | `~/.auspex` | Folder for `profiles.json`, `logs/` and `exports/` |
-| `AUSPEX_PROFILES_FILE` | `<home>/profiles.json` | Profiles file location |
-| `AUSPEX_DB_<NAME>` | none | Extra profile from the environment, e.g. `AUSPEX_DB_LOCAL`; the same name in the file and env is an error |
-| `AUSPEX_SCRIPT_ROOT_<NAME>` | none | Extra script root (absolute folder for `save_execute_script`), e.g. `AUSPEX_SCRIPT_ROOT_SCRIPTS`; the same name in `scriptRoots` and env is an error |
-| `AUSPEX_CODE_ROOT_<NAME>` | none | Extra code root (absolute source code folder the agent reads itself; names `remember` `evidenceCode` roots), e.g. `AUSPEX_CODE_ROOT_EXAMPLE_APP`; the same name in `codeRoots` and env is an error |
-| `AUSPEX_ROOT` | `auspexRoot` in the profiles file | Auspex checkout the desktop app runs `src/stageCli.js` from (report approve/revoke) |
-| `AUSPEX_NODE` | `node` on `PATH` | Absolute path of the Node executable the desktop app uses for approve/revoke |
-| `AUSPEX_MAX_ROWS` | 500 | Row cap for `query` |
-| `AUSPEX_EXPORT_MAX_ROWS` | 100000 | Row cap for `export_csv` |
-| `AUSPEX_EXPORT_MAX_BYTES` | 104857600 | Size cap for one `export_csv` file (100 MB), BOM and header included |
-| `AUSPEX_EXPORT_MAX_MS` | 300000 | Total time cap for one `export_csv` (5 min), on top of the per-statement timeout; covers fetching, writing and closing the file (see CSV export budget) |
-| `AUSPEX_STATEMENT_TIMEOUT_MS` | 30000 | Default statement timeout per call |
-| `AUSPEX_MAX_STATEMENT_TIMEOUT_MS` | 300000 | Ceiling for the per-call `timeoutSeconds` |
-| `AUSPEX_MAX_STATEMENT_TIMEOUT_MS_<NAME>` | global ceiling | Ceiling for one profile, e.g. `_EXAMPLE=120000` |
-| `AUSPEX_MAX_QUERIES_PER_MINUTE` | 60 | Query budget: database operations per profile in any sliding minute, per process (1-10000). One tool call or library call counts once, however many statements it runs; over the budget a call is refused before connecting and the refusal is audited |
-| `AUSPEX_MAX_QUERIES_PER_MINUTE_<NAME>` | file value or global | Query budget for one profile, e.g. `_EXAMPLE=30`; overrides `maxQueriesPerMinute` in the profiles file |
-| `AUSPEX_MAX_CELL_CHARS` | 2000 | Long text values are cut in `query` output |
-| `AUSPEX_DATA_DIR` | `<home>` | Base for `exports/` and `logs/` |
-| `AUSPEX_EXPORT_DIR`, `AUSPEX_LOG_DIR` | under data dir | Override each folder |
-| `AUSPEX_VIEWER_PORT` | 4719 | Port of the local viewer |
-| `AUSPEX_LIBRARY_DIR` | `<home>/library` | Report library (`SELECT/`, `EXECUTE/`, `_drafts/`) |
-| `AUSPEX_MEMORY_DIR` | `<home>/memory` | Schema memory, one folder per profile |
-
-Files are kept out of AppData on purpose: MSIX-packaged desktop apps
-(including some AI clients) redirect AppData writes of their child processes
-into a hidden per-package folder.
-
-</details>
-
-**Passwords live in pgpass**, which node-postgres reads automatically:
-`%APPDATA%\postgresql\pgpass.conf` on Windows, `~/.pgpass` (mode 600)
-elsewhere. Line format: `host:port:database:user:password`.
-
-If the server is behind a VPN, calls fail fast (10 s connect timeout) with a
-hint to check the VPN.
-
-## 🐘 Recommended database role
-
-The role is named `Auspex` with a capital A, so in SQL it must always be
-written in double quotes: `"Auspex"`. Connection strings and pgpass use the
-plain name `Auspex`.
-
-```sql
-CREATE ROLE "Auspex" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT CONNECTION LIMIT 3;
-ALTER ROLE "Auspex" SET default_transaction_read_only = on;
-ALTER ROLE "Auspex" SET statement_timeout = '30s';
-ALTER ROLE "Auspex" SET idle_in_transaction_session_timeout = '60s';
-GRANT CONNECT ON DATABASE <db> TO "Auspex";
-GRANT USAGE ON SCHEMA <schema> TO "Auspex";
-GRANT SELECT ON ALL TABLES IN SCHEMA <schema> TO "Auspex";  -- or a column/view subset for personal data
-```
-
-> [!CAUTION]
-> If a schema grants `CREATE` to `PUBLIC`, the role inherits it. Writes are
-> still blocked by the read-only transaction, but check `PUBLIC` grants,
-> `EXECUTE` on `SECURITY DEFINER` functions that write, and `pg_hba.conf`
-> rules for the role. Prefer a read replica for heavy analysis.
-
-The scripts in [`scripts/`](scripts) do all of this with a
-`BEGIN → DEFINE → PROCESS → MATCH → CORRECT/FAIL → ROLLBACK` step structure, so you can
-review every result before committing.
+| [Safety layers](docs/safety.md) | Each layer in detail, and what the audit log records |
+| [Tools](docs/tools.md) | All tools, CSV export, batch exploration, long queries, errors |
+| [Reports and schedules](docs/reports.md) | Report library, approval, presets, date ranges, scheduled runs |
+| [Schema memory](docs/schema-memory.md) | Notes, relations, column importance, meanings from code |
+| [MCP clients, skills and prompts](docs/clients.md) | Setup for each client, bundled skills and prompts |
+| [Viewer and desktop app](docs/viewer.md) | Every tab, table pages, themes, approving reports |
+| [Configuration](docs/configuration.md) | Profiles file, environment variables, recommended role |
+| [Tests](docs/testing.md) | Unit and integration tests, CI |
 
 ## 🧪 Tests
 
@@ -1462,22 +178,6 @@ review every result before committing.
 npm test             # unit tests, no database needed
 npm run test:local   # integration tests against a local PostgreSQL
 ```
-
-The integration tests need a one-time setup with
-[`scripts/local-test-setup.sql`](scripts/local-test-setup.sql) (role `"Auspex"`,
-schema `auspex_test`) plus a `local` profile and a pgpass line. They prove that
-writes are refused by the database itself, even with the SQL guard bypassed.
-[`scripts/local-test-ddl.sql`](scripts/local-test-ddl.sql), run once after it,
-adds the trigger, functions, check, identity/serial/generated columns,
-partitioned and row-level-security tables the catalog tests describe and
-analyzes the new tables; without it those tests are skipped locally (never in
-CI, which runs both scripts).
-
-GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs
-both on every pull request and every push to `main`: the unit tests on Ubuntu
-(Node 20, 22, 24) and Windows (Node 22, 24), and the integration tests against
-a PostgreSQL 16 service container set up with the same script. A separate
-"Desktop build (Windows)" job runs `cargo test` and builds the desktop app.
 
 ## 📄 License
 

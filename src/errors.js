@@ -4,7 +4,7 @@
 // or connection details: only the code, retry hints and the PostgreSQL
 // SQLSTATE (a five-character class code, never data).
 //
-// Codes (README: Errors):
+// Codes (docs/tools.md: Errors):
 //   QUERY_BUDGET_EXCEEDED  per-process query budget used up; retryAfterSeconds
 //   LOCK_BUSY              another Auspex process holds the library/memory lock
 //   ROLE_REJECTED          the profile's role is not read-only
