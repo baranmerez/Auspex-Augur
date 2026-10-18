@@ -117,6 +117,19 @@ test('an old lock from another host (liveness unknown) is taken over by age; a f
   assert.equal(withFileLock(lockPath, () => 'ran', { waitMs: 10000, staleMs: 30000 }), 'ran');
 });
 
+test('a takeover that succeeds after the deadline still gets one create attempt', () => {
+  const dir = tempDir('auspex-lock-late-');
+  const lockPath = path.join(dir, '.lock');
+  // waitMs 0: the deadline has passed before the takeover even starts, as on a
+  // slow disk where the takeover steps outlast waitMs.
+  fs.writeFileSync(lockPath, JSON.stringify({ pid: 2 ** 30, host: os.hostname(), token: '3333333333333333' }));
+  assert.equal(withFileLock(lockPath, () => 'ran', { waitMs: 0 }), 'ran');
+  assert.deepEqual(fs.readdirSync(dir), [], 'lock, marker and aside files are gone');
+  // A fresh lock of a live owner is still busy at once.
+  fs.writeFileSync(lockPath, JSON.stringify({ pid: process.pid, host: os.hostname(), token: '2222222222222222' }));
+  assert.throws(() => withFileLock(lockPath, () => 'never', { waitMs: 0 }), LockBusyError);
+});
+
 test('a second process cannot enter while a live owner is still inside past staleMs (issue #26)', { timeout: 30000 }, () => {
   const dir = tempDir('auspex-lock-live-');
   const lockPath = path.join(dir, '.lock');

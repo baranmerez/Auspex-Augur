@@ -76,7 +76,7 @@ function isStale(snap, staleMs, maxHoldMs) {
 // Retires one stale generation of the lock. Only the process that creates the
 // generation's takeover marker may move it aside, and it re-checks that the
 // lock is still that generation, so a fresh lock taken meanwhile by someone
-// else is never removed.
+// else is never removed. Returns true when it removed the stale generation.
 function takeOver(lockPath, seen, staleMs, maxHoldMs) {
   const marker = `${lockPath}.takeover.${seen.key}`;
   try {
@@ -85,16 +85,18 @@ function takeOver(lockPath, seen, staleMs, maxHoldMs) {
     if (err.code !== 'EEXIST' && !transient.has(err.code)) throw err;
     // A marker left by a taker that died is itself stale.
     if (isStale(snapshot(marker), staleMs, maxHoldMs)) fs.rmSync(marker, { force: true });
-    return;
+    return false;
   }
   try {
     const now = snapshot(lockPath);
-    if (now?.key !== seen.key || !isStale(now, staleMs, maxHoldMs)) return;
+    if (now?.key !== seen.key || !isStale(now, staleMs, maxHoldMs)) return false;
     const aside = `${lockPath}.stale.${process.pid}.${seen.key}`;
     fs.renameSync(lockPath, aside);
     fs.rmSync(aside, { force: true });
+    return true;
   } catch (err) {
     if (err.code !== 'ENOENT' && !transient.has(err.code)) throw err;
+    return false;
   } finally {
     fs.rmSync(marker, { force: true });
   }
@@ -114,7 +116,10 @@ function acquire(lockPath, { waitMs, staleMs, maxHoldMs }) {
     }
     const seen = snapshot(lockPath);
     if (isStale(seen, staleMs, maxHoldMs)) {
-      takeOver(lockPath, seen, staleMs, maxHoldMs);
+      // A takeover that succeeded owes the caller one more create attempt even
+      // when the takeover itself ran past the deadline; if another process wins
+      // that race, the deadline check below ends the wait.
+      if (takeOver(lockPath, seen, staleMs, maxHoldMs)) continue;
       // A takeover that keeps failing (file held open, fresh marker of another
       // taker) must not spin past the deadline.
       if (Date.now() >= deadline) throw new LockBusyError(lockPath);
