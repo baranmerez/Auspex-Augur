@@ -12,12 +12,40 @@ export const isIdentifierColumn = name => {
   return /(^|_)(id|no)$/i.test(n) || /[a-z](Id|No|Codes?)$/.test(n) || /(^|_)codes?(_|$)/i.test(n) || /kod/i.test(n);
 };
 
+// Floating-point columns are summed as before (their values are approximate
+// anyway); integer and numeric columns exactly: every value becomes a BigInt
+// scaled to a common number of fraction digits, so no binary rounding creeps
+// in. The exact total is a number when it has at most 15 significant digits
+// (a double holds it as written), otherwise its decimal text. An exponent no
+// double can hold falls back to the floating-point sum.
+const isFloatType = type => /double|real|float/i.test(String(type ?? ''));
+const floatSum = values => Number(values.reduce((s, v) => s + Number(v), 0).toPrecision(15));
+function decimalSum(values) {
+  const parts = [];
+  for (const v of values) {
+    const m = String(v).trim().match(/^([-+]?)(\d*)(?:\.(\d*))?(?:e([-+]?\d+))?$/i);
+    const exp = Number(m[4] || 0);
+    if (Math.abs(exp) > 400) return floatSum(values);
+    const frac = m[3] || '';
+    let digits = (m[2] || '') + frac, scale = frac.length - exp;
+    if (scale < 0) { digits += '0'.repeat(-scale); scale = 0; }
+    parts.push({ int: BigInt((m[1] === '-' ? '-' : '') + (digits || '0')), scale });
+  }
+  const scale = Math.max(0, ...parts.map(p => p.scale));
+  let sum = 0n;
+  for (const p of parts) sum += p.int * 10n ** BigInt(scale - p.scale);
+  const neg = sum < 0n;
+  let text = (neg ? -sum : sum).toString().padStart(scale + 1, '0');
+  if (scale) text = `${text.slice(0, -scale)}.${text.slice(-scale)}`.replace(/\.?0+$/, '');
+  const exact = (neg ? '-' : '') + text;
+  return text.replace('.', '').replace(/^0+/, '').replace(/0+$/, '').length <= 15 ? Number(exact) : exact;
+}
 export function previewTotals(columns, rows, masked = new Set()) {
   return columns.map((c, i) => {
     if (!isNumericType(c.type) || masked.has(c.name) || isIdentifierColumn(c.name)) return null;
-    let sum = 0, n = 0;
-    for (const row of rows) if (numericText(row[i])) { sum += Number(row[i]); n++; }
-    return n ? Number(sum.toPrecision(15)) : null;
+    const values = rows.map(row => row[i]).filter(numericText);
+    if (!values.length) return null;
+    return isFloatType(c.type) ? floatSum(values) : decimalSum(values);
   });
 }
 

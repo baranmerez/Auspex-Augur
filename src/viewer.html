@@ -2210,7 +2210,9 @@ const maxTrendSeries = 5;
 // null; an estimated row count is not plotted.
 function trendSeries(points) {
   const list = (Array.isArray(points) ? points : []).filter(p => p && typeof p === 'object');
-  const num = v => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  // An exact total too long for a double is stored as decimal text; the chart
+  // only needs its approximate value.
+  const num = v => (typeof v === 'number' && Number.isFinite(v) ? v : typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : null);
   const series = [{ name: t('Rows'), values: list.map(p => num(p.rows)) }];
   const columns = [];
   for (const p of list) for (const x of Array.isArray(p.totals) ? p.totals : []) {

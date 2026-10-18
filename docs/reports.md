@@ -316,6 +316,9 @@ run time, preset, resolved parameters, SQL version, the row count (exact
 from `EXPLAIN ANALYZE` or a complete preview, otherwise `estimatedRows`) and
 the column totals the report page shows under its preview (identifier, code
 and masked columns excluded; kept only when the preview holds every row).
+Integer and numeric columns are summed exactly; a total with more than 15
+significant digits is stored as decimal text so no digit is lost (floating-point
+columns keep a sum rounded to 15 digits).
 Aggregates only, never row values. The newest 520 points are kept. There are
 no threshold alerts yet; the point format (one number per series, totals
 keyed by column) is ready for them.

@@ -63,3 +63,28 @@ test('totals match the report page: identifier, code and masked columns stay out
   assert.deepEqual(columnTotals(fixtures[0][0], fixtures[0][1], ['amount']), [{ column: 'orders', total: 15 }]);
   assert.deepEqual(columnTotals([{ name: '__proto__', type: 'int4' }, { name: '__proto__', type: 'int4' }], [[1, 2]]), [{ column: '__proto__', total: 1 }]);
 });
+
+test('integer and numeric totals are exact in both copies; float columns keep the rounded sum', () => {
+  const template = fs.readFileSync(new URL('../src/reports/template.html', import.meta.url), 'utf8');
+  const block = template.match(/\/\/ preview-helpers:start[\s\S]*?\/\/ preview-helpers:end/)?.[0];
+  const context = vm.createContext({});
+  vm.runInContext(`${block}\nthis.previewTotals = previewTotals;`, context);
+  const amount = [{ name: 'amount', type: 'numeric' }];
+  const cases = [
+    [amount, [['9007199254740993']], ['9007199254740993']],
+    [amount, [['12345678901234.56'], ['0.01']], ['12345678901234.57']],
+    [amount, [['99999999999999.99'], ['-0.99']], [99999999999999]],
+    [amount, [['0.1'], ['0.2']], [0.3]],
+    [amount, [['-5.50'], ['5.5']], [0]],
+    [amount, [['-1.25'], ['0.5'], [null], ['']], [-0.75]],
+    [amount, [['.5'], ['2.'], ['+1e1'], ['1e-3']], [12.501]],
+    [[{ name: 'orders', type: 'int8' }], [['9223372036854775807'], ['1']], ['9223372036854775808']],
+    [[{ name: 'amount', type: 'double precision' }], [[0.1], [0.2]], [0.3]],
+    [amount, [[null]], [null]],
+  ];
+  for (const [cols, rows, expected] of cases) {
+    assert.deepEqual(previewTotals(cols, rows), expected, JSON.stringify(rows));
+    assert.deepEqual(JSON.parse(JSON.stringify(context.previewTotals(cols, rows))), expected, `template copy: ${JSON.stringify(rows)}`);
+  }
+  assert.deepEqual(columnTotals(amount, [['12345678901234.56'], ['0.01']]), [{ column: 'amount', total: '12345678901234.57' }]);
+});
