@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160" role="img" aria-label="Auspex Augur">
+<title>Auspex Augur</title>
+<defs>
+<linearGradient id="bz" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9a6a3c"/><stop offset=".5" stop-color="#6b4526"/><stop offset="1" stop-color="#3f2814"/></linearGradient>
+<radialGradient id="scr" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#0f3a22"/><stop offset=".75" stop-color="#082a17"/><stop offset="1" stop-color="#04180d"/></radialGradient>
+<clipPath id="clip"><circle cx="80" cy="80" r="44"/></clipPath>
+</defs>
+<path d="M70.3 18.8 L72.3 6.4 L87.7 6.4 L89.7 18.8 L102.2 22.1 L110.1 12.4 L123.5 20.1 L119.0 31.8 L128.2 41.0 L139.9 36.5 L147.6 49.9 L137.9 57.8 L141.2 70.3 L153.6 72.3 L153.6 87.7 L141.2 89.7 L137.9 102.2 L147.6 110.1 L139.9 123.5 L128.2 119.0 L119.0 128.2 L123.5 139.9 L110.1 147.6 L102.2 137.9 L89.7 141.2 L87.7 153.6 L72.3 153.6 L70.3 141.2 L57.8 137.9 L49.9 147.6 L36.5 139.9 L41.0 128.2 L31.8 119.0 L20.1 123.5 L12.4 110.1 L22.1 102.2 L18.8 89.7 L6.4 87.7 L6.4 72.3 L18.8 70.3 L22.1 57.8 L12.4 49.9 L20.1 36.5 L31.8 41.0 L41.0 31.8 L36.5 20.1 L49.9 12.4 L57.8 22.1Z" fill="url(#bz)" stroke="#2a1809" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="80" cy="80" r="56" fill="none" stroke="#c28b52" stroke-opacity=".55" stroke-width="1.5"/>
+<circle cx="80" cy="80" r="52" fill="#2a1a0d" stroke="#1a0f06" stroke-width="2"/>
+<g fill="#c28b52"><circle cx="80" cy="14" r="2"/><circle cx="80" cy="146" r="2"/><circle cx="14" cy="80" r="2"/><circle cx="146" cy="80" r="2"/></g>
+<circle cx="80" cy="80" r="46" fill="#4a2f18" stroke="#8a5d33" stroke-width="2"/>
+<circle cx="80" cy="80" r="44" fill="url(#scr)"/>
+<g clip-path="url(#clip)">
+<g fill="none" stroke="#3ddc84" stroke-opacity=".35" stroke-width=".8"><circle cx="80" cy="80" r="14"/><circle cx="80" cy="80" r="28"/><circle cx="80" cy="80" r="42"/><path d="M80 36V124M36 80H124"/></g>
+<g><path d="M80 80 L80 36 A44 44 0 0 0 44.0 54.8 Z" fill="#4dff94" fill-opacity="0.05"/><path d="M80 80 L80 36 A44 44 0 0 0 51.7 46.3 Z" fill="#4dff94" fill-opacity="0.07"/><path d="M80 80 L80 36 A44 44 0 0 0 60.7 40.5 Z" fill="#4dff94" fill-opacity="0.09"/><path d="M80 80 L80 36 A44 44 0 0 0 70.1 37.1 Z" fill="#4dff94" fill-opacity="0.12"/><line x1="80" y1="80" x2="80" y2="36" stroke="#7dffb0" stroke-width="1.6" stroke-linecap="round"/><animateTransform attributeName="transform" type="rotate" from="0 80 80" to="360 80 80" dur="4s" repeatCount="indefinite"/></g>
+<circle cx="108.2" cy="69.7" r="2.6" fill="#3ddc84" opacity=".25"><animate attributeName="opacity" values="1;.25;.25" keyTimes="0;.4;1" dur="4s" begin="0.00s" repeatCount="indefinite"/><animate attributeName="r" values="4.2;2.6;2.6" keyTimes="0;.4;1" dur="4s" begin="0.00s" repeatCount="indefinite"/></circle><circle cx="86.8" cy="98.8" r="2.6" fill="#ffb020" opacity=".25"><animate attributeName="opacity" values="1;.25;.25" keyTimes="0;.4;1" dur="4s" begin="1.78s" repeatCount="indefinite"/><animate attributeName="r" values="4.2;2.6;2.6" keyTimes="0;.4;1" dur="4s" begin="1.78s" repeatCount="indefinite"/></circle><circle cx="46.1" cy="77.0" r="2.6" fill="#ff4d4d" opacity=".25"><animate attributeName="opacity" values="1;.25;.25" keyTimes="0;.4;1" dur="4s" begin="3.06s" repeatCount="indefinite"/><animate attributeName="r" values="4.2;2.6;2.6" keyTimes="0;.4;1" dur="4s" begin="3.06s" repeatCount="indefinite"/></circle>
+</g>
+<circle cx="80" cy="80" r="44" fill="none" stroke="#000" stroke-opacity=".5" stroke-width="1.5"/>
+</svg>

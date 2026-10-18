@@ -1,4 +1,8 @@
 <p align="center">
+  <img src="docs/assets/auspex-logo-animated.svg" alt="Auspex Augur" width="160" height="160">
+</p>
+
+<p align="center">
   <img src="docs/assets/banner.svg" alt="Auspex Augur — read-only PostgreSQL access for AI agents" width="100%">
 </p>
 
