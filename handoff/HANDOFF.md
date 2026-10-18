@@ -219,6 +219,17 @@ has a hole in that schema.
   rows with both layer histories and notes), keys and indexes, triggers
   (stale summary marked), neighbours by FK direction. Reads `graph.json` plus
   the table file through the existing GET routes; no new GET route.
+  Summary view (default on a first visit, choice kept in `auspex.viewer`
+  `tpView`): names only as chips (pk, fk, columns by score with the score-1
+  "+N unused" collapse, triggers with the disabled hook `.off`, functions,
+  reports whose SQL mentions the table, referenced/referencing). The report
+  match (`tpMentions`) reads each report's active SQL once through the existing
+  `GET /api/report` (`tpSqlOfDoc`, 4 at a time, cached by report and hash); it
+  is a name match, not a link. Chip colours are `--sum-*` variables from
+  `themeTokens().summary`; the generator's "Summary palette" stores
+  `palette` (9 groups, optional) on custom themes, exported and imported with
+  them. Rules tab headers link to the table page (`openTablePage` with
+  `{ column }`).
 - The Schema tab reads `graph.json`, which the memory module rebuilds after
   every change, so the viewer and the Rust app contain no relation logic.
 - Scheduled reports: badge with the last scheduled result in the list,
@@ -448,6 +459,7 @@ Merged work:
 - 2026-10-18: Rules tab lists all schema-memory notes with filters and archives an active note with a required reason (`POST /api/memory/archive`, desktop `archive_note` -> `stageCli.js archive-note`, same store logic and lock as `remember`); Schema tab downloads a data dictionary (HTML/Markdown) built from memory only.
 - 2026-10-18: column importance (PR 1): `score_columns` stores 1-5 scores per column in two layers in the table record (`columnScores.<column>.agent` / `.user`, each with a 5-entry history; effective = user when present; `scoredAt`), `scanned-files.json` capped at 20000 entries per root, trigger summaries (`triggerSummaries`, stale when the definition hash changes) and scanned script files (`scanned-files.json`); `describe_table` now records triggers and diffs them (added, dropped, changed, enabled-changed; legacy records without the field report nothing); `table_knowledge` and graph.json carry scores and triggers; skill `auspex-columns` (prompt `columns`). Viewer UI for scores follows in PR 2; the viewer's change text for `trigger-enabled-changed` uses its generic fallback until then.
 - 2026-10-18: column importance (PR 2): table page in the viewer and desktop app (columns ranked by score, keys, triggers, neighbours, breadcrumb) and user scoring from the score chip (`POST /api/memory/column-score`, desktop `score_column` -> `stageCli.js score-column`, user layer only, audited as `score_columns`).
+- 2026-10-18: table page Summary view (chips by group, report mention match, remembered choice), Summary palette in the theme generator (saved, exported and imported with custom themes) and links from the Rules tab to the table page. Next: glass theme and coloured side panels.
 
 Working agreements:
 

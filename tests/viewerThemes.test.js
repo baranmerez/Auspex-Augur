@@ -11,7 +11,7 @@ const block = page.match(/\/\/ themes:start[\s\S]*?\/\/ themes:end/)?.[0];
 function load() {
   assert.ok(block, 'themes block found in viewer.html');
   const context = vm.createContext({});
-  vm.runInContext(`${block}\nObject.assign(this, { themeTokens, themePresets, themeRecord, themeUpsert, themeExport, themeImport, themeSpecOf, themeBgFrom, contrastRatio, hexRgb, themeIdOf });`, context);
+  vm.runInContext(`${block}\nObject.assign(this, { themeTokens, themePresets, themeRecord, themeUpsert, themeExport, themeImport, themeSpecOf, themeBgFrom, contrastRatio, hexRgb, themeIdOf, summaryDefaults, summaryPaletteRecord, summaryGroups, summaryKeys });`, context);
   return context;
 }
 const plain = v => JSON.parse(JSON.stringify(v));
@@ -108,4 +108,86 @@ test('the light/dark slider gives a tinted background', () => {
   assert.equal(themeTokens({ bg: themeBgFrom(10, '#2a78d6'), accent: '#2a78d6' }).base, 'dark');
   assert.equal(themeTokens({ bg: themeBgFrom(95, '#2a78d6'), accent: '#2a78d6' }).base, 'light');
   assert.equal(themeBgFrom('x', 'nope'), '#080808');
+});
+
+// Summary palette (table page, Summary view).
+const sumKeys = ['pk', 'fk', 's5', 's4', 's3', 's2', 's1', 'trigger', 'fn', 'report', 'ref', 'dep', 'off'];
+
+test('summary palette: every theme gives background, line and text for each group, text meets the contrast target', () => {
+  const { themeTokens, themePresets, contrastRatio, hexRgb } = load();
+  const samples = [...themePresets, { bg: '#9a9a9a', accent: '#888888' }, { bg: '#ffffff', accent: '#ffff00' }, { bg: '#3a3a10', accent: '#40ff40' },
+    { bg: '#000000', accent: '#ffd400', contrast: 'high', palette: { pk: '#ffff00', score: '#ffff00', off: '#ffffff' } }];
+  for (const spec of samples) {
+    const r = themeTokens(spec);
+    assert.equal(r.warnings.length, 0, `${spec.bg}: ${JSON.stringify(plain(r.warnings))}`);
+    assert.deepEqual(Object.keys(r.summary).sort(), sumKeys.flatMap(k => [`--sum-${k}`, `--sum-${k}-line`, `--sum-${k}-ink`]).sort());
+    const min = spec.contrast === 'high' ? 7 : 4.5;
+    for (const k of sumKeys) {
+      assert.match(r.summary[`--sum-${k}`], /^#[0-9a-f]{6}$/);
+      const ratio = contrastRatio(hexRgb(r.summary[`--sum-${k}-ink`]), hexRgb(r.summary[`--sum-${k}`]));
+      assert.ok(ratio >= min, `${spec.bg} ${k}: ${ratio.toFixed(2)}`);
+      assert.ok(r.checks.some(c => c.token === `--sum-${k}-ink`), 'checked with the existing contrast check');
+    }
+    // Summary tokens stay out of the tokens that embedded reports receive.
+    assert.ok(Object.keys(r.tokens).every(k => !k.startsWith('--sum-')));
+  }
+});
+
+test('summary palette: the score ramp gets stronger from 1 to 5 and a changed color changes the chips', () => {
+  const { themeTokens, contrastRatio, hexRgb } = load();
+  const base = { bg: '#f4f5f7', accent: '#2a78d6' };
+  const r = themeTokens(base);
+  const away = k => contrastRatio(hexRgb(r.summary[`--sum-${k}`]), hexRgb(r.tokens['--surface']));
+  assert.ok(['s1', 's2', 's3', 's4', 's5'].every((k, i, a) => i === 0 || away(k) >= away(a[i - 1])), 'ramp');
+  const own = themeTokens({ ...base, palette: { fk: '#ff0000' } });
+  assert.notEqual(own.summary['--sum-fk'], r.summary['--sum-fk']);
+  assert.equal(own.summary['--sum-pk'], r.summary['--sum-pk'], 'other groups keep their defaults');
+  // The score base follows the accent until the palette sets it.
+  assert.notEqual(themeTokens({ ...base, accent: '#cc3366' }).summary['--sum-s4'], r.summary['--sum-s4']);
+  assert.equal(themeTokens({ ...base, accent: '#cc3366', palette: { score: '#2a78d6' } }).summary['--sum-s4'], r.summary['--sum-s4']);
+});
+
+test('summary palette: records keep only known groups with valid colors', () => {
+  const { summaryPaletteRecord, themeRecord, summaryGroups } = load();
+  assert.deepEqual(plain(summaryPaletteRecord({ pk: '#ABC', fk: 'red', nope: '#000', __proto__: { off: '#111111' }, off: 'x' })), { pk: '#aabbcc' });
+  assert.deepEqual(plain(summaryPaletteRecord(null)), {});
+  assert.equal(summaryGroups.length, 9);
+  const rec = themeRecord({ name: 'Example', bg: '#000', accent: '#fff', palette: { pk: '#123456' } });
+  assert.deepEqual(plain(rec.palette), { pk: '#123456' });
+  assert.ok(!('palette' in themeRecord({ name: 'Example', bg: '#000', accent: '#fff', palette: { pk: 'nope' } })), 'an empty palette is not stored');
+});
+
+test('summary palette: saved with custom themes, exported, imported, defaults for the rest', () => {
+  const { themeUpsert, themeExport, themeImport, themeSpecOf, themeTokens, themePresets, summaryDefaults } = load();
+  let list = themeUpsert([], { name: 'Example night', bg: '#101820', accent: '#4c8dff', palette: { trigger: '#ff8800', report: '#00cc99' } });
+  list = themeUpsert(list, { name: 'Test day', bg: '#fafafa', accent: '#2a78d6' });
+  const text = themeExport(list);
+  const parsed = JSON.parse(text);
+  assert.deepEqual(parsed.themes[0].palette, { trigger: '#ff8800', report: '#00cc99' });
+  assert.ok(!('palette' in parsed.themes[1]), 'a theme without a palette exports none');
+  const back = themeImport(text, []);
+  assert.deepEqual([back.added, back.skipped], [2, 0]);
+  assert.deepEqual(plain(back.list), plain(list), 'round trip');
+  const night = themeSpecOf(back.list[0].id, back.list);
+  const r = themeTokens(night);
+  const defaults = themeTokens({ bg: night.bg, accent: night.accent });
+  assert.notEqual(r.summary['--sum-trigger'], defaults.summary['--sum-trigger']);
+  assert.equal(r.summary['--sum-pk'], defaults.summary['--sum-pk'], 'missing groups use the defaults');
+  // Invalid palette entries in an import are dropped, the theme is still imported.
+  const odd = themeImport(JSON.stringify({ name: 'Odd', bg: '#000', accent: '#fff', palette: { pk: 'nope', fk: '#00f', x: 1 } }), []);
+  assert.deepEqual(plain(odd.list[0].palette), { fk: '#0000ff' });
+  // Every ready theme has a full palette from the defaults.
+  for (const p of themePresets) assert.equal(Object.keys(themeTokens(p).summary).length, sumKeys.length * 3, p.id);
+  assert.equal(summaryDefaults('#2a78d6').score, '#2a78d6');
+});
+
+test('summary palette: the generator has its section, a reset and a preview; chips use CSS variables only', () => {
+  assert.match(page, /t\('Summary palette'\)/);
+  assert.match(page, /t\('Reset palette'\)/);
+  assert.match(page, /'Summary palette': 'Özet paleti'/);
+  const css = page.match(/\.sum-chip\.c-pk[\s\S]*?\.sum-chip\.off \{[^}]*\}/)[0];
+  assert.doesNotMatch(css, /#[0-9a-fA-F]{3,6}/, 'no literal colors in the chip styles');
+  // Built-in light, dark and auto set the summary variables too.
+  assert.match(page, /function summaryBuiltIn\(th\)/);
+  assert.match(page, /light-dark\(\$\{light\[k\]\}, \$\{dark\[k\]\}\)/);
 });

@@ -738,6 +738,39 @@
   .tp-pick { border: 1px solid var(--line); border-radius: 8px; margin: 0 0 10px; padding: 6px 10px 8px; display: flex; flex-wrap: wrap; gap: 6px 12px; }
   .tp-pick legend { font-size: 12px; color: var(--text-3); padding: 0 4px; }
   .tp-pick-opt { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; cursor: pointer; }
+  .tp-switch { margin-left: auto; }
+  .rl-link { font: inherit; color: inherit; text-align: left; }
+  .rl-link:hover, .rl-link:focus-visible { color: var(--accent-ink); }
+  .sum { display: grid; gap: 12px; min-width: 0; }
+  .sum-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 12px; align-items: start; }
+  .sum-group { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 10px 12px; min-width: 0; }
+  .sum-group h4 { margin: 0 0 8px; font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: .5px; }
+  .sum-group h4 .muted { text-transform: none; letter-spacing: 0; }
+  .sum-chips { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+  .sum-none { font-size: 12px; }
+  .sum-chip { display: inline-flex; align-items: center; max-width: 100%; border: 1px solid var(--chip-line, var(--line-strong)); border-radius: 999px; padding: 2px 10px;
+    background: var(--chip-bg, var(--surface-2)); color: var(--chip-ink, var(--text)); font: 12px/1.5 var(--mono); overflow-wrap: anywhere; text-align: left; }
+  button.sum-chip:hover { border-color: var(--chip-ink, var(--text)); }
+  button.sum-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .sum-chip.c-pk { --chip-bg: var(--sum-pk); --chip-line: var(--sum-pk-line); --chip-ink: var(--sum-pk-ink); }
+  .sum-chip.c-fk { --chip-bg: var(--sum-fk); --chip-line: var(--sum-fk-line); --chip-ink: var(--sum-fk-ink); }
+  .sum-chip.c-s5 { --chip-bg: var(--sum-s5); --chip-line: var(--sum-s5-line); --chip-ink: var(--sum-s5-ink); font-weight: 650; }
+  .sum-chip.c-s4 { --chip-bg: var(--sum-s4); --chip-line: var(--sum-s4-line); --chip-ink: var(--sum-s4-ink); }
+  .sum-chip.c-s3 { --chip-bg: var(--sum-s3); --chip-line: var(--sum-s3-line); --chip-ink: var(--sum-s3-ink); }
+  .sum-chip.c-s2 { --chip-bg: var(--sum-s2); --chip-line: var(--sum-s2-line); --chip-ink: var(--sum-s2-ink); }
+  .sum-chip.c-s1, .sum-chip.c-unused { --chip-bg: var(--sum-s1); --chip-line: var(--sum-s1-line); --chip-ink: var(--sum-s1-ink); }
+  .sum-chip.c-unused { border-style: dashed; font-family: inherit; }
+  .sum-chip.c-s0 { --chip-bg: transparent; --chip-line: var(--line-strong); --chip-ink: var(--text-2); border-style: dashed; }
+  .sum-chip.c-trigger { --chip-bg: var(--sum-trigger); --chip-line: var(--sum-trigger-line); --chip-ink: var(--sum-trigger-ink); }
+  .sum-chip.c-fn { --chip-bg: var(--sum-fn); --chip-line: var(--sum-fn-line); --chip-ink: var(--sum-fn-ink); }
+  .sum-chip.c-report { --chip-bg: var(--sum-report); --chip-line: var(--sum-report-line); --chip-ink: var(--sum-report-ink); font-family: inherit; }
+  .sum-chip.c-ref { --chip-bg: var(--sum-ref); --chip-line: var(--sum-ref-line); --chip-ink: var(--sum-ref-ink); }
+  .sum-chip.c-dep { --chip-bg: var(--sum-dep); --chip-line: var(--sum-dep-line); --chip-ink: var(--sum-dep-ink); }
+  .sum-chip.off { --chip-bg: var(--sum-off); --chip-line: var(--sum-off-line); --chip-ink: var(--sum-off-ink); text-decoration: line-through; }
+  .th-pal { margin-top: 8px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+  .th-pal summary { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--text-2); }
+  .th-pal .th-gen { margin-top: 8px; }
+  .th-pal .sum-chips { margin-top: 8px; }
   .dlg .dlg-status { min-height: 18px; font-size: 13px; color: var(--critical); margin: 0 0 10px; overflow-wrap: anywhere; }
   .dlg-actions .grow { flex: 1; }
   .mem-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
@@ -1186,7 +1219,7 @@ const state = {
   memSchema: '', memErAll: false, memPos: new Map(), schemaKey: null,
 };
 try { Object.assign(state, JSON.parse(localStorage.getItem('auspex.viewer') || '{}'), { all: [], seen: new Set(), firstLoad: true, open: null, reports: null, reportDoc: null, memory: null, memView: null, memPos: new Map() }); } catch {}
-const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy, memHideFaint: state.memHideFaint, memGraph3d: state.memGraph3d, memGraphSoft: state.memGraphSoft, memExpand: state.memExpand, repListCollapsed: state.repListCollapsed, repTreeOpen: state.repTreeOpen, repFavOpen: state.repFavOpen, repRecentOpen: state.repRecentOpen, sqlWrap: state.sqlWrap, perfOpen: state.perfOpen })); } catch {} };
+const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy, memHideFaint: state.memHideFaint, memGraph3d: state.memGraph3d, memGraphSoft: state.memGraphSoft, memExpand: state.memExpand, repListCollapsed: state.repListCollapsed, repTreeOpen: state.repTreeOpen, repFavOpen: state.repFavOpen, repRecentOpen: state.repRecentOpen, sqlWrap: state.sqlWrap, perfOpen: state.perfOpen, tpView: state.tpView })); } catch {} };
 
 // In the Tauri desktop app the same routes are served by the Rust `api` command.
 const tauriCore = window.__TAURI__?.core;
@@ -4160,8 +4193,9 @@ function ruleCard(n) {
 const ruleCountText = c => [['rule', '{n} rule', '{n} rules'], ['observation', '{n} observation', '{n} observations'], ['inference', '{n} inference', '{n} inferences'], ['archived', '{n} archived', '{n} archived']]
   .filter(([k]) => c[k]).map(([k, one, many]) => t(c[k] === 1 ? one : many, { n: fmt(c[k]) })).join(' · ');
 function ruleGroup(g) {
-  return [h('div', { class: 'rl-table' }, h('h4', {}, g.key || t('Database-wide')), h('span', { class: 'cnt' }, ruleCountText(ruleCounts(g.notes)))),
-    g.columns.map(c => [c.column || g.key ? h('div', { class: 'rl-col' }, c.column || t('(table)')) : null, c.notes.map(ruleCard)])];
+  const open = column => () => openTablePage(state.db, g.key, column ? { column } : {});
+  return [h('div', { class: 'rl-table' }, h('h4', {}, g.key ? h('button', { type: 'button', class: 'tp-link rl-link', title: t('Open table page'), onclick: open() }, g.key) : t('Database-wide')), h('span', { class: 'cnt' }, ruleCountText(ruleCounts(g.notes)))),
+    g.columns.map(c => [c.column || g.key ? h('div', { class: 'rl-col' }, c.column && g.key ? h('button', { type: 'button', class: 'tp-link rl-link', title: t('Open table page'), onclick: open(c.column) }, c.column) : c.column || t('(table)')) : null, c.notes.map(ruleCard)])];
 }
 
 function renderRules() {
@@ -4529,7 +4563,8 @@ function tpHeader(model, ctx) {
       h('span', { class: 'badge ' + model.state }, t({ explored: 'explored', seen: 'seen in a plan', unexplored: 'not explored' }[model.state] || model.state)),
       model.kind ? h('span', { class: 'muted' }, model.kind) : null,
       changes.length ? h('span', { class: 'chg-badge', title: changes.map(changeLabel).join('\n') }, h('span', { class: 'dot' }),
-        t(changes.length === 1 ? '1 change at the last describe' : '{n} changes at the last describe', { n: fmt(changes.length) })) : null),
+        t(changes.length === 1 ? '1 change at the last describe' : '{n} changes at the last describe', { n: fmt(changes.length) })) : null,
+      tpViewSwitch(ctx)),
     model.comment ? h('p', { class: 'tp-comment' }, model.comment) : null,
     h('div', { class: 'tp-facts' }, facts.map(([k, v, title]) => h('span', { title: title ?? null }, h('b', {}, v), ' ', k))));
 }
@@ -4546,7 +4581,90 @@ function tpLoadError(id, message, trail, ctx) {
       t('The table file of {id} could not be loaded: {m}', { id, m: message }), ' ',
       h('button', { type: 'button', class: 'icon-btn sm', onclick: ctx.onRetry }, t('Retry')))));
 }
+// ----- Summary view: names only, as coloured chips -----
+// A simple name match, not a hard link: comments are dropped, double quotes
+// ignored, case ignored. Schema-qualified (schema.table) and bare names match;
+// a bare name does not match after another schema ("other.orders"), and a
+// longer name that shares the prefix or suffix ("orders_archive") never does.
+const tpNameChar = '[\\p{L}\\p{N}_$]';
+const tpEsc = v => String(v).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function tpMentions(sql, schema, table) {
+  if (typeof sql !== 'string' || !table) return false;
+  const text = sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ').replace(/"/g, '');
+  const name = tpEsc(table), tail = `(?!${tpNameChar})`;
+  const qualified = schema ? `(?<!${tpNameChar})${tpEsc(schema)}\\s*\\.\\s*${name}${tail}` : null;
+  const bare = `(?<![.\\p{L}\\p{N}_$])${name}${tail}`;
+  return new RegExp(qualified ? `${qualified}|${bare}` : bare, 'iu').test(text);
+}
+// The SQL of a /api/report document: the content of a plain report, the active
+// version embedded in the data of an HTML report; null when neither is there.
+function tpSqlOfDoc(doc) {
+  if (!doc || typeof doc.content !== 'string') return null;
+  if (doc.kind === 'sql') return doc.content;
+  const m = /<script id="auspex-report" type="application\/json">([\s\S]*?)<\/script>/.exec(doc.content);
+  if (!m) return null;
+  try {
+    const r = JSON.parse(m[1])?.report;
+    const versions = Array.isArray(r?.sqlVersions) ? r.sqlVersions : [];
+    const v = versions.find(x => x.hash === r?.activeHash) || versions.at(-1);
+    return typeof v?.sql === 'string' ? v.sql : null;
+  } catch { return null; }
+}
+// reports: { items: [{ id, title, sql }], pending } (sql null while it loads).
+function tpSummaryModel(model, reports) {
+  const uniq = list => [...new Set(list)];
+  const items = Array.isArray(reports?.items) ? reports.items : [];
+  return {
+    primary: uniq(model.keys.primary.flatMap(c => c.columns)),
+    foreign: model.keys.outgoing.map(f => ({ id: f.id, columns: f.columns, refColumns: f.refColumns, label: `${f.columns.join(', ')} → ${f.id}` })),
+    columns: model.columns.filter(c => c.score !== 1),
+    unused: model.columns.filter(c => c.score === 1),
+    triggers: model.triggers.map(tr => ({ name: tr.name, disabled: tr.enabled === 'disabled' })),
+    functions: uniq(model.triggers.map(tr => tr.function).filter(Boolean)),
+    reports: items.filter(r => tpMentions(r.sql, model.schema, model.table)).map(r => ({ id: r.id, title: r.title })).sort((a, b) => String(a.title).localeCompare(String(b.title), undefined, { sensitivity: 'base' }) || tpCmp(a.id, b.id)),
+    pending: reports?.pending ?? 0,
+    refs: model.neighbours.refs.map(n => n.id),
+    deps: model.neighbours.deps.map(n => n.id),
+  };
+}
+// One chip: a button when it does something, a plain span otherwise.
+function tpChip(kind, label, { onclick, title, off, expanded } = {}) {
+  const attrs = { class: `sum-chip c-${kind}${off ? ' off' : ''}`, title: title ?? null, 'data-state': off ? 'disabled' : null };
+  return onclick ? h('button', { ...attrs, type: 'button', 'aria-expanded': expanded === undefined ? null : String(expanded), onclick }, label) : h('span', attrs, label);
+}
+function tpSummary(model, sum, ctx) {
+  const group = (title, hint, chips, empty) => h('section', { class: 'sum-group', 'aria-label': t(title) },
+    h('h4', {}, t(title), hint ? h('span', { class: 'muted' }, ' ', hint) : null),
+    chips.length ? h('div', { class: 'sum-chips' }, chips) : h('div', { class: 'muted sum-none' }, empty ?? t('None known.')));
+  const colChip = (name, score, type) => tpChip(score ? `s${score}` : 's0', name, { onclick: () => ctx.onColumn(name), title: [tpScoreLabel(score), type].filter(Boolean).join(' · ') });
+  const col = c => colChip(c.name, c.score, c.type);
+  const byName = name => { const c = model.columns.find(x => x.name === name); return colChip(name, c?.score ?? null, c?.type); };
+  const open = !!ctx.unusedOpen;
+  const columnChips = [sum.columns.map(col),
+    sum.unused.length ? tpChip('unused', open ? t('hide {n} unused', { n: fmt(sum.unused.length) }) : t('+{n} unused', { n: fmt(sum.unused.length) }), { onclick: () => ctx.onUnused(!open), expanded: open, title: t('Columns scored 1: they appear in no SQL') }) : null,
+    open ? sum.unused.map(col) : null];
+  const tableChip = (kind, id) => tpChip(kind, id, { onclick: () => ctx.onOpen(id) });
+  return h('div', { class: 'sum', role: 'region', 'aria-label': t('Summary') },
+    !model.described ? h('div', { class: 'tp-empty sm' }, h('b', {}, t('Not described yet')),
+      h('p', {}, t('Ask your agent to run describe_table on {id}; it reads the catalog only and records the columns, keys, indexes and triggers.', { id: model.id }))) : null,
+    h('div', { class: 'sum-grid' },
+      group('Primary key', null, sum.primary.map(byName)),
+      group('Foreign keys', null, sum.foreign.map(f => tpChip('fk', f.label, { onclick: () => ctx.onOpen(f.id), title: `${f.columns.join(', ')} → ${f.id}.${f.refColumns.join(', ')}` }))),
+      group('Columns by score', model.scored ? null : t('not scored'), columnChips, model.described ? t('None known.') : t('Not described yet')),
+      group('Triggers', null, sum.triggers.map(tr => tpChip('trigger', tr.name, { off: tr.disabled, title: tr.disabled ? t('disabled') : null }))),
+      group('Trigger functions', null, sum.functions.map(f => tpChip('fn', f))),
+      group('Reports', t('Mentioned in SQL'), [sum.reports.map(r => tpChip('report', r.title, { onclick: () => ctx.onReport(r.id), title: t('Open on the Reports tab') })),
+        sum.pending ? h('span', { class: 'muted sum-none', role: 'status' }, t('{n} still loading', { n: fmt(sum.pending) })) : null].flat().filter(Boolean),
+      t('No report mentions this table.')),
+      group('Referenced tables', t('(this table points to them)'), sum.refs.map(id => tableChip('ref', id))),
+      group('Referencing tables', t('(they point to this table)'), sum.deps.map(id => tableChip('dep', id)))));
+}
+// The page's own choice, else the remembered one, else Summary (first visit).
+const tpViewChoice = (own, saved) => ((own ?? saved) === 'detail' ? 'detail' : 'summary');
+const tpViewSwitch = ctx => (ctx.onView ? h('div', { class: 'seg tp-switch', role: 'group', 'aria-label': t('Table view') },
+  [['detail', t('Detailed')], ['summary', t('Summary')]].map(([v, label]) => h('button', { type: 'button', class: ctx.view === v ? 'on' : '', 'aria-pressed': String(ctx.view === v), onclick: () => ctx.onView(v) }, label))) : null);
 function tablePageView(model, trail, ctx) {
+  if (ctx.view === 'summary') return h('div', { class: 'tp' }, tpCrumbs(trail, ctx), tpHeader(model, ctx), tpSummary(model, tpSummaryModel(model, ctx.reports), ctx));
   return h('div', { class: 'tp' }, tpCrumbs(trail, ctx), tpHeader(model, ctx),
     h('div', { class: 'tp-body' },
       h('div', { class: 'tp-main' }, tpColumns(model, ctx), tpKeys(model, ctx), tpTriggers(model)),
@@ -4587,6 +4705,11 @@ const tablePageTr = {
   '1 change at the last describe': 'son tanımlamada 1 değişiklik', '{n} changes at the last describe': 'son tanımlamada {n} değişiklik',
   'The table file of {id} could not be loaded: {m}': '{id} tablo dosyası yüklenemedi: {m}', 'Retry': 'Yeniden dene',
   'Breadcrumb': 'Gezinti yolu', 'Back': 'Geri', 'Schema': 'Şema', 'rule': 'kural', 'observation': 'gözlem', 'inference': 'çıkarım',
+  'Detailed': 'Ayrıntılı', 'Summary': 'Özet', 'Table view': 'Tablo görünümü', 'Columns by score': 'Puana göre kolonlar', 'Reports': 'Raporlar',
+  'Mentioned in SQL': 'SQL\'inde geçiyor', 'Referenced tables': 'Bağlı olduğu', 'Referencing tables': 'Ona bağlı olan', 'Trigger functions': 'Trigger fonksiyonları',
+  'Foreign keys': 'Yabancı anahtarlar', '(this table points to them)': '(bu tablo onlara işaret eder)', '(they point to this table)': '(bunlar bu tabloya işaret eder)',
+  '+{n} unused': '+{n} kullanılmayan', 'hide {n} unused': '{n} kullanılmayanı gizle', 'Columns scored 1: they appear in no SQL': '1 puanlı kolonlar: hiçbir SQL\'de geçmezler',
+  'Open on the Reports tab': 'Raporlar sekmesinde aç', 'No report mentions this table.': 'Bu tabloyu anan rapor yok.', '{n} still loading': '{n} tanesi yükleniyor',
 };
 // table-page:end
 
@@ -4638,15 +4761,61 @@ for (const [k, v] of Object.entries({ ...tablePageTr, ...{
   'Only the user layer changes; the agent score stays. Only local Auspex files change; no database is touched.': 'Yalnızca kullanıcı katmanı değişir; ajan puanı kalır. Yalnızca yerel Auspex dosyaları değişir; hiçbir veritabanına dokunulmaz.',
   'A usage note ("mostly in WHERE") can be given to Claude in chat; it is stored as a rule on the column.': 'Kullanım notu ("çoğunlukla WHERE\'de") sohbette Claude\'a verilebilir; kolona kural olarak kaydedilir.',
   'Remove my score': 'Puanımı kaldır', 'Save': 'Kaydet', 'Saving…': 'Kaydediliyor…', 'Score saved': 'Puan kaydedildi', 'Your score was removed': 'Puanınız kaldırıldı',
+  'Summary palette': 'Özet paleti', 'Reset palette': 'Paleti sıfırla', 'Disabled': 'Kapalı', 'Preview of the summary chips': 'Özet çiplerinin önizlemesi',
   'Choose a score from 1 to 5.': '1 ile 5 arasında bir puan seçin.', 'Current': 'Şu an', 'Score': 'Puan', 'Tables matching the search': 'Aramaya uyan tablolar',
 } })) if (!Object.hasOwn(TR, k)) TR[k] = v;
 const tpRecCache = new Map();
-function openTablePage(db, id) {
+// Report SQL for the "mentioned in SQL" chips: the list has no SQL, so each
+// report of the database is read once through GET /api/report (4 at a time,
+// the active version only) and kept by report and SQL hash. An unreadable
+// report is kept as '' so it is not asked again.
+const tpSqlCache = new Map();
+let tpSqlLoading = false;
+const tpSqlKey = r => `${repKey(r)}|${r.activeHash ?? ''}|${r.updatedAt ?? ''}`;
+function tpReportIndex(db) {
+  const byName = new Map();
+  for (const r of state.reports?.reports || []) {
+    if (r.db !== db || (r.stage !== 'draft' && r.stage !== 'approved')) continue;
+    const k = [r.schema, r.category, r.name].join('|');
+    if (!byName.has(k) || r.stage === 'approved') byName.set(k, r);
+  }
+  const reps = [...byName.values()].slice(0, 400);
+  const items = reps.map(r => ({ id: repKey(r), title: r.title || r.name, sql: tpSqlCache.get(tpSqlKey(r)) ?? null }));
+  return { reps, items, pending: reps.filter(r => !tpSqlCache.has(tpSqlKey(r))).length };
+}
+async function tpLoadReportSql(reps) {
+  if (tpSqlLoading) return;
+  const todo = reps.filter(r => !tpSqlCache.has(tpSqlKey(r)));
+  if (!todo.length) return;
+  tpSqlLoading = true;
+  const worker = async () => {
+    for (let r = todo.shift(); r; r = todo.shift()) {
+      let sql = '';
+      try { sql = tpSqlOfDoc(await getJson('/api/report?' + new URLSearchParams({ stage: r.stage, db: r.db, schema: r.schema, category: r.category, name: r.name }))) ?? ''; } catch {}
+      if (tpSqlCache.size > 1000) tpSqlCache.clear();
+      tpSqlCache.set(tpSqlKey(r), sql);
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);
+  tpSqlLoading = false;
+  state.tablePageKey = null;
+  if (state.tab === 'schema') renderSchema();
+}
+// Opens a report on the Reports tab.
+function openReportFromPage(r) {
+  state.reportSel = repKey(r); state.reportDoc = null; state.reportViewNode = null; state.repTreeRevealed = null;
+  persist();
+  switchTab('reports');
+}
+const tpViewOf = tp => tpViewChoice(tp.view, state.tpView);
+function openTablePage(db, id, opts = {}) {
   if (!db || !id) return;
   if (state.db !== db) setDb(db, { render: false });
   const tp = state.tablePage && state.tablePage.db === db ? state.tablePage : { db, trail: [] };
   const at = tp.trail.indexOf(id);
-  state.tablePage = { db, trail: at >= 0 ? tp.trail.slice(0, at + 1) : [...tp.trail, id].slice(-20), open: null, showAll: false };
+  // A column (from the Rules tab) opens its detailed row.
+  const column = typeof opts.column === 'string' && opts.column ? opts.column : null;
+  state.tablePage = { db, trail: at >= 0 ? tp.trail.slice(0, at + 1) : [...tp.trail, id].slice(-20), open: column, showAll: !!column, ...(column ? { view: 'detail', reveal: column } : {}) };
   state.tablePageKey = null;
   state.schemaKey = null;
   if (state.tab !== 'schema') switchTab('schema'); else renderSchema();
@@ -4690,7 +4859,9 @@ function renderTablePage(view, data) {
       .finally(() => { state.tablePageLoading = null; state.tablePageKey = null; renderSchema(); });
     return;
   }
-  const key = JSON.stringify([tp.db, data.generatedAt, tp.trail, tp.open, tp.showAll, lang, state.scorePending ?? null]);
+  const viewKind = tpViewOf(tp);
+  const index = viewKind === 'summary' ? tpReportIndex(tp.db) : null;
+  const key = JSON.stringify([tp.db, data.generatedAt, tp.trail, tp.open, tp.showAll, lang, state.scorePending ?? null, viewKind, !!tp.unusedOpen, index ? [index.items.length, index.pending] : null]);
   if (state.tablePageKey === key && view.querySelector('.tp')) return;
   state.tablePageKey = key;
   const model = tablePageModel(data, id, recKey ? tpRecCache.get(recKey) : null);
@@ -4699,7 +4870,21 @@ function renderTablePage(view, data) {
     open: tp.open, showAll: tp.showAll, canScore: model.described && !state.scorePending,
     onOpen: next => openTablePage(tp.db, next), onToggle: name => set({ open: name }), onShowAll: v => set({ showAll: v }),
     onScore: c => confirmColumnScore(model, c), ...crumbCtx,
+    view: viewKind, unusedOpen: !!tp.unusedOpen, reports: index,
+    onView: v => { state.tpView = v; persist(); set({ view: v }); },
+    onColumn: name => set({ view: 'detail', open: name, showAll: true, reveal: name }),
+    onUnused: v => set({ unusedOpen: v }),
+    onReport: id => { const r = index?.reps.find(x => repKey(x) === id); if (r) openReportFromPage(r); },
   }));
+  if (index?.pending) tpLoadReportSql(index.reps);
+  if (tp.reveal) {
+    state.tablePage = { ...state.tablePage, reveal: null };
+    requestAnimationFrame(() => {
+      const row = view.querySelector('.tp-col.open');
+      row?.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' });
+      row?.querySelector('.tp-cname')?.focus({ preventScroll: true });
+    });
+  }
 }
 // Schema search: matching tables as links to their table page.
 function memSearchResults(data, q) {
@@ -5151,6 +5336,30 @@ function withContrast(fg, bgs, min) {
   }
   return { color: target, ratio: worst(target), adjusted: true, ok: false };
 }
+// Summary palette (table page, Summary view): one color per group; the score
+// group is one base color that gives the 5-step ramp (s5 strongest, s1 faintest).
+// Chip background, border and text become --sum-<key>, --sum-<key>-line and
+// --sum-<key>-ink; the text is fitted to the contrast target like every other
+// text token. Keys missing from a theme take the defaults (the score base
+// follows the accent).
+const summaryGroups = ['pk', 'fk', 'score', 'trigger', 'fn', 'report', 'ref', 'dep', 'off'];
+const summaryLabels = {
+  pk: 'Primary key', fk: 'Foreign keys', score: 'Columns by score', trigger: 'Triggers', fn: 'Trigger functions',
+  report: 'Reports', ref: 'Referenced tables', dep: 'Referencing tables', off: 'Disabled',
+};
+const summaryKeys = ['pk', 'fk', 's5', 's4', 's3', 's2', 's1', 'trigger', 'fn', 'report', 'ref', 'dep', 'off'];
+const summaryRamp = { s5: 0.5, s4: 0.38, s3: 0.27, s2: 0.17, s1: 0.08 };
+const summaryDefaults = accent => ({
+  pk: '#d4a017', fk: '#7c5cd6', score: rgbHex(hexRgb(accent) || [42, 120, 214]), trigger: '#c2478b', fn: '#1baf7a',
+  report: '#0f9aa8', ref: '#2a78d6', dep: '#d9601f', off: '#8a8f98',
+});
+// Only known groups with valid colors survive (no prototype keys).
+function summaryPaletteRecord(x) {
+  const out = {};
+  if (!x || typeof x !== 'object') return out;
+  for (const k of summaryGroups) { const c = Object.hasOwn(x, k) ? hexRgb(x[k]) : null; if (c) out[k] = rgbHex(c); }
+  return out;
+}
 // spec: { bg, accent, contrast: 'high' | 'normal' } with #rgb or #rrggbb colors.
 // Returns { ok, base: 'light' | 'dark', tokens, checks, warnings } or
 // { ok: false, error } for invalid input.
@@ -5183,6 +5392,23 @@ function themeTokens(spec) {
   const goodInk = strong('--good-ink', hue.good), warnInk = strong('--warn-ink', hue.warn);
   const critical = fit('--critical', hue.critical, [surface, surface2], minText);
   const soft = (c, w) => rgbHex(mixRgb(surface, c, dark ? w * 1.6 : w));
+  const pal = { ...summaryDefaults(spec.accent), ...summaryPaletteRecord(spec.palette) };
+  const summary = {};
+  const chip = (key, color, w, start) => {
+    // A background the text cannot reach the target on is moved toward the surface.
+    let back = surface;
+    for (const f of [1, 0.75, 0.55, 0.4, 0.25]) {
+      back = mixRgb(surface, color, (dark ? w * 1.4 : w) * f);
+      if (withContrast(start, [back], minText).ok) break;
+    }
+    summary[`--sum-${key}`] = rgbHex(back);
+    summary[`--sum-${key}-line`] = rgbHex(mixRgb(surface, color, 0.6));
+    summary[`--sum-${key}-ink`] = rgbHex(fit(`--sum-${key}-ink`, start, [back], minText));
+  };
+  const strongOf = c => (dark ? mixRgb(c, white, 0.55) : mixRgb(c, black, 0.45));
+  for (const k of ['pk', 'fk', 'trigger', 'fn', 'report', 'ref', 'dep']) chip(k, hexRgb(pal[k]), 0.16, strongOf(hexRgb(pal[k])));
+  for (const [k, w] of Object.entries(summaryRamp)) chip(k, hexRgb(pal.score), w, ink);
+  chip('off', hexRgb(pal.off), 0.12, mixRgb(ink, surface, 0.35));
   const tokens = {
     '--bg': rgbHex(bg), '--surface': rgbHex(surface), '--surface-2': rgbHex(surface2),
     '--line': rgbHex(mixRgb(surface, ink, high ? 0.45 : dark ? 0.1 : 0.09)), '--line-strong': rgbHex(mixRgb(surface, ink, high ? 0.7 : dark ? 0.17 : 0.15)),
@@ -5200,7 +5426,7 @@ function themeTokens(spec) {
     '--shadow': dark ? '0 1px 2px rgba(0, 0, 0, .4)' : '0 1px 2px rgba(16, 24, 40, .06), 0 1px 3px rgba(16, 24, 40, .08)',
     '--shadow-lg': dark ? '0 12px 32px rgba(0, 0, 0, .5)' : '0 12px 32px rgba(16, 24, 40, .16)',
   };
-  return { ok: true, base: dark ? 'dark' : 'light', tokens, checks, warnings: checks.filter(c => !c.ok) };
+  return { ok: true, base: dark ? 'dark' : 'light', tokens, summary, checks, warnings: checks.filter(c => !c.ok) };
 }
 // Background for the light/dark slider (0 black ... 100 white), tinted 6 %
 // toward the accent so the surfaces belong to it.
@@ -5215,7 +5441,7 @@ const themePresets = [
   { id: 'contrast', name: 'High contrast', bg: '#000000', accent: '#ffd400', contrast: 'high' },
   { id: 'forest', name: 'Forest', bg: '#0f1d16', accent: '#3fb27f' },
 ];
-// Custom themes are { id, name, bg, accent, contrast }; the id derives from
+// Custom themes are { id, name, bg, accent, contrast, palette? }; the id derives from
 // the name (case-insensitive), so a name is unique.
 function themeIdOf(name) {
   let h = 2166136261;
@@ -5227,7 +5453,8 @@ function themeRecord(x) {
   const name = typeof x.name === 'string' ? x.name.trim().slice(0, 40) : '';
   const bg = hexRgb(x.bg), accent = hexRgb(x.accent);
   if (!name || !bg || !accent) return null;
-  return { id: themeIdOf(name), name, bg: rgbHex(bg), accent: rgbHex(accent), contrast: x.contrast === 'high' ? 'high' : 'normal' };
+  const palette = summaryPaletteRecord(x.palette);
+  return { id: themeIdOf(name), name, bg: rgbHex(bg), accent: rgbHex(accent), contrast: x.contrast === 'high' ? 'high' : 'normal', ...(Object.keys(palette).length ? { palette } : {}) };
 }
 // Adds or replaces (same name) one theme; returns a new list.
 function themeUpsert(list, theme) {
@@ -5235,7 +5462,7 @@ function themeUpsert(list, theme) {
   if (!rec) return list;
   return [...list.filter(x => x.id !== rec.id), rec];
 }
-const themeExport = list => JSON.stringify({ auspexThemes: 1, themes: list.map(({ name, bg, accent, contrast }) => ({ name, bg, accent, contrast })) }, null, 2);
+const themeExport = list => JSON.stringify({ auspexThemes: 1, themes: list.map(({ name, bg, accent, contrast, palette }) => ({ name, bg, accent, contrast, ...(palette && Object.keys(palette).length ? { palette } : {}) })) }, null, 2);
 // Import text: the export format, an array of themes or one theme. Returns
 // { list, added, skipped } or { error } when the text is not JSON.
 function themeImport(text, list) {
@@ -5262,6 +5489,7 @@ try { customThemes = (JSON.parse(localStorage.getItem('auspex.viewer.themes') ||
 const saveCustomThemes = () => { try { localStorage.setItem('auspex.viewer.themes', JSON.stringify(customThemes)); return true; } catch { return false; } };
 // Generator draft while the Theme menu is open: { name, bg, accent, contrast, level }.
 let themeDraft = null;
+let themePalOpen = false;
 let themePreview = false;
 let themeAppliedKeys = [];
 const themeSpecNow = () => (themePreview && themeDraft ? themeDraft : themeSpecOf(state.theme, customThemes));
@@ -5272,6 +5500,12 @@ function themeNow() {
 }
 const themeKey = () => (state.theme || 'auto') + JSON.stringify(themeSpecNow() || '');
 const themeName = th => (th.builtin || themePresets.includes(th) ? t(th.name) : th.name);
+function summaryBuiltIn(th) {
+  const light = themeTokens(themePresets[0]).summary, dark = themeTokens(themePresets[1]).summary;
+  if (th === 'light') return light;
+  if (th === 'dark') return dark;
+  return Object.fromEntries(Object.keys(light).map(k => [k, `light-dark(${light[k]}, ${dark[k]})`]));
+}
 function applyTheme() {
   if (!['auto', 'light', 'dark'].includes(state.theme || 'auto') && !themeSpecOf(state.theme, customThemes)) state.theme = 'auto';
   const th = state.theme || 'auto', root = document.documentElement;
@@ -5284,6 +5518,11 @@ function applyTheme() {
     themeAppliedKeys = Object.keys(res.tokens);
   } else if (th === 'auto') root.removeAttribute('data-theme');
   else root.setAttribute('data-theme', th);
+  // Summary chip colors: the generated theme's own, or the defaults of the
+  // built-in light and dark (auto picks by the system, like the other tokens).
+  const sum = res ? res.summary : summaryBuiltIn(th);
+  for (const [k, v] of Object.entries(sum)) root.style.setProperty(k, v);
+  themeAppliedKeys.push(...Object.keys(sum));
   document.querySelectorAll('#theme button').forEach(b => b.classList.toggle('on', !themePreview && b.dataset.v === th));
   const custom = !themePreview && !['auto', 'light', 'dark'].includes(th);
   $('themeMenuBtn').classList.toggle('on', custom);
@@ -5339,6 +5578,15 @@ function renderThemeMenu() {
     onchange: ev => { themeDraft.accent = ev.target.value; preview(); } });
   const hc = h('input', { type: 'checkbox', onchange: ev => { themeDraft.contrast = ev.target.checked ? 'high' : 'normal'; preview(); } });
   hc.checked = themeDraft.contrast === 'high';
+  const defaults = summaryDefaults(themeDraft.accent);
+  const palIn = k => h('label', {}, h('span', {}, t(summaryLabels[k])), h('input', { type: 'color', value: (themeDraft.palette && themeDraft.palette[k]) || defaults[k], 'aria-label': t(summaryLabels[k]),
+    onchange: ev => { themeDraft.palette = { ...themeDraft.palette, [k]: ev.target.value }; preview(); } }));
+  const sample = res.ok ? summaryKeys.map(k => h('span', { class: 'sum-chip' + (k === 'off' ? ' off' : ''), style: `background:${res.summary[`--sum-${k}`]};border-color:${res.summary[`--sum-${k}-line`]};color:${res.summary[`--sum-${k}-ink`]}` }, k)) : [];
+  const palette = h('details', { class: 'th-pal', open: themePalOpen ? true : null, ontoggle: ev => { themePalOpen = ev.target.open; } },
+    h('summary', {}, t('Summary palette')),
+    h('div', { class: 'th-gen' }, summaryGroups.map(palIn)),
+    h('div', { class: 'sum-chips', role: 'img', 'aria-label': t('Preview of the summary chips') }, sample),
+    h('div', { class: 'th-row' }, h('button', { type: 'button', class: 'icon-btn', onclick: () => { themeDraft.palette = {}; preview(); } }, t('Reset palette'))));
   const nameIn = h('input', { type: 'text', maxlength: 40, value: themeDraft.name, placeholder: t('Theme name'), 'aria-label': t('Theme name'), oninput: ev => { themeDraft.name = ev.target.value; } });
   const msg = h('div', { class: 'th-msg', role: 'status' });
   const io = h('textarea', { rows: 4, spellcheck: 'false', 'aria-label': t('Theme JSON'), placeholder: t('Paste theme JSON here to import') });
@@ -5353,6 +5601,7 @@ function renderThemeMenu() {
       h('label', { class: 'wide' }, h('span', {}, t('Dark ↔ light')), level),
       h('label', {}, h('span', {}, t('Accent')), accIn),
       h('label', { class: 'chk' }, hc, h('span', {}, t('High contrast (7:1)')))),
+    palette,
     h('div', { class: 'th-row' }, themeBadge(res), themePreview ? h('button', { class: 'icon-btn', onclick: () => { themePreview = false; themeChanged(); renderThemeMenu(); } }, t('Stop preview')) : h('button', { class: 'icon-btn', onclick: preview }, t('Preview'))),
     h('div', { class: 'th-row' }, nameIn, h('button', { class: 'icon-btn primary', onclick: () => {
       const rec = themeRecord(themeDraft);

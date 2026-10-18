@@ -986,7 +986,8 @@ Opens a local page at http://127.0.0.1:4719 (port: `AUSPEX_VIEWER_PORT`):
   - columns sorted by effective score, then name: a 5-step single-hue score chip (the accent mixed into the surface, so it follows light, dark and custom themes), name and type, roles as icons with tooltips, the agent's one-line reason and its number of reports; "user 5 · agent 2" when both layers exist. By default only scores 4–5 are listed, with a counter and *Show all columns*; the legend explains the rubric (5 core, 4 frequent, 3 topical, 2 rare, 1 unused). A row expands to the score history of both layers (newest 5 each), the column's notes, its FK target, default and comment
   - keys and structure (primary key, unique and check constraints with definitions, outgoing and incoming foreign keys, indexes), triggers (timing and events, level, enabled, function, WHEN, the agent summary; a stale summary is marked *may be out of date*), and neighbours: tables it references on the left, tables that reference it on the right (linking columns, estimated rows; not explored ones muted), each opening its own page
   - an undescribed table explains that `describe_table` is needed; an unscored table points to the `auspex-columns` skill. Clicking a score chip sets your own score (see below)
-- **Rules** (TR *Kurallar*) — every schema-memory note of the chosen database: rules, observations and inferences with table and column, text, status, confirmed or unconfirmed, created/confirmed/archived dates, and the evidence (figures and SQL) behind a collapsed *Evidence* toggle. Filters: status (active by default, archived, all), kind, table (part of `schema.table`) and text (case-insensitive, Turkish İ/I/ı/i match each other). An active note can be archived with a required reason (see below); adding or confirming notes stays an agent action (`remember`)
+  - *Detailed / Summary* switch (TR *Ayrıntılı / Özet*). A first visit opens **Summary**: names only, as coloured, clickable chips in groups: primary key, foreign keys (`column → table`), columns by effective score (coloured by score; score 1 columns collapse into a *+N unused* chip that expands; unscored columns are dashed), triggers (a disabled one is muted and struck through), trigger functions, reports whose SQL mentions the table (*Mentioned in SQL*, TR *SQL'inde geçiyor*), referenced tables (*Bağlı olduğu*) and referencing tables (*Ona bağlı olan*). A column chip opens its row in the Detailed view, a table chip opens that table's page, a report chip opens the report on the Reports tab. The last choice is remembered in browser storage (the page works without storage). The report match is a simple, case-insensitive name match over the SQL of the database's draft and approved reports (read once each through the existing `GET /api/report`, four at a time); schema-qualified and bare names match, a longer name that shares a prefix (`example.orders` vs `example.orders_archive`) does not. It is a hint, not a hard link
+- **Rules** (TR *Kurallar*) — every schema-memory note of the chosen database: rules, observations and inferences with table and column, text, status, confirmed or unconfirmed, created/confirmed/archived dates, and the evidence (figures and SQL) behind a collapsed *Evidence* toggle. Filters: status (active by default, archived, all), kind, table (part of `schema.table`) and text (case-insensitive, Turkish İ/I/ı/i match each other). An active note can be archived with a required reason (see below); adding or confirming notes stays an agent action (`remember`) The table header and the column sub-header of each group are links: a table opens its table page, a column opens its row in the Detailed view
 - **Profiles** — configured databases with connection details (never passwords) and the latest role check; a `check_profile` that failed shows "unable to assess" with its code, never as a passed check
 
 Scheduled reports (see Scheduled runs): an approved report with a schedule
@@ -1004,7 +1005,15 @@ not show schedules or trends yet.
 The viewer uses the full window width with one page scroll, has an English
 and Turkish interface, and offers ready themes plus a theme generator that
 checks contrast; custom themes are saved in the browser and can be exported
-and imported as JSON.
+and imported as JSON. The generator has a *Summary palette* (TR *Özet paleti*)
+section: one colour for each chip group of the table page Summary (primary
+key, foreign keys, columns by score, triggers, trigger functions, reports,
+referenced, referencing, disabled; the score colour gives the five-step ramp).
+Each chip's text colour is derived and checked with the same contrast check as
+the other text colours. The palette is saved with a custom theme and included in
+its JSON export and import; groups left unset use the defaults, so every ready
+theme has a full palette. The chips use only the CSS variables `--sum-<group>`,
+`--sum-<group>-line` and `--sum-<group>-ink`.
 
 The role colors and lane backgrounds are CSS variables at the top of
 `src/viewer.html` (`--role-ref-1`, `--role-ref-10`, `--role-dep-1`,
