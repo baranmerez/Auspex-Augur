@@ -16,6 +16,8 @@ database statements, and leave the answer in the schema memory.
 2. **Memory before the database.** Call `table_knowledge` for every table you
    already know by name before any database call. It costs no query and
    returns database-wide rules (`databaseNotes`): follow them, do not re-ask.
+   Read `columnScores` and trigger summaries first when present; if absent,
+   point to the `auspex-columns` skill.
 3. **Catalog first, data last.** `search` / `list_tables` to find candidates,
    then batch structure, then batch measurement. Never `count(*)` on a large
    table; use estimated rows.
@@ -37,8 +39,9 @@ database statements, and leave the answer in the schema memory.
 ## Workflow
 
 1. **Profile and memory.** Profile check (rule 1). `table_knowledge` on the
-   tables the user named; read `databaseNotes`, table notes and
-   `unexploredNeighbors`.
+   tables the user named; read `databaseNotes`, table notes,
+   `columnScores`, trigger `summary` (`summaryStale` is a hint, not a fact)
+   and `unexploredNeighbors`. No scores: offer `auspex-columns`.
 2. **Candidates.** `search` with the business word and its likely table-name
    forms (in the languages the schema may use, singular and plural). Filter the list in the
    catalog before describing anything; see
@@ -69,8 +72,8 @@ database statements, and leave the answer in the schema memory.
    [reading-stats.md](references/reading-stats.md). Label each conclusion as
    fact (catalog, comment, rule) or inference (with confidence). Column
    importance by how reports and scripts use the columns is the
-   `auspex-columns` workflow (`score_columns`); its saved scores come back
-   with `table_knowledge`.
+   `auspex-columns` workflow (`score_columns`); its saved scores (effective
+   `score`, roles) come back with `table_knowledge`. Scores are advisory.
 7. **Record.** `remember` what was learned (see Recording below).
 8. **Next.** Name `unexploredNeighbors` and ask whether to explore them;
    after a yes, structure only (`describe_tables`).
