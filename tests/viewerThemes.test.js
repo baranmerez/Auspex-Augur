@@ -545,7 +545,7 @@ test('header brand logo is the app icon as a small PNG data URI', () => {
 
 test('viewer.html never calls window.prompt, confirm or alert (blocked in the desktop app)', () => {
   // Comments may mention them; code may not call them.
-  const code = page.split('\n').map(l => l.replace(/(^|\s)\/\/\s.*$/, '').replace(/\/\*.*?\*\//g, '')).join('\n');
+  const code = page.split(/\r?\n/).map(l => l.replace(/(^|\s)\/\/\s.*$/, '').replace(/\/\*.*?\*\//g, '')).join('\n');
   assert.doesNotMatch(code, /(?<![\w.$])(?:window\.)?(?:prompt|confirm|alert)\s*\(/);
   assert.match(page, /function themeConfirm\(/);
   assert.match(page, /id="themeConfirmDlg"/);
