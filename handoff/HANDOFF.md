@@ -225,6 +225,12 @@ has a hole in that schema.
   rows with both layer histories and notes), keys and indexes, triggers
   (stale summary marked), neighbours by FK direction. Reads `graph.json` plus
   the table file through the existing GET routes; no new GET route.
+  Column tools (both views, presentation only): inline meaning of a confirmed
+  note (`tpMeaning`: code evidence, then rule, then newest), column search
+  (`tpColumnMatches`, `foldText`; the 4-5 filter is ignored while a query is
+  active; `/` focuses it, Esc clears it; the query lives in the page state, not
+  in storage) and the Score/Type group switch (`tpTypeGroup`, catalog types
+  only; kept as `tpGroup` in `auspex.viewer`). Tests: `viewerTableColumns`.
   Summary view (default on a first visit, choice kept in `auspex.viewer`
   `tpView`): names only as chips (pk, fk, columns by score with the score-1
   "+N unused" collapse, triggers with the disabled hook `.off`, functions,
