@@ -44,11 +44,14 @@ test('name, title, category and stage match case-insensitively', () => {
 test('Turkish İ, I, ı and i all match each other', () => {
   const { foldText } = load();
   assert.equal(foldText('İŞLEMLERİ'), foldText('işlemleri'));
+  assert.equal(foldText('işlem'), 'islem', 'diacritics are dropped');
+  assert.equal(foldText('Ödeme'), 'odeme');
+  assert.equal(foldText('ığüşöçİ'), 'igusoci');
   assert.equal(foldText('IRSALIYE'), foldText('ırsalıye'));
   assert.equal(foldText('irsaliye'), foldText('IRSALİYE'));
   assert.deepEqual(pick('işlemleri'), ['order-status-summary']);
   assert.deepEqual(pick('İŞLEMLERİ'), ['order-status-summary']);
-  assert.deepEqual(pick('islemleri'), [], 'ş stays ş');
+  assert.deepEqual(pick('islemleri'), ['order-status-summary'], 'ş matches s (diacritic-insensitive)');
   assert.deepEqual(pick('irsaliye'), ['invoice-match']);
   assert.deepEqual(pick('ırsalıye'), ['invoice-match']);
   assert.deepEqual(pick('İRSALİYE'), ['invoice-match']);

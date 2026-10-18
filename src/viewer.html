@@ -2333,7 +2333,7 @@ async function runStageChange(r, sc, hash) {
 // report-filter:start (tests/viewerReportFilter.test.js runs this block in isolation)
 // Search text folded for matching: case-insensitive, and the Turkish dotted
 // and dotless i (İ, I, ı, i) all match each other.
-const foldText = s => String(s ?? '').replace(/[İIı]/g, 'i').toLowerCase().normalize('NFC');
+const foldText = s => String(s ?? '').replace(/[İIı]/g, 'i').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
 // Every word of the query must occur in the report's name, title, category
 // or stage (its key or its label, e.g. "execute" or "taslak").
 function reportMatches(r, query, stageLabel = '') {
@@ -4440,7 +4440,7 @@ function tablePageModel(data, id, rec) {
   const scores = node?.columnScores && typeof node.columnScores === 'object' ? node.columnScores : (rec?.columnScores ?? null);
   const constraints = described && Array.isArray(rec.constraints) ? rec.constraints : [];
   const pk = new Set(constraints.filter(c => c.type === 'primary key').flatMap(c => c.columns || []));
-  const uniq = new Set(constraints.filter(c => c.type === 'unique').flatMap(c => c.columns || []));
+  const uniq = new Set(constraints.filter(c => c.type === 'unique' && (c.columns || []).length === 1).flatMap(c => c.columns));
   const fkOf = new Map();
   for (const c of constraints.filter(c => c.references)) {
     (c.columns || []).forEach((col, i) => { if (!fkOf.has(col)) fkOf.set(col, { id: `${c.references.schema}.${c.references.table}`, column: (c.references.columns || [])[i] ?? null }); });
@@ -4584,6 +4584,21 @@ function tpColumnRow(c, ctx) {
       h('div', { class: 'tp-src', title: t('Reports and scripts that use the column') }, c.sources === null ? '' : t(c.sources === 1 ? '{n} report' : '{n} reports', { n: fmt(c.sources) }))),
     open ? tpColumnDetail(c, ctx) : null);
 }
+// Draws the page again and gives the search box back its focus, caret and
+// selection (a background redraw must not send the next keys to page shortcuts).
+// pending: a typed value not yet applied (debounce), put back into the new box.
+function tpKeepSearchFocus(doc, redraw, pending) {
+  const el = doc.activeElement;
+  const keep = el && el.id === 'tpSearch' ? { start: el.selectionStart, end: el.selectionEnd, dir: el.selectionDirection } : null;
+  redraw();
+  if (!keep) return;
+  const next = doc.getElementById('tpSearch');
+  if (!next) return;
+  if (typeof pending === 'string') next.value = pending;
+  next.focus();
+  const len = next.value.length;
+  next.setSelectionRange(Math.min(keep.start ?? len, len), Math.min(keep.end ?? len, len), keep.dir || 'none');
+}
 // Search box and group switch above the column list (Detailed and Summary);
 // shown is the N of the counter "N / total".
 function tpColumnTools(model, ctx, shown) {
@@ -4593,7 +4608,7 @@ function tpColumnTools(model, ctx, shown) {
   return h('div', { class: 'tp-tools' },
     h('div', { class: 'tp-search-box' },
       h('input', { type: 'text', id: 'tpSearch', class: 'tp-q', value: q, placeholder: t('Search columns'), 'aria-label': t('Search columns'), autocomplete: 'off', spellcheck: 'false',
-        'aria-keyshortcuts': '/', oninput: ev => ctx.onQuery(ev.target.value),
+        'aria-keyshortcuts': '/', oninput: ev => { if (!ev.isComposing) ctx.onQuery(ev.target.value); }, oncompositionend: ev => ctx.onQuery(ev.target.value),
         onkeydown: ev => { if (ev.key === 'Escape' && ev.target.value) { ev.preventDefault(); ev.stopPropagation(); ctx.onQuery(''); } } }),
       searching ? h('button', { type: 'button', class: 'icon-btn sm tp-q-clear', 'aria-label': t('Clear search'), title: t('Clear search'), onclick: () => ctx.onQuery('') }, '×') : null,
       h('span', { class: 'hint tp-q-count', role: 'status' }, searching ? t('{n} / {all}', { n: fmt(shown), all: fmt(model.columns.length) }) : '')),
@@ -4939,6 +4954,7 @@ for (const [k, v] of Object.entries({ ...tablePageTr, ...{
   'Choose a score from 1 to 5.': '1 ile 5 arasında bir puan seçin.', 'Current': 'Şu an', 'Tables matching the search': 'Aramaya uyan tablolar',
 } })) if (!Object.hasOwn(TR, k)) TR[k] = v;
 const tpRecCache = new Map();
+let tpQTimer = 0, tpQPending = null;
 // Report SQL for the "mentioned in SQL" chips: the list has no SQL, so each
 // report of the database is read once through GET /api/report (4 at a time,
 // the active version only) and kept by report and SQL hash. An unreadable
@@ -5034,17 +5050,18 @@ function renderTablePage(view, data) {
   state.tablePageKey = key;
   const model = tablePageModel(data, id, recKey ? tpRecCache.get(recKey) : null);
   const set = patch => { state.tablePage = { ...state.tablePage, ...patch }; renderSchema(); };
-  put(view, tablePageView(model, tp.trail, {
+  tpKeepSearchFocus(document, () => put(view, tablePageView(model, tp.trail, {
     open: tp.open, showAll: tp.showAll, canScore: model.described && !state.scorePending,
     onOpen: next => openTablePage(tp.db, next), onToggle: name => set({ open: name }), onShowAll: v => set({ showAll: v }),
     onScore: c => confirmColumnScore(model, c), ...crumbCtx,
     view: viewKind, unusedOpen: !!tp.unusedOpen, reports: index,
     group: tpGroupOf(tp), onGroup: v => { state.tpGroup = v; persist(); set({ group: v }); },
     query: tp.q ?? '', onQuery: q => {
-      // The page is drawn again for every change; the search box keeps focus and caret.
-      const had = document.activeElement?.id === 'tpSearch';
-      set({ q });
-      if (had || q) { const el = $('tpSearch'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
+      // Typing is applied after a short pause; clearing at once.
+      clearTimeout(tpQTimer);
+      if (!q) { tpQPending = null; set({ q }); return; }
+      tpQPending = q;
+      tpQTimer = setTimeout(() => { tpQPending = null; set({ q }); }, 100);
     },
     onView: v => { state.tpView = v; persist(); set({ view: v }); },
     onColumn: name => set({ view: 'detail', open: name, showAll: true, reveal: name }),
@@ -5052,7 +5069,7 @@ function renderTablePage(view, data) {
     onMore: (k, v) => set({ moreOpen: { ...tp.moreOpen, [k]: v } }),
     onRetryReports: () => { tpSqlFailed.clear(); state.tablePageKey = null; renderSchema(); },
     onReport: id => { const r = index?.reps.find(x => repKey(x) === id); if (r) openReportFromPage(r); },
-  }));
+  })), tpQPending);
   if (index?.pending) tpLoadReportSql(index.reps);
   if (tp.reveal) {
     state.tablePage = { ...state.tablePage, reveal: null };
