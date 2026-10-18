@@ -123,7 +123,8 @@
      only, never on rows of long lists. "glass-flat" (no backdrop-filter, or
      reduced transparency requested) keeps the panels opaque and the page flat. */
   :root.glass:not(.glass-flat) { --panel-bg: var(--glass-bg); }
-  :root.glass:not(.glass-flat) body { background: var(--page-bg); background-attachment: fixed; min-height: 100vh; }
+  :root.glass:not(.glass-flat) body { background: var(--bg); min-height: 100vh; }
+  :root.glass:not(.glass-flat) body::before { content: ""; position: fixed; inset: 0; z-index: -1; background: var(--page-bg); pointer-events: none; }
   :root.glass:not(.glass-flat) .panel { border-color: var(--glass-line); box-shadow: var(--shadow), inset 0 1px 0 var(--glass-hi);
     -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.5); backdrop-filter: blur(var(--glass-blur)) saturate(1.5); }
   :root.glass :focus-visible { box-shadow: 0 0 0 4px var(--surface); }
@@ -686,6 +687,11 @@
   .tp-refs { --tint-hue: var(--tint-ref-hue, var(--role-ref-1)); } .tp-deps { --tint-hue: var(--tint-dep-hue, var(--role-dep-1)); }
   .tp-refs .panel-h h2 { color: var(--role-ref-1); } .tp-deps .panel-h h2 { color: var(--role-dep-1); }
   :root.glass .tp-side { --tint-pct: 12%; }
+  /* Muted text inside the tinted panels takes the stronger text level (4.5:1 on the tint). */
+  .tp-side { --text-3: var(--text-2); }
+  /* Plain: flat and uncoloured, no tints, no accent borders (still follows the system light or dark). */
+  :root.plain .tp-side { border-top: 1px solid var(--line); background: var(--surface); --text-3: unset; }
+  :root.plain .tp-refs .panel-h h2, :root.plain .tp-deps .panel-h h2 { color: inherit; }
   @media (max-width: 1100px) { .tp-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "main main" "refs deps"; } }
   @media (max-width: 700px) { .tp-body { grid-template-columns: minmax(0, 1fr); grid-template-areas: "main" "refs" "deps"; } }
   .score-chip { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 22px; flex: none; padding: 0; border-radius: 6px;
@@ -5647,13 +5653,14 @@ function applyTheme() {
   // browser has no backdrop-filter or the user prefers reduced transparency.
   const gl = res?.glass || null;
   root.classList.toggle('glass', !!gl);
+  root.classList.toggle('plain', th === 'plain' && !themePreview);
   root.classList.toggle('glass-flat', !!gl && glassFallback(window));
   if (gl) { for (const [k, v] of Object.entries(gl)) root.style.setProperty(k, v); themeAppliedKeys.push(...Object.keys(gl)); }
   document.querySelectorAll('#theme button').forEach(b => b.classList.toggle('on', !themePreview && b.dataset.v === th));
   const custom = !themePreview && !['auto', 'light', 'dark', 'plain'].includes(th);
-  $('themeMenuBtn').classList.toggle('on', custom);
+  $('themeMenuBtn').classList.toggle('on', custom || (th === 'plain' && !themePreview));
   const spec = themeSpecOf(th, customThemes);
-  $('themeMenuName').textContent = custom && spec ? themeName(spec) : t('Theme');
+  $('themeMenuName').textContent = th === 'plain' && !themePreview ? t('Plain') : custom && spec ? themeName(spec) : t('Theme');
 }
 try { matchMedia('(prefers-reduced-transparency: reduce)').addEventListener('change', () => applyTheme()); } catch { /* unsupported query */ }
 function themeChanged() {
@@ -5668,6 +5675,11 @@ function setTheme(id) {
 document.querySelectorAll('#theme button').forEach(b => b.addEventListener('click', () => setTheme(b.dataset.v)));
 
 function themeSwatch(spec) {
+  if (spec.id === 'plain') {
+    const l = themeTokens(themePresets[0]).tokens, d = themeTokens(themePresets[1]).tokens;
+    return h('span', { class: 'th-sw', style: `background:linear-gradient(90deg, ${l['--surface']} 50%, ${d['--surface']} 50%);border-color:${l['--line-strong']}` },
+      h('i', { style: `background:${l['--text']}` }), h('i', { style: `background:${d['--text']};outline:1px solid ${l['--line-strong']}` }));
+  }
   const res = themeTokens(spec);
   const tk = res.ok ? res.tokens : {};
   return h('span', { class: 'th-sw', style: `background:${tk['--surface']};border-color:${tk['--line-strong']}` },

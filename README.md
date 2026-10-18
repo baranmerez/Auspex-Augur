@@ -1023,10 +1023,11 @@ against the panel at its opacity over every backdrop colour. When the browser
 has no `backdrop-filter` or you prefer reduced transparency
 (`prefers-reduced-transparency`), the panels stay opaque and the page
 background flat (class `glass-flat` on `<html>`). *Plain* (TR *Sade*) is the
-flat look of the default kept as an explicit choice; the default theme is
-unchanged. On the table page the left *references* and right *referenced by*
-panels have their own tinted surface and accent (from `--role-ref-*` and
-`--role-dep-*`) in every theme (subtle in Plain), the centre stays neutral,
+flat, uncoloured look of the default kept as an explicit choice (no tints, no
+accent borders, no glass; it still follows the system light or dark); the
+default palette is unchanged. On the table page the left *references* and right
+*referenced by* panels have their own tinted surface and accent (from
+`--role-ref-*` and `--role-dep-*`) in every theme except Plain, the centre stays neutral,
 and column and table names are set heavier than types and meta text. The
 generator can switch *Glass look* on, tune blur (0-40 px) and opacity
 (20-95 %) and pick the two panel tints; they are saved with a custom theme and

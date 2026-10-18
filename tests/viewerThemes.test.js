@@ -234,6 +234,35 @@ test('glass presets: light and dark variants load and pass the contrast check on
   assert.equal(themeTokens({ bg: '#e8ecf7', accent: '#4f5fe0' }).glass, null);
 });
 
+test('built-in light and dark: text on the tinted side panels reaches 4.5:1', () => {
+  const { contrastRatio, hexRgb } = load();
+  const css = page.match(/<style>[\s\S]*?<\/style>/)[0];
+  const pick = (block, name) => block.match(new RegExp(name + ': (#[0-9a-f]{6})', 'i'))[1];
+  const lightRoot = css.match(/:root \{[\s\S]*?\n  \}/)[0], darkRoot = css.match(/:root\[data-theme="dark"\] \{[\s\S]*?\n  \}/)[0];
+  const pair = (name, i) => css.match(new RegExp(name + ': light-dark\\((#[0-9a-f]{6}), (#[0-9a-f]{6})\\)'))[i + 1];
+  const mix = (a, b, w) => a.map((x, i) => x + (b[i] - x) * w);
+  assert.ok(css.includes('.tp-side { --text-3: var(--text-2); }') || css.includes('--text-3: var(--text-2);'));
+  [[lightRoot, 0], [darkRoot, 1]].forEach(([block, i]) => {
+    const surface = hexRgb(pick(block, '--surface'));
+    for (const pct of [0.07, 0.12]) for (const role of ['--role-ref-1', '--role-dep-1']) {
+      const hue = hexRgb(pair(role, i)), tint = mix(surface, hue, pct);
+      // Hints take --text-2 inside the tinted panels; --text and the role heading colors sit there too.
+      for (const fg of [pick(block, '--text'), pick(block, '--text-2'), pair(role, i)]) {
+        assert.ok(contrastRatio(hexRgb(fg), tint) >= 4.5, `${i ? 'dark' : 'light'} ${role} ${pct} ${fg}`);
+      }
+    }
+  });
+});
+
+test('plain is a built-in choice, flat and uncoloured, with a two-mode swatch', () => {
+  assert.match(page, /:root\.plain \.tp-side \{[^}]*border-top: 1px solid var\(--line\)/);
+  assert.ok(page.includes("root.classList.toggle('plain', th === 'plain' && !themePreview)"));
+  assert.ok(page.includes("t('Plain') : custom && spec"));
+  assert.ok(page.includes("if (spec.id === 'plain')"));
+  assert.ok(page.includes('body::before { content: ""; position: fixed; inset: 0; z-index: -1; background: var(--page-bg)'));
+  assert.ok(!page.includes('background-attachment: fixed'));
+});
+
 test('plain is a built-in choice and has no glass', () => {
   const { themePresets, themeTokens } = load();
   const plainSpec = themePresets.find(p => p.id === 'plain');
