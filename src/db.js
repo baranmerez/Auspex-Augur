@@ -42,6 +42,22 @@ export class QueryBudgetError extends Error {
   }
 }
 
+// node-postgres fills every connection setting the URL leaves out from a PG*
+// environment variable, and reads some that a URL cannot override at all:
+// PGOPTIONS (session settings such as -c search_path), PGREPLICATION,
+// PGCLIENT_ENCODING, PGBINARY and PGPASSWORD (a password outside pgpass).
+// Auspex connects only to what the profile URL says, so these are removed
+// from the process environment before a pool is created. PGPASSFILE (where
+// pgpass lives) and the PGSSL* settings stay. Returns the names it removed.
+export const ignoredLibpqEnv = ['PGHOST', 'PGHOSTADDR', 'PGPORT', 'PGDATABASE', 'PGUSER', 'PGPASSWORD',
+  'PGOPTIONS', 'PGREPLICATION', 'PGCLIENT_ENCODING', 'PGBINARY'];
+
+export function clearLibpqEnv(env = process.env) {
+  const removed = ignoredLibpqEnv.filter(name => env[name] !== undefined);
+  for (const name of removed) delete env[name];
+  return removed;
+}
+
 export class ReadOnlyDatabase {
   // Every public operation is written to the audit log here, so database reads
   // are recorded whether they come from the MCP server or from a script.
@@ -160,6 +176,8 @@ export class ReadOnlyDatabase {
   pool(name) {
     let pool = this.pools.get(name);
     if (!pool) {
+      const removed = clearLibpqEnv();
+      if (removed.length) process.stderr.write(`Auspex ignores ${removed.join(', ')} from the environment; the profile URL alone decides where it connects.\n`);
       pool = new pg.Pool({
         connectionString: this.config.profiles.get(name),
         max: 2,
