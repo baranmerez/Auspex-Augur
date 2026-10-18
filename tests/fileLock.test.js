@@ -130,6 +130,24 @@ test('a takeover that succeeds after the deadline still gets one create attempt'
   assert.throws(() => withFileLock(lockPath, () => 'never', { waitMs: 0 }), LockBusyError);
 });
 
+test('a takeover whose aside file cannot be deleted still frees the lock', () => {
+  const dir = tempDir('auspex-lock-aside-');
+  const lockPath = path.join(dir, '.lock');
+  fs.writeFileSync(lockPath, JSON.stringify({ pid: 2 ** 30, host: os.hostname(), token: '1111111111111111' }));
+  // The rename succeeds, then the delete fails as if a reader held the file open.
+  const original = fs.rmSync;
+  fs.rmSync = (target, ...rest) => {
+    if (String(target).includes('.stale.')) throw Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' });
+    return original.call(fs, target, ...rest);
+  };
+  try {
+    assert.equal(withFileLock(lockPath, () => 'ran', { waitMs: 0 }), 'ran');
+  } finally {
+    fs.rmSync = original;
+  }
+  assert.deepEqual(fs.readdirSync(dir).filter(f => !f.includes('.stale.')), [], 'lock and marker are gone');
+});
+
 test('a second process cannot enter while a live owner is still inside past staleMs (issue #26)', { timeout: 30000 }, () => {
   const dir = tempDir('auspex-lock-live-');
   const lockPath = path.join(dir, '.lock');
