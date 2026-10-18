@@ -75,6 +75,16 @@ moved.
   `approve_report` accepts it as the optional `expectedHash` (`save_report`
   and `run_report` return it as `sqlHash`). If the draft SQL changed since
   then, the request is refused with `STALE_VERSION` and nothing moves.
+- **Who approves (trust model):** Auspex is a local, single-user tool. When
+  the agent calls `approve_report`, the server cannot see the conversation, so
+  it cannot prove that a person said yes; it relies on the agent following the
+  server instructions, and `expectedHash` is optional there. The viewer and
+  desktop app are the human-controlled path: approve and revoke need a click,
+  a confirm dialog, the SQL hash of the content the person opened and, in the
+  browser viewer, the page's Origin and token. If approvals must come from a
+  person, approve in the viewer or desktop app. Either way an approved report
+  still runs only its approved SQL revision (see run_report above), and the
+  database role keeps every query read-only.
 - **Change scripts:** `save_execute_script` only writes files. A script must
   start with `BEGIN`, end with `ROLLBACK`, contain no `COMMIT` and have `WHERE`
   on every `UPDATE`/`DELETE`; whoever runs it with a privileged role swaps the
