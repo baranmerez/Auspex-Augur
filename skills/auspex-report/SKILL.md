@@ -16,10 +16,13 @@ late one.
 2. **Memory first.** `table_knowledge` on the tables you know by name before
    any database call. Rules in `databaseNotes` and table notes are applied as
    defaults and shown to the user; never ask for them again. Also read
-   `columnScores` and trigger `summary` when present: prefer score 4-5 columns
-   for output and filters and treat score 1-2 or unused columns as low value;
-   a trigger may rewrite or reject values, so read its summary (a
-   `summaryStale` summary is a hint, not a fact). If a table has no scores, say
+   `columnScores` and trigger `summary` when present: prefer effective `score`
+   (the user layer wins) 4-5 columns for output and filters and treat score
+   1-2 or unused columns as low value; never drop a column the user asked for,
+   a low score only means no report or script uses it. A trigger may rewrite
+   or reject values, so read its summary: summaries are hints; `summaryStale`
+   means the trigger definition changed since; a function body change is not
+   detected. If a table has no scores, say
    so and offer the `auspex-columns` skill; never block a report on missing
    scores. Scores are advisory: rules from the user and remembered rules win.
 3. **One question round, at most 3 questions,** in one message, each with a
@@ -43,8 +46,8 @@ late one.
 ## Workflow
 
 1. **Profile, memory, parse.** Profile check. `table_knowledge` on named
-   tables (rule 2: column scores and trigger summaries). Split the request into: period and date column, filters, grain
-   (one row per what), output columns, grouping, sums/counts, joined sources,
+   tables (rule 2: column scores and trigger summaries). Split the request
+   into: period and date column, filters, grain (one row per what), output columns, grouping, sums/counts, joined sources,
    special states to check (for example rows in an error or retry state).
 2. **Questions (one message, max 3).** Only for gaps, in the priority order
    of [question-templates.md](references/question-templates.md):
