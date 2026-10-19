@@ -249,7 +249,6 @@ export class ReportService {
     const result = await this.db.runReport(ref.db, sql, { params, preset: usedPreset, analyze: doAnalyze, previewRows, timeoutSeconds, label: refLabel(ref) });
     const summary = summarizePlan(result.plan);
     const columns = result.columns;
-    const masked = maskRows(columns.map(c => c.name), result.rows, { mask: meta.mask || [], unmask: meta.unmask || [] });
     const hash = sqlHash(sql);
     const version = meta.sqlVersions.find(v => v.hash === hash)?.version ?? null;
     const at = new Date().toISOString();
@@ -264,19 +263,26 @@ export class ReportService {
     };
     const last = {
       at, profile: result.profile, serverVersion: result.serverVersion, sqlHash: hash, version,
-      summary, plan: result.plan, columns, preview: masked.rows, maskedColumns: masked.maskedColumns,
+      summary, plan: result.plan, columns,
       previewTruncated: result.truncated, explainMs: run.explainMs, previewMs: run.previewMs, previewExecuted: result.previewExecuted,
     };
     // The run is appended to the metadata as it is now on disk (another
     // process may have saved meanwhile), and the HTML is rendered from that.
     // The report may also have been approved or revoked (viewer) during the
     // run: then the run goes to the stage it lives in now.
-    const savedStage = this.library.locked(() => {
+    const { savedStage, masked } = this.library.locked(() => {
       const now = this.library.exists(stage, ref) ? stage : ['draft', 'approved'].find(s => this.library.exists(s, ref));
       if (!now) throw new ToolError('NOT_FOUND', `Report ${refLabel(ref)} was moved or removed while it ran (stage changed during run); the run was not saved.`);
+      // Another process may have tightened masking while the query was running.
+      // Apply the policy we are about to persist, while holding the same lock.
+      const currentMeta = this.library.readMeta(now, ref);
+      if (!currentMeta) throw new ToolError('NOT_FOUND', `Report metadata missing for ${refLabel(ref)}.`);
+      const masked = maskRows(columns.map(c => c.name), result.rows, { mask: currentMeta.mask || [], unmask: currentMeta.unmask || [] });
+      last.preview = masked.rows;
+      last.maskedColumns = masked.maskedColumns;
       const updated = this.library.appendRun(now, ref, run, last);
       this.library.writeHtml(now, ref, renderReport(updated));
-      return now;
+      return { savedStage: now, masked };
     });
     const html = this.library.paths(savedStage, ref).html;
     const learned = this.learn(result.profile, result.plan, summary);
