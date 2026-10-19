@@ -16,10 +16,11 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-target-'));
 const baseEnv = { AUSPEX_HOME: dir, AUSPEX_PROFILES_FILE: path.join(dir, 'missing.json') };
 
 // Runs fn with these variables set in process.env (where node-postgres reads
-// them) and restores the previous values afterwards.
+// them) and restores the previous values afterwards. An undefined value
+// removes the variable for the duration of fn.
 function withProcessEnv(vars, fn) {
   const saved = Object.fromEntries(Object.keys(vars).map(k => [k, process.env[k]]));
-  Object.assign(process.env, vars);
+  for (const [k, v] of Object.entries(vars)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
   try { return fn(); } finally {
     for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
   }
@@ -74,7 +75,9 @@ test('creating a pool clears PGOPTIONS, PGREPLICATION and PGPASSWORD before node
   let warned = '';
   process.stderr.write = chunk => { warned += chunk; return true; };
   try {
-    withProcessEnv({ PGOPTIONS: '-c search_path=elsewhere', PGREPLICATION: 'database', PGPASSWORD: 'not-from-pgpass' }, () => {
+    // Start without any ignored variable: CI runners may set PGUSER and others.
+    const clean = Object.fromEntries(ignoredLibpqEnv.map(k => [k, undefined]));
+    withProcessEnv({ ...clean, PGOPTIONS: '-c search_path=elsewhere', PGREPLICATION: 'database', PGPASSWORD: 'not-from-pgpass' }, () => {
       const pool = db.pool('example');
       const p = new pg.Client(pool.options).connectionParameters;
       assert.equal(p.options, undefined);
