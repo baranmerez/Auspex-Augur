@@ -48,6 +48,30 @@ function decodeUnicodeIdentifier(body, escape) {
   return out;
 }
 
+// An E-string keeps its escape mode when another quoted fragment follows
+// whitespace containing a newline. PostgreSQL permits line comments in that
+// gap, but not block comments. Skip whole comments so their quotes cannot be
+// mistaken for a continuation delimiter.
+function escapeStringContinuationEnd(sql, start) {
+  let cursor = start;
+  let hasNewline = false;
+  while (cursor < sql.length) {
+    const character = sql[cursor];
+    if (character === '\n' || character === '\r') {
+      hasNewline = true;
+      cursor++;
+    } else if (character === ' ' || character === '\t' || character === '\f') {
+      cursor++;
+    } else if (character === '-' && sql[cursor + 1] === '-') {
+      cursor += 2;
+      while (cursor < sql.length && sql[cursor] !== '\n' && sql[cursor] !== '\r') cursor++;
+    } else {
+      break;
+    }
+  }
+  return hasNewline && sql[cursor] === "'" ? cursor + 1 : null;
+}
+
 // Masks string literals, quoted identifiers and comments so the keyword scan
 // only sees real SQL tokens. Output length equals input length, so positions
 // found in the masked text are valid in the original. When `identifiers` is
@@ -89,6 +113,8 @@ function stripLiteralsAndComments(sql, identifiers = null) {
         if (sql[i] === "'") {
           if (sql[i + 1] === "'") { i += 2; continue; }
           i++;
+          const continuationEnd = escaped ? escapeStringContinuationEnd(sql, i) : null;
+          if (continuationEnd !== null) { i = continuationEnd; continue; }
           closed = true;
           break;
         }
