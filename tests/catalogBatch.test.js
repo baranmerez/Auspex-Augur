@@ -314,3 +314,20 @@ test('table names parse strictly and identifiers quote safely', () => {
   for (const bad of ['orders', 'a.b.c', 'a.b"', 'a.b;', 'a. b', "a.b'", 'a.b\\c', '.b', 'a.']) assert.throws(() => parseTableRef(bad), /Invalid table/, bad);
   assert.equal(quoteIdent('we"ird'), '"we""ird"');
 });
+
+test('profile_tables page-samples only when about 10 pages or more would be picked; tiny tables are read with LIMIT', async () => {
+  const relation = (relkind, pages) => ({
+    'example.big': { oid: '400', relkind, estimated_rows: '1000000', pages, columns: [col('order_id')], foreign_keys: [] },
+  });
+  const method = async (relkind, pages) => {
+    const { db } = fakeDb(relation(relkind, pages));
+    const r = await profileTables(db, 'example', { tables: ['example.big'], sampleRows: 100 });
+    return r.tables[0].sample.method;
+  };
+  // 100 rows of an estimated 1,000,000 is 0.012 %: 10 pages need about 83,000 pages.
+  assert.equal(await method('r', '5'), 'limit', 'a few pages: page sampling could return no rows');
+  assert.equal(await method('r', '1000000'), 'tablesample', 'a large table is page-sampled');
+  assert.equal(await method('m', '5'), 'limit', 'materialized views follow the same rule');
+  assert.equal(await method('p', null), 'tablesample', 'a partitioned table has no pages of its own and keeps the old rule');
+  assert.equal(await method('r', null), 'tablesample', 'unknown pages (no SELECT privilege) keep the old rule');
+});

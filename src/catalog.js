@@ -622,7 +622,7 @@ export async function describeFunctions(db, profile, { functions, pattern, schem
 const profileCatalogSql = `
 select r.ord::int as ord, c.oid::bigint as oid, c.relkind, n.nspname as schema_name, c.relname as rel_name,
        ${estimatedRowsSql('c')} as estimated_rows,
-       case when c.relkind in ('r', 'm') then pg_relation_size(c.oid) / current_setting('block_size')::bigint end as pages,
+       case when c.relkind in ('r', 'm') and has_table_privilege(c.oid, 'SELECT') then pg_relation_size(c.oid) / current_setting('block_size')::bigint end as pages,
        has_table_privilege(c.oid, 'SELECT') as can_select,
        (select coalesce(jsonb_agg(jsonb_build_object(
                  'name', a.attname,

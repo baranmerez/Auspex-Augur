@@ -202,7 +202,10 @@ vacuum or analyze), so a table analyzed while empty and filled later is not
 shown as empty. It is 0 only for a relation that was vacuumed or analyzed and
 has no live rows, and `null` (unknown) otherwise. This matters before
 PostgreSQL 14, which marks a never-analyzed table with `reltuples = 0`
-instead of `-1`. An estimate above 0 can still be out of date until the next
+instead of `-1`. The live row count and the vacuum/analyze times are kept
+per server, so on a standby, after a statistics reset or with
+`track_counts = off` an empty table also shows `null`: `null` means "no
+estimate", never "empty". An estimate above 0 can still be out of date until the next
 analyze; use `profile_tables` or `count(*)` when the exact figure matters.
 
 ### Large tables and long queries
