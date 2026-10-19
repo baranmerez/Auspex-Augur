@@ -48,6 +48,26 @@ function decodeUnicodeIdentifier(body, escape) {
   return out;
 }
 
+// PostgreSQL continues a quoted string across whitespace containing a newline.
+// Only line comments participate in quotecontinue; block comments do not.
+function continuedStringStart(sql, start) {
+  let i = start;
+  let hasNewline = false;
+  while (i < sql.length) {
+    if (sql[i] === '\n' || sql[i] === '\r') {
+      hasNewline = true;
+      i++;
+    } else if (/[ \t\f]/.test(sql[i])) {
+      i++;
+    } else if (sql[i] === '-' && sql[i + 1] === '-') {
+      while (i < sql.length && sql[i] !== '\n' && sql[i] !== '\r') i++;
+    } else {
+      break;
+    }
+  }
+  return hasNewline && sql[i] === "'" ? i + 1 : null;
+}
+
 // Masks string literals, quoted identifiers and comments so the keyword scan
 // only sees real SQL tokens. Output length equals input length, so positions
 // found in the masked text are valid in the original. When `identifiers` is
@@ -89,6 +109,9 @@ function stripLiteralsAndComments(sql, identifiers = null) {
         if (sql[i] === "'") {
           if (sql[i + 1] === "'") { i += 2; continue; }
           i++;
+          // The initial E prefix also governs every continued fragment.
+          const continuation = continuedStringStart(sql, i);
+          if (continuation !== null) { i = continuation; continue; }
           closed = true;
           break;
         }
