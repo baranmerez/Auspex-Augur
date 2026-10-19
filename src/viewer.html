@@ -1354,7 +1354,7 @@ function resolveRange() {
     case 'yesterday': { const y = addDays(today, -1); return [y, y]; }
     case '7': return [addDays(today, -6), today];
     case '30': return [addDays(today, -29), today];
-    case 'all': return [state.days.length ? state.days[state.days.length - 1].day : today, today];
+    case 'all': return [state.days.length ? state.days[0].day : today, today];
     default: return [state.from || today, state.to || today];
   }
 }
