@@ -117,15 +117,17 @@ export class ReadOnlyDatabase {
 
   // Runs the role check again (check_profile) and returns its result; a
   // blocked role is reported, not thrown.
-  async checkProfile(profile) {
-    const name = this.resolveProfile(profile);
-    this.roleChecks.delete(name);
-    try {
-      await this.withReadOnly(name, async () => null);
-    } catch (err) {
-      if (!(err instanceof RoleCheckError)) throw err;
-    }
-    return { profile: name, ...this.roleChecks.get(name) };
+  checkProfile(profile) {
+    return this.audited('check_profile', { profile: profile ?? null }, async () => {
+      const name = this.resolveProfile(profile);
+      this.roleChecks.delete(name);
+      try {
+        await this.withReadOnly(name, async () => null);
+      } catch (err) {
+        if (!(err instanceof RoleCheckError)) throw err;
+      }
+      return { profile: name, ...this.roleChecks.get(name) };
+    }, result => ({ roleStatus: result.status }));
   }
 
   // First use of a profile in this process: check that its role is read-only
