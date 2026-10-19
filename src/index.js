@@ -167,10 +167,10 @@ tool('check_profile', {
   title: 'Check that a profile is read-only',
   description: 'Checks the database role of a profile from the catalog: superuser, BYPASSRLS, REPLICATION, CREATEROLE, membership in pg_write_all_data / server-file roles, or any table it can write to block the profile (no query runs on it); CREATE on a schema or the database, CREATEDB and default_transaction_read_only off are warnings. Runs automatically on the first call to each profile; use this to see the result or to check again after the role was fixed.',
   inputSchema: { profile: profileArg },
-}, async ({ profile }) => db.audited('check_profile', { profile: profile ?? null }, async () => {
+}, async ({ profile }) => {
   const r = await db.checkProfile(profile);
   return { profile: r.profile, ...roleCheckSummary(r) };
-}, r => ({ roleStatus: r.status })));
+});
 
 tool('search', {
   title: 'Search tables and columns',
