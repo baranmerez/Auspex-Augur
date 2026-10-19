@@ -99,9 +99,10 @@ function checkExpected(expectedHash, currentHash, version) {
 }
 
 function writeAtomic(file, text) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  if (process.platform !== 'win32') fs.chmodSync(path.dirname(file), 0o700);
   const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(tmp, text, 'utf8');
+  fs.writeFileSync(tmp, text, { encoding: 'utf8', mode: 0o600 });
   renameRetrying(tmp, file); // the viewer may be reading the target on Windows
 }
 
@@ -123,7 +124,11 @@ export class Library {
   }
 
   ensure() {
-    for (const dir of Object.values(stages)) fs.mkdirSync(path.join(this.root, dir), { recursive: true });
+    // Private reports can contain raw SQL, parameters and preview row data.
+    // Old library roots also need tightening; sharing has a separate export.
+    fs.mkdirSync(this.root, { recursive: true, mode: 0o700 });
+    if (process.platform !== 'win32') fs.chmodSync(this.root, 0o700);
+    for (const dir of Object.values(stages)) fs.mkdirSync(path.join(this.root, dir), { recursive: true, mode: 0o700 });
   }
 
   // Absolute base path (without extension), guaranteed inside the library.
