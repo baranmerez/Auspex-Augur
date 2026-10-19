@@ -223,6 +223,8 @@ export class ReadOnlyDatabase {
     client.on?.('error', onClientError); // test doubles may not be emitters
     try {
       await client.query('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      // Match sqlGuard's string semantics even with legacy server or role defaults.
+      await client.query('SET LOCAL standard_conforming_strings = on');
       await client.query(`SET LOCAL statement_timeout = ${timeoutMs}`);
       await client.query(`SET LOCAL idle_in_transaction_session_timeout = ${timeoutMs * 2}`);
       await client.query("SET LOCAL lock_timeout = '5s'");
