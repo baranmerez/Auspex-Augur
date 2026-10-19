@@ -141,11 +141,19 @@ function stripLiteralsAndComments(sql, identifiers = null) {
   for (const u of unicodeIds) {
     const m = /^\s*uescape\s*'/i.exec(out.slice(u.end));
     if (!m) {
+      // PostgreSQL also accepts escape strings here. Do not silently treat an
+      // unparsed UESCAPE clause as though it were absent.
+      if (/^\s*uescape\b/i.test(out.slice(u.end))) {
+        throw new SqlGuardError('UESCAPE requires a plain single-character string literal.');
+      }
       identifiers.push({ end: u.end, name: decodeUnicodeIdentifier(u.body, '\\') });
       continue;
     }
     const quote = u.end + m[0].length - 1; // opening quote of the escape literal
-    if (sql[quote + 2] !== "'" || sql[quote + 1] === "'") throw new SqlGuardError('Invalid UESCAPE clause.');
+    if (sql[quote] !== "'" || sql[quote + 2] !== "'" || sql[quote + 1] === "'") throw new SqlGuardError('Invalid UESCAPE clause.');
+    // A continued escape literal moves the end of the identifier token. Until
+    // that spelling is decoded, reject it rather than losing the function name.
+    if (/^\s*'/.test(out.slice(quote + 3))) throw new SqlGuardError('Continued UESCAPE literals are not supported.');
     const name = decodeUnicodeIdentifier(u.body, sql[quote + 1]);
     // With UESCAPE the token before "(" is the escape literal.
     identifiers.push({ end: u.end, name }, { end: quote + 3, name });
