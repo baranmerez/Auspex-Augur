@@ -67,3 +67,16 @@ test('a successful run says how many rows it returned and calls out an empty res
   assert.equal(text({ rows: '12; rm' }), 'Scheduled run finished.', 'not a count');
   assert.equal(notificationText({ reportTitle: 'r', status: 'failed', errorCode: 'TIMEOUT', rows: 5 }).text, 'Scheduled run failed (TIMEOUT).', 'counts only for successful runs');
 });
+
+test('notifications speak Turkish when asked, with Turkish number grouping', () => {
+  const tr = m => notificationText({ reportTitle: 'Örnek rapor', ...m }, 'tr');
+  assert.deepEqual(tr({ status: 'ok', rows: 1091 }), { title: 'Auspex: Örnek rapor', text: 'Tamamlandı: 1.091 satır.' });
+  assert.equal(tr({ status: 'ok', rows: 0 }).text, 'Tamamlandı, ancak sonuç boş (0 satır). Dönemi ya da veriyi kontrol et.');
+  assert.equal(tr({ status: 'ok', estimatedRows: 1500 }).text, 'Tamamlandı: yaklaşık 1.500 satır (tahmini).');
+  assert.equal(tr({ status: 'ok' }).text, 'Zamanlanmış çalıştırma tamamlandı.');
+  assert.match(tr({ status: 'skipped-unreachable' }).text, /ulaşılamadı/);
+  assert.equal(tr({ status: 'failed', errorCode: 'TIMEOUT' }).text, 'Zamanlanmış çalıştırma başarısız (TIMEOUT).');
+  assert.equal(tr({ status: 'rows' }).text, 'Zamanlanmış çalıştırma bilinmeyen bir durumla bitti.', 'an unknown status never picks another text');
+  assert.equal(notificationText({ reportTitle: '', status: 'ok' }, 'tr').title, 'Auspex: zamanlanmış rapor');
+  assert.equal(notificationText({ reportTitle: 'r', status: 'ok', rows: 2 }, 'de').text, 'Finished: 2 rows.', 'an unsupported language falls back to English');
+});

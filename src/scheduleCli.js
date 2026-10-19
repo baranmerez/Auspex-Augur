@@ -17,12 +17,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadConfig, auspexHome } from './config.js';
+import { loadConfig, auspexHome, readNotesLanguage, defaultProfilesFile } from './config.js';
 import { Library, refLabel } from './reports/library.js';
 import { loadSchedules, schedulesFile, nextSlot, cadenceText, taskTimeOf, parseTime } from './schedule/config.js';
 import { stateFile, trendsDir, readState, scheduleState } from './schedule/store.js';
 import { ScheduleRunner, checkSchedule } from './schedule/runner.js';
-import { notify } from './schedule/notify.js';
+import { notify, notificationLanguages } from './schedule/notify.js';
 import { acquireFileLock, LockBusyError } from './fileLock.js';
 
 export const auspexRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -99,6 +99,20 @@ function parseIdArgs(args) {
   return id;
 }
 
+// Language of the notifications: "language" in schedules.json, else the
+// notesLanguage of the profiles file when a notification language matches it
+// (pt-BR -> pt), else English. Never fails: a broken file means English.
+export function notificationLanguage(loaded, env) {
+  if (loaded?.language) return loaded.language;
+  try {
+    const notes = readNotesLanguage(env.AUSPEX_PROFILES_FILE || defaultProfilesFile(env));
+    const base = String(notes ?? '').toLowerCase().split('-')[0];
+    return notificationLanguages.includes(base) ? base : 'en';
+  } catch {
+    return 'en';
+  }
+}
+
 function home(env) {
   return { stateFile: stateFile(env), trendsDir: trendsDir(env), lockFile: path.join(auspexHome(env), 'scheduler.lock') };
 }
@@ -109,13 +123,13 @@ async function runSchedules(pick, loaded, config, env, deps) {
   if (!release) {
     const age = lockAgeMs(h.lockFile);
     const stuck = age !== null && age > taskLimitMs;
-    if (stuck) await (deps.notifyFn ?? notify)({ reportTitle: 'scheduler lock', status: 'failed', errorCode: 'LOCK_BUSY' });
+    if (stuck) await (deps.notifyFn ?? notify)({ reportTitle: 'scheduler lock', status: 'failed', errorCode: 'LOCK_BUSY' }, { language: notificationLanguage(loaded, env) });
     const message = stuck
       ? `The scheduler lock ${h.lockFile} has been held for ${Math.round(age / 60000)} minutes, longer than the task limit; it is taken over after ${runLockMaxHoldMs / 3600000} h. Check for a hung scheduler process.`
       : 'Another scheduler run is in progress.';
     return { status: 3, out: { ok: false, code: 'BUSY', message } };
   }
-  const runner = new ScheduleRunner(config, { stateFile: h.stateFile, trendsDir: h.trendsDir, notifyMode: loaded.notify, ...deps });
+  const runner = new ScheduleRunner(config, { stateFile: h.stateFile, trendsDir: h.trendsDir, notifyMode: loaded.notify, notifyLanguage: notificationLanguage(loaded, env), ...deps });
   try {
     const results = [];
     for (const { schedule, slot } of pick(runner)) results.push(await runner.run(schedule, slot));
@@ -139,7 +153,7 @@ function statusOut(loaded, config, env, now) {
   const state = readState(home(env).stateFile);
   const lib = new Library(config.libraryDir);
   return {
-    ok: true, file: loaded.file, missing: loaded.missing, notify: loaded.notify, taskTime: taskTimeOf(loaded),
+    ok: true, file: loaded.file, missing: loaded.missing, notify: loaded.notify, language: notificationLanguage(loaded, env), taskTime: taskTimeOf(loaded),
     warnings: lateScheduleWarnings(loaded),
     schedules: loaded.schedules.map(s => {
       const own = scheduleState(state, s.id);
@@ -209,7 +223,7 @@ export async function main(argv, env = process.env, deps = {}) {
   } catch (err) {
     const out = { ok: false, code: err.errorCode ?? 'INVALID_INPUT', message: err.message };
     // An unattended run-due must not fail silently on a broken file.
-    if (command === 'run-due') await (deps.notifyFn ?? notify)({ reportTitle: 'schedules.json', status: 'failed', errorCode: out.code });
+    if (command === 'run-due') await (deps.notifyFn ?? notify)({ reportTitle: 'schedules.json', status: 'failed', errorCode: out.code }, { language: notificationLanguage(loaded, env) });
     return { status: 2, out };
   }
   const now = deps.now ?? (() => new Date());

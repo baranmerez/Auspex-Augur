@@ -102,3 +102,22 @@ test('a preset resolves against the reference date, not the run time', () => {
   assert.throws(() => resolvePreset('last_7_days', [], 2, fail, slot.at, false), /not available/, 'built-in presets need dateRange: true');
   assert.deepEqual(resolvePreset('Example set', [{ name: 'Example set', params: ['A'] }], 1, fail, slot.at, false).params, ['A']);
 });
+
+test('"language" in schedules.json picks the notification language; otherwise notesLanguage, otherwise English', async () => {
+  const { validateSchedules } = await import('../src/schedule/config.js');
+  const { notificationLanguage } = await import('../src/scheduleCli.js');
+  const fs = (await import('node:fs')).default;
+  const os = (await import('node:os')).default;
+  const path = (await import('node:path')).default;
+  assert.equal(validateSchedules({ schedules: [], language: 'tr' }).language, 'tr');
+  assert.equal(validateSchedules({ schedules: [] }).language, null);
+  assert.throws(() => validateSchedules({ schedules: [], language: 'de' }), /"language" must be one of en, tr/);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-notify-lang-'));
+  const profiles = content => { const f = path.join(dir, `p${Math.random().toString(36).slice(2)}.json`); fs.writeFileSync(f, content); return { AUSPEX_HOME: dir, AUSPEX_PROFILES_FILE: f }; };
+  assert.equal(notificationLanguage({ language: 'en' }, profiles('{"notesLanguage":"tr"}')), 'en', 'schedules.json wins');
+  assert.equal(notificationLanguage({ language: null }, profiles('{"notesLanguage":"tr"}')), 'tr');
+  assert.equal(notificationLanguage(undefined, profiles('{"notesLanguage":"TR"}')), 'tr', 'also when schedules.json could not be read');
+  assert.equal(notificationLanguage(null, profiles('{"notesLanguage":"pt-BR"}')), 'en', 'no Portuguese texts: English');
+  assert.equal(notificationLanguage(null, profiles('{ broken')), 'en', 'a broken profiles file means English');
+  assert.equal(notificationLanguage(null, { AUSPEX_HOME: dir, AUSPEX_PROFILES_FILE: path.join(dir, 'missing.json') }), 'en');
+});

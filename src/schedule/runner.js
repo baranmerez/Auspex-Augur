@@ -64,11 +64,12 @@ export function checkSchedule(library, schedule, now = new Date()) {
 export class ScheduleRunner {
   // config: loadConfig() result. home: AUSPEX_HOME folder files (stateFile,
   // trendsDir). db, notifyFn, now: injectable for tests.
-  constructor(config, { stateFile, trendsDir, notifyMode = 'all', db, notifyFn = defaultNotify, audit, now = () => new Date() }) {
+  constructor(config, { stateFile, trendsDir, notifyMode = 'all', notifyLanguage = 'en', db, notifyFn = defaultNotify, audit, now = () => new Date() }) {
     this.config = config;
     this.stateFile = stateFile;
     this.trendsDir = trendsDir;
     this.notifyMode = notifyMode;
+    this.notifyLanguage = notifyLanguage;
     this.audit = audit ?? createAuditLog(config.logDir);
     this.db = db ?? schedulerDatabase(config, { audit: this.audit });
     this.notifyFn = notifyFn;
@@ -141,7 +142,7 @@ export class ScheduleRunner {
     // "failures" mode too, as it usually means a wrong period or missing data.
     const note = { reportTitle: title, status, errorCode, ...(counts ? { rows: counts.rows, estimatedRows: counts.estimatedRows } : {}) };
     if (this.notifyMode === 'all' || (this.notifyMode === 'failures' && (status !== 'ok' || isEmptyResult(note)))) {
-      try { await this.notifyFn(note); } catch { /* never fatal */ }
+      try { await this.notifyFn(note, { language: this.notifyLanguage }); } catch { /* never fatal */ }
     }
     return { id: schedule.id, slot: record.slot, status, ...(errorCode ? { errorCode, message } : {}), ...(trendError ? { trendError } : {}), report: label };
   }
