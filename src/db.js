@@ -228,6 +228,8 @@ export class ReadOnlyDatabase {
       await client.query(`SET LOCAL statement_timeout = ${timeoutMs}`);
       await client.query(`SET LOCAL idle_in_transaction_session_timeout = ${timeoutMs * 2}`);
       await client.query("SET LOCAL lock_timeout = '5s'");
+      // Match sqlGuard's ordinary-string rules even on legacy server/role defaults.
+      await client.query('SET LOCAL standard_conforming_strings = on');
       await this.ensureRoleChecked(client, name);
       return await fn(client, name);
     } catch (err) {
