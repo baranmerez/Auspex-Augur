@@ -15,8 +15,8 @@ import { SchemaMemory } from '../memory/store.js';
 import { createAuditLog } from '../auditLog.js';
 import { ToolError, classifyError } from '../errors.js';
 import { latestDueSlot } from './config.js';
-import { recordResult, readState, scheduleState, appendTrend, trendPoint } from './store.js';
-import { notify as defaultNotify } from './notify.js';
+import { recordResult, readState, scheduleState, appendTrend, trendPoint, runRows } from './store.js';
+import { notify as defaultNotify, isEmptyResult } from './notify.js';
 
 export const actor = 'scheduler';
 
@@ -97,7 +97,7 @@ export class ScheduleRunner {
     const label = refLabel(schedule.report);
     const at = () => this.now().toISOString();
     let title = schedule.report.name;
-    let status, errorCode = null, trendError = null, message = null;
+    let status, errorCode = null, trendError = null, message = null, counts = null;
     try {
       const check = checkSchedule(this.reports.library, schedule, slot ? slot.at : this.now());
       title = check.title;
@@ -106,6 +106,7 @@ export class ScheduleRunner {
         stage: 'approved', includeLast: true, presetDate: slot ? slot.at : this.now(), ...(schedule.preset !== null ? { preset: schedule.preset } : {}),
       }));
       status = 'ok';
+      counts = runRows(result.last ?? null);
       if (!manual) {
         try {
           // The result this run stored, not meta.last re-read from disk: a
@@ -136,8 +137,11 @@ export class ScheduleRunner {
       source: actor, actor, tool: 'schedule_run', correlationId, scheduleId: schedule.id, slot: record.slot, ...(manual ? { manual: true } : {}),
       profile: schedule.profile, report: label, status, ms: Date.now() - started, ...(errorCode ? { errorCode, error: message } : {}), ...(trendError ? { trendError } : {}),
     });
-    if (this.notifyMode === 'all' || (this.notifyMode === 'failures' && status !== 'ok')) {
-      try { await this.notifyFn({ reportTitle: title, status, errorCode }); } catch { /* never fatal */ }
+    // A successful run carries its row count; an empty result is notified in
+    // "failures" mode too, as it usually means a wrong period or missing data.
+    const note = { reportTitle: title, status, errorCode, ...(counts ? { rows: counts.rows, estimatedRows: counts.estimatedRows } : {}) };
+    if (this.notifyMode === 'all' || (this.notifyMode === 'failures' && (status !== 'ok' || isEmptyResult(note)))) {
+      try { await this.notifyFn(note); } catch { /* never fatal */ }
     }
     return { id: schedule.id, slot: record.slot, status, ...(errorCode ? { errorCode, message } : {}), ...(trendError ? { trendError } : {}), report: label };
   }

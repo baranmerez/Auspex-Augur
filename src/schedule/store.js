@@ -95,11 +95,20 @@ const finite = v => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 // preview holds every row; a total over a cut preview would be misleading.
 // Ready for later threshold checks: one value per series, keyed by column; a
 // total is a number, or decimal text when it has more than 15 significant digits.
-export function trendPoint({ scheduleId, slot, ranAt, preset, params, last, sqlHash, version, totals }) {
+// Row count of a run's stored result: exact from EXPLAIN ANALYZE or a
+// complete preview, otherwise null with the planner's estimate.
+export function runRows(last) {
   const s = last?.summary ?? {};
   const previewRows = Array.isArray(last?.preview) ? last.preview.length : 0;
   const complete = last?.previewExecuted === true && last?.previewTruncated === false;
   const rows = s.analyzed ? finite(s.rows) : complete ? previewRows : null;
+  return { rows, estimatedRows: rows === null ? finite(s.rows) : null };
+}
+
+export function trendPoint({ scheduleId, slot, ranAt, preset, params, last, sqlHash, version, totals }) {
+  const s = last?.summary ?? {};
+  const complete = last?.previewExecuted === true && last?.previewTruncated === false;
+  const { rows } = runRows(last);
   return {
     v: trendFormat, scheduleId, slot, ranAt, preset: preset ?? null, params: Array.isArray(params) ? params : null,
     sqlHash: sqlHash ?? null, version: Number.isInteger(version) ? version : null,

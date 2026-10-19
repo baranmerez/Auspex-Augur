@@ -55,3 +55,15 @@ test('outside Windows the notification is a log line; a failing toast falls back
   const hang = () => { const c = new EventEmitter(); c.kill = () => {}; return c; };
   assert.equal(await notify({ reportTitle: 'r', status: 'ok' }, { platform: 'win32', spawnFn: hang, env: {}, log: () => {}, timeoutMs: 20 }), 'failed');
 });
+
+test('a successful run says how many rows it returned and calls out an empty result', () => {
+  const text = m => notificationText({ reportTitle: 'r', status: 'ok', ...m }).text;
+  assert.equal(text({ rows: 1091 }), 'Finished: 1,091 rows.');
+  assert.equal(text({ rows: 1 }), 'Finished: 1 row.');
+  assert.equal(text({ rows: 0 }), 'Finished, but the result is empty (0 rows). Check the period or the data.');
+  assert.equal(text({ rows: null, estimatedRows: 1499.6 }), 'Finished: about 1,500 rows (estimated).');
+  assert.equal(text({}), 'Scheduled run finished.');
+  assert.equal(text({ rows: -1 }), 'Scheduled run finished.', 'not a count');
+  assert.equal(text({ rows: '12; rm' }), 'Scheduled run finished.', 'not a count');
+  assert.equal(notificationText({ reportTitle: 'r', status: 'failed', errorCode: 'TIMEOUT', rows: 5 }).text, 'Scheduled run failed (TIMEOUT).', 'counts only for successful runs');
+});

@@ -100,7 +100,7 @@ test('run-due runs an approved report for its slot, records state, trend and aud
   assert.equal(runEntry.actor, 'scheduler');
   assert.equal(runEntry.status, 'ok');
   assert.equal(runEntry.correlationId, dbEntry.correlationId);
-  assert.deepEqual(notes, [{ reportTitle: 'Example report <b>', status: 'ok', errorCode: null }]);
+  assert.deepEqual(notes, [{ reportTitle: 'Example report <b>', status: 'ok', errorCode: null, rows: 2, estimatedRows: null }]);
   // The run is in the approved report's history like a run_report run.
   const meta = new Library(path.join(home, 'library')).readMeta('approved', ref);
   assert.equal(meta.runs.at(-1).preset, 'last_7_days');
@@ -369,4 +369,31 @@ test('--home selects the AUSPEX_HOME of a run and is validated', async () => {
   assert.equal((await main(['status', '--home', 'relative/dir'], noHome)).status, 2);
   assert.equal((await main(['status', '--home', path.join(home, 'missing')], noHome)).status, 2);
   assert.equal((await main(['status', '--home', home, '--home', home], noHome)).status, 2);
+});
+
+test('an empty result is notified with its row count, also when only failures are notified', async () => {
+  approveReport();
+  writeSchedules([schedule()], { notify: 'failures' });
+  connect = async () => {
+    const c = fakeClient();
+    const query = c.query;
+    c.query = async q => {
+      const res = await query(q);
+      const text = typeof q === 'string' ? q : q.text;
+      if (text.startsWith('EXPLAIN')) res.rows[0]['QUERY PLAN'][0].Plan['Actual Rows'] = 0;
+      if (text.startsWith('FETCH')) res.rows = [];
+      return res;
+    };
+    return c;
+  };
+  const r = await run(['run-due'], tuesday);
+  assert.equal(r.out.results[0].status, 'ok');
+  assert.deepEqual(notes, [{ reportTitle: 'Example report <b>', status: 'ok', errorCode: null, rows: 0, estimatedRows: null }]);
+});
+
+test('a run with rows is not notified when only failures are notified', async () => {
+  approveReport();
+  writeSchedules([schedule()], { notify: 'failures' });
+  await run(['run-due'], tuesday);
+  assert.deepEqual(notes, []);
 });
