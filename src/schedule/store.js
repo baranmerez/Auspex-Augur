@@ -20,9 +20,12 @@ export const stateFile = (env = process.env) => path.join(auspexHome(env), 'sche
 export const trendsDir = (env = process.env) => path.join(auspexHome(env), 'trends');
 
 function writeAtomic(file, text) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
+  // Trends contain preset parameters, which may be sensitive even though
+  // the data points contain aggregates rather than database row values.
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  if (process.platform !== 'win32') fs.chmodSync(path.dirname(file), 0o700);
   const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(tmp, text, 'utf8');
+  fs.writeFileSync(tmp, text, { encoding: 'utf8', mode: 0o600 });
   renameRetrying(tmp, file);
 }
 
