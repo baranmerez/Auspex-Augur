@@ -14,12 +14,15 @@ import { ReadOnlyDatabase, clearLibpqEnv, ignoredLibpqEnv } from '../src/db.js';
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-target-'));
 const baseEnv = { AUSPEX_HOME: dir, AUSPEX_PROFILES_FILE: path.join(dir, 'missing.json') };
+const isolatedLibpqEnv = Object.fromEntries(ignoredLibpqEnv.map(name => [name, undefined]));
 
 // Runs fn with these variables set in process.env (where node-postgres reads
-// them) and restores the previous values afterwards.
+// them) and restores the previous values afterwards. Undefined means absent.
 function withProcessEnv(vars, fn) {
   const saved = Object.fromEntries(Object.keys(vars).map(k => [k, process.env[k]]));
-  Object.assign(process.env, vars);
+  for (const [name, value] of Object.entries(vars)) {
+    if (value === undefined) delete process.env[name]; else process.env[name] = value;
+  }
   try { return fn(); } finally {
     for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
   }
@@ -74,7 +77,7 @@ test('creating a pool clears PGOPTIONS, PGREPLICATION and PGPASSWORD before node
   let warned = '';
   process.stderr.write = chunk => { warned += chunk; return true; };
   try {
-    withProcessEnv({ PGOPTIONS: '-c search_path=elsewhere', PGREPLICATION: 'database', PGPASSWORD: 'not-from-pgpass' }, () => {
+    withProcessEnv({ ...isolatedLibpqEnv, PGOPTIONS: '-c search_path=elsewhere', PGREPLICATION: 'database', PGPASSWORD: 'not-from-pgpass' }, () => {
       const pool = db.pool('example');
       const p = new pg.Client(pool.options).connectionParameters;
       assert.equal(p.options, undefined);
@@ -103,4 +106,26 @@ test('socket, IPv6 and encoded URLs keep their target when the port is added', (
     const shown = describeConnection(url);
     assert.deepEqual(after, { host: shown.host, port: shown.port, database: shown.database, user: shown.user }, `shown = used for ${raw}`);
   }
+});
+
+// A developer or Windows runner can already have PGUSER/PGHOST set. The
+// fixture must remove those temporarily, then restore them even on failure.
+test('the pool environment fixture isolates and restores inherited PG variables', () => {
+  withProcessEnv({ PGUSER: 'example_reader', PGHOST: 'db.example.test' }, () => {
+    withProcessEnv(isolatedLibpqEnv, () => {
+      for (const name of ignoredLibpqEnv) assert.equal(process.env[name], undefined, name);
+    });
+    assert.equal(process.env.PGUSER, 'example_reader');
+    assert.equal(process.env.PGHOST, 'db.example.test');
+  });
+});
+
+test('the pool environment fixture restores inherited values when a check throws', () => {
+  withProcessEnv({ PGUSER: 'example_reader' }, () => {
+    assert.throws(() => withProcessEnv(isolatedLibpqEnv, () => {
+      assert.equal(process.env.PGUSER, undefined);
+      throw new Error('example check failed');
+    }), /example check failed/);
+    assert.equal(process.env.PGUSER, 'example_reader');
+  });
 });
