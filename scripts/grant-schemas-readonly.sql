@@ -1,9 +1,11 @@
 -- Grant read-only access on schemas to the "Auspex" login role
 -- Fill in 2. DEFINE: the schema list (or leave it empty for every non-system
 -- schema). Run as a superuser or as the owner of the tables.
--- Grants CONNECT on this database, SELECT on existing relations and default
--- SELECT for relations that the current owners create later. Last statement
--- is ROLLBACK.
+-- Grants CONNECT on this database, SELECT on existing relations and sequences,
+-- and default SELECT for relations and sequences that the current owners
+-- create later. Last statement is ROLLBACK.
+-- On a sequence SELECT only reads last_value; USAGE and UPDATE (nextval,
+-- setval) are never granted, and a sequence "Auspex" can advance is a failure.
 -- CREATE on a schema that comes only from PUBLIC (for example the PostgreSQL
 -- 14-and-older default on schema public, or a GRANT ... TO PUBLIC) is reported
 -- as a warning, not a failure: Auspex runs every query in a READ ONLY
@@ -31,11 +33,13 @@ SELECT r.schema_name AS missing_schema
 FROM requested_schema r
 WHERE r.schema_name NOT IN (SELECT schema_name FROM grant_target);
 
--- 2b. Target schemas, relation counts and owners (owners get default privileges)
-SELECT g.schema_name, pg_get_userbyid(c.relowner) AS owner, count(c.oid) AS relations
+-- 2b. Target schemas, relation and sequence counts and owners (owners get default privileges)
+SELECT g.schema_name, pg_get_userbyid(c.relowner) AS owner,
+       count(c.oid) FILTER (WHERE c.relkind <> 'S') AS relations,
+       count(c.oid) FILTER (WHERE c.relkind = 'S') AS sequences
 FROM grant_target g
 JOIN pg_namespace n ON n.nspname = g.schema_name
-LEFT JOIN pg_class c ON c.relnamespace = n.oid AND c.relkind IN ('r','p','v','m','f')
+LEFT JOIN pg_class c ON c.relnamespace = n.oid AND c.relkind IN ('r','p','v','m','f','S')
 GROUP BY 1, 2 ORDER BY 1, 2;
 
 -- 3. PROCESS
@@ -60,37 +64,46 @@ BEGIN
   FOR s IN SELECT schema_name FROM grant_target LOOP
     EXECUTE format('GRANT USAGE ON SCHEMA %I TO %I', s.schema_name, 'Auspex');
     EXECUTE format('GRANT SELECT ON ALL TABLES IN SCHEMA %I TO %I', s.schema_name, 'Auspex');
+    -- ALL TABLES does not include sequences.
+    EXECUTE format('GRANT SELECT ON ALL SEQUENCES IN SCHEMA %I TO %I', s.schema_name, 'Auspex');
     FOR o IN
       SELECT DISTINCT pg_get_userbyid(c.relowner) AS owner
       FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-      WHERE n.nspname = s.schema_name AND c.relkind IN ('r','p','v','m','f')
+      WHERE n.nspname = s.schema_name AND c.relkind IN ('r','p','v','m','f','S')
     LOOP
       EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA %I GRANT SELECT ON TABLES TO %I', o.owner, s.schema_name, 'Auspex');
+      EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA %I GRANT SELECT ON SEQUENCES TO %I', o.owner, s.schema_name, 'Auspex');
     END LOOP;
   END LOOP;
 END $$;
 
 -- 4. MATCH
--- 4a. Per schema (expected: readable = total, writable = 0, usage true; can_create
---     false, or true only where create_from_public is true: see the warning in 5)
+-- 4a. Per schema (expected: readable = total, writable = 0, sequences_readable =
+--     sequences, sequences_advanceable = 0, usage true; can_create false, or true
+--     only where create_from_public is true: see the warning in 5)
 SELECT g.schema_name,
-       count(c.oid) AS total,
-       count(c.oid) FILTER (WHERE has_table_privilege('Auspex', c.oid, 'SELECT')) AS readable,
-       count(c.oid) FILTER (WHERE has_table_privilege('Auspex', c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE')) AS writable,
+       count(c.oid) FILTER (WHERE c.relkind <> 'S') AS total,
+       count(c.oid) FILTER (WHERE c.relkind <> 'S' AND has_table_privilege('Auspex', c.oid, 'SELECT')) AS readable,
+       count(c.oid) FILTER (WHERE c.relkind <> 'S' AND has_table_privilege('Auspex', c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE')) AS writable,
+       count(c.oid) FILTER (WHERE c.relkind = 'S') AS sequences,
+       count(c.oid) FILTER (WHERE c.relkind = 'S' AND has_sequence_privilege('Auspex', c.oid, 'SELECT')) AS sequences_readable,
+       count(c.oid) FILTER (WHERE c.relkind = 'S' AND has_sequence_privilege('Auspex', c.oid, 'USAGE,UPDATE')) AS sequences_advanceable,
        has_schema_privilege('Auspex', g.schema_name, 'USAGE') AS usage,
        has_schema_privilege('Auspex', g.schema_name, 'CREATE') AS can_create,
        EXISTS (SELECT 1 FROM aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a
                WHERE a.grantee = 0 AND a.privilege_type = 'CREATE') AS create_from_public
 FROM grant_target g
 JOIN pg_namespace n ON n.nspname = g.schema_name
-LEFT JOIN pg_class c ON c.relnamespace = n.oid AND c.relkind IN ('r','p','v','m','f')
+LEFT JOIN pg_class c ON c.relnamespace = n.oid AND c.relkind IN ('r','p','v','m','f','S')
 GROUP BY g.schema_name, n.nspacl, n.nspowner ORDER BY 1;
 
--- 4b. Default privileges recorded for "Auspex" (expected: one row per schema and owner)
-SELECT n.nspname AS schema_name, pg_get_userbyid(d.defaclrole) AS for_owner, d.defaclacl::text AS acl
+-- 4b. Default privileges recorded for "Auspex" (expected: two rows per schema and
+--     owner, object_type r = tables and S = sequences)
+SELECT n.nspname AS schema_name, pg_get_userbyid(d.defaclrole) AS for_owner,
+       d.defaclobjtype AS object_type, d.defaclacl::text AS acl
 FROM pg_default_acl d JOIN pg_namespace n ON n.oid = d.defaclnamespace
 WHERE n.nspname IN (SELECT schema_name FROM grant_target) AND d.defaclacl::text LIKE '%Auspex%'
-ORDER BY 1, 2;
+ORDER BY 1, 2, 3;
 
 -- 4c. Database privileges (expected: connect true, create false)
 SELECT has_database_privilege('Auspex', current_database(), 'CONNECT') AS can_connect,
@@ -106,6 +119,13 @@ BEGIN
     WHERE NOT has_table_privilege('Auspex', c.oid, 'SELECT')
        OR has_table_privilege('Auspex', c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE')) THEN
     RAISE EXCEPTION 'FAIL: a relation is not readable or is writable by "Auspex"';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM grant_target g JOIN pg_namespace n ON n.nspname = g.schema_name
+    JOIN pg_class c ON c.relnamespace = n.oid AND c.relkind = 'S'
+    WHERE NOT has_sequence_privilege('Auspex', c.oid, 'SELECT')
+       OR has_sequence_privilege('Auspex', c.oid, 'USAGE,UPDATE')) THEN
+    RAISE EXCEPTION 'FAIL: a sequence is not readable or can be advanced (USAGE/UPDATE) by "Auspex"';
   END IF;
   IF EXISTS (SELECT 1 FROM grant_target g WHERE NOT has_schema_privilege('Auspex', g.schema_name, 'USAGE')) THEN
     RAISE EXCEPTION 'FAIL: "Auspex" has no USAGE on a target schema';
