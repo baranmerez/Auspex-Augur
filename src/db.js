@@ -16,6 +16,9 @@ for (const oid of [1082, 1083, 1114, 1184, 1266]) pg.types.setTypeParser(oid, va
 // Keep numeric array elements exact, like scalar numeric values, not JS floats.
 pg.types.setTypeParser(1231, pg.types.getTypeParser(1009, 'text'));
 
+// Array parsers do not use the scalar overrides above; keep their text too.
+for (const oid of [1182, 1115, 1185]) pg.types.setTypeParser(oid, pg.types.getTypeParser(1009, 'text'));
+
 const cursorName = 'auspex_cursor';
 const exportBatchSize = 1000;
 // How long past exportMaxMs an export waits for a cancelled FETCH to come back
