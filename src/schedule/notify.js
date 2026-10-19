@@ -1,5 +1,5 @@
-// Desktop notification for a scheduled run: report title and status only,
-// never data values, SQL, parameters or error messages.
+// Desktop notification for a scheduled run: report title, status and the row
+// count only, never data values, SQL, parameters or error messages.
 //
 // Windows: a toast through Windows PowerShell. The script is a fixed string;
 // the title and text travel in environment variables and are put into the
@@ -32,14 +32,32 @@ const statusText = {
 // Plain one-line text: control characters removed, length capped.
 const clean = (value, max) => String(value ?? '').replace(/[\u0000-\u001f\u007f\u2028\u2029]+/g, ' ').trim().slice(0, max);
 
+const count = v => (Number.isInteger(v) && v >= 0 ? v : null);
+const thousands = n => n.toLocaleString('en-US');
+
+// Text of a successful run: the row count when it is known (an empty result
+// is called out, since it usually means a wrong period or missing data),
+// else the planner's estimate, else the plain status.
+function okText(rows, estimatedRows) {
+  if (rows === 0) return 'Finished, but the result is empty (0 rows). Check the period or the data.';
+  if (rows !== null) return `Finished: ${thousands(rows)} ${rows === 1 ? 'row' : 'rows'}.`;
+  if (estimatedRows !== null) return `Finished: about ${thousands(estimatedRows)} rows (estimated).`;
+  return statusText.ok;
+}
+
 // { title, text } of a notification. errorCode is one of the fixed codes of
-// src/errors.js (never a message).
-export function notificationText({ reportTitle, status, errorCode }) {
+// src/errors.js (never a message); rows and estimatedRows are counts of the
+// result (see runRows in store.js).
+export function notificationText({ reportTitle, status, errorCode, rows, estimatedRows }) {
   const title = clean(`Auspex: ${clean(reportTitle, 120) || 'scheduled report'}`, 140);
+  if (status === 'ok') return { title, text: okText(count(rows), count(Number.isFinite(estimatedRows) ? Math.round(estimatedRows) : null)) };
   const base = statusText[status] ?? 'Scheduled run finished with an unknown status.';
   const code = status === 'failed' && /^[A-Z_]{1,40}$/.test(String(errorCode ?? '')) ? ` (${errorCode}).` : status === 'failed' ? '.' : '';
   return { title, text: base + code };
 }
+
+// An empty result is worth a notification even when only failures are asked for.
+export const isEmptyResult = ({ status, rows }) => status === 'ok' && rows === 0;
 
 // The process to start for a toast: { command, args, options }. Exported for tests.
 export function toastCommand({ title, text }, env = process.env) {

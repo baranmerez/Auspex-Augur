@@ -314,8 +314,10 @@ variable. `task-command` names, never prints, the `AUSPEX_DB_*` and other
 `AUSPEX_*` variables of the current shell that the task will not see.
 
 **Notifications:** on Windows a toast with the report title and the status
-(`ok`, skipped because the database was unreachable, or failed with its error
-code). Never data values, SQL, parameters or error messages. The text is
+(`ok` with the row count, skipped because the database was unreachable, or
+failed with its error code). An empty result (0 rows) is called out, since it
+usually means a wrong period or missing data, and is notified with
+`"notify": "failures"` too. Never data values, SQL, parameters or error messages. The text is
 passed to PowerShell through environment variables and inserted as XML text
 nodes, never as script. Elsewhere, or when the toast fails, one line on
 stderr. A notification never fails a run.
