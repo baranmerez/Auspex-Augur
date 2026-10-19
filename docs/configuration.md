@@ -171,3 +171,12 @@ GRANT SELECT ON ALL TABLES IN SCHEMA <schema> TO "Auspex";  -- or a column/view 
 The scripts in [`scripts/`](../scripts) do all of this with a
 `BEGIN → DEFINE → PROCESS → MATCH → CORRECT/FAIL → ROLLBACK` step structure, so you can
 review every result before committing.
+
+On a server whose `password_encryption` is still `md5`, the role script sets
+`scram-sha-256` for its own transaction only, so the new password is stored
+as SCRAM without touching the server setting. If the role already exists on
+the server (another database), run only the grant script: it also grants
+`CONNECT` on the current database. `CREATE` on a schema that comes only
+from `PUBLIC` (the default on `public` before PostgreSQL 15, or an old
+`GRANT ... TO PUBLIC`) is reported as a warning, not a failure; revoking it
+from `PUBLIC` affects every role and is a decision for the DBA.
