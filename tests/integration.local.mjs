@@ -54,12 +54,17 @@ test('list_tables reports privileges', async () => {
   assert.equal(byName.v_worker_region.kind, 'view');
 });
 
-test('estimated_rows is null when the table was never analyzed, never a false 0', async () => {
-  const stats = await raw("select reltuples from pg_class where oid = 'auspex_test.worker'::regclass");
+test('estimated_rows is reltuples, else the live row count, else 0 only after a vacuum or analyze, never a false 0', async () => {
+  const stats = await raw(`select reltuples, pg_stat_get_live_tuples(oid) as live,
+    coalesce(pg_stat_get_last_analyze_time(oid), pg_stat_get_last_autoanalyze_time(oid),
+             pg_stat_get_last_vacuum_time(oid), pg_stat_get_last_autovacuum_time(oid)) is not null as analyzed
+    from pg_class where oid = 'auspex_test.worker'::regclass`);
+  const { reltuples, live, analyzed } = stats.rows[0];
+  const expected = reltuples > 0 ? String(Math.round(reltuples)) : Number(live) > 0 ? String(live) : analyzed ? '0' : null;
   const { tables } = await listTables(db, 'local', 'auspex_test', 'worker');
   const worker = tables.find(t => t.name === 'worker');
-  if (stats.rows[0].reltuples < 0) assert.equal(worker.estimated_rows, null);
-  else assert.equal(worker.estimated_rows, String(Math.round(stats.rows[0].reltuples)));
+  assert.equal(worker.estimated_rows, expected);
+  assert.notEqual(worker.estimated_rows, '0', 'the fixture table has rows: never shown as empty');
   const found = await search(db, 'local', 'worker', 'auspex_test', false);
   assert.equal(found.relations.find(r => r.relation === 'worker').estimated_rows, worker.estimated_rows);
 });
