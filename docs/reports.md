@@ -229,8 +229,10 @@ yourself with the command Auspex prints.
 - `cadence`: `{ "weekly": "<weekday in English>", "at": "HH:MM" }` or
   `{ "daily": true, "at": "HH:MM" }`, local time of the machine.
 - Optional: `"enabled": false` on a schedule; top-level `"taskTime": "HH:MM"`
-  (time of the daily task, default the latest `at` of the enabled schedules)
-  and `"notify": "all" | "failures" | "none"` (default `all`).
+  (time of the daily task, default the latest `at` of the enabled schedules),
+  `"notify": "all" | "failures" | "none"` (default `all`) and
+  `"language": "en" | "tr"` for the notification texts (default: the
+  `notesLanguage` of the profiles file when it is one of these, else English).
 
 Validation is strict: an unknown key, a missing profile or a malformed
 cadence rejects the whole file, so a typo never silently drops a schedule.

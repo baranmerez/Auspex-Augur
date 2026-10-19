@@ -23,35 +23,59 @@ export const toastScript = [
   `[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('${appId}').Show($toast)`,
 ].join('; ');
 
-const statusText = {
-  ok: 'Scheduled run finished.',
-  'skipped-unreachable': 'Skipped: the database was unreachable. It is retried later.',
-  failed: 'Scheduled run failed',
+// Notification texts per language ("language" in schedules.json, else the
+// notesLanguage of the profiles file, else English); the viewer offers the
+// same two languages.
+export const notificationLanguages = ['en', 'tr'];
+const texts = {
+  en: {
+    locale: 'en-US',
+    report: 'scheduled report',
+    ok: 'Scheduled run finished.',
+    'skipped-unreachable': 'Skipped: the database was unreachable. It is retried later.',
+    failed: 'Scheduled run failed',
+    unknown: 'Scheduled run finished with an unknown status.',
+    empty: 'Finished, but the result is empty (0 rows). Check the period or the data.',
+    rows: (n, count) => `Finished: ${n} ${count === 1 ? 'row' : 'rows'}.`,
+    estimated: n => `Finished: about ${n} rows (estimated).`,
+  },
+  tr: {
+    locale: 'tr-TR',
+    report: 'zamanlanm\u0131\u015f rapor',
+    ok: 'Zamanlanm\u0131\u015f \u00e7al\u0131\u015ft\u0131rma tamamland\u0131.',
+    'skipped-unreachable': 'Atland\u0131: veritaban\u0131na ula\u015f\u0131lamad\u0131. Daha sonra yeniden denenecek.',
+    failed: 'Zamanlanm\u0131\u015f \u00e7al\u0131\u015ft\u0131rma ba\u015far\u0131s\u0131z',
+    unknown: 'Zamanlanm\u0131\u015f \u00e7al\u0131\u015ft\u0131rma bilinmeyen bir durumla bitti.',
+    empty: 'Tamamland\u0131, ancak sonu\u00e7 bo\u015f (0 sat\u0131r). D\u00f6nemi ya da veriyi kontrol et.',
+    rows: n => `Tamamland\u0131: ${n} sat\u0131r.`,
+    estimated: n => `Tamamland\u0131: yakla\u015f\u0131k ${n} sat\u0131r (tahmini).`,
+  },
 };
 
 // Plain one-line text: control characters removed, length capped.
 const clean = (value, max) => String(value ?? '').replace(/[\u0000-\u001f\u007f\u2028\u2029]+/g, ' ').trim().slice(0, max);
 
 const count = v => (Number.isInteger(v) && v >= 0 ? v : null);
-const thousands = n => n.toLocaleString('en-US');
 
 // Text of a successful run: the row count when it is known (an empty result
 // is called out, since it usually means a wrong period or missing data),
 // else the planner's estimate, else the plain status.
-function okText(rows, estimatedRows) {
-  if (rows === 0) return 'Finished, but the result is empty (0 rows). Check the period or the data.';
-  if (rows !== null) return `Finished: ${thousands(rows)} ${rows === 1 ? 'row' : 'rows'}.`;
-  if (estimatedRows !== null) return `Finished: about ${thousands(estimatedRows)} rows (estimated).`;
-  return statusText.ok;
+function okText(t, rows, estimatedRows) {
+  const n = v => v.toLocaleString(t.locale);
+  if (rows === 0) return t.empty;
+  if (rows !== null) return t.rows(n(rows), rows);
+  if (estimatedRows !== null) return t.estimated(n(estimatedRows));
+  return t.ok;
 }
 
 // { title, text } of a notification. errorCode is one of the fixed codes of
 // src/errors.js (never a message); rows and estimatedRows are counts of the
-// result (see runRows in store.js).
-export function notificationText({ reportTitle, status, errorCode, rows, estimatedRows }) {
-  const title = clean(`Auspex: ${clean(reportTitle, 120) || 'scheduled report'}`, 140);
-  if (status === 'ok') return { title, text: okText(count(rows), count(Number.isFinite(estimatedRows) ? Math.round(estimatedRows) : null)) };
-  const base = statusText[status] ?? 'Scheduled run finished with an unknown status.';
+// result (see runRows in store.js); language one of notificationLanguages.
+export function notificationText({ reportTitle, status, errorCode, rows, estimatedRows }, language = 'en') {
+  const t = texts[language] ?? texts.en;
+  const title = clean(`Auspex: ${clean(reportTitle, 120) || t.report}`, 140);
+  if (status === 'ok') return { title, text: okText(t, count(rows), count(Number.isFinite(estimatedRows) ? Math.round(estimatedRows) : null)) };
+  const base = status === 'skipped-unreachable' || status === 'failed' ? t[status] : t.unknown;
   const code = status === 'failed' && /^[A-Z_]{1,40}$/.test(String(errorCode ?? '')) ? ` (${errorCode}).` : status === 'failed' ? '.' : '';
   return { title, text: base + code };
 }
@@ -77,8 +101,8 @@ export function toastCommand({ title, text }, env = process.env) {
 
 // Shows a notification; resolves to 'toast', 'log' or 'failed'. Never throws.
 // spawnFn and platform are injectable for tests.
-export function notify(message, { platform = process.platform, spawnFn = spawn, env = process.env, log = line => process.stderr.write(`${line}\n`), timeoutMs = 15000 } = {}) {
-  const { title, text } = notificationText(message);
+export function notify(message, { language = 'en', platform = process.platform, spawnFn = spawn, env = process.env, log = line => process.stderr.write(`${line}\n`), timeoutMs = 15000 } = {}) {
+  const { title, text } = notificationText(message, language);
   const logLine = () => log(`auspex scheduler: ${title}: ${text}`);
   if (platform !== 'win32') {
     logLine();

@@ -24,6 +24,7 @@ import path from 'node:path';
 import { auspexHome } from '../config.js';
 import { normalizeRef } from '../reports/library.js';
 import { ToolError } from '../errors.js';
+import { notificationLanguages } from './notify.js';
 
 export const weekdays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 export const notifyModes = ['all', 'failures', 'none'];
@@ -97,17 +98,18 @@ function validateEntry(s, i, ids) {
   return { id: s.id, profile, report, preset, cadence: validateCadence(s.cadence, `${label}.cadence`), enabled: s.enabled !== false };
 }
 
-// Validates the parsed file content; returns { taskTime, notify, schedules }.
+// Validates the parsed file content; returns { taskTime, notify, language, schedules }.
 export function validateSchedules(data) {
   if (!isObject(data)) throw fail('schedules.json must be a JSON object with a "schedules" array.');
-  onlyKeys(data, ['schedules', 'taskTime', 'notify'], 'schedules.json');
+  onlyKeys(data, ['schedules', 'taskTime', 'notify', 'language'], 'schedules.json');
   if (!Array.isArray(data.schedules)) throw fail('schedules.json: "schedules" must be an array.');
   if (data.schedules.length > maxSchedules) throw fail(`schedules.json: at most ${maxSchedules} schedules.`);
   const ids = new Set();
   const schedules = data.schedules.map((s, i) => validateEntry(s, i, ids));
   if (data.taskTime !== undefined) parseTime(data.taskTime, 'schedules.json: "taskTime"');
   if (data.notify !== undefined && !notifyModes.includes(data.notify)) throw fail(`schedules.json: "notify" must be one of ${notifyModes.join(', ')}.`);
-  return { taskTime: data.taskTime ?? null, notify: data.notify ?? 'all', schedules };
+  if (data.language !== undefined && !notificationLanguages.includes(data.language)) throw fail(`schedules.json: "language" must be one of ${notificationLanguages.join(', ')}.`);
+  return { taskTime: data.taskTime ?? null, notify: data.notify ?? 'all', language: data.language ?? null, schedules };
 }
 
 // The validated schedules file, or { missing: true, schedules: [] } when it
@@ -117,7 +119,7 @@ export function loadSchedules(file) {
   try {
     text = fs.readFileSync(file, 'utf8');
   } catch (err) {
-    if (err.code === 'ENOENT') return { file, missing: true, taskTime: null, notify: 'all', schedules: [] };
+    if (err.code === 'ENOENT') return { file, missing: true, taskTime: null, notify: 'all', language: null, schedules: [] };
     throw err;
   }
   let data;
