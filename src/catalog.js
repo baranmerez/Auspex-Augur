@@ -3,6 +3,22 @@ import { ToolError } from './errors.js';
 // Catalog queries used for browsing. They are fixed, parameterized SQL and run
 // inside the same READ ONLY transaction wrapper as user queries.
 
+// Row estimate of a relation (pg_class alias), null when unknown.
+// - reltuples > 0: the planner's estimate, as PostgreSQL itself uses it.
+// - reltuples is 0 or -1 but the statistics collector counts live rows
+//   (inserts since the last vacuum or analyze): that count. A table analyzed
+//   while empty and filled later would otherwise stay at 0.
+// - reltuples is 0 and the relation was vacuumed or analyzed: 0 (empty).
+// - otherwise unknown (null). PostgreSQL 14+ marks a never vacuumed or
+//   analyzed relation with -1, but before 14 with 0, the same value as an
+//   empty table: an unknown is safer than a false "empty".
+// (After a statistics reset an empty table shows unknown until its next
+// vacuum or analyze.)
+export const estimatedRowsSql = alias => `case when ${alias}.reltuples > 0 then ${alias}.reltuples::bigint `
+  + `when pg_stat_get_live_tuples(${alias}.oid) > 0 then pg_stat_get_live_tuples(${alias}.oid) `
+  + `when ${alias}.reltuples = 0 and coalesce(pg_stat_get_last_analyze_time(${alias}.oid), pg_stat_get_last_autoanalyze_time(${alias}.oid), `
+  + `pg_stat_get_last_vacuum_time(${alias}.oid), pg_stat_get_last_autovacuum_time(${alias}.oid)) is not null then 0 end`;
+
 const listSchemasSql = `
 select n.nspname as schema,
        pg_get_userbyid(n.nspowner) as owner,
@@ -17,7 +33,7 @@ const listTablesSql = `
 select c.relname as name,
        case c.relkind when 'r' then 'table' when 'p' then 'partitioned' when 'v' then 'view'
                       when 'm' then 'matview' when 'f' then 'foreign' end as kind,
-       case when c.reltuples < 0 then null else c.reltuples::bigint end as estimated_rows, -- -1 = never analyzed
+       ${estimatedRowsSql('c')} as estimated_rows,
        pg_size_pretty(pg_total_relation_size(c.oid)) as total_size,
        has_table_privilege(c.oid, 'SELECT') as can_select,
        obj_description(c.oid, 'pg_class') as comment
@@ -34,7 +50,7 @@ limit 1000`;
 // when the relation does not exist.
 const relationsByNameSql = `
 select r.ord::int as ord, c.oid::bigint as oid, c.relkind,
-       case when c.reltuples < 0 then null else c.reltuples::bigint end as estimated_rows, -- -1 = never analyzed
+       ${estimatedRowsSql('c')} as estimated_rows,
        obj_description(c.oid, 'pg_class') as comment,
        c.relrowsecurity as rls_enabled, c.relforcerowsecurity as rls_forced,
        case when c.relkind = 'p' then pg_get_partkeydef(c.oid) end as partition_key,
@@ -167,7 +183,7 @@ with rel as (
   select c.oid, n.nspname, c.relname,
          case c.relkind when 'r' then 'table' when 'p' then 'partitioned' when 'v' then 'view'
                         when 'm' then 'matview' when 'f' then 'foreign' end as kind,
-         case when c.reltuples < 0 then null else c.reltuples::bigint end as estimated_rows, -- -1 = never analyzed
+         ${estimatedRowsSql('c')} as estimated_rows,
          has_table_privilege(c.oid, 'SELECT') as can_select,
          obj_description(c.oid, 'pg_class') as comment
   from pg_class c
@@ -601,10 +617,12 @@ export async function describeFunctions(db, profile, { functions, pattern, schem
 
 // Catalog facts profile_tables needs for every requested relation (and the
 // parent), in one statement: columns with their base type and SELECT
-// privilege, and outgoing single- or multi-column foreign keys.
+// privilege, outgoing single- or multi-column foreign keys, and for a table or
+// materialized view its size in pages (from the file size, not statistics).
 const profileCatalogSql = `
 select r.ord::int as ord, c.oid::bigint as oid, c.relkind, n.nspname as schema_name, c.relname as rel_name,
-       case when c.reltuples < 0 then null else c.reltuples::bigint end as estimated_rows, -- -1 = never analyzed
+       ${estimatedRowsSql('c')} as estimated_rows,
+       case when c.relkind in ('r', 'm') then pg_relation_size(c.oid) / current_setting('block_size')::bigint end as pages,
        has_table_privilege(c.oid, 'SELECT') as can_select,
        (select coalesce(jsonb_agg(jsonb_build_object(
                  'name', a.attname,
@@ -632,7 +650,8 @@ const comparableTypes = (a, b) => Number(a) === Number(b) || typeFamilies.some(f
 
 export const samplingNote = 'Column statistics are computed on a sample of at most sampleRows rows per table. '
   + 'A table, partitioned table or materialized view whose estimated rows exceed sampleRows is read with TABLESAMPLE SYSTEM '
-  + '(random pages, percent sized to about 1.2 x sampleRows) plus LIMIT sampleRows (sample.method "tablesample"); '
+  + '(random pages, percent sized to about 1.2 x sampleRows) plus LIMIT sampleRows (sample.method "tablesample"), '
+  + 'unless that would pick fewer than about 10 pages of a table or materialized view (a small table could come back empty); '
   + 'any other relation, or one with unknown or smaller estimates, is read with a plain LIMIT sampleRows scan '
   + '(sample.method "limit": the first rows the scan returns, not random). fillRate = non-null share of the sample; '
   + 'distinctInSample = count(distinct value::text) within the sample, a lower bound for the whole table.';
@@ -705,13 +724,20 @@ function validateProfileArgs({ tables, parent, window, parentFilter, sampleRows 
   return { refs, parentRef, win, filters, rows };
 }
 
+// TABLESAMPLE SYSTEM picks whole pages at random: below about this many
+// expected pages a small table can come back with no rows at all, so it is
+// read with a plain LIMIT scan instead (which reads at most sampleRows rows).
+const minSamplePages = 10;
+
 function sampleSource(rel, readable, sampleRows) {
   const from = `${quoteIdent(rel.schema_name)}.${quoteIdent(rel.rel_name)}`;
   const cols = readable.map(c => quoteIdent(c.name)).join(', ');
   const estimated = toNumber(rel.estimated_rows);
   if (['r', 'p', 'm'].includes(rel.relkind) && estimated !== null && estimated > sampleRows) {
     const percent = Number(Math.min(100, Math.max(0.0001, (sampleRows / estimated) * 120)).toFixed(4));
-    return { sql: `select ${cols} from ${from} tablesample system (${percent}) limit $1`, sample: { method: 'tablesample', percent } };
+    const pages = toNumber(rel.pages);
+    const tooFewPages = pages !== null && (pages * percent) / 100 < minSamplePages;
+    if (!tooFewPages) return { sql: `select ${cols} from ${from} tablesample system (${percent}) limit $1`, sample: { method: 'tablesample', percent } };
   }
   return { sql: `select ${cols} from ${from} limit $1`, sample: { method: 'limit' } };
 }
@@ -917,7 +943,7 @@ export const maxRelationStatsTables = 50;
 // for them. $3 limits the neighbours to one schema.
 const relationStatsCatalogSql = `
 select r.ord::int as ord, c.oid::bigint as oid, c.relkind,
-       case when c.reltuples < 0 then null else c.reltuples::bigint end as est_rows, -- -1 = never analyzed
+       ${estimatedRowsSql('c')} as est_rows,
        has_table_privilege(c.oid, 'SELECT') as can_select,
        (select coalesce(jsonb_agg(jsonb_build_object(
                  'role', k.role,
@@ -925,7 +951,7 @@ select r.ord::int as ord, c.oid::bigint as oid, c.relkind,
                  'schema', on_.nspname,
                  'table', oc.relname,
                  'relkind', oc.relkind,
-                 'estRows', case when oc.reltuples < 0 then null else oc.reltuples::bigint end,
+                 'estRows', ${estimatedRowsSql('oc')},
                  'canSelect', has_table_privilege(oc.oid, 'SELECT'),
                  'columns', ${keyColumns('con.conkey', 'con.conrelid')},
                  'refColumns', ${keyColumns('con.confkey', 'con.confrelid')}) order by k.role, on_.nspname, oc.relname, con.conname), '[]'::jsonb)
@@ -950,10 +976,10 @@ from unnest($1::text[], $2::text[], $3::text[], $4::boolean[]) with ordinality a
 left join pg_stats s on s.schemaname = r.schema and s.tablename = r.tbl and s.attname = r.col and s.inherited = r.inh
 order by r.ord`;
 
-export const relationStatsNote = 'Estimates from planner statistics only; no table is read. linkedRows = estimated rows of the referencing table '
+export const relationStatsNote = 'Estimates from statistics only (reltuples, or the live row count when reltuples is 0 or unknown); no table is read. linkedRows = estimated rows of the referencing table '
   + '(the dependent table, or the center for an instance table) x (1 - null_frac of its foreign key column; for a multi-column key the '
-  + 'largest null_frac, so an upper bound). linkedRows is null with stats "missing" when the referencing table was never analyzed '
-  + '(reltuples < 0) or pg_stats has no row for a key column: pg_stats only shows columns the role may read, hides tables whose row '
+  + 'largest null_frac, so an upper bound). linkedRows is null with stats "missing" when the referencing table has no row estimate (never vacuumed '
+  + 'or analyzed) or pg_stats has no row for a key column: pg_stats only shows columns the role may read, hides tables whose row '
   + 'security applies to the role, and a partitioned table has statistics only after ANALYZE on the parent (autovacuum does not analyze it). '
   + 'Relations without SELECT privilege are not listed, only counted in hidden.';
 

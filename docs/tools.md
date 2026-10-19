@@ -89,8 +89,9 @@ or materialized view is listed); `profile_tables` sends 1 catalog lookup, 1
 column-statistics statement for all tables (`UNION ALL`) and, with `parent`,
 1 fan-out statement, so at most 3 (field `statements`). Column statistics are
 taken on a sample of `sampleRows` rows per table (default 20000, max 200000):
-`TABLESAMPLE SYSTEM` plus `LIMIT` when the estimate is larger, otherwise a
-plain `LIMIT` scan. Fan-out uses the child's single-column foreign key to
+`TABLESAMPLE SYSTEM` plus `LIMIT` when the estimate is larger and the table is
+big enough to sample about 10 pages (a small table could otherwise come back
+empty), otherwise a plain `LIMIT` scan. Fan-out uses the child's single-column foreign key to
 `parent.key`, or a column given as `schema.table:column`. The parent rows can
 be narrowed by `window` (`from <= column < to`) and by `parentFilter`, up to 5
 conditions `{ column, op, value | values }` with `op` one of `=`, `<>`, `>`,
@@ -171,10 +172,10 @@ Each list is sorted by `linkedRows`, then by the table's estimated rows
 rank, explored }`; `columns` are the referencing side's key columns.
 
 `linkedRows` estimates the rows that link through the key, from statistics
-only: the referencing table's `reltuples` (the dependent table, or the center
-for an instance table) times `1 - null_frac` of its key column in `pg_stats`.
+only: the referencing table's row estimate (the dependent table, or the center
+for an instance table; see *Row estimates* below) times `1 - null_frac` of its key column in `pg_stats`.
 For a multi-column key the largest `null_frac` is used, so it is an upper
-bound. When the referencing table was never analyzed (`reltuples < 0`) or
+bound. When the referencing table has no row estimate or
 `pg_stats` has no row for a key column, `linkedRows` is `null` and `stats` is
 `"missing"`; it is never reported as 0. `pg_stats` only shows columns the role
 may read and hides tables whose row security applies to the role, so missing
@@ -191,6 +192,18 @@ relations with their foreign keys, then `pg_stats`), with one audit entry
 (field `statements`). The result is recorded in the schema memory: centers and
 neighbours are recorded as seen (never as explored), with their row estimates,
 and the edges in `graph.json` carry the linked-row figures (see below).
+
+### Row estimates
+
+`estimated_rows` (and `estRows`) never read a table. It is the planner's
+`reltuples` when that is above 0. When `reltuples` is 0 or unknown it is the
+live row count of the statistics collector (rows inserted since the last
+vacuum or analyze), so a table analyzed while empty and filled later is not
+shown as empty. It is 0 only for a relation that was vacuumed or analyzed and
+has no live rows, and `null` (unknown) otherwise. This matters before
+PostgreSQL 14, which marks a never-analyzed table with `reltuples = 0`
+instead of `-1`. An estimate above 0 can still be out of date until the next
+analyze; use `profile_tables` or `count(*)` when the exact figure matters.
 
 ### Large tables and long queries
 
