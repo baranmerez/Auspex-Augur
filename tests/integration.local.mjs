@@ -12,7 +12,7 @@ import path from 'node:path';
 import { loadConfig } from '../src/config.js';
 import { ReadOnlyDatabase } from '../src/db.js';
 import { classifyError } from '../src/errors.js';
-import { listSchemas, listTables, describeTable, describeTables, describeFunctions, profileTables, relationStats, search, summarizeDescribedTable } from '../src/catalog.js';
+import { listSchemas, listTables, describeTable, describeTables, describeFunctions, profileTables, relationStats, search, summarizeDescribedTable, estimatedRowsSql } from '../src/catalog.js';
 import { ReportService } from '../src/reports/service.js';
 import { SchemaMemory } from '../src/memory/store.js';
 
@@ -513,10 +513,10 @@ test('relation_stats links region and worker from planner statistics in at most 
   assert.equal(instance.constraint, 'worker_region_id_fkey');
   // The setup may or may not have analyzed the tables: either way the figure
   // must match the statistics, and unknown stays null.
-  const stats = (await raw(`select c.reltuples, s.null_frac from pg_class c
+  const stats = (await raw(`select ${estimatedRowsSql('c')} as est, s.null_frac from pg_class c
     left join pg_stats s on s.schemaname = 'auspex_test' and s.tablename = 'worker' and s.attname = 'region_id' and not s.inherited
     where c.oid = 'auspex_test.worker'::regclass`)).rows[0];
-  const expected = stats.reltuples < 0 || stats.null_frac === null ? null : Math.round(stats.reltuples * (1 - stats.null_frac));
+  const expected = stats.est === null || stats.null_frac === null ? null : Math.round(Number(stats.est) * (1 - stats.null_frac));
   assert.equal(dependent.linkedRows, expected);
   assert.equal(instance.linkedRows, expected);
   assert.equal(dependent.stats, expected === null ? 'missing' : 'ok');
@@ -608,10 +608,10 @@ ddlTest('relation_stats on import_job: analyzed figures, partitioned dependent, 
   const r = await relationStats(db, 'local', ['auspex_test.import_job']);
   assert.equal(r.statements, 2);
   const [job] = r.tables;
-  const stat = async (table, column, inherited) => (await raw(`select c.reltuples, s.null_frac from pg_class c
+  const stat = async (table, column, inherited) => (await raw(`select ${estimatedRowsSql('c')} as est, s.null_frac from pg_class c
     left join pg_stats s on s.schemaname = 'auspex_test' and s.tablename = c.relname and s.attname = '${column}' and s.inherited = ${inherited}
     where c.oid = 'auspex_test.${table}'::regclass`)).rows[0];
-  const expect = s => (s.reltuples < 0 || s.null_frac === null ? null : Math.round(s.reltuples * (1 - s.null_frac)));
+  const expect = s => (s.est === null || s.null_frac === null ? null : Math.round(Number(s.est) * (1 - s.null_frac)));
   const region = job.instance.find(i => i.relation === 'auspex_test.region');
   assert.equal(region.linkedRows, expect(await stat('import_job', 'region_id', false)));
   assert.equal(region.linkedRows, 3, 'the script analyzed import_job: 4 rows, one without region');

@@ -14,7 +14,8 @@ confidence; it stays an inference until the user confirms it.
 | Two foreign keys, few other columns | link table (N:M) |
 | Date + amount + foreign keys, large row count | transaction / movement table |
 | Same columns as another table plus date/user/op columns | log or history copy |
-| Estimated rows 0 or `null` | unused or never analyzed: say which |
+| Estimated rows 0 | empty when it was last vacuumed or analyzed |
+| Estimated rows `null` | no estimate (never vacuumed or analyzed, or statistics not available on a standby or after a reset): measure with `profile_tables` before calling it empty |
 | Write activity (inserts/updates/deletes since stats reset, when a tool returns it) | live vs frozen table |
 
 ## Column importance signals (`profile_tables`)

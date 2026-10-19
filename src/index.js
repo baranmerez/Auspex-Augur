@@ -174,7 +174,7 @@ tool('check_profile', {
 
 tool('search', {
   title: 'Search tables and columns',
-  description: 'Finds tables, views, materialized views, columns, functions (incl. procedures) and triggers whose name or comment matches the text, across all non-system schemas (or one schema), in one statement. Case-insensitive; always a contains-match (a leading and trailing % are added); % and _ inside the text are ILIKE wildcards, e.g. example%code. Returns estimated rows (null = never analyzed, unknown), SELECT privilege for relations and columns, EXECUTE privilege for functions and the trigger function for triggers. With searchSource, functions whose source text contains the text are found too (matchedIn "source"; the source is not returned, use describe_functions). At most 500 matches (truncated).',
+  description: 'Finds tables, views, materialized views, columns, functions (incl. procedures) and triggers whose name or comment matches the text, across all non-system schemas (or one schema), in one statement. Case-insensitive; always a contains-match (a leading and trailing % are added); % and _ inside the text are ILIKE wildcards, e.g. example%code. Returns estimated rows (null = no row estimate: never vacuumed or analyzed, or statistics not available, e.g. on a standby or after a statistics reset), SELECT privilege for relations and columns, EXECUTE privilege for functions and the trigger function for triggers. With searchSource, functions whose source text contains the text are found too (matchedIn "source"; the source is not returned, use describe_functions). At most 500 matches (truncated).',
   inputSchema: {
     profile: profileArg,
     text: z.string().min(1).describe('Text to find, e.g. invoice or customer.'),
@@ -194,7 +194,7 @@ tool('list_schemas', {
 
 tool('list_tables', {
   title: 'List tables',
-  description: 'Lists tables, views, materialized views and foreign tables in a schema with estimated rows (null = never analyzed, unknown), size, SELECT privilege and comment.',
+  description: 'Lists tables, views, materialized views and foreign tables in a schema with estimated rows (null = no row estimate: never vacuumed or analyzed, or statistics not available, e.g. on a standby or after a statistics reset), size, SELECT privilege and comment.',
   inputSchema: {
     profile: profileArg,
     schema: z.string().describe('Schema name, e.g. public.'),

@@ -54,7 +54,7 @@ changelog }`. Nodes and edges, with the optional fields `relation_stats` adds
 ```
 node: { id: "schema.table", schema, table, file?, state: "explored" | "seen" | "unexplored",
         kind, estimatedRows, columnCount, changes, notes,
-        estRows?: number | null,        // relation_stats row estimate; null = never analyzed
+        estRows?: number | null,        // relation_stats row estimate; null = no estimate (see docs/tools.md, Row estimates)
         scoredAt?: "ISO time",          // score_columns, see Column importance
         columnScores?: { [column]: { score: 1-5 | null, scoreBy?: "user" | "agent",   // effective score
                                      agent?: { score, roles, reason, sources, at, history },
