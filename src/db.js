@@ -368,7 +368,10 @@ export class ReadOnlyDatabase {
       const deadline = Date.now() + maxMs;
       const statementMs = this.timeoutMs(name, timeoutSeconds);
       await this.declareCursor(client, query, params);
-      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
+      // Existing export directories may predate private permissions. Lock them
+      // down before writing a CSV that contains unmasked database row values.
+      if (process.platform !== 'win32') fs.chmodSync(path.dirname(target), 0o700);
       // 'wx' never touches an existing file; only a file this call created is
       // ever removed again.
       const out = this.openExportStream(target);
@@ -470,7 +473,7 @@ export class ReadOnlyDatabase {
 
   // Separate so tests can substitute a failing or slow stream.
   openExportStream(target) {
-    return fs.createWriteStream(target, { encoding: 'utf8', flags: 'wx' });
+    return fs.createWriteStream(target, { encoding: 'utf8', flags: 'wx', mode: 0o600 });
   }
 
   // Timestamp plus a random part: two exports with the same name in the same
