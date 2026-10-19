@@ -160,6 +160,7 @@ ALTER ROLE "Auspex" SET idle_in_transaction_session_timeout = '60s';
 GRANT CONNECT ON DATABASE <db> TO "Auspex";
 GRANT USAGE ON SCHEMA <schema> TO "Auspex";
 GRANT SELECT ON ALL TABLES IN SCHEMA <schema> TO "Auspex";  -- or a column/view subset for personal data
+GRANT SELECT ON ALL SEQUENCES IN SCHEMA <schema> TO "Auspex";  -- last_value only; never USAGE or UPDATE
 ```
 
 > [!CAUTION]
@@ -180,3 +181,7 @@ the server (another database), run only the grant script: it also grants
 from `PUBLIC` (the default on `public` before PostgreSQL 15, or an old
 `GRANT ... TO PUBLIC`) is reported as a warning, not a failure; revoking it
 from `PUBLIC` affects every role and is a decision for the DBA.
+`ALL TABLES` does not include sequences, so the grant script also grants
+`SELECT` on sequences (and on sequences the current owners create later).
+That reads `last_value` only; `USAGE` or `UPDATE` (`nextval`, `setval`) on a
+sequence makes the script fail.
