@@ -9,19 +9,26 @@
 -- 1. BEGIN
 BEGIN;
 
+-- Store the new password as SCRAM even where the server default is still md5.
+-- Only for this transaction: the server setting and other roles are not touched.
+-- A pg_hba.conf "md5" line accepts a SCRAM-stored password (it then uses SCRAM).
+SET LOCAL password_encryption = 'scram-sha-256';
+
 -- 2. DEFINE
 -- Scope: one new role "Auspex" (cluster-wide) + CONNECT on the current database.
--- Expected: role does not exist yet; password_encryption is scram-sha-256.
+-- Expected: role does not exist yet; password_encryption is scram-sha-256 here
+-- (set above for this transaction; server_default shows the server's own value).
 SELECT current_database() AS target_database,
        inet_server_addr() AS server_addr,
        current_setting('server_version') AS server_version,
        current_setting('password_encryption') AS password_encryption,  -- expected: scram-sha-256
+       (SELECT reset_val FROM pg_settings WHERE name = 'password_encryption') AS server_default,  -- info only; md5 is fine
        EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'Auspex') AS role_exists;  -- expected: false
 
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'Auspex') THEN
-    RAISE EXCEPTION 'Role "Auspex" already exists on this server; skip this script and run only grant-schemas-readonly.sql.';
+    RAISE EXCEPTION 'Role "Auspex" already exists on this server; skip this script and run only grant-schemas-readonly.sql (it also grants CONNECT on this database).';
   END IF;
   IF current_setting('password_encryption') <> 'scram-sha-256' THEN
     RAISE EXCEPTION 'password_encryption is %, expected scram-sha-256.', current_setting('password_encryption');

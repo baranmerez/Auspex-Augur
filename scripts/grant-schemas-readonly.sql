@@ -1,8 +1,14 @@
 -- Grant read-only access on schemas to the "Auspex" login role
 -- Fill in 2. DEFINE: the schema list (or leave it empty for every non-system
 -- schema). Run as a superuser or as the owner of the tables.
--- Grants SELECT on existing relations and default SELECT for relations that
--- the current owners create later. Last statement is ROLLBACK.
+-- Grants CONNECT on this database, SELECT on existing relations and default
+-- SELECT for relations that the current owners create later. Last statement
+-- is ROLLBACK.
+-- CREATE on a schema that comes only from PUBLIC (for example the PostgreSQL
+-- 14-and-older default on schema public, or a GRANT ... TO PUBLIC) is reported
+-- as a warning, not a failure: Auspex runs every query in a READ ONLY
+-- transaction. Revoking it from PUBLIC is a decision for the DBA, since other
+-- roles may rely on it. CREATE granted to "Auspex" itself is a failure.
 
 -- 1. BEGIN
 BEGIN;
@@ -49,6 +55,8 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM grant_target) THEN
     RAISE EXCEPTION 'FAIL: no target schemas';
   END IF;
+  -- Also when the role already existed for another database on this server.
+  EXECUTE format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), 'Auspex');
   FOR s IN SELECT schema_name FROM grant_target LOOP
     EXECUTE format('GRANT USAGE ON SCHEMA %I TO %I', s.schema_name, 'Auspex');
     EXECUTE format('GRANT SELECT ON ALL TABLES IN SCHEMA %I TO %I', s.schema_name, 'Auspex');
@@ -63,17 +71,20 @@ BEGIN
 END $$;
 
 -- 4. MATCH
--- 4a. Per schema (expected: readable = total, writable = 0, usage true, can_create false)
+-- 4a. Per schema (expected: readable = total, writable = 0, usage true; can_create
+--     false, or true only where create_from_public is true: see the warning in 5)
 SELECT g.schema_name,
        count(c.oid) AS total,
        count(c.oid) FILTER (WHERE has_table_privilege('Auspex', c.oid, 'SELECT')) AS readable,
        count(c.oid) FILTER (WHERE has_table_privilege('Auspex', c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE')) AS writable,
        has_schema_privilege('Auspex', g.schema_name, 'USAGE') AS usage,
-       has_schema_privilege('Auspex', g.schema_name, 'CREATE') AS can_create
+       has_schema_privilege('Auspex', g.schema_name, 'CREATE') AS can_create,
+       EXISTS (SELECT 1 FROM aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a
+               WHERE a.grantee = 0 AND a.privilege_type = 'CREATE') AS create_from_public
 FROM grant_target g
 JOIN pg_namespace n ON n.nspname = g.schema_name
 LEFT JOIN pg_class c ON c.relnamespace = n.oid AND c.relkind IN ('r','p','v','m','f')
-GROUP BY g.schema_name ORDER BY 1;
+GROUP BY g.schema_name, n.nspacl, n.nspowner ORDER BY 1;
 
 -- 4b. Default privileges recorded for "Auspex" (expected: one row per schema and owner)
 SELECT n.nspname AS schema_name, pg_get_userbyid(d.defaclrole) AS for_owner, d.defaclacl::text AS acl
@@ -81,8 +92,13 @@ FROM pg_default_acl d JOIN pg_namespace n ON n.oid = d.defaclnamespace
 WHERE n.nspname IN (SELECT schema_name FROM grant_target) AND d.defaclacl::text LIKE '%Auspex%'
 ORDER BY 1, 2;
 
+-- 4c. Database privileges (expected: connect true, create false)
+SELECT has_database_privilege('Auspex', current_database(), 'CONNECT') AS can_connect,
+       has_database_privilege('Auspex', current_database(), 'CREATE') AS can_create_schema;
+
 -- 5. CORRECT or FAIL
 DO $$
+DECLARE warn text;
 BEGIN
   IF EXISTS (
     SELECT 1 FROM grant_target g JOIN pg_namespace n ON n.nspname = g.schema_name
@@ -91,10 +107,28 @@ BEGIN
        OR has_table_privilege('Auspex', c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE')) THEN
     RAISE EXCEPTION 'FAIL: a relation is not readable or is writable by "Auspex"';
   END IF;
-  IF EXISTS (SELECT 1 FROM grant_target g
-             WHERE NOT has_schema_privilege('Auspex', g.schema_name, 'USAGE')
-                OR has_schema_privilege('Auspex', g.schema_name, 'CREATE')) THEN
-    RAISE EXCEPTION 'FAIL: schema privilege mismatch for "Auspex"';
+  IF EXISTS (SELECT 1 FROM grant_target g WHERE NOT has_schema_privilege('Auspex', g.schema_name, 'USAGE')) THEN
+    RAISE EXCEPTION 'FAIL: "Auspex" has no USAGE on a target schema';
+  END IF;
+  IF NOT has_database_privilege('Auspex', current_database(), 'CONNECT')
+     OR has_database_privilege('Auspex', current_database(), 'CREATE') THEN
+    RAISE EXCEPTION 'FAIL: database privilege mismatch for "Auspex" (expected CONNECT without CREATE)';
+  END IF;
+  -- CREATE granted to "Auspex" itself, or CREATE that does not come from PUBLIC
+  -- (then through a role "Auspex" belongs to).
+  IF EXISTS (
+    SELECT 1 FROM grant_target g JOIN pg_namespace n ON n.nspname = g.schema_name
+    WHERE EXISTS (SELECT 1 FROM aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a
+                  WHERE a.grantee = (SELECT oid FROM pg_roles WHERE rolname = 'Auspex') AND a.privilege_type = 'CREATE')
+       OR (has_schema_privilege('Auspex', n.oid, 'CREATE')
+           AND NOT EXISTS (SELECT 1 FROM aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a
+                           WHERE a.grantee = 0 AND a.privilege_type = 'CREATE'))) THEN
+    RAISE EXCEPTION 'FAIL: "Auspex" was granted CREATE on a schema';
+  END IF;
+  SELECT string_agg(g.schema_name, ', ' ORDER BY g.schema_name) INTO warn
+  FROM grant_target g WHERE has_schema_privilege('Auspex', g.schema_name, 'CREATE');
+  IF warn IS NOT NULL THEN
+    RAISE NOTICE 'WARNING: CREATE through PUBLIC on: % (blocked by the READ ONLY transaction; REVOKE CREATE ON SCHEMA ... FROM PUBLIC is a DBA decision)', warn;
   END IF;
   RAISE NOTICE 'OK: all checks passed';
 END $$;
