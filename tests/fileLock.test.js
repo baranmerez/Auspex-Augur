@@ -392,6 +392,28 @@ test('a dead owner\'s lock is taken over when the rename changes the inode (FAT/
   assert.deepEqual(fs.readdirSync(dir), []);
 });
 
+test('a takeover of a tokenless lock never retires a newer lock caught between create and write', () => {
+  const dir = tempDir('auspex-lock-tokenless-race-');
+  const lockPath = path.join(dir, '.lock');
+  fs.writeFileSync(lockPath, ''); // an owner that died between create and write
+  const old = new Date(Date.now() - 3600000);
+  fs.utimesSync(lockPath, old, old);
+  // Just before the taker's rename, a new owner creates a fresh lock and has
+  // not written its body yet: it reads as tokenless too.
+  const hook = onFirstRemoval(lockPath, ({ rmSync }) => {
+    rmSync.call(fs, lockPath);
+    fs.writeFileSync(lockPath, '', { flag: 'wx' });
+  });
+  try {
+    assert.throws(() => withFileLock(lockPath, () => 'two writers would overlap', { waitMs: 150 }), LockBusyError);
+  } finally {
+    hook.restore();
+  }
+  assert.ok(hook.fired(), 'the race was exercised');
+  assert.ok(fs.existsSync(lockPath), "the new owner's lock is intact");
+  assert.ok(Date.now() - fs.statSync(lockPath).mtimeMs < 60000, 'it is the fresh lock, not the old one');
+});
+
 test('a takeover never retires a newer generation installed after its last check', () => {
   const dir = tempDir('auspex-lock-takeover-race-');
   const lockPath = path.join(dir, '.lock');
