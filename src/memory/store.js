@@ -13,8 +13,8 @@
 //                                  rebuilt after every change, safe to delete
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import { withFileLock, renameRetrying } from '../fileLock.js';
-import { ensurePrivateDir, appendPrivate } from '../privateFiles.js';
+import { withFileLock } from '../fileLock.js';
+import { writePrivateAtomic, appendPrivate } from '../privateFiles.js';
 import path from 'node:path';
 import { splitColumnRef } from './planUsage.js';
 
@@ -76,13 +76,6 @@ function legacySegment(name) {
 
 const tableKey = (schema, table) => `${schema}.${table}`;
 const sameTable = (a, b) => a.schema === b.schema && a.table === b.table;
-
-function writeFileAtomic(file, text) {
-  ensurePrivateDir(path.dirname(file));
-  const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, text, { encoding: 'utf8', mode: 0o600 });
-  renameRetrying(tmp, file); // the viewer may be reading the target on Windows
-}
 
 // The structural part of a describe_table result, in the form stored and diffed.
 export function recordFromDescribe(desc) {
@@ -233,7 +226,7 @@ export class SchemaMemory {
   }
 
   writeJson(file, value) {
-    writeFileAtomic(file, `${JSON.stringify(value, null, 1)}\n`);
+    writePrivateAtomic(file, `${JSON.stringify(value, null, 1)}\n`);
     this.cache.delete(file);
   }
 
