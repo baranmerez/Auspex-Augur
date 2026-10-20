@@ -79,7 +79,7 @@ test('the trend chart puts column names in as text, never as markup', () => {
 //    reports in /api/reports and the trend route (aggregates, no parameters).
 const viewer = new URL('../src/viewer.js', import.meta.url);
 const ref = { db: 'exampledb', schema: 'example', category: 'Orders/Delivery', name: 'example-report' };
-let child, port, home;
+let child, port, home, token;
 
 const freePort = () => new Promise((resolve, reject) => {
   const s = net.createServer();
@@ -87,7 +87,7 @@ const freePort = () => new Promise((resolve, reject) => {
   s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)); });
 });
 const request = (method, rawPath, headers = {}) => new Promise((resolve, reject) => {
-  const req = http.request({ host: '127.0.0.1', port, path: rawPath, method, headers: { host: `127.0.0.1:${port}`, ...headers } }, res => {
+  const req = http.request({ host: '127.0.0.1', port, path: rawPath, method, headers: { host: `127.0.0.1:${port}`, ...(token && method === 'GET' ? { 'x-auspex-token': token } : {}), ...headers } }, res => {
     const chunks = [];
     res.on('data', c => chunks.push(c));
     res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString('utf8') }));
@@ -113,6 +113,8 @@ before(async () => {
     child.stderr.on('data', d => { err += d; });
     child.once('exit', code => reject(new Error(`viewer exited with ${code}: ${err}`)));
   });
+  // The /api routes need the per-process token the page carries.
+  token = (await request('GET', '/')).body.match(/<meta name="auspex-token" content="([0-9a-f]{64})">/)?.[1];
 });
 
 after(() => {
