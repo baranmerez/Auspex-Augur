@@ -7,6 +7,8 @@ const separators = [
   ['CR', '\r'],
   ['CRLF', '\r\n'],
   ['horizontal whitespace', ' \t\n\f '],
+  ['vertical tab after the newline', '\n\v'],
+  ['vertical tab before the newline', '\v\n'],
   ['line comment', " -- example's note\n"],
   ['several line comments', " -- example\r\n-- ' another note\n\t"],
 ];
