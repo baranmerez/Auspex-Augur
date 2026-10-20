@@ -62,7 +62,8 @@ test('a malformed request target is refused and the viewer keeps serving', async
     assert.ok(status === 400 || status === null, `${target} -> ${status}`);
     assert.equal(exited, false, `the viewer is still running after ${target}`);
   }
-  assert.equal(await raw('/api/health'), 200);
+  assert.equal(await raw('/api/health'), 401, 'the read routes need the page token');
+  assert.equal(await raw('/'), 200);
 });
 
 test('the host check still comes first', async () => {

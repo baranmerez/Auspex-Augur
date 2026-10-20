@@ -33,8 +33,10 @@ const vendorFiles = new Map(['3d-force-graph-1.80.1.min.js'].map(f => [`/vendor/
 const dayPattern = /^\d{4}-\d{2}-\d{2}$/;
 const profilePattern = /^[a-z][a-z0-9_-]{0,39}$/;
 const memoryFilePattern = /^tables\/[a-z0-9_~-]+\/[a-z0-9_~-]+\.json$/;
-// Per-process secret for the stage-change routes. Only the served page carries
-// it; a page of another origin cannot read it (no CORS headers, Host check).
+// Per-process secret for every /api route (reads and writes). Only the served
+// page carries it; a page of another origin cannot read it (no CORS headers,
+// Host check). GET / still serves it to any local client that reaches the
+// loopback port, so it does not separate local OS accounts (docs/safety.md).
 const csrfToken = crypto.randomBytes(32).toString('hex');
 const tokenPlaceholder = '__AUSPEX_VIEWER_TOKEN__';
 const maxBodyBytes = 4096;
@@ -202,9 +204,14 @@ function sendPage(res) {
 // viewer (the Host was already allowlisted) and the token must match.
 function checkWriteRequest(req) {
   if (req.headers.origin !== `http://${req.headers.host}`) throw new HttpError(403, 'Forbidden origin', 'ORIGIN_INVALID');
+  if (!hasToken(req)) throw new HttpError(403, 'Missing or invalid token', 'TOKEN_INVALID');
+}
+
+// True when the request carries this process's token (constant-time compare).
+function hasToken(req) {
   const given = Buffer.from(String(req.headers['x-auspex-token'] || ''));
   const expected = Buffer.from(csrfToken);
-  if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) throw new HttpError(403, 'Missing or invalid token', 'TOKEN_INVALID');
+  return given.length === expected.length && crypto.timingSafeEqual(given, expected);
 }
 
 function readBody(req) {
@@ -357,6 +364,9 @@ function handle(req, res) {
     });
   }
   if (req.method !== 'GET') return send(res, 405, { error: 'Read-only route' }, undefined, { Allow: 'GET' });
+  // Every read route needs the token as well; the page and the vendor files
+  // carry no audit, report or memory data and stay open.
+  if (url.pathname.startsWith('/api/') && !hasToken(req)) return send(res, 401, { error: 'Missing or invalid token', code: 'TOKEN_INVALID' });
   try {
     if (url.pathname === '/') return sendPage(res);
     if (vendorFiles.has(url.pathname)) return send(res, 200, fs.readFileSync(vendorFiles.get(url.pathname), 'utf8'), 'text/javascript; charset=utf-8');

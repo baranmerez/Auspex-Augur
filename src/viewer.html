@@ -1334,13 +1334,15 @@ const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringi
 
 // In the Tauri desktop app the same routes are served by the Rust `api` command.
 const tauriCore = window.__TAURI__?.core;
+// Per-process token of the browser viewer: every /api route needs it.
+const pageToken = document.querySelector('meta[name="auspex-token"]')?.content || '';
 async function getJson(url) {
   if (tauriCore) {
     const u = new URL(url, 'http://auspex.local');
     try { return await tauriCore.invoke('api', { path: u.pathname, query: Object.fromEntries(u.searchParams) }); }
     catch (err) { throw new Error(typeof err === 'string' ? err : err?.message || String(err)); }
   }
-  const r = await fetch(url, { cache: 'no-store' });
+  const r = await fetch(url, { cache: 'no-store', headers: { 'x-auspex-token': pageToken } });
   const d = await r.json();
   if (!r.ok) throw new Error(d.error || r.statusText);
   return d;
@@ -2349,7 +2351,6 @@ async function invokeStageChange(invoke, command, r, hash) {
   }
 }
 // stage-change:end
-const pageToken = document.querySelector('meta[name="auspex-token"]')?.content || '';
 function stageButton(r, doc) {
   const sc = stageChangeFor(r);
   if (!sc) return null;
