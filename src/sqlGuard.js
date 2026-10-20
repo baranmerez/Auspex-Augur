@@ -60,7 +60,9 @@ function escapeStringContinuationEnd(sql, start) {
     if (character === '\n' || character === '\r') {
       hasNewline = true;
       cursor++;
-    } else if (character === ' ' || character === '\t' || character === '\f') {
+    } else if (character === ' ' || character === '\t' || character === '\f' || character === '\v') {
+      // Newer PostgreSQL lexers count \v as whitespace too; treating it as a
+      // gap only makes the guard stricter on servers that do not.
       cursor++;
     } else if (character === '-' && sql[cursor + 1] === '-') {
       cursor += 2;
