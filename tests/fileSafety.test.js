@@ -201,3 +201,83 @@ test('script-root copies of save_report and save_execute_script are created 0600
   assert.equal(modeOf(scripts), 0o755, 'the configured script root keeps its mode');
   assert.throws(() => lib.saveDraft({ ref, sql: 'select 1', target: target('01_example_report.sql') }), /already exists/);
 });
+
+// ---------- #108: linked folders below the roots ----------
+
+function junction(target, link) {
+  fs.mkdirSync(path.dirname(link), { recursive: true });
+  fs.symlinkSync(target, link, 'junction'); // a directory symlink on POSIX
+}
+
+const exampleRef = { db: 'exampledb', schema: 'example', category: 'Reports', name: 'example-orders' };
+
+test('the library refuses a linked category, nested category or stage folder and writes nothing outside', t => {
+  const cases = [
+    ['category', ['_drafts', 'exampledb', 'example', 'Reports'], exampleRef, lib => lib.saveDraft({ ref: exampleRef, sql: 'select order_id from example.orders' })],
+    ['nested category', ['_drafts', 'exampledb', 'example', 'Orders', 'Delivery'], { ...exampleRef, category: 'Orders/Delivery' },
+      lib => lib.saveDraft({ ref: { ...exampleRef, category: 'Orders/Delivery' }, sql: 'select order_id from example.orders' })],
+    ['schema folder', ['SELECT', 'exampledb', 'example'], exampleRef, lib => lib.readSql('approved', exampleRef)],
+    ['stage folder', ['EXECUTE'], exampleRef,
+      lib => lib.saveExecuteScript({ ref: exampleRef, sql: 'BEGIN;\nUPDATE example.orders SET status_code = 1 WHERE order_id = 1;\nROLLBACK;' })],
+  ];
+  for (const [label, linkParts, , act] of cases) {
+    const dir = tempDir(t);
+    const outside = path.join(dir, 'outside');
+    fs.mkdirSync(outside);
+    fs.writeFileSync(path.join(outside, 'example-orders.sql'), 'select 1 from example.orders\n');
+    const before = fs.readdirSync(outside, { recursive: true }).sort();
+    const lib = new Library(path.join(dir, 'library'));
+    junction(outside, path.join(lib.root, ...linkParts));
+    assert.throws(() => act(lib), /link or junction; refused/, label);
+    assert.deepEqual(fs.readdirSync(outside, { recursive: true }).sort(), before, `${label}: nothing written outside`);
+    assert.ok(Array.isArray(lib.list()), `${label}: listing still works`);
+  }
+});
+
+test('a library root that is itself a link and normal nested categories keep working', t => {
+  const dir = tempDir(t);
+  const real = path.join(dir, 'real-library');
+  fs.mkdirSync(real);
+  junction(real, path.join(dir, 'library'));
+  const lib = new Library(path.join(dir, 'library'));
+  const ref = { ...exampleRef, category: 'Orders/Delivery/Daily' };
+  lib.saveDraft({ ref, sql: 'select order_id from example.orders' });
+  assert.equal(lib.readSql('draft', ref), 'select order_id from example.orders\n');
+  assert.ok(fs.existsSync(path.join(real, '_drafts', 'exampledb', 'example', 'Orders', 'Delivery', 'Daily', 'example-orders.sql')));
+  assert.deepEqual(lib.list().map(r => r.category), ['Orders/Delivery/Daily']);
+});
+
+test('the schema memory refuses linked profile, schema and legacy folders before reads and writes', t => {
+  const record = (schema, table) => ({ schema, table, columns: [], constraints: [], indexes: [], referencedBy: [] });
+  const legacySchema = 'example\u{1F600}'; // a name whose older file name differs
+  const cases = [
+    ['profile folder', ['exampledb'], m => m.writeTable('exampledb', record('example', 'orders'))],
+    ['schema folder', ['exampledb', 'tables', 'example'], m => m.writeTable('exampledb', record('example', 'orders'))],
+    ['schema folder read', ['exampledb', 'tables', 'example'], m => m.readTable('exampledb', 'example', 'orders')],
+    ['notes', ['exampledb'], m => m.writeNotes('exampledb', { nextId: 1, notes: [] })],
+    ['legacy schema folder', ['exampledb', 'tables', 'example~efbfbd~efbfbd'], m => m.readTable('exampledb', legacySchema, 'orders')],
+  ];
+  for (const [label, linkParts, act] of cases) {
+    const dir = tempDir(t);
+    const outside = path.join(dir, 'outside');
+    fs.mkdirSync(outside);
+    fs.writeFileSync(path.join(outside, 'orders.json'), JSON.stringify(record(legacySchema, 'orders')));
+    const before = fs.readdirSync(outside, { recursive: true }).sort();
+    const memory = new SchemaMemory(path.join(dir, 'memory'));
+    junction(outside, path.join(memory.root, ...linkParts));
+    assert.throws(() => act(memory), /link or junction; refused/, label);
+    assert.deepEqual(fs.readdirSync(outside, { recursive: true }).sort(), before, `${label}: nothing written outside`);
+  }
+  assert.notEqual(fileSegment(legacySchema), 'example~efbfbd~efbfbd', 'the legacy case uses a different folder');
+});
+
+test('a schema-memory root that is itself a link keeps working', t => {
+  const dir = tempDir(t);
+  const real = path.join(dir, 'real-memory');
+  fs.mkdirSync(real);
+  junction(real, path.join(dir, 'memory'));
+  const memory = new SchemaMemory(path.join(dir, 'memory'));
+  memory.writeTable('exampledb', { schema: 'example', table: 'orders', columns: [], constraints: [], indexes: [], referencedBy: [] });
+  assert.equal(memory.readTable('exampledb', 'example', 'orders').table, 'orders');
+  assert.ok(fs.existsSync(path.join(real, 'exampledb', 'tables', 'example', 'orders.json')));
+});
