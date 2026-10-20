@@ -105,6 +105,10 @@ function recordStageChange(meta, change) {
   meta.stageHistory = [...(meta.stageHistory || []), change].slice(-maxRuns);
 }
 
+function linkRefusal(link) {
+  return Object.assign(new LibraryError(`Library path ${link} is a link or junction; refused.`, 'DISK_ERROR'), { linkRefused: true });
+}
+
 export class Library {
   constructor(root) {
     this.root = path.resolve(root);
@@ -133,17 +137,22 @@ export class Library {
     return file;
   }
 
+  // Refuses target when it or an existing folder between the root and it is
+  // a symbolic link or junction. err.linkRefused lets listings skip it.
   checkLinks(target) {
     const link = linkBelow(this.root, target);
-    if (link) throw new LibraryError(`Library path ${link} is a link or junction; refused.`, 'DISK_ERROR');
+    if (link) throw linkRefusal(link);
     return target;
   }
 
-  // The report files; none of them may be a link either.
+  // The report files; none of them may be a link either. base() checked the
+  // folders, so only the file names themselves are looked at here.
   paths(stage, ref) {
     const b = this.base(stage, ref);
     const p = { sql: `${b}.sql`, meta: `${b}.report.json`, html: `${b}.html` };
-    for (const file of Object.values(p)) this.checkLinks(file);
+    for (const file of Object.values(p)) {
+      if (fs.lstatSync(file, { throwIfNoEntry: false })?.isSymbolicLink()) throw linkRefusal(file);
+    }
     return p;
   }
 
@@ -194,7 +203,9 @@ export class Library {
     const checkedDateRange = checkDateRange(dateRange, paramCount, msg => new LibraryError(msg));
     this.ensure();
     const r = normalizeRef(ref);
-    const p = this.paths('draft', r); // refused before anything is written
+    // Refused before anything is written, the script-root file included.
+    const p = this.paths('draft', r);
+    this.paths('approved', r);
     const now = new Date().toISOString();
     let externalFile = null;
     if (target) {
@@ -399,7 +410,12 @@ export class Library {
         const walk = segments => {
           const folder = path.join(base, db, schema, ...segments);
           for (const f of fs.readdirSync(folder, { withFileTypes: true }).filter(x => x.isFile() && x.name.endsWith('.sql')).map(x => x.name)) {
-            out.push(this.listEntry(stage, { db, schema, category: segments.join('/'), name: f.slice(0, -4) }, segments, path.join(folder, f)));
+            try {
+              out.push(this.listEntry(stage, { db, schema, category: segments.join('/'), name: f.slice(0, -4) }, segments, path.join(folder, f)));
+            } catch (err) {
+              if (!err.linkRefused) throw err;
+              process.stderr.write(`auspex: report skipped in the list: ${err.message}\n`); // one linked file never hides the rest
+            }
           }
           if (segments.length < maxCategoryLevels) for (const child of sub(folder).filter(isCategoryFolder)) walk([...segments, child]);
         };

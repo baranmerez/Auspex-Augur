@@ -175,7 +175,7 @@ function reportContent(params) {
   const ref = { db: params.get('db'), schema: params.get('schema'), category: params.get('category'), name: params.get('name') };
   const lib = library();
   if (stage === 'execute') {
-    const file = `${lib.base('execute', ref)}.sql`;
+    const file = lib.checkLinks(`${lib.base('execute', ref)}.sql`);
     return { kind: 'sql', content: fs.readFileSync(file, 'utf8') };
   }
   if (stage !== 'draft' && stage !== 'approved') throw new Error('stage must be draft, approved or execute');
