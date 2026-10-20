@@ -322,6 +322,15 @@ outside the repository. The current setup is described in
 - **Log file day is UTC:** in time zones ahead of UTC, entries written shortly
   after local midnight land in the previous day's file; the viewer filters by
   local day.
+- **Links in Auspex folders (#103, #108, #109):** temp files are created
+  exclusively under a random name (`src/privateFiles.js`, also used by the
+  schema memory); appends refuse a final symlink/junction (`O_NOFOLLOW` plus
+  `fstat` on POSIX, `lstat` before the open on Windows), non-regular files and
+  files with more than one hard link; the library and memory refuse link or
+  junction components below their root (`linkBelow`), the root itself may be
+  a link. The checks run before the file operation, so a link swapped in by
+  another process between check and use is not caught; that needs write
+  access to the private folder. Script-root files are created 0600 (#110).
 - **Catalog visibility:** PostgreSQL shows table names to everyone; tables in
   unprivileged schemas appear in search (`can_select = false`) but cannot be
   read.

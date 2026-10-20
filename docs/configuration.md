@@ -139,6 +139,19 @@ the permissions you gave them. Files Auspex rewrites there (library, memory,
 schedule state) come back 0600, since every rewrite creates a new file. On
 Windows the folder's ACLs apply unchanged.
 
+Rewrites go through a new temporary file created exclusively under a random
+name next to the target, then renamed over it; an existing entry at that name
+(a link, a hard link, an old temp file) is skipped and never written through.
+Appends (audit log, schema-memory changelog, trends) refuse a target file that
+is a symbolic link or junction, is not a regular file, or has more than one
+hard link; the audit log and the changelog then report the refusal on stderr
+and the call goes on. The report library and the schema memory refuse any
+folder or file below their root (stage, database, schema, category, profile
+and table folders) that is a symbolic link or junction, before reading or
+writing; the root folder itself may be a link. Script-root files
+(`save_report` and `save_execute_script` with a script root) are created new
+with mode 0600; the script-root folders keep the permissions you gave them.
+
 </details>
 
 **Passwords live in pgpass**, which node-postgres reads automatically:
