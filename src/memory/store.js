@@ -76,10 +76,29 @@ function legacySegment(name) {
 const tableKey = (schema, table) => `${schema}.${table}`;
 const sameTable = (a, b) => a.schema === b.schema && a.table === b.table;
 
-function writeFileAtomic(file, text) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, text, 'utf8');
+// Schema memory includes comments, code evidence and notes; neither its
+// directories nor its files should be readable by other local Unix users.
+function ensurePrivateMemoryDir(root, dir) {
+  const base = path.resolve(root);
+  const target = path.resolve(dir);
+  const relative = path.relative(base, target);
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new MemoryError('Memory path escapes its root.');
+  }
+  fs.mkdirSync(target, { recursive: true, mode: 0o700 });
+  if (process.platform === 'win32') return; // Windows uses its own ACLs
+  let current = base;
+  fs.chmodSync(current, 0o700);
+  for (const part of relative.split(path.sep).filter(Boolean)) {
+    current = path.join(current, part);
+    fs.chmodSync(current, 0o700);
+  }
+}
+
+function writeFileAtomic(file, text, root) {
+  ensurePrivateMemoryDir(root, path.dirname(file));
+  const tmp = `${file}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+  fs.writeFileSync(tmp, text, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
   renameRetrying(tmp, file); // the viewer may be reading the target on Windows
 }
 
@@ -232,7 +251,7 @@ export class SchemaMemory {
   }
 
   writeJson(file, value) {
-    writeFileAtomic(file, `${JSON.stringify(value, null, 1)}\n`);
+    writeFileAtomic(file, `${JSON.stringify(value, null, 1)}\n`, this.root);
     this.cache.delete(file);
   }
 
@@ -295,8 +314,16 @@ export class SchemaMemory {
 
   appendChangelog(profile, entry) {
     const file = path.join(this.profileDir(profile), 'changelog.jsonl');
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.appendFileSync(file, `${JSON.stringify(entry)}\n`, 'utf8');
+    ensurePrivateMemoryDir(this.root, path.dirname(file));
+    const fd = fs.openSync(file, 'a', 0o600);
+    try {
+      // On an existing file, mode in openSync is ignored; tighten it before
+      // appending potentially sensitive schema changes.
+      if (process.platform !== 'win32') fs.fchmodSync(fd, 0o600);
+      fs.writeSync(fd, `${JSON.stringify(entry)}\n`, null, 'utf8');
+    } finally {
+      fs.closeSync(fd);
+    }
   }
 
   readChangelog(profile, limit = 200) {
