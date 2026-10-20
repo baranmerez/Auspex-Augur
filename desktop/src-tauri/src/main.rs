@@ -17,7 +17,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime};
@@ -769,15 +769,18 @@ const STORAGE_ENV: [&str; 7] = [
 
 // The CLI runs with the checkout as its working directory, so a relative
 // storage path would point into the checkout instead of where this app reads
-// it. Relative values are made absolute against this app's working directory
-// first, like this app's own reads resolve them.
-fn absolute_storage_env(cwd: &Path, get: impl Fn(&str) -> Option<String>) -> Vec<(&'static str, PathBuf)> {
+// it. Relative values (also drive-relative ones such as C:foo on Windows) are
+// made absolute the way the OS resolves this app's own reads; the working
+// directory is only consulted for such values. If that fails, the value is
+// passed on unchanged, as before.
+fn absolute_storage_env(get: impl Fn(&str) -> Option<String>) -> Vec<(&'static str, PathBuf)> {
     STORAGE_ENV
         .iter()
         .filter_map(|name| {
             get(name).map(|value| {
                 let path = PathBuf::from(value);
-                (*name, if path.is_absolute() { path } else { cwd.join(path) })
+                let resolved = if path.is_absolute() { path } else { std::path::absolute(&path).unwrap_or(path) };
+                (*name, resolved)
             })
         })
         .collect()
@@ -788,8 +791,7 @@ fn exec_cli(args: &[String], timeout: Duration, stdout_cap: u64) -> Result<(CliR
     let root = auspex_root()?;
     let mut cmd = Command::new(&node);
     cmd.arg(root.join("src").join("stageCli.js")).args(args);
-    let cwd = std::env::current_dir().map_err(|e| stage_error("INTERNAL", format!("Could not read the working directory: {e}")))?;
-    for (name, path) in absolute_storage_env(&cwd, env) {
+    for (name, path) in absolute_storage_env(env) {
         cmd.env(name, path);
     }
     cmd.current_dir(&root).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -1163,17 +1165,25 @@ mod tests {
 
     #[test]
     fn relative_storage_paths_reach_the_cli_as_absolute_paths() {
-        let cwd = std::env::temp_dir().join("example-launch");
+        let cwd = std::env::current_dir().unwrap();
         let absolute = std::env::temp_dir().join("example-library");
-        let absolute_text = absolute.to_string_lossy().to_string();
-        let values: HashMap<&str, String> = HashMap::from([
+        let mut values: HashMap<&str, String> = HashMap::from([
             ("AUSPEX_HOME", "exampleHome".to_string()),
-            ("AUSPEX_LIBRARY_DIR", absolute_text.clone()),
+            ("AUSPEX_LIBRARY_DIR", absolute.to_string_lossy().to_string()),
         ]);
-        let resolved: HashMap<&str, PathBuf> = absolute_storage_env(&cwd, |name| values.get(name).cloned()).into_iter().collect();
-        assert_eq!(resolved.len(), 2, "unset variables are not passed");
+        if cfg!(windows) {
+            // Drive-relative: C:foo is not absolute, and joining it to a base
+            // would keep it unchanged.
+            values.insert("AUSPEX_MEMORY_DIR", format!("{}exampleMemory", &cwd.to_string_lossy()[..2]));
+        }
+        let resolved: HashMap<&str, PathBuf> = absolute_storage_env(|name| values.get(name).cloned()).into_iter().collect();
+        assert_eq!(resolved.len(), values.len(), "unset variables are not passed");
         assert_eq!(resolved["AUSPEX_HOME"], cwd.join("exampleHome"), "a relative home is resolved where the app reads it");
         assert_eq!(resolved["AUSPEX_LIBRARY_DIR"], absolute, "an absolute path is kept");
+        if cfg!(windows) {
+            assert!(resolved["AUSPEX_MEMORY_DIR"].is_absolute(), "a drive-relative path becomes absolute");
+            assert_eq!(resolved["AUSPEX_MEMORY_DIR"], cwd.join("exampleMemory"));
+        }
     }
 
     #[test]
