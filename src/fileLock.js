@@ -73,10 +73,58 @@ function isStale(snap, staleMs, maxHoldMs) {
   return Date.now() - snap.mtimeMs > staleMs;
 }
 
+// Removing a lock is never "check, then unlink the path": between the two a
+// newer generation can take the path, and the unlink would delete it. Instead
+// the path is first renamed to a unique aside name, which atomically detaches
+// whatever generation is there, and the aside file is checked. A generation
+// that is not the one meant is put back with link(), which creates the path
+// only while it is still free (EEXIST otherwise, never a replace) and keeps
+// the inode and mtime, so its owner and its age are unchanged.
+// Limitation: while a wrongly detached generation is aside (microseconds,
+// and only after a check/replace race), a third process may create a fresh
+// lock; link() then leaves that one in place and the detached owner loses
+// the lock. Filesystems give no atomic compare-and-delete to close this.
+function moveAside(lockPath, tag) {
+  const aside = `${lockPath}.${tag}.${process.pid}.${crypto.randomBytes(6).toString('hex')}`;
+  try {
+    fs.renameSync(lockPath, aside);
+    return aside;
+  } catch (err) {
+    if (err.code === 'ENOENT') return null;
+    throw err;
+  }
+}
+
+function removeAside(aside) {
+  // A reader holding the aside file open (Windows) must not turn a finished
+  // removal of the lock path into a failure.
+  try { fs.rmSync(aside, { force: true, maxRetries: 5, retryDelay: 20 }); } catch (err) { if (err.code !== 'ENOENT' && !transient.has(err.code)) throw err; }
+}
+
+function putBack(aside, lockPath) {
+  try {
+    fs.linkSync(aside, lockPath);
+  } catch (err) {
+    if (err.code !== 'EEXIST') {
+      // No hard links on this filesystem: exclusive create of a copy, with
+      // the original age. EEXIST still means a newer lock is there.
+      try {
+        const { mtime } = fs.statSync(aside);
+        fs.writeFileSync(lockPath, fs.readFileSync(aside), { flag: 'wx' });
+        fs.utimesSync(lockPath, mtime, mtime);
+      } catch (copyErr) {
+        if (copyErr.code !== 'EEXIST') throw copyErr;
+      }
+    }
+  }
+  removeAside(aside);
+}
+
 // Retires one stale generation of the lock. Only the process that creates the
-// generation's takeover marker may move it aside, and it re-checks that the
-// lock is still that generation, so a fresh lock taken meanwhile by someone
-// else is never removed. Returns true when it removed the stale generation.
+// generation's takeover marker may move it aside, and it checks the detached
+// file is still that generation, so a fresh lock taken meanwhile by someone
+// else is put back, never removed. Returns true when it removed the stale
+// generation.
 function takeOver(lockPath, seen, staleMs, maxHoldMs) {
   const marker = `${lockPath}.takeover.${seen.key}`;
   try {
@@ -90,11 +138,13 @@ function takeOver(lockPath, seen, staleMs, maxHoldMs) {
   try {
     const now = snapshot(lockPath);
     if (now?.key !== seen.key || !isStale(now, staleMs, maxHoldMs)) return false;
-    const aside = `${lockPath}.stale.${process.pid}.${seen.key}`;
-    fs.renameSync(lockPath, aside);
-    // The lock is gone from here on; a reader holding the aside file open
-    // (Windows) must not turn that into a failed takeover.
-    try { fs.rmSync(aside, { force: true }); } catch (err) { if (err.code !== 'ENOENT' && !transient.has(err.code)) throw err; }
+    const aside = moveAside(lockPath, 'stale');
+    if (!aside) return false;
+    if (snapshot(aside)?.key !== seen.key) {
+      putBack(aside, lockPath); // replaced after the check above: not ours to retire
+      return false;
+    }
+    removeAside(aside);
     return true;
   } catch (err) {
     if (err.code !== 'ENOENT' && !transient.has(err.code)) throw err;
@@ -134,11 +184,22 @@ function acquire(lockPath, { waitMs, staleMs, maxHoldMs }) {
 }
 
 function release(lockPath, token) {
-  // Only remove the lock if it is still ours (it may have been taken over).
-  // A failure here never masks the guarded function's result or error; the
-  // dead-owner takeover recovers a lock left behind.
+  // Only remove the lock if it is still ours (it may have been taken over):
+  // detach it first, then check the detached file (see moveAside). A failure
+  // here never masks the guarded function's result or error; the dead-owner
+  // takeover recovers a lock left behind.
   try {
-    if (readOwner(lockPath)?.token === token) fs.rmSync(lockPath, { force: true, maxRetries: 5, retryDelay: 20 });
+    if (readOwner(lockPath)?.token !== token) return;
+    let aside;
+    for (let i = 0; ; i++) {
+      try { aside = moveAside(lockPath, 'released'); break; } catch (err) {
+        if (!transient.has(err.code) || i >= 5) throw err;
+        sleep(20);
+      }
+    }
+    if (!aside) return;
+    if (readOwner(aside)?.token === token) removeAside(aside);
+    else putBack(aside, lockPath);
   } catch { /* see above */ }
 }
 

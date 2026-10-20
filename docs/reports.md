@@ -158,7 +158,10 @@ moved.
   Past 10 minutes (`maxHoldMs` of `withFileLock`) any lock or leftover
   takeover marker is reclaimed even when its pid looks alive, because the OS
   may have reused the pid of an owner that died holding it; every guarded
-  section is short file work, far below that ceiling. Locks are same-host
+  section is short file work, far below that ceiling. Releasing or taking
+  over a lock first renames it to a private name and checks that file, so a
+  newer owner's lock is never deleted; a lock moved by mistake is put back
+  only while the path is still free. Locks are same-host
   only: sharing one library or memory folder between machines over a network
   filesystem is not supported. A crash in the middle of an approval can leave
   it half done.

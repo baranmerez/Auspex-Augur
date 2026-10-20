@@ -262,6 +262,66 @@ test('a stale lock taken over by another process meanwhile is never removed (tak
   assert.equal(JSON.parse(fs.readFileSync(lockPath, 'utf8')).token, '2222222222222222', "A's lock is intact");
 });
 
+// Runs install() the first time fs.rmSync or fs.renameSync is called on
+// lockPath itself, just before that call: the window between a check of the
+// lock and its removal or rename.
+function onFirstRemoval(lockPath, install) {
+  const originals = { rmSync: fs.rmSync, renameSync: fs.renameSync };
+  let fired = false;
+  for (const name of Object.keys(originals)) {
+    fs[name] = function (file, ...rest) {
+      if (!fired && path.resolve(String(file)) === path.resolve(lockPath)) {
+        fired = true;
+        install(originals);
+      }
+      return originals[name].call(this, file, ...rest);
+    };
+  }
+  return { fired: () => fired, restore: () => Object.assign(fs, originals) };
+}
+
+test('release never removes a newer generation installed after its ownership check', () => {
+  const dir = tempDir('auspex-lock-release-race-');
+  const lockPath = path.join(dir, '.lock');
+  const newer = JSON.stringify({ pid: process.ppid, host: os.hostname(), token: '4444444444444444' });
+  let hook;
+  withFileLock(lockPath, () => {
+    // As this owner releases, another process retires its generation as stale
+    // and takes a fresh lock between the release check and the removal.
+    hook = onFirstRemoval(lockPath, ({ renameSync }) => {
+      renameSync.call(fs, lockPath, `${lockPath}.retired`);
+      fs.writeFileSync(lockPath, newer, { flag: 'wx' });
+      fs.unlinkSync(`${lockPath}.retired`);
+    });
+  });
+  hook.restore();
+  assert.ok(hook.fired(), 'the race was exercised');
+  assert.equal(JSON.parse(fs.readFileSync(lockPath, 'utf8')).token, '4444444444444444', 'the newer lock is intact');
+  assert.throws(() => withFileLock(lockPath, () => 'two writers would overlap', { waitMs: 100 }), LockBusyError);
+  assert.deepEqual(fs.readdirSync(dir), ['.lock'], 'no aside file is left');
+});
+
+test('a takeover never retires a newer generation installed after its last check', () => {
+  const dir = tempDir('auspex-lock-takeover-race-');
+  const lockPath = path.join(dir, '.lock');
+  fs.writeFileSync(lockPath, JSON.stringify({ pid: 2 ** 30, host: os.hostname(), token: '5555555555555555' }));
+  const newer = JSON.stringify({ pid: process.ppid, host: os.hostname(), token: '6666666666666666' });
+  // Between the taker's last snapshot and its rename, the stale generation is
+  // retired by someone else and a live owner takes a fresh lock.
+  const hook = onFirstRemoval(lockPath, ({ rmSync }) => {
+    rmSync.call(fs, lockPath);
+    fs.writeFileSync(lockPath, newer, { flag: 'wx' });
+  });
+  try {
+    assert.throws(() => withFileLock(lockPath, () => 'two writers would overlap', { waitMs: 150 }), LockBusyError);
+  } finally {
+    hook.restore();
+  }
+  assert.ok(hook.fired(), 'the race was exercised');
+  assert.equal(JSON.parse(fs.readFileSync(lockPath, 'utf8')).token, '6666666666666666', 'the newer lock is intact');
+  assert.deepEqual(fs.readdirSync(dir), ['.lock'], 'no aside or marker file is left');
+});
+
 test('a takeover marker left by a crashed taker does not block the lock', () => {
   const dir = tempDir('auspex-lock-marker-');
   const lockPath = path.join(dir, '.lock');
