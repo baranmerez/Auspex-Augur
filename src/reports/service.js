@@ -193,7 +193,13 @@ export class ReportService {
     const saved = this.library.locked(() => {
       const s = this.library.saveDraft({ ...rest, ref, target });
       this.library.writeHtml('draft', ref, renderReport(this.library.readMeta('draft', ref)));
-      if (s.approvedRemasked) this.library.writeHtml('approved', ref, renderReport(this.library.readMeta('approved', ref)));
+      // Only after the draft is fully saved; HTML first, so a failure leaves
+      // the approved metadata unscrubbed and the next save scrubs both.
+      const approved = s.maskPolicySaved ? this.library.remaskedApprovedUnlocked(ref) : null;
+      if (approved) {
+        this.library.writeHtml('approved', ref, renderReport(approved));
+        this.library.writeMeta('approved', ref, approved);
+      }
       return s;
     });
     return {

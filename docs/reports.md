@@ -182,7 +182,9 @@ moved.
   run already masked stays masked even if the column was unmasked later.
   Saving a report with a new `mask`/`unmask` also re-masks the preview stored
   in the draft and in its approved copy (and regenerates their HTML); for the
-  approved copy only ever tighter. SQL,
+  approved copy only ever tighter. Runs of the approved copy, scheduled ones
+  included, keep using its own `mask`/`unmask` until the next approval, so a
+  later approved run can store and show a column unmasked again. SQL,
   plan, parameters, warnings, history and database, schema and server names are left out, not redacted. The title and
   description are kept as written, so keep secrets out of them.
 
