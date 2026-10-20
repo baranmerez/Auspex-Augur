@@ -22,7 +22,8 @@ for (const oid of [1182, 1115, 1185]) pg.types.setTypeParser(oid, pg.types.getTy
 
 // Rows of the caller's SQL (FETCH from the cursor): json and jsonb stay as
 // PostgreSQL prints them, since JSON.parse would round large integers and long
-// decimals. Cells were already shown as JSON text, so only the digits change;
+// decimals. Cells were already shown as JSON text; now it is PostgreSQL's own
+// text (its spacing, scalars such as null or "x" as JSON text, exact digits).
 // json[] and jsonb[] keep each element's text. Auspex's own catalog queries
 // keep the default parsers, because they read jsonb_agg results as objects.
 const textArrayParser = pg.types.getTypeParser(1009, 'text');

@@ -41,6 +41,15 @@ database to use unless the user named one in the current conversation, and to
 confirm before switching. The code guarantees the explicit choice; asking the
 user is model behavior.
 
+### Exact values
+
+`numeric`, date and time values and their arrays come back as PostgreSQL's
+text, never as rounded JavaScript numbers or shifted dates. `json` and `jsonb`
+cells (and the elements of `json[]` / `jsonb[]`) are PostgreSQL's own JSON
+text, so `9007199254740993` and `1234567890.123456789` keep every digit; a
+JSON scalar such as `null` or `"x"` arrives as that JSON text, not as SQL NULL.
+This applies to `query`, report previews and `export_csv`.
+
 ### CSV for spreadsheets
 
 `export_csv` writes exact values by default (`mode: "raw"`), which is right
