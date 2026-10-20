@@ -8,12 +8,37 @@ const unquote = name => (name.startsWith('"') ? name.slice(1, -1).replace(/""/g,
 const escapeRegex = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const identifier = '("(?:[^"]|"")+"|[A-Za-z_\\u00C0-\\uFFFF][\\w$\\u00C0-\\uFFFF]*)';
 
+// Plan expressions with every string constant emptied ('...' becomes ''), so
+// text such as 'orders.example_note'::text is not read as a column. Quoted
+// identifiers are kept as they are, even when they contain a single quote.
+// EXPLAIN writes constants with doubled quotes ('') and doubled backslashes.
+function withoutStringLiterals(text) {
+  let out = '';
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '"') {
+      let j = i + 1;
+      while (j < text.length && !(text[j] === '"' && text[j + 1] !== '"')) j += text[j] === '"' ? 2 : 1;
+      out += text.slice(i, j + 1);
+      i = j;
+    } else if (c === "'") {
+      let j = i + 1;
+      while (j < text.length && !(text[j] === "'" && text[j + 1] !== "'")) j += text[j] === "'" ? 2 : 1;
+      out += "''";
+      i = j;
+    } else {
+      out += c;
+    }
+  }
+  return out;
+}
+
 // Columns written as alias.column in plan expressions (VERBOSE output qualifies them).
 function aliasColumns(alias, texts) {
   const re = new RegExp(`(?:^|[^\\w$."])${escapeRegex(alias)}\\.${identifier}`, 'g');
   const found = new Set();
   for (const text of texts) {
-    for (const m of String(text).matchAll(re)) found.add(unquote(m[1]));
+    for (const m of withoutStringLiterals(String(text)).matchAll(re)) found.add(unquote(m[1]));
   }
   return found;
 }
