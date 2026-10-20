@@ -928,9 +928,21 @@ fn audit_uncertain(base: &Value, elapsed: Duration, err: &Value) {
         e.insert("errorCode".into(), err["code"].clone());
     }
     let dir = log_dir();
-    let _ = fs::create_dir_all(&dir).and_then(|_| {
+    // New folders 0700 and new day files 0600 on Unix, like src/privateFiles.js;
+    // existing ones keep their permissions here.
+    let mut dirs = fs::DirBuilder::new();
+    dirs.recursive(true);
+    let mut options = fs::OpenOptions::new();
+    options.create(true).append(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+        dirs.mode(0o700);
+        options.mode(0o600);
+    }
+    let _ = dirs.create(&dir).and_then(|_| {
         use std::io::Write;
-        let mut f = fs::OpenOptions::new().create(true).append(true).open(dir.join(format!("{}.jsonl", &ts[..10])))?;
+        let mut f = options.open(dir.join(format!("{}.jsonl", &ts[..10])))?;
         f.write_all(format!("{entry}\n").as_bytes())
     });
 }
