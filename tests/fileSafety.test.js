@@ -9,6 +9,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { writePrivateAtomic, copyPrivate, appendPrivate } from '../src/privateFiles.js';
 import { createAuditLog } from '../src/auditLog.js';
 import { Library } from '../src/reports/library.js';
@@ -370,7 +371,9 @@ test('save_report refuses a linked SELECT folder before writing the script-root 
   assert.deepEqual(fs.readdirSync(outsideDir), []);
 });
 
-test('the viewer refuses an EXECUTE script whose file is a symlink', posixOnly, async t => {
+// A file symlink on POSIX; on Windows (no symlink privilege) a directory
+// junction at the file name, which lstat also reports as a link.
+test('the viewer refuses an EXECUTE script whose file is a link', async t => {
   const { spawn } = await import('node:child_process');
   const http = await import('node:http');
   const net = await import('node:net');
@@ -380,7 +383,13 @@ test('the viewer refuses an EXECUTE script whose file is a symlink', posixOnly, 
   const lib = new Library(path.join(home, 'library'));
   const file = `${lib.base('execute', exampleRef)}.sql`;
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.symlinkSync(outside, file);
+  if (process.platform === 'win32') {
+    const outsideDir = path.join(home, 'outside');
+    fs.mkdirSync(outsideDir);
+    junction(outsideDir, file);
+  } else {
+    fs.symlinkSync(outside, file);
+  }
 
   const port = await new Promise((resolve, reject) => {
     const s = net.createServer();
@@ -389,20 +398,33 @@ test('the viewer refuses an EXECUTE script whose file is a symlink', posixOnly, 
   });
   const env = { ...process.env, AUSPEX_HOME: home, AUSPEX_VIEWER_PORT: String(port), AUSPEX_PROFILES_FILE: path.join(home, 'none.json'),
     AUSPEX_LIBRARY_DIR: lib.root, AUSPEX_LOG_DIR: path.join(home, 'logs'), AUSPEX_MEMORY_DIR: path.join(home, 'memory') };
-  const child = spawn(process.execPath, [new URL('../src/viewer.js', import.meta.url).pathname], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, [fileURLToPath(new URL('../src/viewer.js', import.meta.url))], { env, stdio: ['ignore', 'pipe', 'pipe'] });
   t.after(() => child.kill());
   await new Promise((resolve, reject) => {
     child.stdout.on('data', d => { if (String(d).includes('Auspex viewer:')) resolve(); });
     child.once('exit', code => reject(new Error(`viewer exited with ${code}`)));
   });
-  const q = new URLSearchParams({ stage: 'execute', ...exampleRef }).toString();
-  const res = await new Promise((resolve, reject) => {
-    http.get({ host: '127.0.0.1', port, path: `/api/report?${q}`, headers: { host: `127.0.0.1:${port}` } }, r => {
+  const get = (route, headers = {}) => new Promise((resolve, reject) => {
+    http.get({ host: '127.0.0.1', port, path: route, headers: { host: `127.0.0.1:${port}`, ...headers } }, r => {
       let text = '';
       r.on('data', c => { text += c; });
       r.on('end', () => resolve({ status: r.statusCode, text }));
     }).on('error', reject);
   });
-  assert.notEqual(res.status, 200);
+  // Read routes need the per-process token from the page (as the page sends it).
+  const token = (await get('/')).text.match(/<meta name="auspex-token" content="([0-9a-f]{64})">/)?.[1];
+  assert.ok(token, 'token embedded in the page');
+  const report = ref => get(`/api/report?${new URLSearchParams({ stage: 'execute', ...ref })}`, { 'x-auspex-token': token });
+
+  const res = await report(exampleRef);
+  assert.equal(res.status, 400);
+  assert.match(JSON.parse(res.text).error, /^Library path .*example-orders\.sql is a link or junction; refused\.$/);
   assert.doesNotMatch(res.text, /example confidential data/);
+
+  // Control: a normal EXECUTE file next to it is served.
+  const normalRef = { ...exampleRef, name: 'example-normal' };
+  fs.writeFileSync(`${lib.base('execute', normalRef)}.sql`, 'BEGIN;\nROLLBACK;\n');
+  const normal = await report(normalRef);
+  assert.equal(normal.status, 200);
+  assert.deepEqual(JSON.parse(normal.text), { kind: 'sql', content: 'BEGIN;\nROLLBACK;\n' });
 });
