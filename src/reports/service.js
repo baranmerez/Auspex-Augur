@@ -193,6 +193,7 @@ export class ReportService {
     const saved = this.library.locked(() => {
       const s = this.library.saveDraft({ ...rest, ref, target });
       this.library.writeHtml('draft', ref, renderReport(this.library.readMeta('draft', ref)));
+      if (s.approvedRemasked) this.library.writeHtml('approved', ref, renderReport(this.library.readMeta('approved', ref)));
       return s;
     });
     return {

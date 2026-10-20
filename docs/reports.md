@@ -176,7 +176,10 @@ moved.
   current one (saved but not run yet); run the current version first. The
   report's current `mask`/`unmask` is applied to the stored preview once more,
   so a column masked after the last run is masked in the share; a value the
-  run already masked stays masked even if the column was unmasked later. SQL,
+  run already masked stays masked even if the column was unmasked later.
+  Saving a report with a new `mask`/`unmask` also re-masks the preview stored
+  in the draft and in its approved copy (and regenerates their HTML); for the
+  approved copy only ever tighter. SQL,
   plan, parameters, warnings, history and database, schema and server names are left out, not redacted. The title and
   description are kept as written, so keep secrets out of them.
 
