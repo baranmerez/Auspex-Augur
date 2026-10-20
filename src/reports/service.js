@@ -9,6 +9,7 @@ import { Library, normalizeRef, refLabel, sqlHash, sqlHashPattern } from './libr
 import { summarizePlan, planDigest } from './planSummary.js';
 import { maskRows } from './mask.js';
 import { ToolError } from '../errors.js';
+import { ensurePrivateDir } from '../privateFiles.js';
 import { relationsFromJsonPlan } from '../memory/planUsage.js';
 import { sqlParamCount, resolvePreset, builtInPresetsFor, mismatchedPresets } from './presets.js';
 
@@ -329,8 +330,9 @@ export class ReportService {
     });
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const file = path.join(dir, `${stamp}_${crypto.randomBytes(3).toString('hex')}_${ref.name}.share.html`);
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(file, renderReport(snapshot), { encoding: 'utf8', flag: 'wx' });
+    // The shared copy holds preview rows: private like a CSV export.
+    ensurePrivateDir(dir);
+    fs.writeFileSync(file, renderReport(snapshot), { encoding: 'utf8', flag: 'wx', mode: 0o600 });
     return { report: refLabel(ref), stage, file, version };
   }
 
