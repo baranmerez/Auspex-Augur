@@ -247,30 +247,6 @@ export class Library {
       // The old result may contain masked values which must never unmask.
       meta.last.maskedColumns = [...new Set([...(meta.last.maskedColumns || []), ...remasked.maskedColumns])];
     }
-    // An approved copy keeps its own stored preview and HTML, which the new
-    // policy must scrub too (approvedRemasked: the caller regenerates its
-    // HTML). Only ever tighter: a column masked by the approved policy or by
-    // the new one stays masked, and earlier masked values never unmask. The
-    // approved copy's own mask settings change only on the next approval.
-    let approvedRemasked = false;
-    if (mask !== undefined || unmask !== undefined) {
-      const approved = this.readMeta('approved', r);
-      if (Array.isArray(approved?.last?.columns) && Array.isArray(approved?.last?.preview)) {
-        const newExempt = new Set((meta.unmask || []).map(c => c.toLowerCase()));
-        const remasked = maskRows(approved.last.columns.map(column => column.name), approved.last.preview, {
-          mask: [...(approved.mask || []), ...(meta.mask || [])],
-          unmask: (approved.unmask || []).filter(c => newExempt.has(c.toLowerCase())),
-        });
-        const maskedColumns = [...new Set([...(approved.last.maskedColumns || []), ...remasked.maskedColumns])];
-        if (JSON.stringify(remasked.rows) !== JSON.stringify(approved.last.preview)
-            || maskedColumns.length !== (approved.last.maskedColumns || []).length) {
-          approved.last.preview = remasked.rows;
-          approved.last.maskedColumns = maskedColumns;
-          this.writeMeta('approved', r, approved);
-          approvedRemasked = true;
-        }
-      }
-    }
     const text = normalizeSql(sql);
     const hash = sqlHash(text);
     if (!meta.sqlVersions.some(v => v.hash === hash)) {
@@ -288,7 +264,33 @@ export class Library {
     this.writeMeta('draft', r, meta);
     // Stored presets that no longer fit the saved SQL (run_report refuses them).
     const presetMismatch = mismatchedPresets(meta.presets, paramCount);
-    return { ref: r, stage: 'draft', version, hash, paths: p, externalFile, presetMismatch, approvedRemasked };
+    return { ref: r, stage: 'draft', version, hash, paths: p, externalFile, presetMismatch, maskPolicySaved: mask !== undefined || unmask !== undefined };
+  }
+
+  // The approved copy keeps its own stored preview and HTML, which a mask
+  // policy saved on the draft must scrub too. Returns the approved metadata
+  // with its preview re-masked, or null when nothing changes; it writes
+  // nothing, so the caller writes the HTML and then this metadata, after the
+  // draft is saved (a failure before that leaves the copy to scrub next
+  // time). Only ever tighter: a column masked by the approved policy or by
+  // the draft's stays masked, and earlier masked values never unmask. The
+  // approved copy's own mask settings change only on the next approval.
+  remaskedApprovedUnlocked(ref) {
+    const r = normalizeRef(ref);
+    const draft = this.readMeta('draft', r);
+    const approved = this.readMeta('approved', r);
+    if (!draft || !Array.isArray(approved?.last?.columns) || !Array.isArray(approved?.last?.preview)) return null;
+    const draftExempt = new Set((draft.unmask || []).map(c => c.toLowerCase()));
+    const remasked = maskRows(approved.last.columns.map(column => column.name), approved.last.preview, {
+      mask: [...(approved.mask || []), ...(draft.mask || [])],
+      unmask: (approved.unmask || []).filter(c => draftExempt.has(c.toLowerCase())),
+    });
+    const maskedColumns = [...new Set([...(approved.last.maskedColumns || []), ...remasked.maskedColumns])];
+    if (JSON.stringify(remasked.rows) === JSON.stringify(approved.last.preview)
+        && maskedColumns.length === (approved.last.maskedColumns || []).length) return null;
+    approved.last.preview = remasked.rows;
+    approved.last.maskedColumns = maskedColumns;
+    return approved;
   }
 
   appendRun(stage, ref, run, last) {

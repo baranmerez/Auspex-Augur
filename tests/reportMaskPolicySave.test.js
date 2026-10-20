@@ -65,3 +65,37 @@ test('tightening the mask while only an approved copy exists also scrubs that co
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('a save that fails writing the draft leaves the approved copy to scrub on the next save', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-mask-save-retry-'));
+  try {
+    const service = new ReportService({ resolveProfile: name => name }, root);
+    const lib = service.library;
+    const ref = { db: 'exampledb', schema: 'example', category: 'Orders', name: 'example-retry' };
+    const sql = 'select tracking_ref from example.orders';
+    service.save({ ...ref, sql, unmask: ['tracking_ref'] });
+    const rawText = 'synthetic-retry-reference-482';
+    const updated = lib.appendRun('draft', ref,
+      { at: '2026-10-01T12:00:00Z', sqlHash: sqlHash(sql), durationMs: 2, warnings: [] },
+      { at: '2026-10-01T12:00:00Z', sqlHash: sqlHash(sql), columns: [{ name: 'tracking_ref', type: 'text' }],
+        preview: [[rawText]], maskedColumns: [], summary: {} });
+    lib.writeHtml('draft', ref, renderReport(updated));
+    lib.approve(ref);
+
+    const writeHtml = lib.writeHtml;
+    lib.writeHtml = function (stage, ...rest) {
+      if (stage === 'draft') throw Object.assign(new Error('EIO: i/o error, write'), { code: 'EIO' });
+      return writeHtml.call(this, stage, ...rest);
+    };
+    assert.throws(() => service.save({ ...ref, sql, mask: ['tracking_ref'], unmask: [] }), /EIO/);
+    lib.writeHtml = writeHtml;
+
+    service.save({ ...ref, sql, mask: ['tracking_ref'], unmask: [] });
+    const paths = lib.paths('approved', ref);
+    assert.deepEqual(lib.readMeta('approved', ref).last.preview, [['s***']]);
+    assert.ok(!fs.readFileSync(paths.html, 'utf8').includes(rawText), 'the retry scrubs the approved HTML too');
+    assert.ok(!fs.readFileSync(paths.meta, 'utf8').includes(rawText));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
