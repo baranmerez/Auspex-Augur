@@ -203,15 +203,27 @@ function functionNames(masked, identifiers) {
       names.push(byEnd.get(j + 1));
       continue;
     }
-    const m = /[A-Za-z_][A-Za-z0-9_$]*$/.exec(masked.slice(0, j + 1));
-    if (m) names.push(m[0].toLowerCase());
+    // Walk back over the identifier characters only, so the work per "(" is
+    // its own name, not the whole text before it. The name starts at the
+    // first letter or underscore of that run, as an unquoted identifier does.
+    let k = j;
+    while (k >= 0 && /[A-Za-z0-9_$]/.test(masked[k])) k--;
+    const run = masked.slice(k + 1, j + 1);
+    const start = run.search(/[A-Za-z_]/);
+    if (start >= 0) names.push(run.slice(start).toLowerCase());
   }
   return names;
 }
 
+// Longer SQL is refused before it is scanned or sent anywhere.
+export const maxSqlLength = 256 * 1024;
+
 // Returns the query without a trailing semicolon, or throws SqlGuardError.
 export function assertReadOnlyQuery(sql) {
   if (typeof sql !== 'string' || !sql.trim()) throw new SqlGuardError('Query is empty.');
+  if (sql.length > maxSqlLength) {
+    throw new SqlGuardError(`Query is too long (${sql.length} characters; at most ${maxSqlLength}).`);
+  }
 
   const identifiers = [];
   const stripped = stripLiteralsAndComments(sql, identifiers);

@@ -4,7 +4,7 @@ import { once } from 'node:events';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import path from 'node:path';
 import pg from 'pg';
-import { assertReadOnlyQuery, SqlGuardError } from './sqlGuard.js';
+import { assertReadOnlyQuery, SqlGuardError, maxSqlLength } from './sqlGuard.js';
 import { createAuditLog } from './auditLog.js';
 import { ensurePrivateDir } from './privateFiles.js';
 import { runRoleCheck, RoleCheckError } from './roleCheck.js';
@@ -161,7 +161,7 @@ export class ReadOnlyDatabase {
   // Fields a nested auditedPhase adds land in this one entry (scope.fields).
   async audited(tool, details, fn, summarize = null) {
     const started = Date.now();
-    const entry = { source: this.source, tool, ...this.correlationField(), ...details };
+    const entry = { source: this.source, tool, ...this.correlationField(), ...boundedSql(details) };
     const scope = { tool, fields: {} };
     try {
       const store = this.operation.getStore() ?? new Set();
@@ -538,6 +538,13 @@ export class ReadOnlyDatabase {
 }
 
 const timeUp = Symbol('timeUp');
+
+// SQL over the guard's limit is always refused, so its audit entry keeps only
+// the start and the length instead of the whole text.
+function boundedSql(details) {
+  if (typeof details?.sql !== 'string' || details.sql.length <= maxSqlLength) return details;
+  return { ...details, sql: details.sql.slice(0, 2000), sqlLength: details.sql.length, sqlTruncated: true };
+}
 
 // Resolves with timeUp after ms (never when ms is not finite); clear() stops it.
 function timer(ms) {
