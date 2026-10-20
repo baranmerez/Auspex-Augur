@@ -449,10 +449,13 @@ export class ReadOnlyDatabase {
         }
         // Closing the file may take until the deadline plus the grace; after
         // that the export fails and the partial file is removed.
+        // 'finish' means data was handed to the OS, not that the file handle
+        // is closed. On Windows, callers may fail to open the path until 'close'.
+        const finished = once(out, 'finish');
         out.end();
         const finishing = timer(Math.max(0, deadline - Date.now()) + this.exportGraceMs);
         try {
-          if (await Promise.race([once(out, 'finish'), failed, finishing.promise]) === timeUp) {
+          if (await Promise.race([Promise.all([finished, closed]), failed, finishing.promise]) === timeUp) {
             throw new ToolError('TIMEOUT', `Export could not finish writing the file within the time limit (exportMaxMs ${maxMs} ms plus ${this.exportGraceMs} ms); no file was kept.`);
           }
         } finally {

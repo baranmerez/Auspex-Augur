@@ -361,3 +361,28 @@ test('raw mode keeps column names exactly in the written file', async () => {
   assert.equal(lines[0], `=1+1,+a,-b,@c,\td,"Şükrü, ""ad""\nx"`);
   assert.equal(lines[1], `=1+1,+x,-5,@y,"\rz",`);
 });
+
+test('completed exports wait for the file descriptor to close before returning', async () => {
+  const db = fakeDb({ batches: [[[1, 'synthetic']]] });
+  const target = path.join(exportDir, 'example-export-await-close.csv');
+  db.exportPath = () => target;
+  const originalOpen = db.openExportStream.bind(db);
+  let finished = false;
+  let closed = false;
+  db.openExportStream = file => {
+    const out = originalOpen(file);
+    const originalDestroy = out._destroy.bind(out);
+    out._destroy = (err, callback) => setTimeout(() => originalDestroy(err, callback), 75);
+    out.once('finish', () => { finished = true; });
+    out.once('close', () => { closed = true; });
+    return out;
+  };
+  try {
+    const result = await db._exportCsv('local', 'select 1', [], 'example', ',');
+    assert.equal(finished, true, 'the stream finished its writes');
+    assert.equal(closed, true, 'the export must not report success with an open file handle');
+    assert.equal(result.rowCount, 1);
+  } finally {
+    fs.rmSync(target, { force: true });
+  }
+});
