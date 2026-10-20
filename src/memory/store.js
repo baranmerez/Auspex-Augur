@@ -219,19 +219,26 @@ export class SchemaMemory {
     return this.checkPath(path.join(this.profileDir(profile), 'tables', fileSegment(schema), `${fileSegment(table)}.json`));
   }
 
+  // The cache key names the file's identity, not only its time and size: every
+  // write replaces the file with a rename (a new inode, a new NTFS file id on
+  // Windows, and a new ctime), so another process's write is seen even when it
+  // has the same length and modification time. A filesystem that reports no
+  // inode (ino 0, some network shares) gives no identity: read without cache.
   readJson(file, fallback) {
     this.checkPath(file);
     let stat;
     try {
-      stat = fs.statSync(file);
+      stat = fs.statSync(file, { bigint: true });
     } catch (err) {
       if (err.code === 'ENOENT') return fallback;
       throw err;
     }
-    const hit = this.cache.get(file);
-    if (hit && hit.mtimeMs === stat.mtimeMs && hit.size === stat.size) return structuredClone(hit.value);
+    const key = stat.ino === 0n ? null : `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+    const hit = key && this.cache.get(file);
+    if (hit && hit.key === key) return structuredClone(hit.value);
     const value = JSON.parse(fs.readFileSync(file, 'utf8'));
-    this.cache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, value });
+    if (key) this.cache.set(file, { key, value });
+    else this.cache.delete(file);
     return structuredClone(value);
   }
 
