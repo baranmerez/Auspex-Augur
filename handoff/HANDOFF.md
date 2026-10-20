@@ -253,7 +253,13 @@ has a hole in that schema.
 - Binds to 127.0.0.1 only, GET only except the two approval routes,
   `POST /api/memory/archive` and `POST /api/memory/column-score` (same Host,
   Origin, per-process token, JSON and 4 KB checks, audited), foreign Host headers get 403; never connects to a
-  database.
+  database. Every GET `/api/*` route also needs the per-process
+  `X-Auspex-Token` (401 otherwise; `getJson` in `viewer.html` sends it); `/`
+  and vendor files stay open. Known limit (#102, partial): `GET /` still
+  serves the token on loopback, so the browser viewer does not separate local
+  OS accounts; do not run it on a machine shared with untrusted accounts (or
+  only briefly). The desktop app uses Tauri IPC and is not affected. Open:
+  owner-only bootstrap secret (key URL + session cookie).
 - Report approval: Reports tab *Approve* / *Revoke approval* (TR *Onayla* /
   *Onayı geri al*) with a confirm dialog. The browser viewer POSTs to its
   routes; the desktop app's `approve_report` / `revoke_report` Tauri commands

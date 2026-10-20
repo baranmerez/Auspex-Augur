@@ -70,3 +70,27 @@ How Auspex keeps every call read-only, layer by layer.
 > refuses to start if it finds one, whether in `user:password@` or as a
 > `?password=` / `?sslpassword=` option, in the file or in `AUSPEX_DB_<NAME>`.
 > Passwords belong in pgpass only.
+
+## Local viewer and other OS accounts
+
+The browser viewer (`npm run viewer`) listens on `127.0.0.1` and checks the
+Host header. Every `/api` route, reads as well as the four write routes, needs
+the `X-Auspex-Token` header with a random token created per viewer process;
+write routes also need the exact `Origin`. Requests without the token get 401
+(reads) or 403 (writes) and no data.
+
+This keeps other web pages out, but it does **not** separate local OS
+accounts: `GET /` still serves the page with the token to any process on the
+machine that can reach the loopback port, and a native HTTP client can send
+any `Origin`. Another account on the same machine could therefore read the
+audit log (SQL and parameters), reports and schema memory through the viewer,
+and use the approve/revoke, note archive and column score routes, even though
+it cannot open those files directly (owner-only file permissions do not apply
+to the HTTP route).
+
+- On a machine shared with local accounts you do not trust, do not run the
+  browser viewer, or run it only briefly and stop it (Ctrl+C) afterwards.
+- The desktop app is not affected: it talks to its own window through Tauri
+  IPC and opens no loopback HTTP port.
+- An owner-only bootstrap secret for the browser viewer is planned
+  (issue #102).
