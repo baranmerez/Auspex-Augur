@@ -128,6 +128,14 @@ Files are kept out of AppData on purpose: MSIX-packaged desktop apps
 (including some AI clients) redirect AppData writes of their child processes
 into a hidden per-package folder.
 
+Files Auspex writes (audit logs, CSV exports, the report library, schedule
+state and trends, schema memory) are created private on Linux and macOS: new
+files 0600, new folders 0700. Auspex tightens existing folders and files only
+inside the default `~/.auspex` tree, only when your account owns them, and
+never through a link that leads out of it; a failed tightening never stops the
+write. Folders you configured elsewhere (`AUSPEX_HOME`, `AUSPEX_*_DIR`) keep
+the permissions you gave them. On Windows the folder's ACLs apply unchanged.
+
 </details>
 
 **Passwords live in pgpass**, which node-postgres reads automatically:
