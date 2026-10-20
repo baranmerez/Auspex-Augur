@@ -1356,7 +1356,13 @@ function resolveRange() {
     case 'yesterday': { const y = addDays(today, -1); return [y, y]; }
     case '7': return [addDays(today, -6), today];
     case '30': return [addDays(today, -29), today];
-    case 'all': return [state.days.length ? state.days[0].day : today, today];
+    // At most the last 398 days: the log request adds a day on each side and
+    // the server refuses more than 400 days.
+    case 'all': {
+      const oldest = state.days.length ? state.days[0].day : today;
+      const limit = addDays(today, -397);
+      return [oldest < limit ? limit : oldest, today];
+    }
     default: return [state.from || today, state.to || today];
   }
 }
