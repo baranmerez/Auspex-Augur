@@ -287,9 +287,16 @@ export class SchemaMemory {
       .sort();
   }
 
+  // Best effort like the audit log: the table or note is already stored, so a
+  // refused or failed append (for example a linked changelog.jsonl) is
+  // reported on stderr and does not fail the call.
   appendChangelog(profile, entry) {
     const file = path.join(this.profileDir(profile), 'changelog.jsonl');
-    appendPrivate(file, `${JSON.stringify(entry)}\n`);
+    try {
+      appendPrivate(file, `${JSON.stringify(entry)}\n`);
+    } catch (err) {
+      process.stderr.write(`auspex: schema memory changelog write failed: ${err.message}\n`);
+    }
   }
 
   readChangelog(profile, limit = 200) {
