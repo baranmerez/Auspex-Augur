@@ -117,6 +117,17 @@ before template v2 keep their old layout until `render_reports` re-renders them.
 It binds to 127.0.0.1 only, rejects other Host headers, never connects to a
 database and never shows passwords. Every route is GET-only except the two
 approval routes, the note archive route and the user column score route below.
+Every `/api` route, reads included, needs the `X-Auspex-Token` header with the
+per-process token the served page carries (401 `TOKEN_INVALID` otherwise); the
+page itself and the vendored scripts need no token.
+
+> [!WARNING]
+> The token is still served by `GET /` to any local client that reaches the
+> loopback port, so it keeps other web pages out but not other local OS
+> accounts. On a machine shared with local accounts you do not trust, do not
+> run the browser viewer, or run it only briefly and stop it afterwards. The
+> desktop app (Tauri IPC, no HTTP port) is not affected. See
+> [Safety: local viewer and other OS accounts](safety.md#local-viewer-and-other-os-accounts).
 
 #### Approving reports in the viewer
 
