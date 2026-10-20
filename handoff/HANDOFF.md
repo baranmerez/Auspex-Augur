@@ -106,7 +106,8 @@ database to use unless they named one in the current conversation.
    schema-qualified or Unicode-escaped (lexical check; user-defined functions
    that call them are limited by the role's grants, not by the guard).
 3. **READ ONLY transaction** — every call runs in `BEGIN ... READ ONLY` with
-   `SET LOCAL statement_timeout / lock_timeout / idle_in_transaction...` and
+   `SET LOCAL statement_timeout / lock_timeout / idle_in_transaction... /
+   standard_conforming_strings = on` and
    always ends with `ROLLBACK`.
 4. **Cursor + extended protocol** — queries run as `DECLARE CURSOR FOR`; the
    server itself rejects stacked statements and data-modifying CTEs.

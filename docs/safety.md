@@ -24,8 +24,10 @@ How Auspex keeps every call read-only, layer by layer.
    that call these internally are not seen, so what the role may EXECUTE is
    limited by its grants.
 2. **Transaction wrapper** (`src/db.js`): every call runs in
-   `BEGIN ... READ ONLY` with `statement_timeout`, `lock_timeout` and
-   `idle_in_transaction_session_timeout`, and always ends with `ROLLBACK`.
+   `BEGIN ... READ ONLY` with `statement_timeout`, `lock_timeout`,
+   `idle_in_transaction_session_timeout` and `standard_conforming_strings = on`
+   (so strings are read the way the SQL guard reads them), and always ends
+   with `ROLLBACK`.
 3. **Cursor + extended protocol:** queries run as `DECLARE CURSOR FOR <query>`
    over the extended protocol, which rejects stacked statements and
    data-modifying CTEs at the server.
