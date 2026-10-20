@@ -98,7 +98,11 @@ function sameGeneration(aside, checkedIno, checkedToken) {
   let token = null;
   try { token = JSON.parse(text)?.token ?? null; } catch { /* caught between create and write */ }
   if (!tokenPattern.test(token ?? '')) token = null;
-  return token === checkedToken;
+  if (token !== null || checkedToken !== null) return token === checkedToken;
+  // Neither has a token: a newer lock caught between its create and write
+  // also reads empty, so the inode tells them apart (as the ino key did).
+  const ino = inodeOf(aside);
+  return ino === null || checkedIno === null || ino === checkedIno;
 }
 
 function isStale(snap, staleMs, maxHoldMs) {
