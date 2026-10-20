@@ -414,6 +414,36 @@ test('a takeover of a tokenless lock never retires a newer lock caught between c
   assert.ok(Date.now() - fs.statSync(lockPath).mtimeMs < 60000, 'it is the fresh lock, not the old one');
 });
 
+test('a takeover never retires a newer tokenless lock that reuses the old inode (ext4)', () => {
+  const dir = tempDir('auspex-lock-tokenless-reuse-');
+  const lockPath = path.join(dir, '.lock');
+  fs.writeFileSync(lockPath, ''); // an owner that died between create and write
+  const old = new Date(Date.now() - 3600000);
+  fs.utimesSync(lockPath, old, old);
+  const oldIno = fs.statSync(lockPath, { bigint: true }).ino;
+  // The new owner's file gets the inode just freed, as ext4 often does, so
+  // only its age tells it apart from the stale generation.
+  const original = fs.statSync;
+  const hook = onFirstRemoval(lockPath, ({ rmSync }) => {
+    rmSync.call(fs, lockPath);
+    fs.writeFileSync(lockPath, '', { flag: 'wx' });
+    fs.statSync = function (file, ...rest) {
+      const stat = original.call(this, file, ...rest);
+      if (!String(file).includes('.stale.') || typeof stat.ino !== 'bigint') return stat;
+      return Object.assign(Object.create(Object.getPrototypeOf(stat)), stat, { ino: oldIno });
+    };
+  });
+  try {
+    assert.throws(() => withFileLock(lockPath, () => 'two writers would overlap', { waitMs: 150 }), LockBusyError);
+  } finally {
+    hook.restore();
+    fs.statSync = original;
+  }
+  assert.ok(hook.fired(), 'the race was exercised');
+  assert.ok(fs.existsSync(lockPath), "the new owner's lock is intact");
+  assert.ok(Date.now() - fs.statSync(lockPath).mtimeMs < 60000, 'it is the fresh lock, not the old one');
+});
+
 test('a takeover never retires a newer generation installed after its last check', () => {
   const dir = tempDir('auspex-lock-takeover-race-');
   const lockPath = path.join(dir, '.lock');

@@ -204,8 +204,12 @@ function takeOver(lockPath, seen, staleMs, maxHoldMs) {
     if (now?.key !== seen.key || !isStale(now, staleMs, maxHoldMs)) return false;
     const aside = moveAside(lockPath, 'stale');
     if (!aside) return false;
-    if (!sameGeneration(aside, now.ino === 0n ? null : now.ino, tokenPattern.test(seen.key) ? seen.key : null)) {
-      putBack(aside, lockPath); // replaced after the check above: not ours to retire
+    // Replaced after the check above: not ours to retire. A file system may
+    // give a fresh lock the inode of the one just removed (ext4 does), so a
+    // detached lock that is no longer stale is a newer generation as well.
+    if (!sameGeneration(aside, now.ino === 0n ? null : now.ino, tokenPattern.test(seen.key) ? seen.key : null)
+        || !isStale(snapshot(aside), staleMs, maxHoldMs)) {
+      putBack(aside, lockPath);
       return false;
     }
     removeAside(aside);
