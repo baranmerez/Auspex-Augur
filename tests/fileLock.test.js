@@ -354,6 +354,44 @@ test('release decides by inode when reading the detached lock fails (transient W
   assert.equal(withFileLock(lockPath, () => 'ran', { waitMs: 100 }), 'ran');
 });
 
+// Makes fs.statSync report a different inode for files whose name contains
+// part, as FAT/exFAT on Windows do for a file renamed to a longer name.
+function inodeChangesOnRename(part) {
+  const original = fs.statSync;
+  fs.statSync = function (file, ...rest) {
+    const stat = original.call(this, file, ...rest);
+    if (!String(file).includes(part) || typeof stat.ino !== 'bigint') return stat;
+    return Object.assign(Object.create(Object.getPrototypeOf(stat)), stat, { ino: stat.ino + 1n });
+  };
+  return () => { fs.statSync = original; };
+}
+
+test('release removes its own lock when the rename changes the inode (FAT/exFAT)', () => {
+  const dir = tempDir('auspex-lock-fat-release-');
+  const lockPath = path.join(dir, '.lock');
+  let restore;
+  try {
+    withFileLock(lockPath, () => { restore = inodeChangesOnRename('.released.'); });
+  } finally {
+    restore?.();
+  }
+  assert.deepEqual(fs.readdirSync(dir), [], 'our own lock is removed, not put back');
+  assert.equal(withFileLock(lockPath, () => 'ran', { waitMs: 100 }), 'ran');
+});
+
+test('a dead owner\'s lock is taken over when the rename changes the inode (FAT/exFAT)', () => {
+  const dir = tempDir('auspex-lock-fat-takeover-');
+  const lockPath = path.join(dir, '.lock');
+  fs.writeFileSync(lockPath, JSON.stringify({ pid: 2 ** 30, host: os.hostname(), token: '7777777777777777' }));
+  const restore = inodeChangesOnRename('.stale.');
+  try {
+    assert.equal(withFileLock(lockPath, () => 'ran', { waitMs: 300 }), 'ran');
+  } finally {
+    restore();
+  }
+  assert.deepEqual(fs.readdirSync(dir), []);
+});
+
 test('a takeover never retires a newer generation installed after its last check', () => {
   const dir = tempDir('auspex-lock-takeover-race-');
   const lockPath = path.join(dir, '.lock');

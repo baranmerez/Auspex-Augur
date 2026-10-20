@@ -77,13 +77,28 @@ function inodeOf(file) {
   }
 }
 
-// Same detached generation as the one checked: by inode when the filesystem
-// has them (no re-read that a transient Windows error could fail), otherwise
-// by the key in its body.
-function sameGeneration(aside, checkedIno, checkedKey) {
-  const ino = inodeOf(aside);
-  if (ino !== null && checkedIno !== null) return ino === checkedIno;
-  return snapshot(aside)?.key === checkedKey;
+const tokenPattern = /^[0-9a-f]{16}$/;
+
+// Same detached generation as the one checked (checkedToken: its token, or
+// null when its body held none). The token in the detached file decides:
+// inodes are not stable across a rename everywhere (FAT/exFAT on Windows
+// give a renamed file a new file id). Only when the file cannot be read (a
+// transient Windows error) does the inode decide, and when that is unknown
+// too the answer is "same", the outcome Auspex had before this check: the
+// generation is removed as the caller intended.
+function sameGeneration(aside, checkedIno, checkedToken) {
+  let text;
+  try {
+    text = fs.readFileSync(aside, 'utf8');
+  } catch (err) {
+    if (err.code === 'ENOENT') return false;
+    const ino = inodeOf(aside);
+    return ino === null || checkedIno === null || ino === checkedIno;
+  }
+  let token = null;
+  try { token = JSON.parse(text)?.token ?? null; } catch { /* caught between create and write */ }
+  if (!tokenPattern.test(token ?? '')) token = null;
+  return token === checkedToken;
 }
 
 function isStale(snap, staleMs, maxHoldMs) {
@@ -185,7 +200,7 @@ function takeOver(lockPath, seen, staleMs, maxHoldMs) {
     if (now?.key !== seen.key || !isStale(now, staleMs, maxHoldMs)) return false;
     const aside = moveAside(lockPath, 'stale');
     if (!aside) return false;
-    if (!sameGeneration(aside, now.ino === 0n ? null : now.ino, seen.key)) {
+    if (!sameGeneration(aside, now.ino === 0n ? null : now.ino, tokenPattern.test(seen.key) ? seen.key : null)) {
       putBack(aside, lockPath); // replaced after the check above: not ours to retire
       return false;
     }
