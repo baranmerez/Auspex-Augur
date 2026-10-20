@@ -6,6 +6,7 @@ import path from 'node:path';
 import pg from 'pg';
 import { assertReadOnlyQuery, SqlGuardError } from './sqlGuard.js';
 import { createAuditLog } from './auditLog.js';
+import { ensurePrivateDir } from './privateFiles.js';
 import { runRoleCheck, RoleCheckError } from './roleCheck.js';
 import { ToolError, classifyError } from './errors.js';
 
@@ -378,7 +379,7 @@ export class ReadOnlyDatabase {
       const deadline = Date.now() + maxMs;
       const statementMs = this.timeoutMs(name, timeoutSeconds);
       await this.declareCursor(client, query, params);
-      fs.mkdirSync(path.dirname(target), { recursive: true });
+      ensurePrivateDir(path.dirname(target));
       // 'wx' never touches an existing file; only a file this call created is
       // ever removed again.
       const out = this.openExportStream(target);
@@ -483,7 +484,7 @@ export class ReadOnlyDatabase {
 
   // Separate so tests can substitute a failing or slow stream.
   openExportStream(target) {
-    return fs.createWriteStream(target, { encoding: 'utf8', flags: 'wx' });
+    return fs.createWriteStream(target, { encoding: 'utf8', flags: 'wx', mode: 0o600 });
   }
 
   // Timestamp plus a random part: two exports with the same name in the same

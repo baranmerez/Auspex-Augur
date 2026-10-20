@@ -105,7 +105,7 @@ function takeOver(lockPath, seen, staleMs, maxHoldMs) {
 }
 
 function acquire(lockPath, { waitMs, staleMs, maxHoldMs }) {
-  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true, mode: 0o700 }); // often the first write into a private folder
   const token = crypto.randomBytes(8).toString('hex');
   const body = JSON.stringify({ pid: process.pid, host: os.hostname(), token, at: new Date().toISOString() });
   const deadline = Date.now() + waitMs;

@@ -10,7 +10,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { assertReadOnlyQuery, stripLiteralsAndComments } from '../sqlGuard.js';
-import { withFileLock, renameRetrying } from '../fileLock.js';
+import { withFileLock } from '../fileLock.js';
+import { ensurePrivateDir, writePrivateAtomic, copyPrivate } from '../privateFiles.js';
 import { sqlParamCount, validatePresets, builtInPresetsFor, mismatchedPresets, checkDateRange } from './presets.js';
 import { maskRows } from './mask.js';
 
@@ -99,13 +100,6 @@ function checkExpected(expectedHash, currentHash, version) {
   throw new LibraryError(`The report changed since you opened it${now}; reload and review again.`, 'STALE_VERSION');
 }
 
-function writeAtomic(file, text) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(tmp, text, 'utf8');
-  renameRetrying(tmp, file); // the viewer may be reading the target on Windows
-}
-
 // Approve/revoke history in the report metadata, newest last.
 function recordStageChange(meta, change) {
   meta.stageHistory = [...(meta.stageHistory || []), change].slice(-maxRuns);
@@ -124,7 +118,7 @@ export class Library {
   }
 
   ensure() {
-    for (const dir of Object.values(stages)) fs.mkdirSync(path.join(this.root, dir), { recursive: true });
+    for (const dir of Object.values(stages)) ensurePrivateDir(path.join(this.root, dir));
   }
 
   // Absolute base path (without extension), guaranteed inside the library.
@@ -162,11 +156,11 @@ export class Library {
   }
 
   writeMeta(stage, ref, meta) {
-    writeAtomic(this.paths(stage, ref).meta, JSON.stringify(meta, null, 2) + '\n');
+    writePrivateAtomic(this.paths(stage, ref).meta, JSON.stringify(meta, null, 2) + '\n');
   }
 
   writeHtml(stage, ref, html) {
-    writeAtomic(this.paths(stage, ref).html, html);
+    writePrivateAtomic(this.paths(stage, ref).html, html);
   }
 
   // Saves or updates a draft. The SQL must pass the read-only guard.
@@ -243,7 +237,7 @@ export class Library {
       meta.externalFiles = [...(meta.externalFiles || []), { file: externalFile, version, hash, savedAt: now }].slice(-maxRuns);
     }
     const p = this.paths('draft', r);
-    writeAtomic(p.sql, text + '\n');
+    writePrivateAtomic(p.sql, text + '\n');
     this.writeMeta('draft', r, meta);
     // Stored presets that no longer fit the saved SQL (run_report refuses them).
     const presetMismatch = mismatchedPresets(meta.presets, paramCount);
@@ -315,9 +309,9 @@ export class Library {
     meta.activeVersion = version;
     meta.approvedVersion = version;
     recordStageChange(meta, { at: meta.approvedAt, from: 'draft', to: 'approved', version, by });
-    writeAtomic(to.meta, JSON.stringify(meta, null, 2) + '\n');
-    fs.copyFileSync(from.sql, to.sql);
-    if (fs.existsSync(from.html)) fs.copyFileSync(from.html, to.html);
+    writePrivateAtomic(to.meta, JSON.stringify(meta, null, 2) + '\n');
+    copyPrivate(from.sql, to.sql);
+    if (fs.existsSync(from.html)) copyPrivate(from.html, to.html);
     for (const f of Object.values(from)) fs.rmSync(f, { force: true });
     this.pruneEmpty(path.dirname(from.sql), path.join(this.root, stages.draft));
     return { ref: r, stage: 'approved', paths: to, meta };
@@ -350,9 +344,9 @@ export class Library {
     delete meta.approvedAt;
     delete meta.approvedVersion;
     recordStageChange(meta, { at: now, from: 'approved', to: 'draft', version, by });
-    writeAtomic(to.meta, JSON.stringify(meta, null, 2) + '\n');
-    fs.copyFileSync(from.sql, to.sql);
-    if (fs.existsSync(from.html)) fs.copyFileSync(from.html, to.html);
+    writePrivateAtomic(to.meta, JSON.stringify(meta, null, 2) + '\n');
+    copyPrivate(from.sql, to.sql);
+    if (fs.existsSync(from.html)) copyPrivate(from.html, to.html);
     for (const f of Object.values(from)) fs.rmSync(f, { force: true });
     this.pruneEmpty(path.dirname(from.sql), path.join(this.root, stages.approved));
     return { ref: r, stage: 'draft', paths: to, meta, version };
@@ -468,10 +462,10 @@ export class Library {
     const finalLint = lintExecuteScript(text);
     if (finalLint.errors.length) throw new LibraryError(`EXECUTE script rejected after adding the header:\n- ${finalLint.errors.join('\n- ')}`);
     const externalFile = external ? writeScriptTarget(external, text) : null;
-    writeAtomic(file, text);
+    writePrivateAtomic(file, text);
     if (external) {
       const info = { externalFile, root: external.root, folder: external.folder, fileName: external.fileName, savedAt: new Date().toISOString(), sqlHash: sqlHash(text) };
-      writeAtomic(sidecar, JSON.stringify(info, null, 2) + '\n');
+      writePrivateAtomic(sidecar, JSON.stringify(info, null, 2) + '\n');
     } else {
       fs.rmSync(sidecar, { force: true }); // a replaced script no longer points at the old file
     }

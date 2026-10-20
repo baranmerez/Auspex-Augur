@@ -14,6 +14,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { withFileLock, renameRetrying } from '../fileLock.js';
+import { ensurePrivateDir, appendPrivate } from '../privateFiles.js';
 import path from 'node:path';
 import { splitColumnRef } from './planUsage.js';
 
@@ -77,9 +78,9 @@ const tableKey = (schema, table) => `${schema}.${table}`;
 const sameTable = (a, b) => a.schema === b.schema && a.table === b.table;
 
 function writeFileAtomic(file, text) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
+  ensurePrivateDir(path.dirname(file));
   const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, text, 'utf8');
+  fs.writeFileSync(tmp, text, { encoding: 'utf8', mode: 0o600 });
   renameRetrying(tmp, file); // the viewer may be reading the target on Windows
 }
 
@@ -295,8 +296,7 @@ export class SchemaMemory {
 
   appendChangelog(profile, entry) {
     const file = path.join(this.profileDir(profile), 'changelog.jsonl');
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.appendFileSync(file, `${JSON.stringify(entry)}\n`, 'utf8');
+    appendPrivate(file, `${JSON.stringify(entry)}\n`);
   }
 
   readChangelog(profile, limit = 200) {
