@@ -206,7 +206,7 @@ export class SchemaMemory {
   // The root itself may be a link (a configured folder).
   checkPath(file) {
     const link = linkBelow(this.root, file);
-    if (link) throw new MemoryError(`Schema memory path ${link} is a link or junction; refused.`, 'DISK_ERROR');
+    if (link) throw Object.assign(new MemoryError(`Schema memory path ${link} is a link or junction; refused.`, 'DISK_ERROR'), { linkRefused: true });
     return file;
   }
 
@@ -277,7 +277,13 @@ export class SchemaMemory {
     const out = [];
     for (const schemaDir of fs.readdirSync(dir, { withFileTypes: true }).filter(d => d.isDirectory())) {
       for (const f of fs.readdirSync(path.join(dir, schemaDir.name)).filter(f => f.endsWith('.json'))) {
-        out.push(this.readJson(path.join(dir, schemaDir.name, f), null));
+        try {
+          out.push(this.readJson(path.join(dir, schemaDir.name, f), null));
+        } catch (err) {
+          if (!err.linkRefused) throw err;
+          // One linked table file must not fail the view and every later write.
+          process.stderr.write(`auspex: schema memory table skipped: ${err.message}\n`);
+        }
       }
     }
     return out.filter(Boolean).sort((a, b) => tableKey(a.schema, a.table).localeCompare(tableKey(b.schema, b.table)));
@@ -309,8 +315,16 @@ export class SchemaMemory {
     }
   }
 
+  // A linked changelog reads as empty (one stderr line), so the view still
+  // rebuilds and a memory write that already happened is not reported failed.
   readChangelog(profile, limit = 200) {
-    const file = this.checkPath(path.join(this.profileDir(profile), 'changelog.jsonl'));
+    const file = path.join(this.profileDir(profile), 'changelog.jsonl');
+    try {
+      this.checkPath(file);
+    } catch (err) {
+      process.stderr.write(`auspex: schema memory changelog not read: ${err.message}\n`);
+      return [];
+    }
     if (!fs.existsSync(file)) return [];
     return fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).slice(-limit).map(line => {
       try { return JSON.parse(line); } catch { return null; }
