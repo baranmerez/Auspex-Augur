@@ -125,7 +125,9 @@ test('shared report copies hold preview rows and are owner-private', posixOnly, 
   const fake = {
     resolveProfile: name => String(name).toLowerCase(),
     async runReport(profile) {
-      return { profile, serverVersion: '16.0', analyzed: false, plan: null, previewMs: 1, previewExecuted: true,
+      const plan = [{ Plan: { 'Node Type': 'Seq Scan', 'Relation Name': 'orders', Schema: 'example', Alias: 'o',
+        'Startup Cost': 0, 'Total Cost': 10, 'Plan Rows': 1, 'Actual Total Time': 1, 'Actual Rows': 1, 'Actual Loops': 1 }, 'Planning Time': 0.1, 'Execution Time': 1 }];
+      return { profile, serverVersion: '16.0', analyzed: true, plan, explainMs: 1, previewMs: 1, previewExecuted: true,
         columns: [{ name: 'private_note', type: 'text' }], rows: [['exampleconfidential']], rowCount: 1, truncated: false };
     },
   };
