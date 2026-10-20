@@ -215,14 +215,16 @@ function functionNames(masked, identifiers) {
   return names;
 }
 
-// Longer SQL is refused before it is scanned or sent anywhere.
+// SQL from a caller that is longer than this is refused before it is scanned
+// or sent anywhere. SQL that Auspex generates itself (profile_tables batches)
+// passes maxLength: Infinity; the scan is linear either way.
 export const maxSqlLength = 256 * 1024;
 
 // Returns the query without a trailing semicolon, or throws SqlGuardError.
-export function assertReadOnlyQuery(sql) {
+export function assertReadOnlyQuery(sql, { maxLength = maxSqlLength } = {}) {
   if (typeof sql !== 'string' || !sql.trim()) throw new SqlGuardError('Query is empty.');
-  if (sql.length > maxSqlLength) {
-    throw new SqlGuardError(`Query is too long (${sql.length} characters; at most ${maxSqlLength}).`);
+  if (sql.length > maxLength) {
+    throw new SqlGuardError(`Query is too long (${sql.length} characters; at most ${maxLength}).`);
   }
 
   const identifiers = [];

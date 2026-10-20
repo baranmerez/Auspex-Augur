@@ -36,6 +36,29 @@ test('SQL longer than the limit is refused before it is scanned', () => {
   assert.doesNotThrow(() => assertReadOnlyQuery('select 1' + ' '.repeat(maxSqlLength - 8)));
 });
 
+test('SQL that Auspex generates itself (profile_tables batches) is not held to the caller limit', async () => {
+  const db = new ReadOnlyDatabase({ profiles: new Map(), maxRows: 10 }, { audit: () => {} });
+  // 30 tables with 100 columns each come to about 264,000 characters.
+  const sql = 'select ' + Array(12000).fill('count("example_column_x")').join(', ') + ' from example.orders';
+  assert.ok(sql.length > maxSqlLength);
+  const sent = [];
+  await db.guardedQuery({ query: async q => { sent.push(q.text); return { rows: [] }; } }, sql, []);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0], sql);
+});
+
+test('a run_report phase keeps an oversized saved SQL out of its audit entry too', async () => {
+  const entries = [];
+  const db = new ReadOnlyDatabase({ profiles: new Map(), maxRows: 10 }, { audit: entry => entries.push(entry) });
+  const sql = 'select ' + 'x'.repeat(maxSqlLength);
+  await assert.rejects(db.audited('run_report', { profile: 'exampledb' }, () =>
+    db.auditedPhase('run_report', 'database', { sql }, async () => assertReadOnlyQuery(sql))), /too long/);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].sql.length, 2000);
+  assert.equal(entries[0].sqlLength, sql.length);
+  assert.equal(entries[0].sqlTruncated, true);
+});
+
 test('a refused oversized query is audited with its length, not its whole text', async () => {
   const entries = [];
   const db = new ReadOnlyDatabase({
