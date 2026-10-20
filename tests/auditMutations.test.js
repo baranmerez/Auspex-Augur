@@ -33,12 +33,12 @@ const ref = { db: 'example', schema: 'sales', category: 'Audit', name: 'totals' 
 
 test('report, script and memory changes are audited on success and failure, without content', async () => {
   const secretText = 'NOTE-TEXT-MARKER';
-  const secretSql = 'select 4242 as sql_marker';
+  const secretSql = "select 'zqsqlvaluemarker' as sql_marker";
 
   assert.ok(!(await call('save_report', { ...ref, sql: secretSql })).isError);
   assert.ok((await call('approve_report', ref)).isError, 'no run yet');
   assert.ok((await call('approve_report', { ...ref, name: 'missing' })).isError);
-  assert.ok(!(await call('save_execute_script', { ...ref, name: 'fix', sql: 'BEGIN;\nUPDATE sales.t SET a = 4242 WHERE id = 1;\nROLLBACK;' })).isError);
+  assert.ok(!(await call('save_execute_script', { ...ref, name: 'fix', sql: "BEGIN;\nUPDATE sales.t SET a = 'zqscriptvaluemarker' WHERE id = 1;\nROLLBACK;" })).isError);
   assert.ok((await call('save_execute_script', { ...ref, name: 'bad', sql: 'DELETE FROM sales.t;' })).isError);
   const added = await call('remember', { profile: 'example', action: 'add', kind: 'rule', text: secretText });
   const noteId = JSON.parse(added.content[0].text).note.id;
@@ -68,7 +68,8 @@ test('report, script and memory changes are audited on success and failure, with
     [['add', noteId, 'active', false], ['archive', noteId, 'archived', false], ['archive', 999, null, true]]);
 
   const raw = JSON.stringify(entries);
-  for (const marker of [secretText, 'REASON-MARKER', 'sql_marker', '4242']) assert.ok(!raw.includes(marker), `${marker} is not logged`);
+  // Markers no random part of an entry (UUID, temp folder, timing) can contain.
+  for (const marker of [secretText, 'REASON-MARKER', 'sql_marker', 'zqsqlvaluemarker', 'zqscriptvaluemarker']) assert.ok(!raw.includes(marker), `${marker} is not logged`);
 });
 
 test('list_profiles shows script roots; a script saved into one is audited with its path and names', async () => {
