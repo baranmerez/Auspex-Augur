@@ -116,3 +116,20 @@ test('the pending archive button spins and the dialog confirm button is the only
   assert.match(page, /class: 'icon-btn sm' \+ \(pending \? ' spin' : ''\)/);
   assert.match(page, /'icon-btn secondary-danger', value: 'ok', disabled: true \}, t\('Archive'\)/);
 });
+
+test('rules navigator: database-wide box apart, one box per table, the chosen box redraws the notes', () => {
+  assert.match(page, /\.rules-nav \{ display: grid; grid-template-columns: minmax\(300px, 400px\) minmax\(0, 1fr\)/);
+  assert.match(page, /@media \(max-width: 900px\) \{\s*\.rules-nav \{ grid-template-columns: minmax\(0, 1fr\); \}/);
+  assert.match(page, /tile\(dbWide, true\)/);
+  assert.match(page, /tables\.map\(g => tile\(g, false\)\)/);
+  // The chosen box is part of the render key; without it a click would not redraw.
+  assert.match(page, /const key = JSON\.stringify\(\[[^\]]*state\.rulesSel \?\? null\]\)/);
+  assert.match(page, /'No notes': 'Not yok'/);
+});
+
+test('operations and tables tabs: name and SQL cells are plain table cells, cut inside, not the .sum grid', () => {
+  assert.doesNotMatch(page, /h\('td', \{ class: 'sum'/);
+  assert.match(page, /h\('td', \{ class: 'op-sql', title: summaryOf\(e\) \}, h\('span', \{ class: 'op-sql-text' \}/);
+  assert.match(page, /td\.op-sql \.op-sql-text \{[^}]*text-overflow: ellipsis/);
+  assert.doesNotMatch(page, /td\.op-sql \{[^}]*display:/);
+});
