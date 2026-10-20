@@ -142,13 +142,16 @@ Windows the folder's ACLs apply unchanged.
 Rewrites go through a new temporary file created exclusively under a random
 name next to the target, then renamed over it; an existing entry at that name
 (a link, a hard link, an old temp file) is skipped and never written through.
-Appends (audit log, schema-memory changelog, trends) refuse a target file that
-is a symbolic link or junction, is not a regular file, or has more than one
-hard link; the audit log and the changelog then report the refusal on stderr
-and the call goes on. The report library and the schema memory refuse any
-folder or file below their root (stage, database, schema, category, profile
-and table folders) that is a symbolic link or junction, before reading or
-writing; the root folder itself may be a link. Script-root files
+Appends (audit log, schema-memory changelog) refuse a target file that is a
+symbolic link or junction, is not a regular file, or has more than one hard
+link; the refusal goes to stderr and the call goes on (a linked changelog
+reads as empty). In the MCP server and the Node viewer, the report library and
+the schema memory refuse any folder or file below their root (stage, database,
+schema, category, profile and table folders) that is a symbolic link or
+junction, before reading or writing; the root folder itself may be a link. A
+linked report or table file is left out of listings with a note on stderr.
+The desktop app still follows such links when it reads report files; that is
+a known gap. Script-root files
 (`save_report` and `save_execute_script` with a script root) are created new
 with mode 0600; the script-root folders keep the permissions you gave them.
 

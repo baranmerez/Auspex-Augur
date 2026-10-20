@@ -331,6 +331,8 @@ outside the repository. The current setup is described in
   a link. The checks run before the file operation, so a link swapped in by
   another process between check and use is not caught; that needs write
   access to the private folder. Script-root files are created 0600 (#110).
+  The desktop app (Rust, `read_json` / `report_content_in` in `main.rs`) does
+  not check links yet and follows them when reading report files.
 - **Catalog visibility:** PostgreSQL shows table names to everyone; tables in
   unprivileged schemas appear in search (`can_select = false`) but cannot be
   read.
