@@ -12,6 +12,7 @@ import crypto from 'node:crypto';
 import { assertReadOnlyQuery, stripLiteralsAndComments } from '../sqlGuard.js';
 import { withFileLock, renameRetrying } from '../fileLock.js';
 import { sqlParamCount, validatePresets, builtInPresetsFor, mismatchedPresets, checkDateRange } from './presets.js';
+import { maskRows } from './mask.js';
 
 export const stages = { draft: '_drafts', approved: 'SELECT', execute: 'EXECUTE' };
 const maxRuns = 100;
@@ -216,6 +217,18 @@ export class Library {
     if (unmask) meta.unmask = unmask;
     if (checkedPresets !== undefined) meta.presets = checkedPresets;
     if (checkedDateRange !== undefined) meta.dateRange = checkedDateRange;
+    // A mask tightened after an earlier run must also protect the preview
+    // already stored in this report. Otherwise saving regenerates HTML with
+    // stale unmasked values even though new shares apply the current policy.
+    if ((mask !== undefined || unmask !== undefined)
+        && Array.isArray(meta.last?.columns) && Array.isArray(meta.last?.preview)) {
+      const remasked = maskRows(meta.last.columns.map(column => column.name), meta.last.preview, {
+        mask: meta.mask || [], unmask: meta.unmask || [],
+      });
+      meta.last.preview = remasked.rows;
+      // The old result may contain masked values which must never unmask.
+      meta.last.maskedColumns = [...new Set([...(meta.last.maskedColumns || []), ...remasked.maskedColumns])];
+    }
     const text = normalizeSql(sql);
     const hash = sqlHash(text);
     if (!meta.sqlVersions.some(v => v.hash === hash)) {
