@@ -1449,6 +1449,7 @@ function knownDbs() {
 function setDb(db, { render: doRender = true } = {}) {
   state.db = db;
   state.reportSel = null; state.reportDoc = null;
+  state.rulesSel = null; state.rulesJump = false;
   persist();
   $('dbVal').textContent = db || t('All databases');
   closeDbMenu();
@@ -4262,6 +4263,14 @@ function ruleCounts(list) {
   for (const n of Array.isArray(list) ? list : []) { if (n.status === 'active') c[n.kind] = (c[n.kind] || 0) + 1; else c.archived++; }
   return c;
 }
+// The box the Rules navigator shows: the user's pick while it still has
+// notes ('' = database-wide), else the database-wide box when it has notes,
+// else the first table ('' when there is nothing at all).
+function pickRulesSel(sel, dbWideCount, tableKeys) {
+  if (sel === '' && (dbWideCount || !tableKeys.length)) return '';
+  if (sel && tableKeys.includes(sel)) return sel;
+  return dbWideCount || !tableKeys.length ? '' : tableKeys[0];
+}
 // "13 Oct 2026" / "13 Eki 2026": a day without time of day.
 const ruleDay = (ts, loc) => {
   const d = ts ? new Date(ts) : null;
@@ -4369,7 +4378,7 @@ function renderRules() {
 
   const f = state.rulesFilter ??= { kind: '', table: '', status: 'active', q: '' };
   const key = JSON.stringify([state.db, mv.data.generatedAt, lang, f, state.archivePending ?? null, state.rulesSel ?? null]);
-  if (state.rulesKey === key && view.firstChild) return;
+  if (state.rulesKey === key && view.firstChild) { state.rulesJump = false; return; }
   state.rulesKey = key;
   const focus = ['rulesText', 'rulesTable'].map(id => [id, captureFocus(document, id)]);
   const notes = mv.data.notes || [];
@@ -4403,16 +4412,23 @@ function renderRules() {
   const groups = groupRules(list);
   const dbWide = groups.find(g => !g.key) || { key: '', notes: [], columns: [] };
   const tables = groups.filter(g => g.key);
-  let sel = state.rulesSel;
-  if (sel == null || (sel !== '' && !tables.some(g => g.key === sel))) sel = dbWide.notes.length || !tables.length ? '' : tables[0].key;
-  state.rulesSel = sel;
-  const choose = key => { state.rulesSel = key; state.rulesJump = true; renderRules(); };
+  // The shown box; state.rulesSel keeps the user's own pick, so a filter that
+  // hides it for a moment does not replace it.
+  const sel = pickRulesSel(state.rulesSel, dbWide.notes.length, tables.map(g => g.key));
+  const choose = key => {
+    if (key === sel) return;
+    state.rulesSel = key; state.rulesJump = true; renderRules();
+  };
+  // The boxes are drawn anew: keep the side panel's scroll and a box's focus.
+  const oldSide = view.querySelector('.rn-side');
+  const sideScroll = oldSide ? oldSide.scrollTop : 0;
+  const focusedKey = document.activeElement?.classList?.contains('rn-tile') ? document.activeElement.dataset.key : null;
   // Long snake_case names wrap after an underscore, not inside a word.
   const breakAtUnderscores = name => name.split('_').flatMap((part, i, all) => (i < all.length - 1 ? [part + '_', h('wbr')] : [part]));
   const tile = (g, wide) => {
     const on = sel === g.key;
     const dot = g.key.indexOf('.');
-    return h('button', { type: 'button', class: 'rn-tile' + (wide ? ' global' : '') + (on ? ' on' : ''), 'aria-pressed': String(on), title: wide ? t('Database-wide') : g.key, onclick: () => choose(g.key) },
+    return h('button', { type: 'button', class: 'rn-tile' + (wide ? ' global' : '') + (on ? ' on' : ''), 'aria-pressed': String(on), 'data-key': g.key, title: wide ? t('Database-wide') : g.key, onclick: () => choose(g.key) },
       h('span', { class: 'rn-schema' }, wide ? t('Database-wide') : g.key.slice(0, dot)),
       h('span', { class: 'rn-name' }, wide ? state.db : breakAtUnderscores(g.key.slice(dot + 1))),
       h('span', { class: 'rn-cnt' }, ruleCountText(ruleCounts(g.notes)) || t('No notes')));
@@ -4428,6 +4444,8 @@ function renderRules() {
     tables.length ? h('div', { class: 'rn-tiles' }, tables.map(g => tile(g, false))) : h('div', { class: 'muted rn-none' }, t('No tables match.')));
   put(view, h('div', { class: 'stack' }, bar, h('div', { class: 'rules-nav' }, side, detail)));
   for (const [id, saved] of focus) restoreFocus(document, id, saved);
+  side.scrollTop = sideScroll;
+  if (focusedKey !== null) [...side.querySelectorAll('.rn-tile')].find(b => b.dataset.key === focusedKey)?.focus({ preventScroll: true });
   // On a narrow screen the notes sit below the boxes: bring them into view.
   if (state.rulesJump) {
     state.rulesJump = false;

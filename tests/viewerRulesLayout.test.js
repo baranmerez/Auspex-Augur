@@ -12,7 +12,7 @@ function load() {
   for (const name of ['report-filter', 'rules-list']) assert.ok(blockOf(name), `${name} block found`);
   const context = vm.createContext({ JSON });
   vm.runInContext(`${blockOf('report-filter')}\n${blockOf('rules-list')}
-this.filterRules = filterRules; this.groupRules = groupRules; this.ruleCounts = ruleCounts; this.ruleDay = ruleDay;`, context);
+this.filterRules = filterRules; this.groupRules = groupRules; this.ruleCounts = ruleCounts; this.ruleDay = ruleDay; this.pickRulesSel = pickRulesSel;`, context);
   return context;
 }
 
@@ -132,4 +132,24 @@ test('operations and tables tabs: name and SQL cells are plain table cells, cut 
   assert.match(page, /h\('td', \{ class: 'op-sql', title: summaryOf\(e\) \}, h\('span', \{ class: 'op-sql-text' \}/);
   assert.match(page, /td\.op-sql \.op-sql-text \{[^}]*text-overflow: ellipsis/);
   assert.doesNotMatch(page, /td\.op-sql \{[^}]*display:/);
+});
+
+test('navigator selection: the pick while it has notes, else database-wide with notes, else the first table', () => {
+  const { pickRulesSel } = load();
+  const tables = ['example.orders', 'example.customers'];
+  assert.equal(pickRulesSel(null, 2, tables), '', 'first visit: database-wide when it has notes');
+  assert.equal(pickRulesSel(null, 0, tables), 'example.orders', 'first visit without database-wide notes: the first table');
+  assert.equal(pickRulesSel('example.customers', 2, tables), 'example.customers', 'a valid pick stays');
+  assert.equal(pickRulesSel('example.gone', 2, tables), '', 'a vanished table falls back');
+  assert.equal(pickRulesSel('', 0, tables), 'example.orders', 'an empty database-wide pick falls back to a table with notes');
+  assert.equal(pickRulesSel('', 0, []), '', 'nothing at all: the database-wide box');
+  assert.equal(pickRulesSel('example.orders', 0, []), '', 'no tables left: the database-wide box');
+});
+
+test('navigator redraw keeps the side scroll and a focused box; a database switch forgets the pick', () => {
+  assert.ok(page.includes('side.scrollTop = sideScroll;'));
+  assert.ok(page.includes("'data-key': g.key"));
+  assert.ok(page.includes('.focus({ preventScroll: true })'));
+  assert.match(page, /state\.db = db;[\s\S]{0,120}state\.rulesSel = null; state\.rulesJump = false;/);
+  assert.ok(page.includes('if (state.rulesKey === key && view.firstChild) { state.rulesJump = false; return; }'));
 });
