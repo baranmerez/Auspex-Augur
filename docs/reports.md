@@ -161,7 +161,10 @@ moved.
   section is short file work, far below that ceiling. Releasing or taking
   over a lock first renames it to a private name and checks that file, so a
   newer owner's lock is never deleted; a lock moved by mistake is put back
-  only while the path is still free. Locks are same-host
+  only while the path is still free, and an owner that releases removes any
+  such moved copy of its own lock, so a finished owner's lock is not put back.
+  A lock nobody holds that survives a crash at that moment is reclaimed like
+  any stale lock (at once for a dead pid, otherwise after 10 minutes). Locks are same-host
   only: sharing one library or memory folder between machines over a network
   filesystem is not supported. A crash in the middle of an approval can leave
   it half done.

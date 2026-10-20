@@ -62,7 +62,28 @@ function snapshot(file) {
   try { stat = fs.statSync(file, { bigint: true }); } catch { return null; }
   const owner = readOwner(file);
   const key = /^[0-9a-f]{16}$/.test(owner?.token ?? '') ? owner.token : `ino${stat.ino}`;
-  return { owner, key, mtimeMs: Number(stat.mtimeMs) };
+  return { owner, key, mtimeMs: Number(stat.mtimeMs), ino: stat.ino };
+}
+
+// Inode (NTFS file id on Windows) of a file, or null when it is missing or
+// the filesystem reports none (0). A rename keeps it, so it says whether a
+// detached file is the very generation that was checked before the rename.
+function inodeOf(file) {
+  try {
+    const { ino } = fs.statSync(file, { bigint: true });
+    return ino === 0n ? null : ino;
+  } catch {
+    return null;
+  }
+}
+
+// Same detached generation as the one checked: by inode when the filesystem
+// has them (no re-read that a transient Windows error could fail), otherwise
+// by the key in its body.
+function sameGeneration(aside, checkedIno, checkedKey) {
+  const ino = inodeOf(aside);
+  if (ino !== null && checkedIno !== null) return ino === checkedIno;
+  return snapshot(aside)?.key === checkedKey;
 }
 
 function isStale(snap, staleMs, maxHoldMs) {
@@ -80,10 +101,18 @@ function isStale(snap, staleMs, maxHoldMs) {
 // that is not the one meant is put back with link(), which creates the path
 // only while it is still free (EEXIST otherwise, never a replace) and keeps
 // the inode and mtime, so its owner and its age are unchanged.
+// While a generation is aside by mistake its owner may finish and release:
+// release then finds the path empty or not its own, and also removes any
+// aside file still holding its token (removeOwnAsides), so put-back finds
+// nothing and a lock nobody holds is never restored. If put-back linked it
+// first, the owner sees its token on the path again and releases it there.
 // Limitation: while a wrongly detached generation is aside (microseconds,
 // and only after a check/replace race), a third process may create a fresh
 // lock; link() then leaves that one in place and the detached owner loses
 // the lock. Filesystems give no atomic compare-and-delete to close this.
+// Should a lock nobody holds survive anyway (an owner that crashed in that
+// window), it is reclaimed like any other: at once when its pid is gone,
+// after maxHoldMs otherwise.
 function moveAside(lockPath, tag) {
   const aside = `${lockPath}.${tag}.${process.pid}.${crypto.randomBytes(6).toString('hex')}`;
   try {
@@ -101,10 +130,25 @@ function removeAside(aside) {
   try { fs.rmSync(aside, { force: true, maxRetries: 5, retryDelay: 20 }); } catch (err) { if (err.code !== 'ENOENT' && !transient.has(err.code)) throw err; }
 }
 
+// Removes aside files (released or stale) that still carry this owner's
+// token: its generation ended, so nobody may put it back.
+function removeOwnAsides(lockPath, token) {
+  const dir = path.dirname(lockPath);
+  const prefixes = [`${path.basename(lockPath)}.released.`, `${path.basename(lockPath)}.stale.`];
+  let names;
+  try { names = fs.readdirSync(dir); } catch { return; }
+  for (const name of names) {
+    if (!prefixes.some(p => name.startsWith(p))) continue;
+    const file = path.join(dir, name);
+    if (readOwner(file)?.token === token) removeAside(file);
+  }
+}
+
 function putBack(aside, lockPath) {
   try {
     fs.linkSync(aside, lockPath);
   } catch (err) {
+    if (err.code === 'ENOENT') return; // its owner released it meanwhile: nothing to restore
     if (err.code !== 'EEXIST') {
       // No hard links on this filesystem: exclusive create of a copy, with
       // the original age. EEXIST still means a newer lock is there.
@@ -113,6 +157,7 @@ function putBack(aside, lockPath) {
         fs.writeFileSync(lockPath, fs.readFileSync(aside), { flag: 'wx' });
         fs.utimesSync(lockPath, mtime, mtime);
       } catch (copyErr) {
+        if (copyErr.code === 'ENOENT') return;
         if (copyErr.code !== 'EEXIST') throw copyErr;
       }
     }
@@ -140,7 +185,7 @@ function takeOver(lockPath, seen, staleMs, maxHoldMs) {
     if (now?.key !== seen.key || !isStale(now, staleMs, maxHoldMs)) return false;
     const aside = moveAside(lockPath, 'stale');
     if (!aside) return false;
-    if (snapshot(aside)?.key !== seen.key) {
+    if (!sameGeneration(aside, now.ino === 0n ? null : now.ino, seen.key)) {
       putBack(aside, lockPath); // replaced after the check above: not ours to retire
       return false;
     }
@@ -189,17 +234,30 @@ function release(lockPath, token) {
   // here never masks the guarded function's result or error; the dead-owner
   // takeover recovers a lock left behind.
   try {
-    if (readOwner(lockPath)?.token !== token) return;
-    let aside;
-    for (let i = 0; ; i++) {
-      try { aside = moveAside(lockPath, 'released'); break; } catch (err) {
-        if (!transient.has(err.code) || i >= 5) throw err;
-        sleep(20);
+    for (let round = 0; round < 3; round++) {
+      // The token read belongs to this inode only if the inode did not change
+      // around the read.
+      const checkedIno = inodeOf(lockPath);
+      const mine = readOwner(lockPath)?.token === token && inodeOf(lockPath) === checkedIno;
+      if (!mine) {
+        // Not on the path: someone may hold our generation aside and put it
+        // back (see moveAside). Remove such copies, then look once more.
+        removeOwnAsides(lockPath, token);
+        if (readOwner(lockPath)?.token !== token) return;
+        continue; // put back meanwhile: release it from the path
       }
+      let aside;
+      for (let i = 0; ; i++) {
+        try { aside = moveAside(lockPath, 'released'); break; } catch (err) {
+          if (!transient.has(err.code) || i >= 5) throw err;
+          sleep(20);
+        }
+      }
+      if (!aside) continue; // detached by someone else meanwhile
+      if (sameGeneration(aside, checkedIno, token)) return removeAside(aside);
+      putBack(aside, lockPath); // another generation; ours may now be aside elsewhere
     }
-    if (!aside) return;
-    if (readOwner(aside)?.token === token) removeAside(aside);
-    else putBack(aside, lockPath);
+    removeOwnAsides(lockPath, token);
   } catch { /* see above */ }
 }
 

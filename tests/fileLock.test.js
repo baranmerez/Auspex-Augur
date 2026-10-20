@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { withFileLock, LockBusyError } from '../src/fileLock.js';
+import { withFileLock, acquireFileLock, LockBusyError } from '../src/fileLock.js';
 import { Library } from '../src/reports/library.js';
 import { SchemaMemory } from '../src/memory/store.js';
 
@@ -299,6 +299,59 @@ test('release never removes a newer generation installed after its ownership che
   assert.equal(JSON.parse(fs.readFileSync(lockPath, 'utf8')).token, '4444444444444444', 'the newer lock is intact');
   assert.throws(() => withFileLock(lockPath, () => 'two writers would overlap', { waitMs: 100 }), LockBusyError);
   assert.deepEqual(fs.readdirSync(dir), ['.lock'], 'no aside file is left');
+});
+
+test('a generation put back after its owner released it is not restored (no orphan lock of a live pid)', () => {
+  const dir = tempDir('auspex-lock-putback-race-');
+  const lockPath = path.join(dir, '.lock');
+  const originals = { renameSync: fs.renameSync, linkSync: fs.linkSync };
+  let releaseSecond = null;
+  let releasedBeforePutBack = false;
+  try {
+    withFileLock(lockPath, () => {
+      // Owner 1 passed its release check. Before its rename, a second owner
+      // retires that generation and takes the lock (here with the exported
+      // acquireFileLock, so its pid is alive), so owner 1 detaches the
+      // second owner's lock instead of its own.
+      fs.renameSync = function (from, ...rest) {
+        if (!releaseSecond && path.resolve(String(from)) === path.resolve(lockPath)) {
+          originals.renameSync.call(fs, lockPath, `${lockPath}.retired`);
+          fs.unlinkSync(`${lockPath}.retired`);
+          releaseSecond = acquireFileLock(lockPath, { waitMs: 100 });
+        }
+        return originals.renameSync.call(this, from, ...rest);
+      };
+      // Before owner 1 puts that lock back, the second owner finishes.
+      fs.linkSync = function (...args) {
+        if (releaseSecond && !releasedBeforePutBack) {
+          releasedBeforePutBack = true;
+          releaseSecond();
+        }
+        return originals.linkSync.apply(this, args);
+      };
+    });
+  } finally {
+    Object.assign(fs, originals);
+  }
+  assert.ok(releaseSecond && releasedBeforePutBack, 'the race was exercised');
+  assert.equal(fs.existsSync(lockPath), false, 'nobody holds the lock, so none is left behind');
+  assert.equal(withFileLock(lockPath, () => 'ran', { waitMs: 100 }), 'ran');
+  assert.deepEqual(fs.readdirSync(dir), [], 'no aside file is left');
+});
+
+test('release decides by inode when reading the detached lock fails (transient Windows error)', () => {
+  const dir = tempDir('auspex-lock-release-read-');
+  const lockPath = path.join(dir, '.lock');
+  const original = fs.readFileSync;
+  withFileLock(lockPath, () => {
+    fs.readFileSync = function (file, ...rest) {
+      if (String(file).includes('.released.')) throw Object.assign(new Error('EBUSY: resource busy or locked'), { code: 'EBUSY' });
+      return original.call(this, file, ...rest);
+    };
+  });
+  fs.readFileSync = original;
+  assert.deepEqual(fs.readdirSync(dir), [], 'our own lock is removed, not put back');
+  assert.equal(withFileLock(lockPath, () => 'ran', { waitMs: 100 }), 'ran');
 });
 
 test('a takeover never retires a newer generation installed after its last check', () => {
