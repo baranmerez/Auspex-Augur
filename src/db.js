@@ -20,6 +20,20 @@ pg.types.setTypeParser(1231, pg.types.getTypeParser(1009, 'text'));
 // Array parsers do not use the scalar overrides above; keep their text too.
 for (const oid of [1182, 1115, 1185]) pg.types.setTypeParser(oid, pg.types.getTypeParser(1009, 'text'));
 
+// Rows of the caller's SQL (FETCH from the cursor): json and jsonb stay as
+// PostgreSQL prints them, since JSON.parse would round large integers and long
+// decimals. Cells were already shown as JSON text, so only the digits change;
+// json[] and jsonb[] keep each element's text. Auspex's own catalog queries
+// keep the default parsers, because they read jsonb_agg results as objects.
+const textArrayParser = pg.types.getTypeParser(1009, 'text');
+const resultTypes = {
+  getTypeParser(oid, format) {
+    if (oid === 114 || oid === 3802) return value => value;
+    if (oid === 199 || oid === 3807) return textArrayParser;
+    return pg.types.getTypeParser(oid, format);
+  },
+};
+
 const cursorName = 'auspex_cursor';
 const exportBatchSize = 1000;
 // How long past exportMaxMs an export waits for a cancelled FETCH to come back
@@ -342,7 +356,7 @@ export class ReadOnlyDatabase {
         res = await client.query({ text: `SELECT * FROM (${query}\n) auspex_columns LIMIT 0`, values: params || [], rowMode: 'array', queryMode: 'extended' });
       } else {
         await this.declareCursor(client, query, params);
-        res = await client.query({ text: `FETCH ${limit + 1} FROM ${cursorName}`, rowMode: 'array' });
+        res = await client.query({ text: `FETCH ${limit + 1} FROM ${cursorName}`, rowMode: 'array', types: resultTypes });
       }
       const previewMs = performance.now() - t1;
       const truncated = res.rows.length > limit;
@@ -372,7 +386,7 @@ export class ReadOnlyDatabase {
     const query = assertReadOnlyQuery(sql);
     return this.withReadOnly(profile, async (client, name) => {
       await this.declareCursor(client, query, params);
-      const res = await client.query({ text: `FETCH ${limit + 1} FROM ${cursorName}`, rowMode: 'array' });
+      const res = await client.query({ text: `FETCH ${limit + 1} FROM ${cursorName}`, rowMode: 'array', types: resultTypes });
       const truncated = res.rows.length > limit;
       const rows = (truncated ? res.rows.slice(0, limit) : res.rows).map(row => row.map(v => this.formatCell(v)));
       return { profile: name, columns: res.fields.map(f => f.name), rows, rowCount: rows.length, truncated };
@@ -435,7 +449,7 @@ export class ReadOnlyDatabase {
         const backstop = timer(remaining + this.exportGraceMs);
         const run = async () => {
           if (capped) await client.query(`SET LOCAL statement_timeout = ${Math.max(1, Math.ceil(remaining))}`);
-          return client.query({ text: `FETCH ${exportBatchSize} FROM ${cursorName}`, rowMode: 'array' });
+          return client.query({ text: `FETCH ${exportBatchSize} FROM ${cursorName}`, rowMode: 'array', types: resultTypes });
         };
         try {
           const res = await Promise.race([run(), failed, backstop.promise]);
