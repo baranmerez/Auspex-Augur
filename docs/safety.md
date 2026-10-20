@@ -46,6 +46,15 @@ How Auspex keeps every call read-only, layer by layer.
    - Database calls (`query`, `explain`, `export_csv`, `run_report`, catalog
      tools): time, source, tool, profile, SQL, params, row count, duration,
      error — also when the SQL guard rejects the query.
+   - `run_report` has one entry per call for the whole run: refusals before
+     the database (both `params` and `preset`, a `.sql` file changed outside
+     `save_report`, a missing report, a busy lock) and failures after the
+     query (saving the run, writing the HTML) carry `error` and `errorCode`.
+     `phases.database` holds the duration of the database part (and its
+     `errorCode` if that part failed); no `phases` means the run was refused
+     before the database. A success adds the stage, version and SQL hash.
+     Preview values and masking settings are not logged. Scheduled runs keep
+     their own `run_report` entry for the database part next to `schedule_run`.
    - Library and memory changes (`save_report`, `approve_report`,
      `save_execute_script`, `render_reports`, `share_report`, `remember`,
      `score_columns`): which report, note or table, the SQL hash and version,
