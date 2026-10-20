@@ -186,7 +186,7 @@ export class ReadOnlyDatabase {
   async auditedPhase(tool, phase, details, fn) {
     const scope = this.auditScope.getStore();
     if (scope?.tool !== tool) return this.audited(tool, details, fn);
-    Object.assign(scope.fields, details);
+    Object.assign(scope.fields, boundedSql(details));
     const started = Date.now();
     const record = extra => { scope.fields.phases = { ...scope.fields.phases, [phase]: { ms: Date.now() - started, ...extra } }; };
     try {
@@ -292,7 +292,7 @@ export class ReadOnlyDatabase {
   // inside an open withReadOnly transaction: through the same guard as user
   // queries and with the extended protocol, which rejects a second statement.
   async guardedQuery(client, sql, params) {
-    const text = assertReadOnlyQuery(sql);
+    const text = assertReadOnlyQuery(sql, { maxLength: Infinity });
     return client.query({ text, values: params || [], queryMode: 'extended' });
   }
 

@@ -21,9 +21,10 @@ How Auspex keeps every call read-only, layer by layer.
    carriage return are read the way PostgreSQL reads them), and built-ins that
    run SQL given as text (`query_to_xml*`, `cursor_to_xml*`, `ts_stat`,
    `ts_rewrite`). Runs before connecting, in time linear in the SQL length;
-   SQL over 256 KiB (262,144 characters) is refused before it is scanned, and
-   its audit entry keeps only the first 2,000 characters and the length. It is
-   a lexical check only: functions
+   caller SQL over 262,144 characters is refused before it is scanned, and
+   its audit entry keeps only the first 2,000 characters and the length (SQL
+   that Auspex generates itself, such as a `profile_tables` batch, has no such
+   limit). It is a lexical check only: functions
    that call these internally are not seen, so what the role may EXECUTE is
    limited by its grants.
 2. **Transaction wrapper** (`src/db.js`): every call runs in
