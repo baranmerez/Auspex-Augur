@@ -56,7 +56,10 @@ after(() => {
 });
 
 const readRoutes = ['/api/logs?day=2026-01-01', '/api/days', '/api/health', '/api/profiles', '/api/reports',
-  '/api/report?stage=draft&db=exampledb&schema=example&category=General&name=example-report', '/api/memory'];
+  '/api/report?stage=draft&db=exampledb&schema=example&category=General&name=example-report', '/api/memory',
+  '/api/reports/trend?db=exampledb&schema=example&category=General&name=example-report',
+  '/api/memory/graph?profile=exampledb', '/api/memory/table?profile=exampledb&schema=example&table=orders',
+  '/api/example-unknown'];
 
 test('read routes refuse requests without the token and return no data', async () => {
   for (const route of readRoutes) {
