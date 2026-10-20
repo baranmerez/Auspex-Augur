@@ -7,6 +7,7 @@ import { ensurePrivateDir, appendPrivate, writePrivateAtomic, copyPrivate } from
 import { createAuditLog } from '../src/auditLog.js';
 import { ReadOnlyDatabase } from '../src/db.js';
 import { Library, sqlHash } from '../src/reports/library.js';
+import { ReportService } from '../src/reports/service.js';
 import { recordResult, appendTrend, trendFile, readTrend } from '../src/schedule/store.js';
 import { SchemaMemory } from '../src/memory/store.js';
 
@@ -117,6 +118,25 @@ test('CSV exports containing row values are owner-private', posixOnly, async t =
   assert.equal(modeOf(exportDir), 0o700);
   assert.equal(modeOf(second.file), 0o600);
   assert.notEqual(second.file, first.file);
+});
+
+test('shared report copies hold preview rows and are owner-private', posixOnly, async t => {
+  const { tree } = tempHome(t);
+  const fake = {
+    resolveProfile: name => String(name).toLowerCase(),
+    async runReport(profile) {
+      return { profile, serverVersion: '16.0', analyzed: false, plan: null, previewMs: 1, previewExecuted: true,
+        columns: [{ name: 'private_note', type: 'text' }], rows: [['exampleconfidential']], rowCount: 1, truncated: false };
+    },
+  };
+  const svc = new ReportService(fake, path.join(tree, 'library'));
+  const reportRef = { db: 'exampledb', schema: 'example', category: 'Orders', name: 'shared-notes' };
+  svc.save({ ...reportRef, title: 'Example share', sql: 'select private_note from example.orders' });
+  await svc.run(reportRef);
+  const exportDir = path.join(tree, 'exports'); // not created yet: share_report may come before any CSV export
+  const shared = svc.share(reportRef, exportDir);
+  assert.equal(modeOf(exportDir), 0o700, 'others must not traverse the export directory');
+  assert.equal(modeOf(shared.file), 0o600, 'others must not read the shared preview rows');
 });
 
 test('private report SQL, metadata and HTML are owner-only, approved copies included', posixOnly, t => {
