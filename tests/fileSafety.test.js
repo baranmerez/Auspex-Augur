@@ -177,3 +177,27 @@ test('appends refuse a final symlink, also a dangling one, in the audit log and 
   appendPrivate(fresh, 'one\n');
   assert.equal(modeOf(fresh), 0o600, 'a new log file is owner-only');
 });
+
+// ---------- #110: script-root files ----------
+
+test('script-root copies of save_report and save_execute_script are created 0600', posixOnly, t => {
+  permissiveUmask(t);
+  const dir = tempDir(t);
+  const scripts = path.join(dir, 'example-scripts');
+  fs.mkdirSync(scripts);
+  fs.chmodSync(scripts, 0o755);
+  const lib = new Library(path.join(dir, 'library'));
+  const ref = { db: 'exampledb', schema: 'example', category: 'Orders', name: 'example-orders' };
+  const target = fileName => ({ root: 'scripts', dir: scripts, folder: 'example', fileName });
+
+  const report = lib.saveDraft({ ref, sql: 'select order_id from example.orders', target: target('01_example_report.sql') });
+  const change = lib.saveExecuteScript({
+    ref: { ...ref, name: 'example-change' },
+    sql: 'BEGIN;\nUPDATE example.orders SET status_code = 1 WHERE order_id = 1;\nROLLBACK;',
+    target: target('02_example_change.sql'),
+  });
+  assert.equal(modeOf(report.externalFile), 0o600, 'report SQL copy is owner-only');
+  assert.equal(modeOf(change.externalFile), 0o600, 'change script copy is owner-only');
+  assert.equal(modeOf(scripts), 0o755, 'the configured script root keeps its mode');
+  assert.throws(() => lib.saveDraft({ ref, sql: 'select 1', target: target('01_example_report.sql') }), /already exists/);
+});
