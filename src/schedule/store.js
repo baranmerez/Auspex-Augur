@@ -9,7 +9,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { auspexHome } from '../config.js';
 import { normalizeRef } from '../reports/library.js';
-import { withFileLock, renameRetrying } from '../fileLock.js';
+import { withFileLock } from '../fileLock.js';
+import { writePrivateAtomic } from '../privateFiles.js';
 
 export const scheduleStatuses = ['ok', 'skipped-unreachable', 'failed'];
 export const maxTrendPoints = 520; // ten years of weekly points, ~1.4 years of daily points
@@ -18,13 +19,6 @@ export const trendFormat = 1;
 
 export const stateFile = (env = process.env) => path.join(auspexHome(env), 'schedule-state.json');
 export const trendsDir = (env = process.env) => path.join(auspexHome(env), 'trends');
-
-function writeAtomic(file, text) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(tmp, text, 'utf8');
-  renameRetrying(tmp, file);
-}
 
 // { schedules: { [id]: { last, lastSuccessSlot, history } } }; an unreadable
 // or missing file reads as empty (the next run writes a fresh one).
@@ -45,7 +39,7 @@ export function recordResult(file, id, result) {
     const entry = { ...own, last: result, history: [...(Array.isArray(own.history) ? own.history : []), result].slice(-maxHistory) };
     if (result.status === 'ok' && result.slot) entry.lastSuccessSlot = result.slot;
     const schedules = Object.assign(Object.create(null), state.schedules, { [id]: entry });
-    writeAtomic(file, `${JSON.stringify({ updatedAt: result.at, schedules }, null, 2)}\n`);
+    writePrivateAtomic(file, `${JSON.stringify({ updatedAt: result.at, schedules }, null, 2)}\n`);
     return entry;
   });
 }
@@ -82,7 +76,7 @@ export function appendTrend(root, ref, point, { maxPoints = maxTrendPoints } = {
   const file = trendFile(root, ref);
   return withFileLock(`${file}.lock`, () => {
     const points = [...readTrend(file), point].slice(-maxPoints);
-    writeAtomic(file, points.map(p => JSON.stringify(p)).join('\n') + '\n');
+    writePrivateAtomic(file, points.map(p => JSON.stringify(p)).join('\n') + '\n');
     return { file, points: points.length };
   });
 }
