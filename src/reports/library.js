@@ -589,12 +589,14 @@ function prepareScriptTarget({ root, dir, folder, fileName }) {
 }
 
 // Creates missing folder levels, checks them again, and writes the file
-// exclusively (wx): an existing file or link is never replaced.
+// exclusively (wx): an existing file or link is never replaced. The new file
+// is created 0600 (owner only) on Unix; the folders of the script root keep
+// the permissions the user gave them, and Windows keeps its inherited ACLs.
 function writeScriptTarget(t, text) {
   const realFolder = walkScriptFolder(t, true).path;
   const file = path.join(realFolder, t.fileName);
   try {
-    fs.writeFileSync(file, text, { encoding: 'utf8', flag: 'wx' });
+    fs.writeFileSync(file, text, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
   } catch (err) {
     if (err.code === 'EEXIST') throw new LibraryError(existsMessage(file, realFolder));
     throw err;
