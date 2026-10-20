@@ -115,3 +115,65 @@ test('atomic writes skip a planted symlink, a dangling symlink and a stale 0644 
     for (const name of names) assert.ok(fs.lstatSync(name), `${plant}: planted entry is left alone`);
   }
 });
+
+// ---------- #109: append targets ----------
+
+test('appends refuse a final path with a second hard link; audit and changelog stay best effort', t => {
+  const dir = tempDir(t);
+  const outside = path.join(dir, 'example-readable.txt');
+  fs.writeFileSync(outside, keep);
+  const stderr = captureStderr(t);
+
+  const logDir = path.join(dir, 'logs');
+  fs.mkdirSync(logDir);
+  const day = new Date().toISOString().slice(0, 10);
+  fs.linkSync(outside, path.join(logDir, `${day}.jsonl`));
+  const audit = createAuditLog(logDir);
+  assert.doesNotThrow(() => audit({ tool: 'query', profile: 'exampledb', sql: 'select 1 from example.orders' }));
+
+  const memory = new SchemaMemory(path.join(dir, 'memory'));
+  fs.mkdirSync(memory.profileDir('exampledb'), { recursive: true });
+  fs.linkSync(outside, path.join(memory.profileDir('exampledb'), 'changelog.jsonl'));
+  assert.doesNotThrow(() => memory.appendChangelog('exampledb', { event: 'synthetic', table: 'example.orders' }));
+
+  assert.equal(fs.readFileSync(outside, 'utf8'), keep, 'nothing is appended through the hard link');
+  assert.equal(stderr.filter(line => /audit log write failed: refused .*hard link/.test(line)).length, 1);
+  assert.equal(stderr.filter(line => /changelog write failed: refused .*hard link/.test(line)).length, 1);
+  assert.ok(stderr.every(line => line.length < 600), 'stderr notes stay short');
+
+  // A new log and an existing log with one link work as before.
+  const fresh = path.join(dir, 'fresh', 'example.jsonl');
+  appendPrivate(fresh, 'one\n');
+  appendPrivate(fresh, 'two\n');
+  assert.equal(fs.readFileSync(fresh, 'utf8'), 'one\ntwo\n');
+});
+
+test('appends refuse a final symlink, also a dangling one, in the audit log and the changelog', posixOnly, t => {
+  permissiveUmask(t);
+  const dir = tempDir(t);
+  const outside = path.join(dir, 'example-readable.txt');
+  fs.writeFileSync(outside, keep, { mode: 0o644 });
+  const missing = path.join(dir, 'example-missing.txt');
+  const stderr = captureStderr(t);
+
+  const logDir = path.join(dir, 'logs');
+  fs.mkdirSync(logDir);
+  const day = new Date().toISOString().slice(0, 10);
+  fs.symlinkSync(outside, path.join(logDir, `${day}.jsonl`));
+  createAuditLog(logDir)({ tool: 'query', profile: 'exampledb', sql: 'select 1 from example.orders' });
+
+  const memory = new SchemaMemory(path.join(dir, 'memory'));
+  fs.mkdirSync(memory.profileDir('exampledb'), { recursive: true });
+  fs.symlinkSync(missing, path.join(memory.profileDir('exampledb'), 'changelog.jsonl'));
+  memory.appendChangelog('exampledb', { event: 'synthetic', table: 'example.orders' });
+
+  assert.equal(fs.readFileSync(outside, 'utf8'), keep, 'outside file unchanged');
+  assert.equal(modeOf(outside), 0o644, 'outside file mode unchanged');
+  assert.equal(fs.existsSync(missing), false, 'dangling link target is not created');
+  assert.throws(() => appendPrivate(path.join(logDir, `${day}.jsonl`), 'x\n'), /refused .*symbolic link/);
+  assert.equal(stderr.filter(line => /write failed: refused/.test(line)).length, 2);
+
+  const fresh = path.join(logDir, 'fresh.jsonl');
+  appendPrivate(fresh, 'one\n');
+  assert.equal(modeOf(fresh), 0o600, 'a new log file is owner-only');
+});

@@ -12,7 +12,9 @@
 //
 // Temp files are created exclusively under an unpredictable name, so an
 // entry planted at that name (a link, a hard link, an old file) is never
-// written through.
+// written through. Appends refuse a final path that is a symbolic link or
+// junction, anything but a regular file, and a file with more than one hard
+// link.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -85,11 +87,36 @@ export function ensurePrivateDir(dir) {
   tightenDirs(dir);
 }
 
-// Appends text; a new file is 0600, an existing one inside ~/.auspex is tightened.
+// O_NOFOLLOW refuses a final symlink; O_NONBLOCK keeps a FIFO from blocking
+// the open (the fstat check then refuses it). Windows has neither flag.
+const appendFlags = posix && fs.constants.O_NOFOLLOW !== undefined
+  ? fs.constants.O_WRONLY | fs.constants.O_APPEND | fs.constants.O_CREAT | fs.constants.O_NOFOLLOW | (fs.constants.O_NONBLOCK ?? 0)
+  : 'a';
+
+function refusal(file, why) {
+  return Object.assign(new Error(`refused to append to ${file}: ${why}`), { code: 'ELINKREFUSED' });
+}
+
+// Appends text; a new file is 0600, an existing one inside ~/.auspex is
+// tightened. Refused (throws) when the final path is a symbolic link or
+// junction, not a regular file, or a file with more than one hard link (the
+// other name may lie anywhere). On Windows the link check is an lstat before
+// the open; a link swapped in between those two steps is not detected there.
 export function appendPrivate(file, text) {
   ensurePrivateDir(path.dirname(file));
-  const fd = fs.openSync(file, 'a', 0o600);
+  if (!posix && fs.lstatSync(file, { throwIfNoEntry: false })?.isSymbolicLink()) throw refusal(file, 'it is a link or junction');
+  let fd;
   try {
+    fd = fs.openSync(file, appendFlags, 0o600);
+  } catch (err) {
+    if (posix && (err.code === 'ELOOP' || err.code === 'EMLINK')) throw refusal(file, 'it is a symbolic link');
+    if (err.code === 'ENXIO') throw refusal(file, 'it is not a regular file');
+    throw err;
+  }
+  try {
+    const st = fs.fstatSync(fd);
+    if (!st.isFile()) throw refusal(file, 'it is not a regular file');
+    if (st.nlink > 1) throw refusal(file, 'it has more than one hard link');
     if (posix) {
       try {
         if (levelsInTree(file).length) tightenFd(fd);
