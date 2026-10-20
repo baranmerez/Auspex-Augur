@@ -9,6 +9,11 @@
 // effort: it never throws and never fails the write it protects. Folders the
 // user configured elsewhere (AUSPEX_HOME, AUSPEX_*_DIR) keep the permissions
 // the user gave them. Windows ignores mode bits; nothing is changed there.
+//
+// Temp files are created exclusively under an unpredictable name, so an
+// entry planted at that name (a link, a hard link, an old file) is never
+// written through.
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -98,11 +103,38 @@ export function appendPrivate(file, text) {
   }
 }
 
+const maxTempAttempts = 8;
+
+// Creates a new 0600 temp file next to file under a random name and writes
+// data into it. 'wx' never opens an existing entry (a link, a dangling link,
+// a hard link or a stale file): such a name is skipped and left untouched.
+// Only the temp file this call created is removed when writing fails.
+function writeTemp(file, data) {
+  for (let attempt = 1; ; attempt++) {
+    const tmp = `${file}.${crypto.randomBytes(8).toString('hex')}.tmp`;
+    let fd;
+    try {
+      fd = fs.openSync(tmp, 'wx', 0o600);
+    } catch (err) {
+      if (err.code === 'EEXIST' && attempt < maxTempAttempts) continue;
+      throw err;
+    }
+    try {
+      fs.writeFileSync(fd, data, typeof data === 'string' ? 'utf8' : undefined);
+    } catch (err) {
+      try { fs.closeSync(fd); } catch { /* removed below */ }
+      fs.rmSync(tmp, { force: true });
+      throw err;
+    }
+    fs.closeSync(fd);
+    return tmp;
+  }
+}
+
 // Writes a 0600 temp file and renames it over file, so the result is 0600.
 export function writePrivateAtomic(file, data) {
   ensurePrivateDir(path.dirname(file));
-  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(tmp, data, { encoding: 'utf8', mode: 0o600 });
+  const tmp = writeTemp(file, data);
   renameRetrying(tmp, file); // the viewer may be reading the target on Windows
 }
 
@@ -110,3 +142,4 @@ export function writePrivateAtomic(file, data) {
 export function copyPrivate(from, to) {
   writePrivateAtomic(to, fs.readFileSync(from));
 }
+
