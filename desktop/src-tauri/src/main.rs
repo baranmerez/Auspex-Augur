@@ -17,7 +17,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime};
@@ -761,11 +761,37 @@ enum CliRun {
     TimedOut,
 }
 
+// Storage locations the Node CLI reads from the environment.
+const STORAGE_ENV: [&str; 7] = [
+    "AUSPEX_HOME", "AUSPEX_DATA_DIR", "AUSPEX_LOG_DIR", "AUSPEX_EXPORT_DIR",
+    "AUSPEX_PROFILES_FILE", "AUSPEX_LIBRARY_DIR", "AUSPEX_MEMORY_DIR",
+];
+
+// The CLI runs with the checkout as its working directory, so a relative
+// storage path would point into the checkout instead of where this app reads
+// it. Relative values are made absolute against this app's working directory
+// first, like this app's own reads resolve them.
+fn absolute_storage_env(cwd: &Path, get: impl Fn(&str) -> Option<String>) -> Vec<(&'static str, PathBuf)> {
+    STORAGE_ENV
+        .iter()
+        .filter_map(|name| {
+            get(name).map(|value| {
+                let path = PathBuf::from(value);
+                (*name, if path.is_absolute() { path } else { cwd.join(path) })
+            })
+        })
+        .collect()
+}
+
 fn exec_cli(args: &[String], timeout: Duration, stdout_cap: u64) -> Result<(CliRun, Duration), Value> {
     let node = node_program()?;
     let root = auspex_root()?;
     let mut cmd = Command::new(&node);
     cmd.arg(root.join("src").join("stageCli.js")).args(args);
+    let cwd = std::env::current_dir().map_err(|e| stage_error("INTERNAL", format!("Could not read the working directory: {e}")))?;
+    for (name, path) in absolute_storage_env(&cwd, env) {
+        cmd.env(name, path);
+    }
     cmd.current_dir(&root).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     #[cfg(windows)]
     {
@@ -1134,6 +1160,21 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn relative_storage_paths_reach_the_cli_as_absolute_paths() {
+        let cwd = std::env::temp_dir().join("example-launch");
+        let absolute = std::env::temp_dir().join("example-library");
+        let absolute_text = absolute.to_string_lossy().to_string();
+        let values: HashMap<&str, String> = HashMap::from([
+            ("AUSPEX_HOME", "exampleHome".to_string()),
+            ("AUSPEX_LIBRARY_DIR", absolute_text.clone()),
+        ]);
+        let resolved: HashMap<&str, PathBuf> = absolute_storage_env(&cwd, |name| values.get(name).cloned()).into_iter().collect();
+        assert_eq!(resolved.len(), 2, "unset variables are not passed");
+        assert_eq!(resolved["AUSPEX_HOME"], cwd.join("exampleHome"), "a relative home is resolved where the app reads it");
+        assert_eq!(resolved["AUSPEX_LIBRARY_DIR"], absolute, "an absolute path is kept");
+    }
 
     #[test]
     fn read_results_may_be_far_larger_than_change_results() {
