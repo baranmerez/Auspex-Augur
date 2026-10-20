@@ -20,6 +20,7 @@ import { SchemaMemory } from './memory/store.js';
 import { validateArchiveInput, archiveNoteFor } from './memory/noteArchive.js';
 import { validateUserScoreInput, userScoreAudit, setUserScoreFor } from './memory/userScore.js';
 import { createAuditLog } from './auditLog.js';
+import { linkBelow } from './privateFiles.js';
 import { classifyError } from './errors.js';
 import { scheduleIndex, scheduleKey, reportTrend } from './schedule/viewerData.js';
 
@@ -138,7 +139,10 @@ function memoryProfile(params) {
   return path.join(memoryDir(), name);
 }
 
+// A schema-memory file; refused when a folder or the file below the memory
+// root is a symbolic link or junction (as in SchemaMemory.checkPath).
 function readJsonFile(file) {
+  if (linkBelow(path.resolve(memoryDir()), path.resolve(file))) throw new LibraryError('Memory path is a link or junction; refused.');
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
 

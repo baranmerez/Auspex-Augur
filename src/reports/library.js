@@ -11,7 +11,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { assertReadOnlyQuery, stripLiteralsAndComments } from '../sqlGuard.js';
 import { withFileLock } from '../fileLock.js';
-import { ensurePrivateDir, writePrivateAtomic, copyPrivate } from '../privateFiles.js';
+import { ensurePrivateDir, writePrivateAtomic, copyPrivate, linkBelow } from '../privateFiles.js';
 import { sqlParamCount, validatePresets, builtInPresetsFor, mismatchedPresets, checkDateRange } from './presets.js';
 import { maskRows } from './mask.js';
 
@@ -121,18 +121,30 @@ export class Library {
     for (const dir of Object.values(stages)) ensurePrivateDir(path.join(this.root, dir));
   }
 
-  // Absolute base path (without extension), guaranteed inside the library.
+  // Absolute base path (without extension), guaranteed inside the library:
+  // lexically, and no existing stage, db, schema or category folder below the
+  // root is a symbolic link or junction (the root itself may be one).
   base(stage, ref) {
     if (!stages[stage]) throw new LibraryError(`Unknown stage "${stage}".`);
     const r = normalizeRef(ref);
     const file = path.join(this.root, stages[stage], r.db, r.schema, ...r.category.split('/'), r.name);
     if (!file.startsWith(this.root + path.sep)) throw new LibraryError('Path escapes the library.');
+    this.checkLinks(path.dirname(file));
     return file;
   }
 
+  checkLinks(target) {
+    const link = linkBelow(this.root, target);
+    if (link) throw new LibraryError(`Library path ${link} is a link or junction; refused.`, 'DISK_ERROR');
+    return target;
+  }
+
+  // The report files; none of them may be a link either.
   paths(stage, ref) {
     const b = this.base(stage, ref);
-    return { sql: `${b}.sql`, meta: `${b}.report.json`, html: `${b}.html` };
+    const p = { sql: `${b}.sql`, meta: `${b}.report.json`, html: `${b}.html` };
+    for (const file of Object.values(p)) this.checkLinks(file);
+    return p;
   }
 
   exists(stage, ref) {
@@ -182,6 +194,7 @@ export class Library {
     const checkedDateRange = checkDateRange(dateRange, paramCount, msg => new LibraryError(msg));
     this.ensure();
     const r = normalizeRef(ref);
+    const p = this.paths('draft', r); // refused before anything is written
     const now = new Date().toISOString();
     let externalFile = null;
     if (target) {
@@ -236,7 +249,6 @@ export class Library {
     if (externalFile) {
       meta.externalFiles = [...(meta.externalFiles || []), { file: externalFile, version, hash, savedAt: now }].slice(-maxRuns);
     }
-    const p = this.paths('draft', r);
     writePrivateAtomic(p.sql, text + '\n');
     this.writeMeta('draft', r, meta);
     // Stored presets that no longer fit the saved SQL (run_report refuses them).
@@ -382,6 +394,7 @@ export class Library {
     const sub = p => (fs.existsSync(p) ? fs.readdirSync(p, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name) : []);
     for (const [stage, dir] of Object.entries(stages)) {
       const base = path.join(this.root, dir);
+      if (linkBelow(this.root, base)) continue; // a linked stage folder is never read
       for (const db of sub(base)) for (const schema of sub(path.join(base, db))) {
         const walk = segments => {
           const folder = path.join(base, db, schema, ...segments);
@@ -437,8 +450,8 @@ export class Library {
     this.ensure();
     const r = normalizeRef(ref);
     const base = this.base('execute', r);
-    const file = `${base}.sql`;
-    const sidecar = `${base}.execute.json`;
+    const file = this.checkLinks(`${base}.sql`);
+    const sidecar = this.checkLinks(`${base}.execute.json`);
     if (fs.existsSync(file) && !replace) throw new LibraryError(`EXECUTE script already exists: ${file}. Pass replace=true to overwrite.`);
     const external = target ? prepareScriptTarget(target) : null;
     const header = [
@@ -475,7 +488,7 @@ export class Library {
   // External file of an EXECUTE script saved into a script root, or null.
   executeInfo(ref) {
     try {
-      return JSON.parse(fs.readFileSync(`${this.base('execute', ref)}.execute.json`, 'utf8'));
+      return JSON.parse(fs.readFileSync(this.checkLinks(`${this.base('execute', ref)}.execute.json`), 'utf8'));
     } catch {
       return null;
     }

@@ -14,7 +14,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { withFileLock } from '../fileLock.js';
-import { writePrivateAtomic, appendPrivate } from '../privateFiles.js';
+import { writePrivateAtomic, appendPrivate, linkBelow } from '../privateFiles.js';
 import path from 'node:path';
 import { splitColumnRef } from './planUsage.js';
 
@@ -201,16 +201,26 @@ export class SchemaMemory {
     this.cache = new Map();
   }
 
+  // Refuses a memory path whose folders or file below the root are a
+  // symbolic link or junction, so no read or write leaves the memory folder.
+  // The root itself may be a link (a configured folder).
+  checkPath(file) {
+    const link = linkBelow(this.root, file);
+    if (link) throw new MemoryError(`Schema memory path ${link} is a link or junction; refused.`, 'DISK_ERROR');
+    return file;
+  }
+
   profileDir(profile) {
     if (!profilePattern.test(String(profile || ''))) throw new MemoryError(`Invalid profile name "${profile}".`, 'PROFILE_INVALID');
-    return path.join(this.root, profile);
+    return this.checkPath(path.join(this.root, profile));
   }
 
   tablePath(profile, schema, table) {
-    return path.join(this.profileDir(profile), 'tables', fileSegment(schema), `${fileSegment(table)}.json`);
+    return this.checkPath(path.join(this.profileDir(profile), 'tables', fileSegment(schema), `${fileSegment(table)}.json`));
   }
 
   readJson(file, fallback) {
+    this.checkPath(file);
     let stat;
     try {
       stat = fs.statSync(file);
@@ -226,7 +236,7 @@ export class SchemaMemory {
   }
 
   writeJson(file, value) {
-    writePrivateAtomic(file, `${JSON.stringify(value, null, 1)}\n`);
+    writePrivateAtomic(this.checkPath(file), `${JSON.stringify(value, null, 1)}\n`);
     this.cache.delete(file);
   }
 
@@ -235,7 +245,7 @@ export class SchemaMemory {
   // null when the name has none and the path did not change.
   legacyTablePath(profile, schema, table) {
     if (!astralChar.test(`${schema}${table}`)) return null;
-    return path.join(this.profileDir(profile), 'tables', legacySegment(schema), `${legacySegment(table)}.json`);
+    return this.checkPath(path.join(this.profileDir(profile), 'tables', legacySegment(schema), `${legacySegment(table)}.json`));
   }
 
   // A record under an old file name counts only when it is this very table:
@@ -262,7 +272,7 @@ export class SchemaMemory {
   }
 
   listTables(profile) {
-    const dir = path.join(this.profileDir(profile), 'tables');
+    const dir = this.checkPath(path.join(this.profileDir(profile), 'tables'));
     if (!fs.existsSync(dir)) return [];
     const out = [];
     for (const schemaDir of fs.readdirSync(dir, { withFileTypes: true }).filter(d => d.isDirectory())) {
@@ -300,7 +310,7 @@ export class SchemaMemory {
   }
 
   readChangelog(profile, limit = 200) {
-    const file = path.join(this.profileDir(profile), 'changelog.jsonl');
+    const file = this.checkPath(path.join(this.profileDir(profile), 'changelog.jsonl'));
     if (!fs.existsSync(file)) return [];
     return fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).slice(-limit).map(line => {
       try { return JSON.parse(line); } catch { return null; }

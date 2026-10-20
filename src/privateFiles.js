@@ -10,11 +10,12 @@
 // user configured elsewhere (AUSPEX_HOME, AUSPEX_*_DIR) keep the permissions
 // the user gave them. Windows ignores mode bits; nothing is changed there.
 //
-// Temp files are created exclusively under an unpredictable name, so an
-// entry planted at that name (a link, a hard link, an old file) is never
+// Links: temporary files are created exclusively under an unpredictable name,
+// so an entry planted at that name (a link, a hard link, an old file) is never
 // written through. Appends refuse a final path that is a symbolic link or
 // junction, anything but a regular file, and a file with more than one hard
-// link.
+// link. linkBelow lets the report library and the schema memory refuse a path
+// whose folders below their root are links or junctions.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -170,3 +171,19 @@ export function copyPrivate(from, to) {
   writePrivateAtomic(to, fs.readFileSync(from));
 }
 
+// The first existing path below root, down to and including target, that is
+// a symbolic link or junction; null when there is none. root itself may be a
+// link (a configured folder); target must lie lexically inside root, which the
+// caller checks. Levels that do not exist yet cannot be links.
+export function linkBelow(root, target) {
+  const rel = path.relative(root, target);
+  if (!rel || rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return null;
+  let current = root;
+  for (const part of rel.split(path.sep)) {
+    current = path.join(current, part);
+    const st = fs.lstatSync(current, { throwIfNoEntry: false });
+    if (!st) return null;
+    if (st.isSymbolicLink()) return current;
+  }
+  return null;
+}
