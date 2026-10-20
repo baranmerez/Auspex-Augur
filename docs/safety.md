@@ -59,7 +59,9 @@ How Auspex keeps every call read-only, layer by layer.
      `scanned_files`, `list_reports`, `list_profiles`) and calls the MCP SDK rejects for
      invalid arguments before any handler runs.
    - Writing is best effort: if the log cannot be written, the call still
-     runs and the failure goes to stderr. The file is plain appendable JSONL
+     runs and the failure goes to stderr. A day file that is a symbolic link,
+     junction, hard-linked file or not a regular file is refused the same way,
+     so log lines never land in a file outside the log folder. The file is plain appendable JSONL
      on your disk, readable and editable by your user account; it is a record,
      not tamper-proof evidence.
 
