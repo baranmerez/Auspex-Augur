@@ -221,7 +221,9 @@
   th .arr.desc { transform: rotate(180deg); }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   td.time { font: 12px var(--mono); color: var(--text-2); white-space: nowrap; }
-  td.sum { font: 12px var(--mono); max-width: max(520px, 40vw); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* The SQL cell stays a real table cell (own row line, same height); its text is cut inside it. */
+  td.op-sql { font: 12px var(--mono); }
+  td.op-sql .op-sql-text { display: block; max-width: max(520px, 40vw); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   tr.r { cursor: pointer; transition: background .15s; }
   tr.r:hover { background: var(--surface-2); }
   tr.r.open { background: var(--accent-soft); }
@@ -712,6 +714,29 @@
   .rl-act .icon-btn:hover { color: var(--text); background: var(--surface-2); }
   .rl-act svg { width: 15px; height: 15px; }
   @media (max-width: 560px) { .rl-row { grid-template-columns: 80px minmax(0, 1fr) auto; gap: 4px 8px; padding: 8px 4px; } .rl-col { margin-left: 4px; } }
+  /* Rules navigator: the database-wide box apart, one box per table, notes of the chosen box beside */
+  .rules-nav { display: grid; grid-template-columns: minmax(300px, 400px) minmax(0, 1fr); gap: 14px; align-items: start; }
+  .rn-side { position: sticky; top: var(--sticky-top); max-height: calc(100vh - var(--sticky-top) - 20px); overflow: auto; display: grid; gap: 10px; padding: 12px; align-content: start; }
+  .rn-head { display: flex; align-items: baseline; gap: 6px; margin-top: 4px; font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: .5px; }
+  .rn-head b { color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .rn-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+  .rn-tile { display: grid; gap: 3px; min-width: 0; text-align: left; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--text); font: inherit; cursor: pointer; transition: border-color .15s, background .15s; }
+  .rn-tile:hover { border-color: var(--line-strong); background: var(--surface-2); }
+  .rn-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .rn-tile.on { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+  .rn-tile .rn-schema { font: 11px var(--mono); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rn-tile .rn-name { font: 600 13px var(--mono); line-height: 1.3; overflow-wrap: break-word; }
+  .rn-tile .rn-cnt { font-size: 11px; color: var(--text-2); }
+  .rn-tile.global { padding: 11px 13px; border-style: dashed; border-color: var(--line-strong); }
+  .rn-tile.global .rn-schema { font-family: inherit; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: var(--accent-ink); }
+  .rn-tile.global.on { border-style: solid; border-color: var(--accent); }
+  .rn-none { font-size: 12px; }
+  .rn-detail { min-width: 0; }
+  .rn-detail .rules-list { padding-top: 14px; }
+  @media (max-width: 900px) {
+    .rules-nav { grid-template-columns: minmax(0, 1fr); }
+    .rn-side { position: static; max-height: none; overflow: visible; }
+  }
   .note .nh .tgt { font: 11px var(--mono); color: var(--accent-ink); }
   .note .na { display: flex; justify-content: flex-end; margin-top: 6px; }
   .note details > summary { font-size: 12px; cursor: pointer; margin-top: 4px; color: var(--text-3); }
@@ -887,7 +912,7 @@
     .g-tiles { grid-template-columns: 1fr 1fr; }
     .tile.hero { grid-column: 1 / -1; }
     .hide-sm { display: none; }
-    td.sum { max-width: 160px; }
+    td.op-sql .op-sql-text { max-width: 160px; }
     .brand .sub { display: none; }
   }
 </style>
@@ -1024,7 +1049,7 @@ const TR = {
   'Rules': 'Kurallar', 'Kind': 'Tür', 'Table': 'Tablo', 'Active': 'Aktif', 'Archived': 'Arşivlenmiş',
   'Filter by table': 'Tabloya göre süz', 'Search note text': 'Not metninde ara', 'No notes match the filters.': 'Filtrelere uyan not yok.',
   'No notes for {db} yet': '{db} için henüz not yok', 'Notes are added by your agent (remember): rules you state, observations from data and its own inferences.': 'Notları ajanınız ekler (remember): sizin söylediğiniz kurallar, veriden gözlemler ve kendi çıkarımları.',
-  'Database-wide': 'Veritabanı geneli', 'created {d}': 'oluşturma {d}', 'confirmed {d}': 'onay {d}', 'archived {d}': 'arşiv {d}', 'Evidence': 'Kanıt',
+  'Database-wide': 'Veritabanı geneli', 'No notes': 'Not yok', 'created {d}': 'oluşturma {d}', 'confirmed {d}': 'onay {d}', 'archived {d}': 'arşiv {d}', 'Evidence': 'Kanıt',
   'Archive': 'Arşivle', 'Archive this note?': 'Bu not arşivlensin mi?',
   'The note stays in the schema memory as archived, with your reason, and is no longer given to your agent. Only local Auspex files change; no database is touched.': 'Not, gerekçenizle birlikte arşivlenmiş olarak şema hafızasında kalır ve artık ajanınıza verilmez. Yalnızca yerel Auspex dosyaları değişir; veritabanına dokunulmaz.',
   'Reason': 'Gerekçe', 'Why is this note no longer valid?': 'Bu not neden artık geçerli değil?', 'Give a reason.': 'Bir gerekçe yazın.',
@@ -1699,7 +1724,7 @@ function renderOps(rows) {
       h('td', {}, h('span', { class: 'badge ' + src }, sourceLabel(src))),
       h('td', {}, toolName(e.tool), e.analyze ? h('span', { class: 'muted' }, ' + analyze') : null, e.timeoutSeconds ? h('span', { class: 'muted', title: t('custom timeout') }, ` · ${e.timeoutSeconds} s`) : null),
       h('td', { class: 'hide-sm' }, e.profile || h('span', { class: 'muted' }, '–')),
-      h('td', { class: 'sum', title: summaryOf(e) }, summaryOf(e) || h('span', { class: 'muted' }, '–')),
+      h('td', { class: 'op-sql', title: summaryOf(e) }, h('span', { class: 'op-sql-text' }, summaryOf(e) || h('span', { class: 'muted' }, '–'))),
       h('td', { class: 'num' }, h('span', { class: 'dur' }, Number.isFinite(e.ms) ? h('span', { class: 'bar', style: `width:${Math.max(2, e.ms / maxMs * 60)}px` }) : null, fmtMs(e.ms))),
       h('td', { class: 'num hide-sm' }, Number.isFinite(e.rowCount) ? fmt(e.rowCount) : ''),
       h('td', {}, e.error ? h('span', { class: 'badge err', title: e.errorCode || null }, h('span', { class: 'sw', style: 'background:var(--critical)' }), e.errorCode || t('error')) : h('span', { class: 'badge ok' }, h('span', { class: 'sw', style: 'background:var(--good)' }), 'ok')));
@@ -1751,7 +1776,7 @@ function renderTables(rows) {
   const table = groups.length ? h('div', { class: 'tbl-wrap' }, h('table', {},
     h('thead', {}, h('tr', {}, h('th', {}, t('Table / view')), h('th', { class: 'num' }, t('Accesses')), h('th', { class: 'num' }, t('Errors')), h('th', { class: 'num hide-sm' }, t('Avg. duration')), h('th', { class: 'hide-sm' }, t('Profiles')), h('th', {}, t('Last access')))),
     h('tbody', {}, groups.map(g => h('tr', { class: 'r', onclick: () => { F.text.value = g.key; switchTab('ops'); } },
-      h('td', { class: 'sum' }, tableTabLink(g.key, byRel.get(g.key))), h('td', { class: 'num' }, fmt(g.count)), h('td', { class: 'num' }, g.errors ? fmt(g.errors) : '–'),
+      h('td', { class: 'op-sql' }, h('span', { class: 'op-sql-text' }, tableTabLink(g.key, byRel.get(g.key)))), h('td', { class: 'num' }, fmt(g.count)), h('td', { class: 'num' }, g.errors ? fmt(g.errors) : '–'),
       h('td', { class: 'num hide-sm' }, fmtMs(g.ms / g.count)), h('td', { class: 'hide-sm' }, [...(byRel.get(g.key) || [])].join(', ')),
       h('td', { class: 'time' }, dateTimeOf(g.last))))))) : emptyState(t('No table access in this range'));
   $('v-tables').replaceChildren(h('div', { class: 'stack' },
@@ -4343,7 +4368,7 @@ function renderRules() {
   if (mv.error) return plain(null, h('div', { class: 'panel' }, h('div', { class: 'error-box', style: 'margin:16px' }, mv.error)));
 
   const f = state.rulesFilter ??= { kind: '', table: '', status: 'active', q: '' };
-  const key = JSON.stringify([state.db, mv.data.generatedAt, lang, f, state.archivePending ?? null]);
+  const key = JSON.stringify([state.db, mv.data.generatedAt, lang, f, state.archivePending ?? null, state.rulesSel ?? null]);
   if (state.rulesKey === key && view.firstChild) return;
   state.rulesKey = key;
   const focus = ['rulesText', 'rulesTable'].map(id => [id, captureFocus(document, id)]);
@@ -4367,15 +4392,47 @@ function renderRules() {
     h('div', { class: 'sums', title: t('Counts follow the filters, except the status switch.') },
       [['Rules', sums.rule], ['Observations', sums.observation], ['Archived', sums.archived]].map(([k, v]) => h('span', {}, t(k) + ' ', h('b', {}, fmt(v)))),
       sums.inference ? h('span', {}, t('inference') + ' ', h('b', {}, fmt(sums.inference))) : null)));
-  const body = !notes.length
-    ? h('div', { class: 'rep-empty' }, h('b', {}, t('No notes for {db} yet', { db: state.db })),
-      h('p', {}, t('Notes are added by your agent (remember): rules you state, observations from data and its own inferences.')))
-    : list.length
-      ? h('div', { class: 'rules-list' }, groupRules(list).map(ruleGroup),
-        h('div', { class: 'muted', style: 'font-size:12px;margin-top:8px' }, t('Adding or confirming notes stays with your agent.')))
-      : emptyState(t('No notes match the filters.'));
-  put(view, h('div', { class: 'stack' }, bar, h('div', { class: 'panel' }, body)));
+  if (!notes.length) {
+    put(view, h('div', { class: 'stack' }, bar, h('div', { class: 'panel' }, h('div', { class: 'rep-empty' }, h('b', {}, t('No notes for {db} yet', { db: state.db })),
+      h('p', {}, t('Notes are added by your agent (remember): rules you state, observations from data and its own inferences.'))))));
+    for (const [id, saved] of focus) restoreFocus(document, id, saved);
+    return;
+  }
+  // Navigator: the database-wide box on its own, then one box per table;
+  // the chosen box's notes are shown next to it (below it on narrow screens).
+  const groups = groupRules(list);
+  const dbWide = groups.find(g => !g.key) || { key: '', notes: [], columns: [] };
+  const tables = groups.filter(g => g.key);
+  let sel = state.rulesSel;
+  if (sel == null || (sel !== '' && !tables.some(g => g.key === sel))) sel = dbWide.notes.length || !tables.length ? '' : tables[0].key;
+  state.rulesSel = sel;
+  const choose = key => { state.rulesSel = key; state.rulesJump = true; renderRules(); };
+  // Long snake_case names wrap after an underscore, not inside a word.
+  const breakAtUnderscores = name => name.split('_').flatMap((part, i, all) => (i < all.length - 1 ? [part + '_', h('wbr')] : [part]));
+  const tile = (g, wide) => {
+    const on = sel === g.key;
+    const dot = g.key.indexOf('.');
+    return h('button', { type: 'button', class: 'rn-tile' + (wide ? ' global' : '') + (on ? ' on' : ''), 'aria-pressed': String(on), title: wide ? t('Database-wide') : g.key, onclick: () => choose(g.key) },
+      h('span', { class: 'rn-schema' }, wide ? t('Database-wide') : g.key.slice(0, dot)),
+      h('span', { class: 'rn-name' }, wide ? state.db : breakAtUnderscores(g.key.slice(dot + 1))),
+      h('span', { class: 'rn-cnt' }, ruleCountText(ruleCounts(g.notes)) || t('No notes')));
+  };
+  const current = sel === '' ? dbWide : tables.find(g => g.key === sel);
+  const detail = h('div', { class: 'panel rn-detail' }, current?.notes.length
+    ? h('div', { class: 'rules-list' }, ruleGroup(current),
+      h('div', { class: 'muted', style: 'font-size:12px;margin-top:8px' }, t('Adding or confirming notes stays with your agent.')))
+    : emptyState(t('No notes match the filters.')));
+  const side = h('nav', { class: 'panel rn-side', 'aria-label': t('Tables') },
+    tile(dbWide, true),
+    h('div', { class: 'rn-head' }, t('Tables'), h('b', {}, fmt(tables.length))),
+    tables.length ? h('div', { class: 'rn-tiles' }, tables.map(g => tile(g, false))) : h('div', { class: 'muted rn-none' }, t('No tables match.')));
+  put(view, h('div', { class: 'stack' }, bar, h('div', { class: 'rules-nav' }, side, detail)));
   for (const [id, saved] of focus) restoreFocus(document, id, saved);
+  // On a narrow screen the notes sit below the boxes: bring them into view.
+  if (state.rulesJump) {
+    state.rulesJump = false;
+    if (detail.getBoundingClientRect().top > window.innerHeight * 0.6) detail.scrollIntoView({ block: 'start', behavior: reduceMotion ? 'auto' : 'smooth' });
+  }
 }
 
 function confirmArchiveNote(n) {
