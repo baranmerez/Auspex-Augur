@@ -407,7 +407,12 @@ tool('run_report', {
     timeoutSeconds: timeoutArg,
   },
 }, async ({ analyze, previewRows, returnRows, params, preset, timeoutSeconds, ...ref }) =>
-  reports.run(ref, { analyze: analyze === 'never' ? false : analyze === 'always' ? 'always' : 'auto', previewRows, returnRows, params, preset, timeoutSeconds }));
+  // One terminal entry for the whole run: refusals before the database, the
+  // database phase (phases.database, see db.auditedPhase) and saving the run
+  // and its HTML afterwards.
+  db.audited('run_report', reportDetails(ref),
+    () => reports.run(ref, { analyze: analyze === 'never' ? false : analyze === 'always' ? 'always' : 'auto', previewRows, returnRows, params, preset, timeoutSeconds }),
+    r => ({ stage: r.stage, version: r.version, sqlHash: r.sqlHash })));
 
 tool('approve_report', {
   title: 'Approve report',

@@ -255,5 +255,8 @@ UUID), returned in `_meta.correlationId` of both successful and failed results
 and in the error envelope. The audit log entries written by that call carry the
 same `correlationId` (including the first-use `role_check`), and failed entries
 also `errorCode` and `sqlState`, so a result can be matched to its audit entry
-without double counting. Calls rejected by the MCP SDK's schema validation get
+without double counting. `run_report` writes exactly one entry per call,
+covering refusals before the database and failures after the query; its
+database part is the `phases.database` field of that entry (docs/safety.md).
+Calls rejected by the MCP SDK's schema validation get
 the envelope too but are not audited (the handler never ran).

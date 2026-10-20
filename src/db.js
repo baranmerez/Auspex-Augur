@@ -80,6 +80,7 @@ export class ReadOnlyDatabase {
     this.budgetUse = new Map(); // profile -> start times (ms) of operations in the window
     this.operation = new AsyncLocalStorage(); // profiles already charged by the current audited operation
     this.correlation = new AsyncLocalStorage(); // correlation ID of the current tool call
+    this.auditScope = new AsyncLocalStorage(); // { tool, fields } of the innermost audited operation
     this.exportGraceMs = exportGraceMs; // tests shorten it
   }
 
@@ -157,17 +158,44 @@ export class ReadOnlyDatabase {
   // duration, and row count / file or the error. Failures are logged too.
   // summarize(result) adds safe result fields (ids, versions), never content.
   // A nested call shares the outer operation, so it is charged once.
+  // Fields a nested auditedPhase adds land in this one entry (scope.fields).
   async audited(tool, details, fn, summarize = null) {
     const started = Date.now();
     const entry = { source: this.source, tool, ...this.correlationField(), ...details };
+    const scope = { tool, fields: {} };
     try {
       const store = this.operation.getStore() ?? new Set();
-      const result = await this.operation.run(store, fn);
-      this.auditFn({ ...entry, ms: Date.now() - started, rowCount: result?.rowCount, file: result?.file, ...(summarize ? summarize(result) : {}) });
+      const result = await this.operation.run(store, () => this.auditScope.run(scope, fn));
+      this.auditFn({ ...entry, ms: Date.now() - started, rowCount: result?.rowCount, file: result?.file, ...scope.fields, ...(summarize ? summarize(result) : {}) });
       return result;
     } catch (err) {
       const { code: errorCode, sqlState } = classifyError(err);
-      this.auditFn({ ...entry, ms: Date.now() - started, error: err.message, errorCode, ...(sqlState ? { sqlState } : {}) });
+      this.auditFn({ ...entry, ms: Date.now() - started, ...scope.fields, error: err.message, errorCode, ...(sqlState ? { sqlState } : {}) });
+      throw err;
+    }
+  }
+
+  // One phase of an operation that is audited as a whole further out (the
+  // MCP run_report handler audits the full report run: checks, the database
+  // part, saving the run and its HTML). Inside an audited operation of the
+  // same tool, the phase writes no entry of its own: its details, its row
+  // count and phases.<phase> = { ms, errorCode? } go into that operation's
+  // one terminal entry, and the query budget is charged once for the whole
+  // operation. Without such an operation (scheduler, scripts) it is audited
+  // on its own as before.
+  async auditedPhase(tool, phase, details, fn) {
+    const scope = this.auditScope.getStore();
+    if (scope?.tool !== tool) return this.audited(tool, details, fn);
+    Object.assign(scope.fields, details);
+    const started = Date.now();
+    const record = extra => { scope.fields.phases = { ...scope.fields.phases, [phase]: { ms: Date.now() - started, ...extra } }; };
+    try {
+      const result = await fn();
+      if (result?.rowCount !== undefined) scope.fields.rowCount = result.rowCount;
+      record({});
+      return result;
+    } catch (err) {
+      record({ errorCode: classifyError(err).code });
       throw err;
     }
   }
@@ -287,7 +315,7 @@ export class ReadOnlyDatabase {
   }
 
   runReport(profile, sql, options = {}) {
-    return this.audited('run_report', { profile: profile ?? null, sql, params: options.params, ...(options.preset ? { preset: options.preset } : {}), analyze: options.analyze, report: options.label, timeoutSeconds: options.timeoutSeconds },
+    return this.auditedPhase('run_report', 'database', { profile: profile ?? null, sql, params: options.params, ...(options.preset ? { preset: options.preset } : {}), analyze: options.analyze, report: options.label, timeoutSeconds: options.timeoutSeconds },
       () => this._runReport(profile, sql, options));
   }
 
