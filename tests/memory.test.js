@@ -87,6 +87,26 @@ test('plans record seen tables and used columns; neighbors come from foreign key
   assert.deepEqual(out.unexploredNeighbors, { tables: ['sales.customers', 'sales.order_lines'], more: 0 });
 });
 
+test('string constants in plan expressions never become used columns', () => {
+  // EXPLAIN (VERBOSE, FORMAT JSON) of
+  //   select 'orders.example_ghost' as message from sales.orders as orders
+  //   where orders.status_id <> 'it''s orders.other_ghost' and orders."it's" is not null
+  const plan = [{ Plan: {
+    'Node Type': 'Seq Scan', 'Relation Name': 'orders', Schema: 'sales', Alias: 'orders',
+    Output: ["'orders.example_ghost'::text"],
+    Filter: "((orders.status_id <> 'it''s orders.other_ghost'::text) AND (orders.\"it's\" IS NOT NULL))",
+  } }];
+  const [relation] = relationsFromJsonPlan(plan);
+  assert.deepEqual([...relation.columns].sort(), ["it's", 'status_id']);
+
+  const mem = tempMemory();
+  mem.recordDescribe(ordersDescribe());
+  mem.recordSeen('example', [relation]);
+  const k = mem.knowledge('example', 'sales', 'orders');
+  assert.ok(!k.keyColumns.some(c => c.includes('ghost')), k.keyColumns.join(', '));
+  assert.deepEqual(Object.keys(mem.readTable('example', 'sales', 'orders').usedColumns).filter(c => c.includes('ghost')), []);
+});
+
 test('relations: fk, used from approved reports, suggested by primary key name', () => {
   const mem = tempMemory(() => [{ left: 'sales.orders.status_id', right: 'sales.statuses.id' }, { left: 'sales.orders.customer_id', right: 'sales.customers.id' }]);
   mem.recordDescribe(ordersDescribe({ columns: [...ordersDescribe().columns, col('warehouse_id', 6)] }));
