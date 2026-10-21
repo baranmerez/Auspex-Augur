@@ -192,7 +192,8 @@ the catalog tools return the structure needed to rebuild it:
   `definitionLength` and `truncated`; null for aggregates). One statement.
   `returnsTrigger` is true when the return type is `trigger`
   (`prorettype = 'trigger'::regtype`). `usedByTriggers` lists the
-  non-internal triggers that call the overload, decoded from
+  non-internal triggers that call the overload (clones of a partitioned
+  table's trigger on its partitions are left out), decoded from
   `pg_trigger.tgtype`:
 
   ```jsonc

@@ -74,6 +74,18 @@ CREATE TABLE auspex_test.import_log (
 CREATE TABLE auspex_test.import_log_2026_01 PARTITION OF auspex_test.import_log FOR VALUES FROM ('2026-01-01') TO ('2026-02-01');
 CREATE TABLE auspex_test.import_log_2026_02 PARTITION OF auspex_test.import_log FOR VALUES FROM ('2026-02-01') TO ('2026-03-01');
 
+-- A row trigger on the partitioned table: PostgreSQL clones it to every
+-- partition; the function's usedByTriggers lists the parent trigger only.
+CREATE FUNCTION auspex_test.import_log_after_insert() RETURNS trigger
+LANGUAGE plpgsql AS $fn$
+BEGIN
+  RETURN NULL;
+END
+$fn$;
+CREATE TRIGGER import_log_after_insert
+  AFTER INSERT ON auspex_test.import_log
+  FOR EACH ROW EXECUTE FUNCTION auspex_test.import_log_after_insert();
+
 CREATE TABLE auspex_test.import_secret (
   job_id bigint NOT NULL REFERENCES auspex_test.import_job (id),
   token  text
