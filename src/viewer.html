@@ -5411,7 +5411,7 @@ function tpChip(kind, label, { onclick, title, off, expanded } = {}) {
 function tpSummary(model, sum, ctx) {
   const group = (title, hint, chips, empty, wide) => h('section', { class: 'sum-group' + (wide ? ' wide' : ''), 'aria-label': t(title) },
     h('h4', {}, t(title), hint ? h('span', { class: 'muted' }, ' ', hint) : null),
-    chips.length ? h('div', { class: 'sum-chips' }, chips) : h('div', { class: 'muted sum-none' }, empty ?? t('None known.')));
+    [chips].flat(Infinity).filter(Boolean).length ? h('div', { class: 'sum-chips' }, chips) : h('div', { class: 'muted sum-none' }, empty ?? t('None known.')));
   const colChip = (name, score, type, meaning) => tpChip(score ? `s${score}` : 's0', name, { onclick: () => ctx.onColumn(name), title: [tpScoreLabel(score), type, meaning].filter(Boolean).join(' · ') });
   const col = c => colChip(c.name, c.score, c.type, tpMeaning(c));
   const byName = name => { const c = model.columns.find(x => x.name === name); return colChip(name, c?.score ?? null, c?.type, tpMeaning(c)); };
