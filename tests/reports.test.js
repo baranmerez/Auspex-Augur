@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -137,6 +138,55 @@ test('drafts are stored under _drafts/<db>/<schema>/<category> and versioned by 
   assert.deepEqual(meta.sqlVersions.map(v => v.version), [1, 2]);
   assert.equal(meta.sqlVersions[1].hash, sqlHash('select 2'));
   assert.equal(lib.locate(ref), 'draft');
+});
+
+// The normalization every release before this one used: kept here so the
+// tests can prove ordinary SQL still saves and hashes exactly the same.
+const previousNormalize = sql => String(sql).replace(/\r\n/g, '\n').trim();
+const previousHash = sql => crypto.createHash('sha256').update(previousNormalize(sql)).digest('hex').slice(0, 12);
+
+test('saving keeps CRLF inside literals, quoted identifiers and dollar bodies, and the hash tells them apart', () => {
+  const lib = tempLibrary();
+  const cases = [
+    ["SELECT 'left\r\nright' AS value\r\nFROM example.orders", "SELECT 'left\r\nright' AS value\nFROM example.orders"],
+    ["SELECT E'left\r\nright'\r\n'more' AS value", "SELECT E'left\r\nright'\n'more' AS value"],
+    ['SELECT 1 AS "left\r\nright"\r\nFROM example.orders', 'SELECT 1 AS "left\r\nright"\nFROM example.orders'],
+    ['SELECT $x$left\r\nright$x$ AS value\r\n', 'SELECT $x$left\r\nright$x$ AS value'],
+  ];
+  for (const [sql, stored] of cases) {
+    const saved = lib.saveDraft({ ref: { ...ref, name: 'example-newlines' }, sql });
+    assert.equal(fs.readFileSync(saved.paths.sql, 'utf8'), stored + '\n', JSON.stringify(sql));
+    assert.equal(saved.hash, sqlHash(stored), 'the stored text hashes like the input');
+    assert.notEqual(sqlHash(sql), sqlHash(sql.replace(/\r\n/g, '\n')), `different literal values, different hash: ${JSON.stringify(sql)}`);
+  }
+});
+
+test('ordinary SQL with CRLF outside literals saves and hashes exactly as before', () => {
+  // Hashes pinned from the previous release: stored approvals keep matching.
+  const pinned = {
+    "SELECT order_id,\r\n  customer_id -- note\r\nFROM example.orders /* first\r\n second */\r\nWHERE status_code = 'A'\r\n": '09c501bd8e1f',
+    "SELECT E'a'\r\n'b', 'c'\r\n'd' AS \"value\", $x$ body $x$\r\nFROM example.orders\r\n": 'bcc9802c461b',
+  };
+  for (const [sql, hash] of Object.entries(pinned)) assert.equal(sqlHash(sql), hash, JSON.stringify(sql));
+  const ordinary = [
+    ...Object.keys(pinned),
+    'select 1',
+    '\r\n  SELECT customer_id, count(*)\r\n  FROM example.orders\r\n  GROUP BY customer_id\r\n\r\n',
+    "SELECT 'no newline here', \"customerId\", $$plain$$\r\nFROM example.orders o\r\nJOIN example.customers c ON c.customer_id = o.customer_id",
+    '/* block\r\ncomment */ SELECT 1 -- trailing\r\n',
+    "SELECT E'a'\r\n-- a comment between fragments\r\n'b'",
+    'SELECT 1\rFROM example.orders\n',
+    "SELECT 'unterminated\r\nliteral",
+    'SELECT \'it\'\'s\', E\'a\\\'b\'\r\nFROM example.orders',
+  ];
+  const lib = tempLibrary();
+  for (const sql of ordinary) {
+    assert.equal(sqlHash(sql), previousHash(sql), JSON.stringify(sql));
+    assert.equal(sqlHash(sql.replace(/\r\n/g, '\n')), sqlHash(sql), `LF and CRLF line ends hash alike: ${JSON.stringify(sql)}`);
+    if (sql.includes('unterminated')) continue; // the guard refuses it before saving
+    const saved = lib.saveDraft({ ref: { ...ref, name: 'example-ordinary' }, sql });
+    assert.equal(fs.readFileSync(saved.paths.sql, 'utf8'), previousNormalize(sql) + '\n', JSON.stringify(sql));
+  }
 });
 
 test('drafts must be read-only SQL', () => {
