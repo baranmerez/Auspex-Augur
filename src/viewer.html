@@ -1339,6 +1339,7 @@ const TR = {
   'Give the theme a name.': 'Temaya bir ad verin.', 'Invalid color': 'Geçersiz renk', 'Could not save themes in this browser': 'Temalar bu tarayıcıda kaydedilemedi',
   'Export / import': 'Dışa / içe aktar', 'Export': 'Dışa aktar', 'Import': 'İçe aktar', 'Theme JSON': 'Tema JSON', 'Paste theme JSON here to import': 'İçe aktarmak için tema JSON metnini buraya yapıştırın',
   'Import failed: not valid JSON': 'İçe aktarılamadı: geçerli JSON değil', '{a} imported, {s} skipped': '{a} içe aktarıldı, {s} atlandı',
+  'Aurora': 'Kutup ışığı', 'Abyss': 'Derin deniz', 'Dusk': 'Alacakaranlık', 'Ember': 'Kor', 'Pomegranate': 'Nar', 'Synthwave': 'Neon dalga', 'Nebula': 'Bulutsu', 'Emerald': 'Zümrüt', 'Pearl': 'İnci', 'Lagoon': 'Lagün',
   'Light and dark': 'Açık ve koyu', 'Accessibility': 'Erişilebilirlik', 'Fjord': 'Fiyort', 'Nocturne': 'Gece', 'Rosewood': 'Gül ağacı',
   'Ocean': 'Okyanus', 'Amber': 'Kehribar', 'Slate': 'Arduvaz', 'Moss': 'Yosun', 'Sunset': 'Gün batımı',
   'Auspex themes': 'Auspex temaları', 'Auspex': 'Auspex', 'Forge': 'Dökümhane', 'Phosphor': 'Fosfor', 'Verdigris': 'Bakır yeşili', 'Ivory': 'Fildişi',
@@ -7156,7 +7157,8 @@ function themeTokens(spec) {
   const tints = tintsRecord(spec.tints), glass = glassRecord(spec.glass);
   const tintC = { ref: hexRgb(tints.ref) || hue.ref, dep: hexRgb(tints.dep) || hue.dep };
   const gk = glass ? glass.strength / 50 : 1, gw = w => Math.min(0.8, w * gk);
-  const stops = [mixRgb(bg, accent, gw(0.35)), mixRgb(bg, hue.dep, gw(0.3)), mixRgb(bg, hue.ref, gw(0.35))];
+  // Glass backdrop: three glows from the accent and the two region tints (the status hues when a theme sets no tints).
+  const stops = [mixRgb(bg, accent, gw(0.35)), mixRgb(bg, tintC.dep, gw(0.3)), mixRgb(bg, tintC.ref, gw(0.35))];
   const glassBacks = glass ? stops.flatMap(st => { const e = mixRgb(st, surface, glass.opacity / 100); return [e, mixRgb(e, tintC.ref, 0.12), mixRgb(e, tintC.dep, 0.12)]; }) : [];
   const tintBacks = [0.07, 0.12].flatMap(p => [mixRgb(surface, tintC.ref, p), mixRgb(surface, tintC.dep, p)]);
   const panelBacks = [surface, surface2, ...tintBacks, ...glassBacks];
@@ -7318,6 +7320,17 @@ const themePresets = [
   { id: 'forest', name: 'Forest', bg: '#0f1d16', accent: '#3fb27f' },
   { id: 'glass', name: 'Glass', bg: '#e8ecf7', accent: '#4f5fe0', glass: { blur: 16, opacity: 68 } },
   { id: 'glassDark', name: 'Glass dark', bg: '#0d1122', accent: '#8a98ff', glass: { blur: 16, opacity: 60 } },
+  // More glass themes: the accent and two tints give each one a three-color backdrop.
+  { id: 'glassAurora', name: 'Aurora', bg: '#0a1420', accent: '#3ee6b0', glass: { blur: 16, opacity: 60 }, tints: { ref: '#7a5cff', dep: '#22b8e8' }, colors: { accent2: '#b07cff' } },
+  { id: 'glassAbyss', name: 'Abyss', bg: '#06121f', accent: '#2fd3d0', glass: { blur: 16, opacity: 60 }, tints: { ref: '#1f5fd6', dep: '#ff7a6b' }, colors: { accent2: '#ff8f7e' } },
+  { id: 'glassDusk', name: 'Dusk', bg: '#170d1c', accent: '#ff8a65', glass: { blur: 16, opacity: 60 }, tints: { ref: '#8a4dff', dep: '#ff3d8b' }, colors: { accent2: '#c39bff' } },
+  { id: 'glassEmber', name: 'Ember', bg: '#160b08', accent: '#ffb547', glass: { blur: 16, opacity: 60 }, tints: { ref: '#b3263f', dep: '#ff5e3a' }, colors: { accent2: '#ff7b5c' } },
+  { id: 'glassPomegranate', name: 'Pomegranate', bg: '#1a0a12', accent: '#ff5c8a', glass: { blur: 16, opacity: 60 }, tints: { ref: '#c2185b', dep: '#ff9e6d' }, colors: { accent2: '#ffb08a' } },
+  { id: 'glassSynthwave', name: 'Synthwave', bg: '#0f0820', accent: '#ff4fd8', glass: { blur: 16, opacity: 60 }, tints: { ref: '#00e5ff', dep: '#7c4dff' }, colors: { accent2: '#3fe9ff' } },
+  { id: 'glassNebula', name: 'Nebula', bg: '#0b0a1f', accent: '#8c7bff', glass: { blur: 16, opacity: 60 }, tints: { ref: '#3a7bff', dep: '#ff6ad5' }, colors: { accent2: '#ff8ae0' } },
+  { id: 'glassEmerald', name: 'Emerald', bg: '#07150f', accent: '#2ecc8f', glass: { blur: 16, opacity: 60 }, tints: { ref: '#0f7a5a', dep: '#e3b341' }, colors: { accent2: '#e3b341' } },
+  { id: 'glassPearl', name: 'Pearl', bg: '#eeeaf6', accent: '#7a4fd0', glass: { blur: 16, opacity: 68 }, tints: { ref: '#9fb4d8', dep: '#d97ab8' }, colors: { accent2: '#b0447f' } },
+  { id: 'glassLagoon', name: 'Lagoon', bg: '#e6f3f2', accent: '#0f8f86', glass: { blur: 16, opacity: 68 }, tints: { ref: '#6a8cff', dep: '#ffa27a' }, colors: { accent2: '#c2582a' } },
   // Light and dark pairs: the variant follows the Auto, Light and Dark switch.
   { id: 'fjord', name: 'Fjord', bg: '#2e3440', accent: '#88c0d0', colors: { accent2: '#b48ead' },
     pair: { bg: '#eceff4', accent: '#5e81ac', colors: { accent2: '#8a5c86' } } },
@@ -7359,8 +7372,8 @@ const themePresets = [
     palette: { pk: '#9a7330', fk: '#6a50b0', score: '#1e8a55', trigger: '#b03a78', fn: '#1a8a6a', report: '#1a7f90', ref: '#2a6fb0', dep: '#b8561f', off: '#7a7060' } },
 ];
 const themeDefaultId = saved => (typeof saved === 'string' && saved ? saved : 'auspex');
-// Menu group of a ready theme: auspex, access (high contrast), pair (light and dark) or ready.
-const themePresetGroup = p => (p.auspex ? 'auspex' : p.contrast === 'high' ? 'access' : p.pair ? 'pair' : 'ready');
+// Menu group of a ready theme: auspex, glass, access (high contrast), pair (light and dark) or ready.
+const themePresetGroup = p => (p.auspex ? 'auspex' : p.glass ? 'glass' : p.contrast === 'high' ? 'access' : p.pair ? 'pair' : 'ready');
 // Custom themes are records { id, name, bg, accent, contrast, colors?, palette?, glass?, tints?, mono?, pair? };
 // the id derives from the name (case-insensitive), so a name is unique.
 function themeIdOf(name) {
@@ -7558,6 +7571,7 @@ function renderThemeMenu() {
   const group = (label, list) => (list.length ? [h('div', { class: 'th-h' }, label), h('div', { class: 'th-list', role: 'listbox' }, list.map(p => item(p, p.id, false)))] : []);
   put(menu,
     ...group(t('Auspex themes'), themePresets.filter(p => themePresetGroup(p) === 'auspex')),
+    ...group(t('Glass'), themePresets.filter(p => themePresetGroup(p) === 'glass')),
     ...group(t('Light and dark'), themePresets.filter(p => themePresetGroup(p) === 'pair')),
     ...group(t('Ready themes'), themePresets.filter(p => themePresetGroup(p) === 'ready')),
     ...group(t('Accessibility'), themePresets.filter(p => themePresetGroup(p) === 'access')),
