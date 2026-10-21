@@ -225,6 +225,13 @@
   /* The SQL cell stays a real table cell (own row line, same height); its text is cut inside it. */
   td.op-sql { font: 12px var(--mono); }
   td.op-sql .op-sql-text { display: block; max-width: max(520px, 40vw); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Compact rows: tool and profile stay on one line, cut with the full text in the tooltip. */
+  td.op-one { white-space: nowrap; }
+  td.op-one .op-one-text { display: block; max-width: 22ch; overflow: hidden; text-overflow: ellipsis; }
+  tr.r > td { padding-top: 7px; padding-bottom: 7px; }
+  /* The SQL column takes the width that is left, so the table never scrolls sideways. */
+  #v-ops td.op-sql { width: 100%; max-width: 0; }
+  #v-ops td.op-sql .op-sql-text { max-width: none; }
   tr.r { cursor: pointer; transition: background .15s; }
   tr.r:hover { background: var(--surface-2); }
   tr.r.open { background: var(--accent-soft); }
@@ -1906,8 +1913,9 @@ function renderOps(rows) {
       tabindex: 0, onclick: () => { state.open = open ? null : e._id; render(); }, onkeydown: ev => { if (ev.key === 'Enter') { state.open = open ? null : e._id; render(); } } },
       h('td', { class: 'time', title: dateTimeOf(e.ts) }, (state.range === 'today' || state.range === 'yesterday') ? timeOf(e.ts) : dateTimeOf(e.ts)),
       h('td', {}, h('span', { class: 'badge ' + src }, sourceLabel(src))),
-      h('td', {}, toolName(e.tool), e.analyze ? h('span', { class: 'muted' }, ' + analyze') : null, e.timeoutSeconds ? h('span', { class: 'muted', title: t('custom timeout') }, ` · ${e.timeoutSeconds} s`) : null),
-      h('td', { class: 'hide-sm' }, e.profile || h('span', { class: 'muted' }, '–')),
+      h('td', { class: 'op-one', title: toolName(e.tool) + (e.analyze ? ' + analyze' : '') + (e.timeoutSeconds ? ` · ${t('custom timeout')} ${e.timeoutSeconds} s` : '') },
+        h('span', { class: 'op-one-text' }, toolName(e.tool), e.analyze ? h('span', { class: 'muted' }, ' + analyze') : null, e.timeoutSeconds ? h('span', { class: 'muted' }, ` · ${e.timeoutSeconds} s`) : null)),
+      h('td', { class: 'hide-sm op-one', title: e.profile || null }, h('span', { class: 'op-one-text' }, e.profile || h('span', { class: 'muted' }, '–'))),
       h('td', { class: 'op-sql', title: summaryOf(e) }, h('span', { class: 'op-sql-text' }, summaryOf(e) || h('span', { class: 'muted' }, '–'))),
       h('td', { class: 'num' }, h('span', { class: 'dur' }, Number.isFinite(e.ms) ? h('span', { class: 'bar', style: `width:${Math.max(2, e.ms / maxMs * 60)}px` }) : null, fmtMs(e.ms))),
       h('td', { class: 'num hide-sm' }, Number.isFinite(e.rowCount) ? fmt(e.rowCount) : ''),
