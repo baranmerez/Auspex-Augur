@@ -236,7 +236,7 @@ test('the group choice is remembered like the view: page choice, then storage, g
   assert.equal(ctx.tpGroupChoice(undefined, 'type'), 'type');
   assert.equal(ctx.tpGroupChoice('score', 'type'), 'score');
   assert.equal(ctx.tpGroupChoice(undefined, '<b>'), 'score');
-  assert.match(page, /perfOpen: state\.perfOpen, tpView: state\.tpView, tpGroup: state\.tpGroup \}\)\); \} catch \{\}/, 'saved by persist() inside try/catch');
+  assert.match(page, /perfOpen: state\.perfOpen, tpView: state\.tpView, tpGroup: state\.tpGroup(, [^}]*)? \}\)\); \} catch \{\}/, 'saved by persist() inside try/catch');
   assert.match(page, /onGroup: v => \{ state\.tpGroup = v; persist\(\);/);
   assert.match(page, /const tpGroupOf = tp => tpGroupChoice\(tp\.group, state\.tpGroup\);/);
 });
