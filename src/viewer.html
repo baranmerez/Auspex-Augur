@@ -931,6 +931,55 @@
   .sch-type button.on .n { color: inherit; opacity: .75; }
   .obj-list .panel-b { display: grid; gap: 14px; }
   .obj-search { flex: 1 1 260px; max-width: 520px; }
+  .fn-imp { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; }
+  .fn-imp-l { font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: .5px; margin-right: 4px; }
+  .fn-imp-c { gap: 6px; }
+  .fn-imp-c .fn-imp-n { font: 600 11px var(--mono); opacity: .75; font-variant-numeric: tabular-nums; }
+  .sum-chip.on { box-shadow: inset 0 0 0 2px var(--chip-ink, var(--accent)); font-weight: 650; }
+  .fn-filter-note, .fn-legend { margin: 0; }
+  .fn-legend .fn-dot { color: var(--text-3); }
+  .fn-sec + .fn-sec { margin-top: 2px; }
+  .fn-sec-h { margin: 0 0 6px; font-size: 13px; }
+  .fn-sec-b { border: 0; background: none; padding: 2px 0; font: inherit; font-weight: 650; color: var(--text); display: inline-flex; gap: 6px; align-items: baseline; }
+  .fn-sec-b:hover { color: var(--accent-ink); }
+  .fn-sec-b:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+  .fn-caret { width: 1em; color: var(--text-3); }
+  .fn-sec-b-body { display: grid; gap: 10px; margin-bottom: 8px; }
+  .fn-tgroup-h { margin: 0 0 4px; font-size: 12px; font-weight: 600; color: var(--text-2); display: flex; gap: 4px; align-items: center; }
+  .fn-row { padding: 5px 10px; }
+  .fn-row .obj-nm { font-weight: 600; }
+  .fn-row.listed .obj-nm { font-weight: 500; color: var(--text-2); }
+  .fn-dot { font-size: 10px; line-height: 1; color: var(--accent-ink); width: 10px; flex: none; }
+  .fn-row.listed .fn-dot { color: var(--text-3); }
+  .fn-tm { display: inline-flex; align-items: center; padding: 0 6px; border-radius: 4px; font: 600 10.5px/1.6 var(--mono); letter-spacing: .3px; border: 1px solid var(--line-strong); color: var(--text-2); background: var(--surface-2); white-space: nowrap; }
+  .fn-tm.tm-before { color: var(--accent-ink); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent-ink) 30%, transparent); }
+  .fn-tm.tm-after { color: var(--good-ink); background: var(--good-soft); border-color: color-mix(in srgb, var(--good-ink) 30%, transparent); }
+  .fn-tm.tm-instead { color: var(--warn-ink); background: var(--warn-soft); border-color: color-mix(in srgb, var(--warn-ink) 30%, transparent); }
+  .fn-risk { font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+  .fn-risk.crit { color: var(--critical); }
+  .fn-risk.warn { color: var(--warn-ink); }
+  .fn-sig-h { display: block; }
+  .fn-sig-wrap { display: grid; gap: 4px; min-width: 0; }
+  .fn-sig.clamp { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .fn-sig-more { justify-self: start; font-size: 12px; }
+  .fn-cols { margin: 2px 0 0; padding: 6px 10px 6px 34px; max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2);
+    font: 12px/1.6 var(--mono); color: var(--text-2); columns: 2 260px; column-gap: 24px; }
+  .fn-cols li { break-inside: avoid; overflow-wrap: anywhere; }
+  .fn-flags { justify-content: flex-start; }
+  .fn-ov-b > * { min-width: 0; }
+  .fn-trg-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 13px; }
+  .fn-trg-list li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; min-width: 0; padding: 6px 0; border-top: 1px solid var(--line); }
+  .fn-trg-list li:first-child { border-top: 0; padding-top: 0; }
+  .fn-ev { color: var(--text); }
+  .tp-about .panel-b { padding: 12px 16px; display: grid; gap: 8px; }
+  .tp-about-c { margin: 0; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+  .tp-about-n { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 13px; }
+  .tp-about-n li { display: flex; gap: 8px; align-items: baseline; overflow-wrap: anywhere; min-width: 0; }
+  .tp-about-none { margin: 0; font-size: 13px; }
+  .tp-def-panel .panel-h { align-items: center; flex-wrap: wrap; }
+  .tp-def-panel .panel-h .grow { flex: 1; }
+  .tp-def-panel.closed .panel-h { padding-bottom: 14px; }
+  .tp-rel-more { font-size: 12px; margin: 0 0 6px; }
   .obj-schema { margin: 0 0 4px; font: 600 12px var(--mono); color: var(--text-2); }
   .obj-rows { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
   .obj-rows li + li { border-top: 1px solid var(--line); }
@@ -1477,7 +1526,7 @@ const state = {
 };
 state.themeMode = 'auto';
 try { Object.assign(state, JSON.parse(localStorage.getItem('auspex.viewer') || '{}'), { all: [], seen: new Set(), firstLoad: true, open: null, reports: null, reportDoc: null, memory: null, memView: null, memPos: new Map() }); } catch {}
-const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, themeMode: state.themeMode, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy, memHideFaint: state.memHideFaint, memGraph3d: state.memGraph3d, memGraphSoft: state.memGraphSoft, memExpand: state.memExpand, repListCollapsed: state.repListCollapsed, repTreeOpen: state.repTreeOpen, repFavOpen: state.repFavOpen, repRecentOpen: state.repRecentOpen, rulesOpen: state.rulesOpen, rulesListCollapsed: state.rulesListCollapsed, rulesSideW: state.rulesSideW, sqlWrap: state.sqlWrap, perfOpen: state.perfOpen, tpView: state.tpView, tpGroup: state.tpGroup })); } catch {} };
+const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, themeMode: state.themeMode, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy, memHideFaint: state.memHideFaint, memGraph3d: state.memGraph3d, memGraphSoft: state.memGraphSoft, memExpand: state.memExpand, repListCollapsed: state.repListCollapsed, repTreeOpen: state.repTreeOpen, repFavOpen: state.repFavOpen, repRecentOpen: state.repRecentOpen, rulesOpen: state.rulesOpen, rulesListCollapsed: state.rulesListCollapsed, rulesSideW: state.rulesSideW, sqlWrap: state.sqlWrap, perfOpen: state.perfOpen, tpView: state.tpView, tpGroup: state.tpGroup, fnSecOpen: state.fnSecOpen })); } catch {} };
 
 // In the Tauri desktop app the same routes are served by the Rust `api` command.
 const tauriCore = window.__TAURI__?.core;
@@ -4919,6 +4968,19 @@ function tpRelRef(nodes, id, kind, columns) {
 }
 // The graph's entry of function schema.name (graph.json functions[]), or null.
 const tpFnEntry = (data, schema, name) => tpArr(data?.functions).find(f => f && f.schema === schema && f.name === name) ?? null;
+// Importance of a relation from memory only, to rank tables in short lists:
+// 2 per active note on it or its columns, 1 per column scored 4–5 (the user score wins), 3 per
+// report whose SQL mentions it (when report SQL is at hand), 1 when explored.
+function tpImportance(data, id, reportItems) {
+  const node = tpArr(data?.nodes).find(n => n.id === id);
+  const parts = splitTableKey(id);
+  const schema = node?.schema ?? parts?.schema ?? '', table = node?.table ?? parts?.table ?? String(id);
+  const notes = tpArr(data?.notes).filter(n => n.status === 'active' && n.schema === schema && n.table === table).length;
+  const scores = node?.columnScores && typeof node.columnScores === 'object' ? Object.values(node.columnScores) : [];
+  const top = scores.filter(e => (tpEffective(e).score ?? 0) >= 4).length;
+  const reports = tpArr(reportItems).filter(r => tpMentions(r.sql, schema, table)).length;
+  return notes * 2 + top + reports * 3 + (node?.state === 'explored' ? 1 : 0);
+}
 // What the page shows for a view or matview: the definition and options from
 // the table file; sources and called functions from the file, else from the
 // graph node (ids only). A function counts as volatile when the file says so,
@@ -4929,6 +4991,8 @@ function tpViewFacts(data, node, rec, kind) {
   const sources = fromRec
     ? rec.viewSources.filter(r => r && r.table).map(r => tpRelRef(nodes, tableKey(r.schema, r.table), r.kind ?? null, r.columns))
     : tpArr(node?.viewSources).filter(id => typeof id === 'string').map(id => tpRelRef(nodes, id, null, []));
+  const rank = new Map(sources.map(r => [r.id, tpImportance(data, r.id)]));
+  sources.sort((a, b) => rank.get(b.id) - rank.get(a.id));
   const fn = (schema, name, args, volatility) => {
     const entry = tpFnEntry(data, schema, name);
     const vol = typeof volatility === 'string' ? volatility : entry?.flags?.volatile ? 'volatile' : null;
@@ -5023,7 +5087,7 @@ function tablePageModel(data, id, rec) {
     view: tpIsView(kind) ? tpViewFacts(data, node, rec, kind) : null,
     usedByViews: tpUsedByViews(data, id, rec),
     estimatedRows: rec?.estimatedRows ?? node?.estimatedRows ?? null, columnCount: described ? structure.length : (node?.columnCount ?? 0),
-    noteCount: notes.length, scoredAt: node?.scoredAt ?? rec?.scoredAt ?? null, sourcesMax, lastChanges, describedAt: rec?.describedAt ?? null,
+    noteCount: notes.length, tableNotes: notes.filter(n => !n.column && (n.kind === 'rule' || n.kind === 'observation') && typeof n.text === 'string'), scoredAt: node?.scoredAt ?? rec?.scoredAt ?? null, sourcesMax, lastChanges, describedAt: rec?.describedAt ?? null,
     columns, scored,
     keys: {
       primary: byType('primary key'), unique: byType('unique'), check: byType('check'),
@@ -5048,7 +5112,11 @@ async function tpLoadRec(fetchRec, cache, key, what = 'table') {
 }
 // Default filter: scores 4-5 only (when the table is scored at all).
 const tpTop = c => (c.score ?? 0) >= 4;
-const tpVisibleColumns = (model, showAll) => (showAll || !model.scored ? model.columns : model.columns.filter(tpTop));
+// An unscored view starts with its first tpUnscoredLimit columns (a view can
+// have hundreds); an unscored table shows them all, as before.
+const tpUnscoredLimit = 24;
+const tpColumnsLimited = model => !model.scored && !!model.view && model.columns.length > tpUnscoredLimit;
+const tpVisibleColumns = (model, showAll) => (showAll ? model.columns : model.scored ? model.columns.filter(tpTop) : tpColumnsLimited(model) ? model.columns.slice(0, tpUnscoredLimit) : model.columns);
 
 // ----- view (h, svg, t, fmt, compact, ruleDay, locale and changeLabel come from the page) -----
 const tpDay = ts => ruleDay(ts, locale);
@@ -5160,8 +5228,10 @@ function tpColumns(model, ctx) {
   const top = model.columns.filter(tpTop).length;
   const head = h('div', { class: 'panel-h' }, h('h2', {}, t('Columns')),
     model.scored && !searching ? h('span', { class: 'hint', role: 'status' }, ctx.showAll ? t('{n} columns', { n: fmt(model.columns.length) }) : t('{n} of {all} columns scored 4–5', { n: fmt(top), all: fmt(model.columns.length) })) : null,
+    tpColumnsLimited(model) && !searching ? h('span', { class: 'hint', role: 'status' }, ctx.showAll ? t('{n} columns', { n: fmt(model.columns.length) }) : t('first {n} of {all} columns', { n: fmt(tpUnscoredLimit), all: fmt(model.columns.length) })) : null,
     h('span', { class: 'grow' }),
-    model.scored && !searching ? h('button', { type: 'button', class: 'icon-btn sm', 'aria-pressed': String(!!ctx.showAll), onclick: () => ctx.onShowAll(!ctx.showAll) }, ctx.showAll ? t('Only 4–5') : t('Show all columns')) : null);
+    model.scored && !searching ? h('button', { type: 'button', class: 'icon-btn sm', 'aria-pressed': String(!!ctx.showAll), onclick: () => ctx.onShowAll(!ctx.showAll) }, ctx.showAll ? t('Only 4–5') : t('Show all columns')) : null,
+    tpColumnsLimited(model) && !searching ? h('button', { type: 'button', class: 'icon-btn sm', 'aria-pressed': String(!!ctx.showAll), onclick: () => ctx.onShowAll(!ctx.showAll) }, ctx.showAll ? t('show fewer') : t('Show all {n} columns', { n: fmt(model.columns.length) })) : null);
   let body;
   if (!model.described) {
     body = h('div', { class: 'tp-empty' }, h('b', {}, t('Not described yet')),
@@ -5253,19 +5323,39 @@ function tpViewDefinition(model, ctx) {
   const v = model.view;
   const opts = [v.securityBarrier ? h('span', { class: 'badge code', title: t('security_barrier: conditions from outside run only after the view\'s own WHERE, so they cannot see hidden rows.') }, 'security_barrier') : null,
     v.checkOption ? h('span', { class: 'badge code', title: t('WITH CHECK OPTION: inserts and updates through the view must satisfy its WHERE ({o}).', { o: v.checkOption }) }, `check option: ${v.checkOption}`) : null].filter(Boolean);
-  return h('section', { class: 'panel', 'aria-label': t('Definition') },
-    h('div', { class: 'panel-h' }, h('h2', {}, t('Definition')), opts.length ? h('span', { class: 'tp-opts' }, opts) : null),
-    h('div', { class: 'panel-b' }, v.definition !== null
-      ? tpCode(v.definition, { id: 'tp-viewdef', label: t('Definition of {id}', { id: model.id }), open: ctx.codeOpen, onToggle: ctx.onCodeOpen, truncated: v.truncated, length: v.definitionLength }, ctx)
-      : h('div', { class: 'tp-empty sm' }, h('b', {}, t('No definition recorded')),
-        h('p', {}, t('Ask your agent to run describe_table on {id}; for a view it also records the definition, the source relations and the called functions.', { id: model.id })))));
+  // The SQL stays collapsed until asked for (a definition can run to hundreds of lines).
+  const n = v.definition === null ? 0 : v.definition.split('\n').length;
+  const shown = !!ctx.sqlShown;
+  const toggle = v.definition !== null ? h('button', { type: 'button', class: 'icon-btn sm tp-sql-btn', 'aria-expanded': String(shown), 'aria-controls': 'tp-viewdef',
+    onclick: () => ctx.onSqlShown?.(!shown) }, shown ? t('Hide SQL') : t('Show SQL ({n} lines)', { n: fmt(n) })) : null;
+  return h('section', { class: 'panel tp-def-panel' + (shown ? '' : ' closed'), 'aria-label': t('Definition') },
+    h('div', { class: 'panel-h' }, h('h2', {}, t('Definition')), opts.length ? h('span', { class: 'tp-opts' }, opts) : null, h('span', { class: 'grow' }), toggle),
+    v.definition === null
+      ? h('div', { class: 'panel-b' }, h('div', { class: 'tp-empty sm' }, h('b', {}, t('No definition recorded')),
+        h('p', {}, t('Ask your agent to run describe_table on {id}; for a view it also records the definition, the source relations and the called functions.', { id: model.id }))))
+      : shown ? h('div', { class: 'panel-b' }, tpCode(v.definition, { id: 'tp-viewdef', label: t('Definition of {id}', { id: model.id }), open: ctx.codeOpen, onToggle: ctx.onCodeOpen, truncated: v.truncated, length: v.definitionLength }, ctx))
+      : null);
+}
+// What the view is, first under the header: its comment and the rules and
+// observations saved on it (not on a column).
+function tpViewAbout(model) {
+  const notes = model.tableNotes;
+  return h('section', { class: 'panel tp-about', 'aria-label': t('About this view') },
+    h('div', { class: 'panel-b' }, model.comment || notes.length
+      ? [model.comment ? h('p', { class: 'tp-about-c' }, model.comment) : null,
+        notes.length ? h('ul', { class: 'tp-about-n' }, notes.map(n => h('li', {}, h('span', { class: 'badge ' + n.kind }, t(n.kind)), h('span', {}, n.text)))) : null]
+      : h('p', { class: 'muted tp-about-none' }, t('No description yet: a comment on the view, or a rule or observation saved with remember, describes it here.'))));
 }
 // A relation card list on the left (sources) or right (used by views).
 function tpRelPanel(list, side, title, hint, ctx) {
+  const key = `panel-${side}`, open = !!ctx.moreOpen?.[key];
+  const shown = open ? list : list.slice(0, tpListLimit);
   return h('section', { class: `panel tp-side tp-${side}`, 'aria-label': t(title) },
     h('div', { class: 'panel-h' }, h('h2', {}, t(title)), h('span', { class: 'hint' }, fmt(list.length))),
     h('div', { class: 'panel-b' }, h('p', { class: 'tp-hint' }, t(hint)),
-      list.length ? h('ul', { class: 'tp-nbs' }, list.map(r => h('li', {},
+      list.length > tpListLimit ? h('button', { type: 'button', class: 'tp-link tp-rel-more', 'aria-expanded': String(open), onclick: () => ctx.onMore?.(key, !open) },
+        open ? t('show fewer') : t('Show all {n}', { n: fmt(list.length) })) : null,
+      list.length ? h('ul', { class: 'tp-nbs' }, shown.map(r => h('li', {},
         h('button', { type: 'button', class: 'tp-nb' + (r.explored ? '' : ' muted-card'), onclick: () => ctx.onOpen(r.id), title: r.explored ? null : t('Not explored yet: describe_table records it.') },
           h('span', { class: 'tp-nb-h' }, h('span', { class: 'tp-mono tp-nm' }, r.id), tpIsView(r.kind) ? h('span', { class: 'badge kind-view' }, t(r.kind === 'matview' ? 'Materialized view' : 'View{k}', { k: '' })) : null),
           r.columns.length ? h('span', { class: 'tp-mono tp-jn', title: t('Columns the view uses') }, r.columns.join(', ')) : null,
@@ -5339,7 +5429,6 @@ function tpViewHeader(model, ctx) {
       changes.length ? h('span', { class: 'chg-badge', title: changes.map(changeLabel).join('\n') }, h('span', { class: 'dot' }),
         t(changes.length === 1 ? '1 change at the last describe' : '{n} changes at the last describe', { n: fmt(changes.length) })) : null,
       tpViewSwitch(ctx)),
-    model.comment ? h('p', { class: 'tp-comment' }, model.comment) : null,
     h('div', { class: 'tp-facts' }, facts.map(([k, val]) => h('span', {}, h('b', {}, val), ' ', k))));
 }
 function tpCrumbs(trail, ctx) {
@@ -5453,7 +5542,12 @@ function tpSummary(model, sum, ctx) {
   const columnBody = searching || tpGroupChoice(ctx.group, undefined) === 'type'
     ? (found.length ? (tpGroupChoice(ctx.group, undefined) === 'type' ? tpGroupColumns(found).map(typeSub) : [5, 4, 3, 2, 1, 0].map(s => sub(s, found.filter(c => (c.score ?? 0) === s))))
       : h('div', { class: 'muted sum-none' }, t('No column matches the search.')))
+    : model.view && !ctx.showAll && (model.scored || tpColumnsLimited(model))
+      ? [model.scored ? [5, 4].map(s => sub(s, sum.columns.filter(c => (c.score ?? 0) === s))) : sub(0, model.columns.slice(0, tpUnscoredLimit)),
+        model.scored && !model.columns.some(tpTop) ? h('div', { class: 'muted sum-none' }, t('No column is scored 4 or 5.')) : null,
+        h('div', { class: 'sum-chips' }, tpChip('more', t('Show all {n} columns', { n: fmt(model.columns.length) }), { onclick: () => ctx.onShowAll?.(true), expanded: false }))]
     : [[5, 4, 3, 2, 0].map(s => sub(s, sum.columns.filter(c => (c.score ?? 0) === s))),
+    model.view && ctx.showAll ? h('div', { class: 'sum-chips' }, tpChip('more', t('show fewer'), { onclick: () => ctx.onShowAll?.(false), expanded: true })) : null,
     sum.unused.length ? h('div', { class: 'sum-sub' }, h('div', { class: 'sum-chips' }, tpChip('unused', open ? t('hide {n} unused', { n: fmt(sum.unused.length) }) : t('+{n} unused', { n: fmt(sum.unused.length) }), { onclick: () => ctx.onUnused(!open), expanded: open, title: t('Columns scored 1: they appear in no SQL') }))) : null,
     open ? sub(1, sum.unused) : null];
   const tableChip = kind => id => tpChip(kind, id, { onclick: () => ctx.onOpen(id) });
@@ -5471,6 +5565,7 @@ function tpSummary(model, sum, ctx) {
   return h('div', { class: 'sum', role: 'region', 'aria-label': t('Summary') },
     !model.described ? h('div', { class: 'tp-empty sm' }, h('b', {}, t('Not described yet')),
       h('p', {}, t('Ask your agent to run describe_table on {id}; it reads the catalog only and records the columns, keys, indexes and triggers.', { id: model.id }))) : null,
+    isView ? tpViewAbout(model) : null,
     isView && model.described ? tpViewDefinition(model, ctx) : null,
     isView ? null : group('Primary key', null, sum.primary.map(byName), null, true),
     isView ? null : group('Foreign keys', t('(best column score first)'), limited('fk', sum.foreign, f => tpChip('fk', f.label, { onclick: () => ctx.onOpen(f.id), title: `${f.columns.join(', ')} → ${f.id}.${f.refColumns.join(', ')}` })), null, true),
@@ -5497,7 +5592,7 @@ function tablePageView(model, trail, ctx) {
     const keys = Object.values(model.keys).some(v => v.length);
     return h('div', { class: 'tp' }, tpCrumbs(trail, ctx), tpHeader(model, ctx),
       h('div', { class: 'tp-body' },
-        h('div', { class: 'tp-main' }, tpViewDefinition(model, ctx), tpViewFunctions(model, ctx), tpColumns(model, ctx),
+        h('div', { class: 'tp-main' }, tpViewAbout(model), tpViewDefinition(model, ctx), tpViewFunctions(model, ctx), tpColumns(model, ctx),
           keys ? tpKeys(model, ctx) : null, model.triggers.length ? tpTriggers(model) : null,
           tpReportsPanel(ctx.reports, model.schema, model.table, 'No report mentions this view.', ctx)),
         tpRelPanel(model.view.sources, 'refs', 'Source relations', 'Relations this view reads, with the columns it uses', ctx),
@@ -5567,6 +5662,8 @@ const tablePageTr = {
   'Used by views': 'Kullanan view\'lar', 'Views that read this one': 'Bunu okuyan view\'lar', '(they read this one)': '(bunu okurlar)', 'Columns the view uses': 'View\'ın kullandığı kolonlar',
   'Functions called': 'Çağrılan fonksiyonlar', 'not recorded yet': 'henüz kaydedilmedi', 'This view calls no functions (or none were recorded).': 'Bu view fonksiyon çağırmıyor (ya da hiçbiri kaydedilmedi).',
   'No report mentions this view.': 'Bu view\'ı anan rapor yok.',
+  'About this view': 'Bu view hakkında', 'No description yet: a comment on the view, or a rule or observation saved with remember, describes it here.': 'Henüz açıklama yok: view üzerindeki bir yorum ya da remember ile kaydedilen bir kural veya gözlem burada açıklar.',
+  'Show SQL ({n} lines)': 'SQL\'i göster ({n} satır)', 'Hide SQL': 'SQL\'i gizle', 'Show all {n} columns': '{n} kolonun tümünü göster', 'first {n} of {all} columns': '{all} kolonun ilk {n} tanesi', 'Show all {n}': 'Tümünü göster ({n})',
   '1 line': '1 satır', '{n} lines': '{n} satır', 'Collapse': 'Daralt', 'Show all {n} lines': '{n} satırın tümünü göster',
   'Cut at {n} of {all} characters; the full text stays in the database.': '{all} karakterin ilk {n} tanesi saklandı; metnin tamamı veritabanında.',
   'Wrap long lines': 'Uzun satırları kaydır', 'Wrap lines': 'Satır kaydır', 'Copy SQL': 'SQL kopyala',
@@ -5601,7 +5698,9 @@ function schemaObjectItem(data, type, x) {
     volatile: flags.volatile === true, definer: flags.securityDefiner === true, definerRisk: flags.definerWithoutSearchPath === true,
     calledByViews: views, calledByFunctions: tpArr(x.calledBy?.functions).length,
     triggers: Number.isInteger(x.usedByTriggers) ? x.usedByTriggers : 0,
-    reads: tpArr(x.touches?.reads).length, writes: tpArr(x.touches?.writes).length, changes: x.changes || 0 };
+    reads: tpArr(x.touches?.reads).length, writes: tpArr(x.touches?.writes).length, changes: x.changes || 0,
+    role: fnRoleOf(x), timings: fnTimings.filter(tm => tpArr(x.timings).includes(tm)), triggerTables: tpArr(x.triggerTables).filter(id => typeof id === 'string'),
+    related: fnRelatedTables(data, x) };
 }
 // The Views or Functions list: every word of the query (Turkish-aware fold)
 // must appear in schema.name; schema limits it to one schema ('' = all).
@@ -5662,6 +5761,163 @@ function schemaObjectList(res, ctx) {
         res.shown > schemaListLimit ? h('p', { class: 'tp-hint' }, t('First {n} shown; search to narrow the list.', { n: fmt(schemaListLimit) })) : null]));
 }
 
+// ----- Functions tab: roles, sections, important tables -----
+// Every graph functions[] field used here is optional: role, timings and
+// triggerTables come from newer memory; older memory falls back to the trigger
+// count, a "trigger" return type and the kinds.
+const fnRoles = ['trigger', 'function', 'procedure', 'aggregate', 'window'];
+const fnTimings = ['before', 'after', 'instead'];
+const fnRoleLabels = { trigger: 'Trigger functions', function: 'Functions', procedure: 'Procedures', aggregate: 'Aggregates', window: 'Window functions' };
+const fnTimingLabels = { before: 'BEFORE', after: 'AFTER', instead: 'INSTEAD OF', unknown: 'timing unknown' };
+const fnReturnsTrigger = r => (typeof r === 'string' ? r.trim().toLowerCase() === 'trigger' : tpArr(r).some(fnReturnsTrigger));
+function fnRoleOf(x) {
+  if (fnRoles.includes(x?.role)) return x.role;
+  if (tpArr(x?.triggerTables).length || (Number.isInteger(x?.usedByTriggers) && x.usedByTriggers > 0) || x?.returnsTrigger === true || fnReturnsTrigger(x?.returns)) return 'trigger';
+  const kinds = tpArr(x?.kinds).filter(k => typeof k === 'string');
+  return ['procedure', 'aggregate', 'window'].find(k => kinds.length && kinds.every(z => z === k)) ?? 'function';
+}
+// The tables a function relates to: the tables its triggers sit on, the tables
+// its body reads or writes (inferred, pg_catalog left out), and the sources of
+// the views that call it.
+function fnRelatedTables(data, x) {
+  const out = new Set();
+  const add = id => { if (typeof id === 'string' && id && !id.startsWith('pg_catalog.')) out.add(id); };
+  tpArr(x?.triggerTables).forEach(add);
+  tpArr(x?.touches?.reads).forEach(add);
+  tpArr(x?.touches?.writes).forEach(add);
+  const nodes = tpArr(data?.nodes);
+  for (const v of tpArr(x?.calledBy?.views)) tpArr(nodes.find(n => n.id === v)?.viewSources).forEach(add);
+  return [...out].sort(tpCmp);
+}
+// The tables to offer as filter chips: every table some function relates to,
+// ranked by tpImportance (notes, columns scored 4–5, reports, explored), then
+// by how many functions relate to it.
+function fnImportantTables(data, reportItems, limit = 10) {
+  const counts = new Map();
+  for (const x of tpArr(data?.functions)) if (x && x.name) for (const id of fnRelatedTables(data, x)) counts.set(id, (counts.get(id) || 0) + 1);
+  return [...counts].map(([id, count]) => ({ id, count, score: tpImportance(data, id, reportItems) }))
+    .sort((a, b) => b.score - a.score || b.count - a.count || tpCmp(a.id, b.id)).slice(0, limit);
+}
+// The Functions tab: sections by role (trigger functions split by timing), each
+// sorted by name; query words, schema and table filter apply together.
+function functionSections(data, { query = '', schema = '', table = '' } = {}) {
+  const all = tpArr(data?.functions).filter(f => f && f.name).map(x => schemaObjectItem(data, 'functions', x)).filter(x => !schema || x.schema === schema);
+  const words = tpQueryWords(query);
+  const shown = all.filter(x => (!words.length || words.every(w => foldText(x.id).includes(w))) && (!table || x.related.includes(table)))
+    .sort((a, b) => tpCmp(a.name, b.name) || tpCmp(a.id, b.id));
+  const sections = fnRoles.map(role => {
+    const items = shown.filter(x => x.role === role);
+    const groups = role !== 'trigger' ? [{ key: role, items }]
+      : [...fnTimings.map(tm => ({ key: tm, items: items.filter(x => x.timings.includes(tm)) })), { key: 'unknown', items: items.filter(x => !x.timings.length) }].filter(g => g.items.length);
+    return { key: role, count: items.length, groups };
+  }).filter(s => s.count);
+  return { type: 'functions', sections, total: all.length, shown: shown.length, searching: words.length > 0, table: table || null,
+    multiSchema: new Set(all.map(x => x.schema)).size > 1, listedOnly: shown.some(x => x.state !== 'explored') };
+}
+function fnTimingChip(tm) {
+  return h('span', { class: `fn-tm tm-${tm}` }, t(fnTimingLabels[tm]));
+}
+// One compact row: name, then for a trigger function its other timings (the
+// group heading already names one) and tables, for the others the language and
+// a risk mark only when there is one.
+function fnRow(x, res, ctx, group) {
+  const listed = x.state !== 'explored';
+  const tables = x.triggerTables;
+  const meta = x.role === 'trigger'
+    ? (tables.length ? t('on {t}', { t: tables.slice(0, 2).join(', ') + (tables.length > 2 ? ` +${fmt(tables.length - 2)}` : '') }) : '')
+    : [x.language, x.overloads > 1 ? t('{n} overloads', { n: fmt(x.overloads) }) : null].filter(Boolean).join(' · ');
+  return h('li', {}, h('button', { type: 'button', class: 'obj-row fn-row' + (listed ? ' listed' : ''), onclick: () => ctx.onOpen(x) },
+    h('span', { class: 'obj-name' },
+      h('span', { class: 'fn-dot', title: listed ? t('listed only') : t('described'), 'aria-label': listed ? t('listed only') : null }, listed ? '○' : '●'),
+      h('span', { class: 'tp-mono obj-nm' }, `${res.multiSchema ? x.id : x.name}()`),
+      x.role === 'trigger' ? x.timings.filter(tm => tm !== group).map(fnTimingChip) : null,
+      x.definerRisk ? h('span', { class: 'fn-risk crit', title: t(fnRiskTexts['definer-no-search-path']) }, '⚠ ', t('definer, no search_path')) : null,
+      x.volatile && x.calledByViews ? h('span', { class: 'fn-risk warn', title: t(fnRiskTexts['volatile-in-view']) }, '⚠ ', t('volatile in a view')) : null),
+    meta ? h('span', { class: 'obj-meta' }, meta) : null));
+}
+// The whole Functions list: important-table chips, sections, legend.
+function functionList(res, important, ctx) {
+  const secOpen = ctx.secOpen || {};
+  let left = schemaListLimit;
+  const rows = (items, group) => {
+    if (left <= 0) return null;
+    const part = items.slice(0, left);
+    left -= part.length;
+    return h('ul', { class: 'obj-rows' }, part.map(x => fnRow(x, res, ctx, group)));
+  };
+  const chips = important.length ? h('div', { class: 'fn-imp', role: 'group', 'aria-label': t('Important tables') },
+    h('span', { class: 'fn-imp-l' }, t('Important tables')),
+    important.map(x => h('button', { type: 'button', class: 'sum-chip c-ref fn-imp-c' + (res.table === x.id ? ' on' : ''), 'aria-pressed': String(res.table === x.id),
+      title: t('Show the functions related to {t}', { t: x.id }), onclick: () => ctx.onTable(res.table === x.id ? '' : x.id) }, x.id, h('span', { class: 'fn-imp-n' }, fmt(x.count)))),
+    res.table && !important.some(x => x.id === res.table) ? h('span', { class: 'sum-chip c-ref on' }, res.table) : null,
+    res.table ? h('button', { type: 'button', class: 'sum-chip c-more', onclick: () => ctx.onTable('') }, t('Clear filter'), ' ×') : null) : null;
+  return h('section', { class: 'panel obj-list fn-list', 'aria-label': t('Functions') },
+    h('div', { class: 'panel-h' }, h('h2', {}, t('Functions')),
+      h('span', { class: 'hint', role: 'status' }, res.searching || res.table ? t('{n} / {all}', { n: fmt(res.shown), all: fmt(res.total) }) : fmt(res.total))),
+    h('div', { class: 'panel-b' },
+      chips,
+      res.table ? h('p', { class: 'tp-hint fn-filter-note' }, t('Related to {t}: trigger functions on it, functions whose body reads or writes it, and functions its views call.', { t: res.table })) : null,
+      !res.total ? h('div', { class: 'tp-empty' }, h('b', {}, t('No functions recorded yet')), h('p', {}, t('Ask your agent to run list_functions for an inventory, or describe_functions to record bodies and flags.')))
+        : !res.shown ? h('div', { class: 'tp-empty sm' }, t('Nothing matches the search.'), ctx.onClearSearch ? [' ', h('button', { type: 'button', class: 'tp-link', onclick: ctx.onClearSearch }, t('Clear search'))] : null)
+        : [res.listedOnly ? h('p', { class: 'tp-hint fn-legend' }, h('span', { class: 'fn-dot' }, '○'), ' ', t('listed only: recorded by list_functions, no body or flags yet'), ' · ', h('span', { class: 'fn-dot' }, '●'), ' ', t('described')) : null,
+          res.sections.map(s => {
+            const open = secOpen[s.key] !== false;
+            const id = `fn-sec-${s.key}`;
+            return h('section', { class: 'fn-sec' + (open ? '' : ' closed'), 'aria-label': t(fnRoleLabels[s.key]) },
+              h('h3', { class: 'fn-sec-h' }, h('button', { type: 'button', class: 'fn-sec-b', 'aria-expanded': String(open), 'aria-controls': id, onclick: () => ctx.onSection(s.key, !open) },
+                h('span', { class: 'fn-caret', 'aria-hidden': 'true' }, open ? '▾' : '▸'), t(fnRoleLabels[s.key]), h('span', { class: 'muted' }, ` (${fmt(s.count)})`))),
+              open ? h('div', { class: 'fn-sec-b-body', id }, s.key === 'trigger'
+                ? s.groups.map(g => h('div', { class: 'fn-tgroup' }, h('h4', { class: 'fn-tgroup-h' }, g.key === 'unknown' ? t('Timing unknown') : fnTimingChip(g.key), h('span', { class: 'muted' }, ` (${fmt(g.items.length)})`)), rows(g.items, g.key)))
+                : rows(s.groups[0].items)) : null);
+          }),
+          res.shown > schemaListLimit ? h('p', { class: 'tp-hint' }, t('First {n} shown; search to narrow the list.', { n: fmt(schemaListLimit) })) : null]));
+}
+// The columns of a RETURNS TABLE(...) type, split at top-level commas; null
+// for any other return type.
+function fnTableColumns(returns) {
+  const m = /^\s*TABLE\s*\(([\s\S]*)\)\s*$/i.exec(typeof returns === 'string' ? returns : '');
+  if (!m) return null;
+  const out = [];
+  let depth = 0, cur = '';
+  for (const ch of m[1]) {
+    if (ch === '(') depth++;
+    if (ch === ')') depth--;
+    if (ch === ',' && depth === 0) { out.push(cur.trim()); cur = ''; } else cur += ch;
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out;
+}
+// A signature longer than this many characters starts clamped to two lines.
+const fnSigLong = 100;
+function fnSignature(model, o, ctx) {
+  const key = `${model.id}#${o.index}`;
+  const cols = fnTableColumns(o.returns);
+  const long = o.arguments.length + (o.returns ?? '').length > fnSigLong || (cols?.length ?? 0) > 4;
+  const open = !long || !!ctx.sigOpen?.[key];
+  const id = `fn-sig-${o.index}`;
+  const ret = !o.returns ? null : cols && !open ? `TABLE (${t(cols.length === 1 ? '{n} column' : '{n} columns', { n: fmt(cols.length) })})` : cols ? 'TABLE' : o.returns;
+  return h('div', { class: 'fn-sig-wrap' },
+    h('h2', { class: 'fn-sig' + (open ? '' : ' clamp'), id }, h('span', { class: 'fn-nm' }, model.name), h('span', { class: 'fn-args' }, `(${o.arguments})`),
+      ret ? [h('span', { class: 'fn-arrow', 'aria-label': t('returns') }, ' → '), h('span', { class: 'fn-ret' }, ret)] : null),
+    open && cols ? h('ol', { class: 'fn-cols', 'aria-label': t('Returned columns') }, cols.map(c => h('li', {}, c))) : null,
+    long ? h('button', { type: 'button', class: 'tp-link fn-sig-more', 'aria-expanded': String(open), 'aria-controls': id, onclick: () => ctx.onSigOpen?.(key, !open) },
+      open ? t('Show less') : t('Show the full signature')) : null);
+}
+// The triggers that run a trigger function, first on its page.
+function fnTriggersPanel(model, ctx) {
+  const list = model.triggers;
+  return h('section', { class: 'panel fn-trg', 'aria-label': t('Triggers') },
+    h('div', { class: 'panel-h' }, h('h2', {}, t('Triggers')), h('span', { class: 'hint' }, fmt(model.triggerCount))),
+    h('div', { class: 'panel-b' }, list.length ? h('ul', { class: 'fn-trg-list' }, list.map(x => h('li', {},
+      h('button', { type: 'button', class: 'tp-link tp-mono tp-nm', onclick: () => ctx.onOpen(x.table), title: t('Open table page') }, x.table),
+      x.timing ? fnTimingChip(x.timing) : h('span', { class: 'fn-tm tm-unknown' }, t('timing unknown')),
+      x.events.length ? h('span', { class: 'tp-mono fn-ev' }, x.events.join(' OR ')) : null,
+      x.level ? h('span', { class: 'muted' }, t('for each {l}', { l: x.level })) : null,
+      h('span', { class: 'muted tp-mono fn-trg-nm' }, x.trigger || '?'),
+      model.overloads.length > 1 ? h('span', { class: 'muted' }, x.signature) : null)))
+      : h('div', { class: 'muted' }, model.recorded && !model.described && model.triggerCount ? t('Trigger names are recorded by describe_functions.') : t('No trigger recorded yet.'))));
+}
+
 // ----- function page -----
 const fnRiskTexts = {
   'definer-no-search-path': 'Security definer without a fixed search_path: a caller can create objects that shadow the ones the body expects, and they run with the owner\'s rights. Set search_path in the function\'s configuration.',
@@ -5708,7 +5964,9 @@ function fnOverloadModel(o, name, calledByViews, i) {
     canExecute: typeof o.canExecute === 'boolean' ? o.canExecute : null, comment: fnStr(o.comment),
     definition, definitionLength: Number.isInteger(o.definitionLength) ? o.definitionLength : definition === null ? null : definition.length, truncated: o.truncated === true,
     touches: { reads: ids(o.touches?.reads), writes: ids(o.touches?.writes) },
-    triggers: tpArr(o.usedByTriggers).filter(x => x && typeof x.table === 'string').map(x => ({ table: x.table, trigger: fnStr(x.trigger) ?? '' })),
+    triggers: tpArr(o.usedByTriggers).filter(x => x && typeof x.table === 'string').map(x => ({ table: x.table, schema: fnStr(x.schema), tableName: fnStr(x.tableName), trigger: fnStr(x.trigger) ?? '',
+      timing: fnTimings.includes(String(x.timing ?? '').toLowerCase()) ? String(x.timing).toLowerCase() : null, events: tpArr(x.events).filter(e => typeof e === 'string'), level: fnStr(x.level) })),
+    returnsTrigger: typeof o.returnsTrigger === 'boolean' ? o.returnsTrigger : fnReturnsTrigger(o.returns),
     risks, listedOnly: o.listedOnly === true, signature: `${name}(${fnStr(o.arguments) ?? ''})`,
   };
 }
@@ -5735,8 +5993,9 @@ function functionPageModel(data, id, rec) {
   // usedByTriggers[].table is the raw "schema.relname" text, not a table key:
   // the graph node with that schema and name gives the key (a quoted one for
   // names with dots or quotes); the raw text is the fallback.
-  const tableIdOf = raw => nodes.find(n => n.schema + '.' + n.table === raw)?.id ?? raw;
-  const triggers = overloads.flatMap(o => o.triggers.map(x => ({ ...x, table: tableIdOf(x.table), signature: o.signature })));
+  // Newer memory names the schema and table apart, which gives the key directly.
+  const tableIdOf = x => (x.schema && x.tableName ? tableKey(x.schema, x.tableName) : nodes.find(n => n.schema + '.' + n.table === x.table)?.id ?? x.table);
+  const triggers = overloads.flatMap(o => o.triggers.map(x => ({ table: tableIdOf(x), trigger: x.trigger, timing: x.timing, events: x.events, level: x.level, signature: o.signature })));
   const history = tpArr(rec?.history).filter(x => x && Array.isArray(x.changes)).slice().reverse()
     .map(x => ({ at: x.at ?? null, changes: x.changes.filter(c => c && c.change).map(c => ({ change: c.change, arguments: fnStr(c.arguments), fields: tpArr(c.fields).filter(f => typeof f === 'string') })) }));
   const described = !!rec?.describedAt || entry?.state === 'explored';
@@ -5750,6 +6009,7 @@ function functionPageModel(data, id, rec) {
     triggers: triggers.length || overloads.length ? triggers : [],
     triggerCount: triggers.length || (Number.isInteger(entry?.usedByTriggers) ? entry.usedByTriggers : 0),
     calledBy: { views, functions }, history,
+    isTrigger: overloads.some(o => o.returnsTrigger) || triggers.length > 0 || (!!entry && fnRoleOf(entry) === 'trigger'),
   };
 }
 // Flag chips of one overload: [label, explanation key, tone].
@@ -5774,15 +6034,13 @@ function fnOverloadCard(model, o, ctx) {
   const helpId = `fn-flags-${o.index}`;
   const helpOpen = !!ctx.flagHelp?.[openKey];
   return h('section', { class: 'panel fn-ov', 'aria-label': o.signature },
-    h('div', { class: 'panel-h fn-sig-h' },
-      h('h2', { class: 'fn-sig' }, h('span', { class: 'fn-nm' }, model.name), h('span', { class: 'fn-args' }, `(${o.arguments})`),
-        o.returns ? [h('span', { class: 'fn-arrow', 'aria-label': t('returns') }, ' → '), h('span', { class: 'fn-ret' }, o.returns)] : null),
-      h('span', { class: 'fn-sig-badges' }, h('span', { class: 'badge kind-fn' }, t(o.kind)), o.language ? h('span', { class: 'badge code' }, o.language) : null,
-        o.listedOnly ? h('span', { class: 'badge seen', title: t('Listed by list_functions: no body or flags beyond volatility yet.') }, t('listed only')) : null)),
+    h('div', { class: 'panel-h fn-sig-h' }, fnSignature(model, o, ctx)),
     h('div', { class: 'panel-b fn-ov-b' },
-      chips.length ? h('div', { class: 'fn-flags' },
-        h('ul', { class: 'fn-chips', 'aria-label': t('Flags') }, chips.map(([label, key, tone]) => h('li', { class: `fn-flag ${tone}`, title: t(fnFlagTexts[key] || key) }, label))),
-        h('button', { type: 'button', class: 'tp-link fn-help-btn', 'aria-expanded': String(helpOpen), 'aria-controls': helpId, onclick: () => ctx.onFlagHelp?.(openKey, !helpOpen) }, helpOpen ? t('Hide explanations') : t('What do these mean?'))) : null,
+      h('div', { class: 'fn-flags' },
+        h('span', { class: 'badge kind-fn' }, t(o.returnsTrigger ? 'trigger function' : o.kind)), o.language ? h('span', { class: 'badge code' }, o.language) : null,
+        o.listedOnly ? h('span', { class: 'badge seen', title: t('Listed by list_functions: no body or flags beyond volatility yet.') }, t('listed only')) : null,
+        chips.length ? h('ul', { class: 'fn-chips', 'aria-label': t('Flags') }, chips.map(([label, key, tone]) => h('li', { class: `fn-flag ${tone}`, title: t(fnFlagTexts[key] || key) }, label))) : null,
+        chips.length ? h('button', { type: 'button', class: 'tp-link fn-help-btn', 'aria-expanded': String(helpOpen), 'aria-controls': helpId, onclick: () => ctx.onFlagHelp?.(openKey, !helpOpen) }, helpOpen ? t('Hide explanations') : t('What do these mean?')) : null),
       helpOpen ? h('dl', { class: 'fn-help', id: helpId }, chips.map(([label, key]) => [h('dt', {}, label), h('dd', {}, t(fnFlagTexts[key] || key))])) : null,
       o.risks.map(fnRiskBox),
       o.comment ? h('p', { class: 'tp-comment' }, o.comment) : null,
@@ -5807,13 +6065,10 @@ function fnTouches(model, ctx) {
 }
 function fnUsedBy(model, ctx) {
   const c = model.calledBy;
-  const n = model.triggers.length + c.views.length + c.functions.length;
+  const n = c.views.length + c.functions.length;
   return h('section', { class: 'panel tp-side tp-deps', 'aria-label': t('Used by') },
     h('div', { class: 'panel-h' }, h('h2', {}, t('Used by')), h('span', { class: 'hint' }, fmt(n))),
     h('div', { class: 'panel-b' },
-      h('h4', { class: 'fn-side-h' }, t('Triggers'), h('span', { class: 'muted' }, ` (${fmt(model.triggers.length)})`)),
-      fnLinkList(model.triggers, x => h('button', { type: 'button', class: 'tp-nb', onclick: () => ctx.onOpen(x.table), title: model.overloads.length > 1 ? x.signature : null },
-        h('span', { class: 'tp-mono tp-nm' }, x.trigger || '?'), h('span', { class: 'tp-mono tp-jn' }, t('on {t}', { t: x.table }))), model.recorded && !model.described && model.triggerCount ? 'Trigger names are recorded by describe_functions.' : 'None known.'),
       h('h4', { class: 'fn-side-h' }, t('Views'), h('span', { class: 'muted' }, ` (${fmt(c.views.length)})`)),
       fnLinkList(c.views, r => h('button', { type: 'button', class: 'tp-nb' + (r.explored ? '' : ' muted-card'), onclick: () => ctx.onOpen(r.id) },
         h('span', { class: 'tp-mono tp-nm' }, r.id), model.risks.includes('volatile-in-view') ? h('span', { class: 'tp-meta' }, '⚠ ', t('volatile call')) : null), 'None known.'),
@@ -5843,7 +6098,7 @@ function functionPageView(model, trail, ctx) {
   ].filter(Boolean);
   const head = h('section', { class: 'panel tp-head' },
     h('div', { class: 'tp-title' }, h('h2', {}, `${model.id}()`),
-      (kinds.length ? kinds : ['function']).map(k => h('span', { class: 'badge kind-fn' }, t(k))),
+      (model.isTrigger ? ['trigger function'] : kinds.length ? kinds : ['function']).map(k => h('span', { class: 'badge kind-fn' }, t(k))),
       h('span', { class: 'badge ' + (model.described ? 'explored' : 'seen') }, model.described ? t('described') : model.recorded ? t('listed only') : t('not recorded')),
       model.risks.map(r => h('span', { class: `badge risk-${fnRiskLevel[r] || 'warn'}`, title: t(fnRiskTexts[r]) }, '⚠ ', t(fnRiskLabels[r])))),
     h('div', { class: 'tp-facts' }, facts.map(([k, v, title]) => h('span', { title: title ?? null }, h('b', {}, v), ' ', k))));
@@ -5855,7 +6110,7 @@ function functionPageView(model, trail, ctx) {
         h('p', {}, t('Ask your agent to run describe_functions on {id}; it reads the catalog only and records the overloads, flags and bodies.', { id: model.id }))));
   return h('div', { class: 'tp fp' }, tpCrumbs(trail, ctx), head,
     h('div', { class: 'tp-body' },
-      h('div', { class: 'tp-main' }, main, tpReportsPanel(ctx.reports, model.schema, model.name, 'No report mentions this function.', ctx), fnHistory(model)),
+      h('div', { class: 'tp-main' }, model.isTrigger ? fnTriggersPanel(model, ctx) : null, main, tpReportsPanel(ctx.reports, model.schema, model.name, 'No report mentions this function.', ctx), fnHistory(model)),
       fnTouches(model, ctx), fnUsedBy(model, ctx)));
 }
 function fnLoadError(id, message, trail, ctx) {
@@ -5894,7 +6149,13 @@ const fnPageTr = {
   'owner of the function': 'fonksiyonun sahibi', 'the Auspex role may execute this function': 'Auspex rolü bu fonksiyonu çalıştırabilir',
   'the Auspex role may not execute this function': 'Auspex rolü bu fonksiyonu çalıştıramaz',
   'overload added': 'overload eklendi', 'overload removed': 'overload kaldırıldı', 'body changed': 'gövde değişti', 'flags changed': 'bayraklar değişti',
-  'returns': 'döndürür', 'Flags': 'Bayraklar', 'Hide explanations': 'Açıklamaları gizle', 'What do these mean?': 'Bunlar ne anlama geliyor?',
+  'returns': 'döndürür', 'Trigger functions': 'Trigger fonksiyonları', 'Procedures': 'Prosedürler', 'Aggregates': 'Aggregate\'ler', 'Window functions': 'Window fonksiyonları',
+  'BEFORE': 'BEFORE', 'AFTER': 'AFTER', 'INSTEAD OF': 'INSTEAD OF', 'timing unknown': 'zamanlama bilinmiyor', 'Timing unknown': 'Zamanlama bilinmiyor',
+  'Important tables': 'Önemli tablolar', 'Show the functions related to {t}': '{t} ile ilgili fonksiyonları göster', 'Clear filter': 'Filtreyi temizle',
+  'Related to {t}: trigger functions on it, functions whose body reads or writes it, and functions its views call.': '{t} ile ilgili: üzerindeki trigger fonksiyonları, gövdesi onu okuyan ya da ona yazan fonksiyonlar ve onun view\'larının çağırdığı fonksiyonlar.',
+  'listed only: recorded by list_functions, no body or flags yet': 'yalnızca listelendi: list_functions kaydetti, henüz gövde ya da bayrak yok',
+  'Returned columns': 'Dönen kolonlar', 'Show less': 'Daha az göster', 'Show the full signature': 'İmzanın tamamını göster', 'trigger function': 'trigger fonksiyonu',
+  'Open table page': 'Tablo sayfasını aç', 'for each {l}': 'her {l} için', 'No trigger recorded yet.': 'Henüz kayıtlı trigger yok.', 'Flags': 'Bayraklar', 'Hide explanations': 'Açıklamaları gizle', 'What do these mean?': 'Bunlar ne anlama geliyor?',
   'Listed only, not described yet: describe_functions records the body and flags.': 'Yalnızca listelendi, henüz tanımlanmadı: describe_functions gövdeyi ve bayrakları kaydeder.',
   'System catalog names the body uses': 'Gövdenin kullandığı sistem kataloğu adları',
   'Body': 'Gövde', 'Body of {s}': '{s} gövdesi', 'An aggregate has no body text.': 'Aggregate\'in gövde metni yoktur.',
@@ -6074,6 +6335,7 @@ const tpCodeCtx = (tab, tp, pageId, set) => ({
   highlight: sqlLineNodes, onCopy: text => copy(text, 'SQL'), wrap: state.sqlWrap !== false,
   onWrap: v => { state.sqlWrap = v; persist(); state.reportViewNode = null; invalidatePages(); renderPageTab(tab); },
   codeOpen: !!tp.codeOpen?.[`${pageId}#def`], onCodeOpen: v => set({ codeOpen: { ...tp.codeOpen, [`${pageId}#def`]: v } }),
+  sqlShown: !!tp.codeOpen?.[`${pageId}#sql`], onSqlShown: v => set({ codeOpen: { ...tp.codeOpen, [`${pageId}#sql`]: v } }),
 });
 // Reads a table or function file once (cached); a failed read shows Retry.
 // Returns the record, null while it loads (the caller stops), or undefined
@@ -6107,7 +6369,7 @@ function renderFunctionPage(view, data, fnId, tab = 'functions') {
   const rec = pageRecord(view, tab, recKey, `/api/memory/function?profile=${encodeURIComponent(tp.db)}&file=${encodeURIComponent(entry?.file ?? '')}`, 'function');
   if (rec === null) return;
   const index = tpReportIndex(tp.db);
-  const key = JSON.stringify(['fn', tp.db, data.generatedAt, tp.trail, lang, tp.codeOpen ?? null, tp.flagHelp ?? null, state.sqlWrap !== false, [index.items.length, index.pending, index.failed]]);
+  const key = JSON.stringify(['fn', tp.db, data.generatedAt, tp.trail, lang, tp.codeOpen ?? null, tp.flagHelp ?? null, tp.sigOpen ?? null, state.sqlWrap !== false, [index.items.length, index.pending, index.failed]]);
   if (pageKey(tab) === key && view.querySelector('.tp')) return;
   setPageKey(tab, key);
   const model = functionPageModel(data, fnId, rec ?? null);
@@ -6116,6 +6378,7 @@ function renderFunctionPage(view, data, fnId, tab = 'functions') {
     ...crumbCtx, ...tpCodeCtx(tab, tp, fnId, set),
     codeOpen: tp.codeOpen || {}, onCodeOpen: (k, v) => set({ codeOpen: { ...tp.codeOpen, [k]: v } }),
     flagHelp: tp.flagHelp || {}, onFlagHelp: (k, v) => set({ flagHelp: { ...tp.flagHelp, [k]: v } }),
+    sigOpen: tp.sigOpen || {}, onSigOpen: (k, v) => set({ sigOpen: { ...tp.sigOpen, [k]: v } }),
     onOpen: next => openTablePage(tp.db, next), onOpenFunction: next => openFunctionPage(tp.db, next),
     reports: index, onReport: id => { const r = index.reps.find(x => repKey(x) === id); if (r) openReportFromPage(r); },
     onRetryReports: () => { tpSqlFailed.clear(); setPageKey(tab, null); renderPageTab(tab); },
@@ -6461,17 +6724,28 @@ function renderObjectTab(tab) {
   const filter = () => state.objFilter?.[tab] ?? { q: '', schema: '' };
   const setFilter = patch => { state.objFilter = { ...state.objFilter, [tab]: { ...filter(), ...patch } }; };
   const cur = schemas.includes(filter().schema) ? filter().schema : '';
-  const key = [state.db, data.generatedAt, cur, lang].join('|');
+  // Functions: important-table chips ranked with report mentions (report SQL
+  // loads in the background; the chips are ranked again once it is in).
+  const index = tab === 'functions' ? tpReportIndex(state.db) : null;
+  const key = [state.db, data.generatedAt, cur, lang, index ? [index.items.length, index.pending, index.failed].join(',') : ''].join('|');
   if (state[listKey] === key && view.firstChild) return;
+  const refocus = document.activeElement?.id === `${tab}Search`;
   state[listKey] = key;
+  const important = index ? fnImportantTables(data, index.items) : [];
+  if (index?.pending) tpLoadReportSql(index.reps);
   const label = t(tab === 'views' ? 'Search views' : 'Search functions');
   const host = h('div', { class: 'obj-host' });
   const input = h('input', { type: 'search', id: `${tab}Search`, class: 'tp-q obj-q', value: filter().q, placeholder: label, 'aria-label': label, autocomplete: 'off', spellcheck: 'false',
     oninput: ev => { setFilter({ q: ev.target.value }); draw(); } });
-  const draw = () => put(host, schemaObjectList(schemaObjectGroups(data, tab, filter().q, cur), {
+  const listCtx = {
     onOpen: x => (tab === 'views' ? openPage('views', state.db, x.id) : openFunctionPage(state.db, x.id)),
     onClearSearch: () => { setFilter({ q: '' }); input.value = ''; draw(); input.focus(); },
-  }));
+    onTable: id => { setFilter({ table: id }); draw(); },
+    onSection: (k, open) => { state.fnSecOpen = { ...state.fnSecOpen, [k]: open }; persist(); draw(); },
+  };
+  const draw = () => put(host, tab === 'functions'
+    ? functionList(functionSections(data, { query: filter().q, schema: cur, table: filter().table || '' }), important, { ...listCtx, secOpen: state.fnSecOpen || {} })
+    : schemaObjectList(schemaObjectGroups(data, tab, filter().q, cur), listCtx));
   const schemaSel = schemas.length > 1 ? h('div', { class: 'field' }, h('label', { for: `${tab}Schema` }, t('Schema')), (() => {
     const s = h('select', { id: `${tab}Schema`, onchange: ev => { setFilter({ schema: ev.target.value }); state[listKey] = null; renderObjectTab(tab); } },
       h('option', { value: '' }, t('All')), schemas.map(x => h('option', { value: x }, x)));
@@ -6480,6 +6754,7 @@ function renderObjectTab(tab) {
   })()) : null;
   put(view, h('div', { class: 'panel' }, h('div', { class: 'sch-bar' }, h('div', { class: 'tp-search-box obj-search' }, input), schemaSel)), host);
   draw();
+  if (refocus) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
 }
 function renderSchema() {
   const profiles = memProfiles();

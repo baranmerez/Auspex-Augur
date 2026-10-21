@@ -214,7 +214,7 @@ test('the switch: two buttons with pressed state, Summary first on a first visit
   // Without a switch handler (older callers) no switch is drawn.
   assert.equal(byClass(ctx.tablePageView(model(ctx, 'example.orders'), ['example.orders'], { onBack() {}, onClose() {}, onCrumb() {} }), 'tp-switch').length, 0);
   // The page remembers the choice in browser storage, tolerating no storage.
-  assert.match(page, /perfOpen: state\.perfOpen, tpView: state\.tpView, tpGroup: state\.tpGroup \}\)\); \} catch \{\}/);
+  assert.match(page, /perfOpen: state\.perfOpen, tpView: state\.tpView, tpGroup: state\.tpGroup(, [^}]*)? \}\)\); \} catch \{\}/);
 });
 
 test('Turkish strings exist for the summary, with the order\'s wording', () => {
