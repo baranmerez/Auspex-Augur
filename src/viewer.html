@@ -372,7 +372,7 @@
   .toolbar .field { background: var(--bg); }
   .toolbar[data-mode="reports"] .when, .toolbar[data-mode="reports"] .opsonly,
   .toolbar[data-mode="profiles"] .when, .toolbar[data-mode="profiles"] .opsonly { display: none; }
-  .toolbar[data-mode="profiles"], .toolbar[data-mode="rules"] { display: none; }
+  .toolbar[data-mode="profiles"], .toolbar[data-mode="rules"], .toolbar[data-mode="views"], .toolbar[data-mode="functions"] { display: none; }
   .field select { background: transparent; color: var(--text); cursor: pointer; }
   select option { background: var(--surface); color: var(--text); }
 
@@ -929,8 +929,8 @@
   .tp-search-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; flex-basis: 100%; min-width: 0; }
   .sch-type .n { margin-left: 6px; font: 600 11px var(--mono); color: var(--text-3); font-variant-numeric: tabular-nums; }
   .sch-type button.on .n { color: inherit; opacity: .75; }
-  .sch-hint { font-size: 12px; }
   .obj-list .panel-b { display: grid; gap: 14px; }
+  .obj-search { flex: 1 1 260px; max-width: 520px; }
   .obj-schema { margin: 0 0 4px; font: 600 12px var(--mono); color: var(--text-2); }
   .obj-rows { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
   .obj-rows li + li { border-top: 1px solid var(--line); }
@@ -1080,6 +1080,8 @@
       <button data-tab="overview" class="on"><span data-i18n="Overview">Overview</span></button>
       <button data-tab="ops"><span data-i18n="Operations">Operations</span><span class="count" id="cOps"></span></button>
       <button data-tab="tables"><span data-i18n="Tables">Tables</span><span class="count" id="cTables"></span></button>
+      <button data-tab="views"><span data-i18n="Views">Views</span><span class="count" id="cViews"></span></button>
+      <button data-tab="functions"><span data-i18n="Functions">Functions</span><span class="count" id="cFunctions"></span></button>
       <button data-tab="reports"><span data-i18n="Reports">Reports</span><span class="count" id="cReports"></span></button>
       <button data-tab="schema"><span data-i18n="Schema">Schema</span><span class="count" id="cSchema"></span></button>
       <button data-tab="rules"><span data-i18n="Rules">Rules</span><span class="count" id="cRules"></span></button>
@@ -1114,6 +1116,8 @@
   <section id="v-overview" class="view"></section>
   <section id="v-ops" class="view" hidden></section>
   <section id="v-tables" class="view" hidden></section>
+  <section id="v-views" class="view" hidden></section>
+  <section id="v-functions" class="view" hidden></section>
   <section id="v-reports" class="view" hidden></section>
   <section id="v-schema" class="view" hidden></section>
   <section id="v-rules" class="view" hidden></section>
@@ -1468,12 +1472,12 @@ const state = {
   tab: 'overview', sort: { key: 'ts', dir: 'desc' }, page: 0, pageSize: 50,
   open: null, live: false, seen: new Set(), firstLoad: true, systemTables: false,
   db: '', reports: null, reportSel: null, stageFilter: 'all', reportDoc: null, repTreeOpen: {}, repTreeRevealed: null,
-  memory: null, memView: null, memMode: 'graph', memSelBy: {}, memFocusBy: {}, memType: 'tables', memShowAll: false, memTimeline: false,
+  memory: null, memView: null, memMode: 'graph', memSelBy: {}, memFocusBy: {}, memShowAll: false, memTimeline: false,
   memSchema: '', memErAll: false, memPos: new Map(), schemaKey: null,
 };
 state.themeMode = 'auto';
 try { Object.assign(state, JSON.parse(localStorage.getItem('auspex.viewer') || '{}'), { all: [], seen: new Set(), firstLoad: true, open: null, reports: null, reportDoc: null, memory: null, memView: null, memPos: new Map() }); } catch {}
-const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, themeMode: state.themeMode, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memType: state.memType, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy, memHideFaint: state.memHideFaint, memGraph3d: state.memGraph3d, memGraphSoft: state.memGraphSoft, memExpand: state.memExpand, repListCollapsed: state.repListCollapsed, repTreeOpen: state.repTreeOpen, repFavOpen: state.repFavOpen, repRecentOpen: state.repRecentOpen, rulesOpen: state.rulesOpen, rulesListCollapsed: state.rulesListCollapsed, rulesSideW: state.rulesSideW, sqlWrap: state.sqlWrap, perfOpen: state.perfOpen, tpView: state.tpView, tpGroup: state.tpGroup })); } catch {} };
+const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, themeMode: state.themeMode, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy, memHideFaint: state.memHideFaint, memGraph3d: state.memGraph3d, memGraphSoft: state.memGraphSoft, memExpand: state.memExpand, repListCollapsed: state.repListCollapsed, repTreeOpen: state.repTreeOpen, repFavOpen: state.repFavOpen, repRecentOpen: state.repRecentOpen, rulesOpen: state.rulesOpen, rulesListCollapsed: state.rulesListCollapsed, rulesSideW: state.rulesSideW, sqlWrap: state.sqlWrap, perfOpen: state.perfOpen, tpView: state.tpView, tpGroup: state.tpGroup })); } catch {} };
 
 // In the Tauri desktop app the same routes are served by the Rust `api` command.
 const tauriCore = window.__TAURI__?.core;
@@ -2906,8 +2910,11 @@ async function ensureMemView(db) {
   state.memLoading = null;
   state.schemaKey = null;
   state.rulesKey = null;
+  state.viewsListKey = null; state.functionsListKey = null;
   renderSchema();
   renderRules();
+  renderObjectTab('views');
+  renderObjectTab('functions');
 }
 
 const memGraph = data => scopeGraph(data, state.memSchema);
@@ -4016,13 +4023,6 @@ function applyMemSearch() {
   graphSim?.search(q);
   graph3d?.search(q);
   if (state.memSearchHost?.isConnected) put(state.memSearchHost, memSearchResults(state.memView?.profile === state.db ? state.memView.data : null, q));
-  if (state.memListHost?.isConnected && state.memView?.profile === state.db && state.memView.data) {
-    const type = memTypeOf();
-    put(state.memListHost, schemaObjectList(schemaObjectGroups(state.memView.data, type, q, state.memListSchema || ''), {
-      onOpen: x => (type === 'views' ? openTablePage(state.db, x.id) : openFunctionPage(state.db, x.id)),
-      onClearSearch: () => { F.text.value = ''; render(); },
-    }));
-  }
 }
 
 // ---------- ER diagram ----------
@@ -5341,7 +5341,7 @@ function tpViewHeader(model, ctx) {
 function tpCrumbs(trail, ctx) {
   return h('nav', { class: 'tp-crumbs', 'aria-label': t('Breadcrumb') },
     h('button', { type: 'button', class: 'icon-btn sm', onclick: ctx.onBack }, '← ', t('Back')),
-    h('button', { type: 'button', class: 'crumb', onclick: ctx.onClose }, t('Schema')),
+    h('button', { type: 'button', class: 'crumb', onclick: ctx.onClose }, t(ctx.home || 'Schema')),
     trail.map((id, i) => [h('span', { 'aria-hidden': 'true' }, '›'),
       i === trail.length - 1 ? h('span', { class: 'crumb cur', 'aria-current': 'page' }, tpCrumbLabel(id)) : h('button', { type: 'button', class: 'crumb', onclick: () => ctx.onCrumb(i) }, tpCrumbLabel(id))]));
 }
@@ -5955,7 +5955,7 @@ async function invokeColumnScore(invoke, req) {
 // in the Schema tab. trail: the visited tables, the last one is shown.
 // Translations of the page; keys the dictionary already has keep their text.
 for (const [k, v] of Object.entries({ ...tablePageTr, ...fnPageTr, ...{
-  'Open table page': 'Tablo sayfasını aç', 'Object type': 'Nesne türü', 'Type in the search box above to filter by name.': 'Ada göre süzmek için yukarıdaki arama kutusuna yazın.',
+  'Open table page': 'Tablo sayfasını aç', 'Search views': 'View\'larda ara', 'Search functions': 'Fonksiyonlarda ara',
   'view': 'view', 'reads (view)': 'okur (view)', 'Your score for {c}': '{c} için puanınız', 'Roles (optional)': 'Roller (isteğe bağlı)',
   'Only the user layer changes; the agent score stays. Only local Auspex files change; no database is touched.': 'Yalnızca kullanıcı katmanı değişir; ajan puanı kalır. Yalnızca yerel Auspex dosyaları değişir; hiçbir veritabanına dokunulmaz.',
   'A usage note ("mostly in WHERE") can be given to Claude in chat; it is stored as a rule on the column.': 'Kullanım notu ("çoğunlukla WHERE\'de") sohbette Claude\'a verilebilir; kolona kural olarak kaydedilir.',
@@ -5991,8 +5991,8 @@ async function tpLoadReportSql(reps) {
   if (tpSqlCache.size > 1000) tpSqlCache.clear();
   await tpFetchSql(reps, r => getJson('/api/report?' + new URLSearchParams({ stage: r.stage, db: r.db, schema: r.schema, category: r.category, name: r.name })), tpSqlCache, tpSqlFailed);
   tpSqlLoading = false;
-  state.tablePageKey = null;
-  if (state.tab === 'schema') renderSchema();
+  invalidatePages();
+  if (pageSlots[state.tab]) renderPageTab(state.tab);
 }
 // Opens a report on the Reports tab.
 function openReportFromPage(r) {
@@ -6002,117 +6002,145 @@ function openReportFromPage(r) {
 }
 const tpViewOf = tp => tpViewChoice(tp.view, state.tpView);
 const tpGroupOf = tp => tpGroupChoice(tp.group, state.tpGroup);
-function openTablePage(db, id, opts = {}) {
-  if (!db || !id) return;
+// page-tabs:start (tests/viewerViewsFunctions.test.js runs this block in isolation)
+// Detail pages live in three tabs, each with its own breadcrumb trail, render
+// key, load error and pending load: table pages in Schema, view and matview
+// pages in Views, function pages in Functions. One render path per page kind;
+// the tab only picks the container, the state slot and what Back returns to.
+const pageSlots = { schema: 'tablePage', views: 'viewPage', functions: 'fnPage' };
+const pageOf = tab => state[pageSlots[tab]] ?? null;
+const setPage = (tab, v) => { state[pageSlots[tab]] = v; };
+const pageKey = tab => state[pageSlots[tab] + 'Key'] ?? null;
+const setPageKey = (tab, v) => { state[pageSlots[tab] + 'Key'] = v; };
+function renderPageTab(tab) {
+  if (tab === 'views' || tab === 'functions') renderObjectTab(tab); else renderSchema();
+}
+// Every page is drawn again (after a score, new report SQL, a wrap change).
+function invalidatePages() {
+  for (const tab of Object.keys(pageSlots)) setPageKey(tab, null);
+}
+// The tab a trail entry belongs to: functions by their trail prefix, views and
+// matviews by the kind of their graph node, everything else in Schema.
+function pageTabOf(db, entry) {
+  if (fnFromTrail(entry) !== null) return 'functions';
+  const data = state.memView?.profile === db ? state.memView.data : null;
+  return tpIsView(data?.nodes?.find(n => n.id === entry)?.kind) ? 'views' : 'schema';
+}
+// Opens a page in its tab. Within the same tab the trail grows (or goes back to
+// an entry already in it); coming from another tab starts a new trail.
+function openPage(tab, db, entry, opts = {}) {
+  if (!db || !entry) return;
   if (state.db !== db) setDb(db, { render: false });
-  const tp = state.tablePage && state.tablePage.db === db ? state.tablePage : { db, trail: [] };
-  const at = tp.trail.indexOf(id);
+  const cur = pageOf(tab);
+  const trail = cur && cur.db === db && state.tab === tab ? cur.trail : [];
+  const at = trail.indexOf(entry);
   // A column (from the Rules tab) opens its detailed row.
   const column = typeof opts.column === 'string' && opts.column ? opts.column : null;
-  state.tablePage = { db, trail: at >= 0 ? tp.trail.slice(0, at + 1) : [...tp.trail, id].slice(-20), open: column, showAll: !!column, ...(column ? { view: 'detail', reveal: column } : {}) };
-  state.tablePageKey = null;
-  state.schemaKey = null;
-  if (state.tab !== 'schema') switchTab('schema'); else renderSchema();
+  setPage(tab, { db, trail: at >= 0 ? trail.slice(0, at + 1) : [...trail, entry].slice(-20), open: column, showAll: !!column, ...(column ? { view: 'detail', reveal: column } : {}) });
+  setPageKey(tab, null);
+  if (tab === 'schema') state.schemaKey = null; else state[tab + 'ListKey'] = null;
+  if (state.tab !== tab) switchTab(tab); else renderPageTab(tab);
   scrollTo({ top: 0, behavior: 'auto' });
 }
-function closeTablePage() {
-  const last = state.tablePage?.trail.at(-1);
-  state.tablePage = null;
-  state.tablePageKey = null;
-  state.schemaKey = null;
-  if (last && fnFromTrail(last) === null) setMemSel(last);
-  renderSchema();
+const openTablePage = (db, id, opts = {}) => openPage(pageTabOf(db, id), db, id, opts);
+const openFunctionPage = (db, id) => openPage('functions', db, fnTrailId(id));
+function closePage(tab) {
+  const last = pageOf(tab)?.trail.at(-1);
+  setPage(tab, null);
+  setPageKey(tab, null);
+  if (tab === 'schema') { state.schemaKey = null; if (last) setMemSel(last); } else state[tab + 'ListKey'] = null;
+  renderPageTab(tab);
 }
-// A function page opens in the same trail as table pages.
-const openFunctionPage = (db, id) => openTablePage(db, fnTrailId(id));
-function tablePageBack() {
-  const tp = state.tablePage;
-  if (!tp || tp.trail.length <= 1) return closeTablePage();
-  state.tablePage = { ...tp, trail: tp.trail.slice(0, -1), open: null, showAll: false };
-  state.tablePageKey = null;
-  renderSchema();
+function pageBack(tab) {
+  const tp = pageOf(tab);
+  if (!tp || tp.trail.length <= 1) return closePage(tab);
+  setPage(tab, { ...tp, trail: tp.trail.slice(0, -1), open: null, showAll: false });
+  setPageKey(tab, null);
+  renderPageTab(tab);
 }
+const pageCrumbCtx = (tab, tp) => ({
+  onBack: () => pageBack(tab), onClose: () => closePage(tab), home: { schema: 'Schema', views: 'Views', functions: 'Functions' }[tab],
+  onCrumb: i => { setPage(tab, { ...tp, trail: tp.trail.slice(0, i + 1), open: null, showAll: false }); renderPageTab(tab); },
+  onRetry: () => { state[pageSlots[tab] + 'Error'] = null; setPageKey(tab, null); renderPageTab(tab); },
+});
+// page-tabs:end
 // SQL boxes of the view and function pages: highlighting, copy, the shared
 // wrap choice of the Reports tab, and the "show all lines" state per page.
-const tpCodeCtx = (tp, pageId, set) => ({
+const tpCodeCtx = (tab, tp, pageId, set) => ({
   highlight: sqlLineNodes, onCopy: text => copy(text, 'SQL'), wrap: state.sqlWrap !== false,
-  onWrap: v => { state.sqlWrap = v; persist(); state.reportViewNode = null; state.tablePageKey = null; renderSchema(); },
+  onWrap: v => { state.sqlWrap = v; persist(); state.reportViewNode = null; invalidatePages(); renderPageTab(tab); },
   codeOpen: !!tp.codeOpen?.[`${pageId}#def`], onCodeOpen: v => set({ codeOpen: { ...tp.codeOpen, [`${pageId}#def`]: v } }),
 });
+// Reads a table or function file once (cached); a failed read shows Retry.
+// Returns the record, null while it loads (the caller stops), or undefined
+// when there is no file to read.
+function pageRecord(view, tab, recKey, url, what) {
+  if (!recKey) return undefined;
+  if (tpRecCache.has(recKey)) return tpRecCache.get(recKey);
+  if (!view.querySelector('.tp')) put(view, h('div', { class: 'panel' }, h('div', { class: 'rep-empty' }, t('Loading…'))));
+  const slot = pageSlots[tab] + 'Loading';
+  if (state[slot] === recKey) return null;
+  state[slot] = recKey;
+  tpLoadRec(() => getJson(url), tpRecCache, recKey, what)
+    .catch(err => { state[pageSlots[tab] + 'Error'] = { key: recKey, message: err?.message || String(err) }; })
+    .finally(() => { state[slot] = null; setPageKey(tab, null); renderPageTab(tab); });
+  return null;
+}
 // The function page: the graph entry names the file; the file is read through
 // GET /api/memory/function like a table file (cached, Retry on error).
-function renderFunctionPage(view, data, fnId) {
-  const tp = state.tablePage;
+function renderFunctionPage(view, data, fnId, tab = 'functions') {
+  const tp = pageOf(tab);
   const parts = splitTableKey(fnId);
   const entry = (Array.isArray(data.functions) ? data.functions : []).find(f => f && (f.id === fnId || (parts && f.schema === parts.schema && f.name === parts.table))) || null;
   const recKey = typeof entry?.file === 'string' ? `${tp.db}|${entry.file}|${data.generatedAt}` : null;
-  const crumbCtx = {
-    onBack: tablePageBack, onClose: closeTablePage,
-    onCrumb: i => { state.tablePage = { ...tp, trail: tp.trail.slice(0, i + 1), open: null, showAll: false }; renderSchema(); },
-    onRetry: () => { state.tablePageError = null; state.tablePageKey = null; renderSchema(); },
-  };
-  if (recKey && state.tablePageError?.key === recKey) {
-    state.tablePageKey = null;
-    put(view, fnLoadError(fnId, state.tablePageError.message, tp.trail, crumbCtx));
+  const crumbCtx = pageCrumbCtx(tab, tp);
+  const err = state[pageSlots[tab] + 'Error'];
+  if (recKey && err?.key === recKey) {
+    setPageKey(tab, null);
+    put(view, fnLoadError(fnId, err.message, tp.trail, crumbCtx));
     return;
   }
-  if (recKey && !tpRecCache.has(recKey)) {
-    if (!view.querySelector('.tp')) put(view, h('div', { class: 'panel' }, h('div', { class: 'rep-empty' }, t('Loading…'))));
-    if (state.tablePageLoading === recKey) return;
-    state.tablePageLoading = recKey;
-    tpLoadRec(() => getJson(`/api/memory/function?profile=${encodeURIComponent(tp.db)}&file=${encodeURIComponent(entry.file)}`), tpRecCache, recKey, 'function')
-      .catch(err => { state.tablePageError = { key: recKey, message: err?.message || String(err) }; })
-      .finally(() => { state.tablePageLoading = null; state.tablePageKey = null; renderSchema(); });
-    return;
-  }
+  const rec = pageRecord(view, tab, recKey, `/api/memory/function?profile=${encodeURIComponent(tp.db)}&file=${encodeURIComponent(entry?.file ?? '')}`, 'function');
+  if (rec === null) return;
   const index = tpReportIndex(tp.db);
   const key = JSON.stringify(['fn', tp.db, data.generatedAt, tp.trail, lang, tp.codeOpen ?? null, tp.flagHelp ?? null, state.sqlWrap !== false, [index.items.length, index.pending, index.failed]]);
-  if (state.tablePageKey === key && view.querySelector('.tp')) return;
-  state.tablePageKey = key;
-  const model = functionPageModel(data, fnId, recKey ? tpRecCache.get(recKey) : null);
-  const set = patch => { state.tablePage = { ...state.tablePage, ...patch }; renderSchema(); };
+  if (pageKey(tab) === key && view.querySelector('.tp')) return;
+  setPageKey(tab, key);
+  const model = functionPageModel(data, fnId, rec ?? null);
+  const set = patch => { setPage(tab, { ...pageOf(tab), ...patch }); renderPageTab(tab); };
   put(view, functionPageView(model, tp.trail, {
-    ...crumbCtx, ...tpCodeCtx(tp, fnId, set),
+    ...crumbCtx, ...tpCodeCtx(tab, tp, fnId, set),
     codeOpen: tp.codeOpen || {}, onCodeOpen: (k, v) => set({ codeOpen: { ...tp.codeOpen, [k]: v } }),
     flagHelp: tp.flagHelp || {}, onFlagHelp: (k, v) => set({ flagHelp: { ...tp.flagHelp, [k]: v } }),
     onOpen: next => openTablePage(tp.db, next), onOpenFunction: next => openFunctionPage(tp.db, next),
     reports: index, onReport: id => { const r = index.reps.find(x => repKey(x) === id); if (r) openReportFromPage(r); },
-    onRetryReports: () => { tpSqlFailed.clear(); state.tablePageKey = null; renderSchema(); },
+    onRetryReports: () => { tpSqlFailed.clear(); setPageKey(tab, null); renderPageTab(tab); },
   }));
   if (index.pending) tpLoadReportSql(index.reps);
 }
-function renderTablePage(view, data) {
-  const tp = state.tablePage, id = tp.trail.at(-1);
-  if (fnFromTrail(id) !== null) { renderFunctionPage(view, data, fnFromTrail(id)); return; }
+// The table page, also for views and matviews (in the Views tab).
+function renderTablePage(view, data, tab = 'schema') {
+  const tp = pageOf(tab), id = tp.trail.at(-1);
+  if (fnFromTrail(id) !== null) { renderFunctionPage(view, data, fnFromTrail(id), tab); return; }
   const node = data.nodes.find(n => n.id === id) || null;
   const recKey = node?.file && node.state !== 'unexplored' ? `${tp.db}|${node.file}|${data.generatedAt}` : null;
-  const crumbCtx = {
-    onBack: tablePageBack, onClose: closeTablePage,
-    onCrumb: i => { state.tablePage = { ...tp, trail: tp.trail.slice(0, i + 1), open: null, showAll: false }; renderSchema(); },
-    onRetry: () => { state.tablePageError = null; state.tablePageKey = null; renderSchema(); },
-  };
-  if (recKey && state.tablePageError?.key === recKey) {
-    state.tablePageKey = null;
-    put(view, tpLoadError(id, state.tablePageError.message, tp.trail, crumbCtx));
+  const crumbCtx = pageCrumbCtx(tab, tp);
+  const err = state[pageSlots[tab] + 'Error'];
+  if (recKey && err?.key === recKey) {
+    setPageKey(tab, null);
+    put(view, tpLoadError(id, err.message, tp.trail, crumbCtx));
     return;
   }
-  if (recKey && !tpRecCache.has(recKey)) {
-    if (!view.querySelector('.tp')) put(view, h('div', { class: 'panel' }, h('div', { class: 'rep-empty' }, t('Loading…'))));
-    if (state.tablePageLoading === recKey) return;
-    state.tablePageLoading = recKey;
-    tpLoadRec(() => getJson(`/api/memory/table?profile=${encodeURIComponent(tp.db)}&file=${encodeURIComponent(node.file)}`), tpRecCache, recKey)
-      .catch(err => { state.tablePageError = { key: recKey, message: err?.message || String(err) }; })
-      .finally(() => { state.tablePageLoading = null; state.tablePageKey = null; renderSchema(); });
-    return;
-  }
+  const rec = pageRecord(view, tab, recKey, `/api/memory/table?profile=${encodeURIComponent(tp.db)}&file=${encodeURIComponent(node?.file ?? '')}`, 'table');
+  if (rec === null) return;
   const viewKind = tpViewOf(tp);
   const isView = tpIsView(node?.kind);
   const index = viewKind === 'summary' || isView ? tpReportIndex(tp.db) : null;
   const key = JSON.stringify([tp.db, data.generatedAt, tp.trail, tp.open, tp.showAll, lang, state.scorePending ?? null, viewKind, tpGroupOf(tp), tp.q ?? '', !!tp.unusedOpen, tp.moreOpen ?? null, index ? [index.items.length, index.pending, index.failed] : null, tp.codeOpen ?? null, state.sqlWrap !== false]);
-  if (state.tablePageKey === key && view.querySelector('.tp')) return;
-  state.tablePageKey = key;
-  const model = tablePageModel(data, id, recKey ? tpRecCache.get(recKey) : null);
-  const set = patch => { state.tablePage = { ...state.tablePage, ...patch }; renderSchema(); };
+  if (pageKey(tab) === key && view.querySelector('.tp')) return;
+  setPageKey(tab, key);
+  const model = tablePageModel(data, id, rec ?? null);
+  const set = patch => { setPage(tab, { ...pageOf(tab), ...patch }); renderPageTab(tab); };
   tpKeepSearchFocus(document, () => put(view, tablePageView(model, tp.trail, {
     open: tp.open, showAll: tp.showAll, canScore: model.described && !state.scorePending,
     onOpen: next => openTablePage(tp.db, next), onToggle: name => set({ open: name }), onShowAll: v => set({ showAll: v }),
@@ -6130,13 +6158,13 @@ function renderTablePage(view, data) {
     onColumn: name => set({ view: 'detail', open: name, showAll: true, reveal: name }),
     onUnused: v => set({ unusedOpen: v }), moreOpen: tp.moreOpen ?? {},
     onMore: (k, v) => set({ moreOpen: { ...tp.moreOpen, [k]: v } }),
-    onRetryReports: () => { tpSqlFailed.clear(); state.tablePageKey = null; renderSchema(); },
+    onRetryReports: () => { tpSqlFailed.clear(); setPageKey(tab, null); renderPageTab(tab); },
     onReport: id => { const r = index?.reps.find(x => repKey(x) === id); if (r) openReportFromPage(r); },
-    ...tpCodeCtx(tp, id, set), onOpenFunction: fn => openFunctionPage(tp.db, fn),
+    ...tpCodeCtx(tab, tp, id, set), onOpenFunction: fn => openFunctionPage(tp.db, fn),
   })), tpQPending);
   if (index?.pending) tpLoadReportSql(index.reps);
   if (tp.reveal) {
-    state.tablePage = { ...state.tablePage, reveal: null };
+    setPage(tab, { ...pageOf(tab), reveal: null });
     requestAnimationFrame(() => {
       const row = view.querySelector('.tp-col.open');
       row?.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' });
@@ -6220,10 +6248,13 @@ async function runColumnScore(req) {
     // Show the memory as it is now (also after an unknown outcome).
     try { state.memory = await getJson('/api/memory'); } catch {}
     try { state.memView = { profile: req.profile, data: await getJson('/api/memory/graph?profile=' + encodeURIComponent(req.profile)) }; } catch {}
-    state.tablePageKey = null;
+    invalidatePages();
     state.schemaKey = null;
     state.rulesKey = null;
+    state.viewsListKey = null; state.functionsListKey = null;
     renderSchema();
+    renderObjectTab('views');
+    renderObjectTab('functions');
   }
 }
 
@@ -6386,37 +6417,65 @@ function timelinePanel(data, schema) {
       e.changes ? h('ul', {}, e.changes.map(c => h('li', {}, changeLabel(c)))) : null))) : h('div', { class: 'muted', style: 'padding:10px 0' }, t('No events yet.')));
 }
 
-// The Tables / Views / Functions switch of the Schema tab (remembered).
-const memTypeOf = () => (schemaObjectTypes.includes(state.memType) ? state.memType : 'tables');
-function memTypeSwitch(data) {
-  const counts = schemaObjectCounts(data), cur = memTypeOf();
-  return h('div', { class: 'seg sch-type', role: 'group', 'aria-label': t('Object type') }, schemaObjectTypes.map(k =>
-    h('button', { type: 'button', class: cur === k ? 'on' : '', 'aria-pressed': String(cur === k), onclick: () => { if (cur === k) return; state.memType = k; persist(); state.schemaKey = null; renderSchema(); } },
-      t(schemaObjectTypeLabels[k]), h('span', { class: 'n' }, fmt(counts[k])))));
+// ---------- Views and Functions tabs ----------
+// The views (and matviews) or functions of the chosen database: a list per
+// schema with its own search box and schema picker; a row opens its page in
+// the same tab (Back returns to the list). From graph.json only.
+function objectTabCount(tab) {
+  const data = state.memView?.profile === state.db ? state.memView.data : null;
+  const n = data?.nodes ? schemaObjectCounts(data)[tab] : 0;
+  return n ? fmt(n) : '';
 }
-// Views or Functions: a compact list grouped by schema, filtered by the search
-// box of the toolbar (applyMemSearch draws the rows).
-function renderObjectList(view, data) {
-  const type = memTypeOf();
-  const source = type === 'views' ? data.nodes.filter(n => tpIsView(n.kind)) : (Array.isArray(data.functions) ? data.functions : []);
+function renderObjectTab(tab) {
+  const profiles = memProfiles();
+  const sum = state.db ? memSummaryFor(state.db) : null;
+  // The counts need the graph of the chosen database; it is read once.
+  if (sum && state.memView?.profile !== state.db) ensureMemView(state.db);
+  $(tab === 'views' ? 'cViews' : 'cFunctions').textContent = state.db ? objectTabCount(tab) : '';
+  const view = $('v-' + tab);
+  const listKey = tab + 'ListKey';
+  if (state.tab !== tab) { state[listKey] = null; return; }
+  const plain = node => { state[listKey] = null; setPageKey(tab, null); put(view, node); };
+  if (state.memory?.error) return plain(h('div', { class: 'panel' }, h('div', { class: 'error-box', style: 'margin:16px' }, state.memory.error)));
+  if (!state.db) return plain(memChooser(profiles));
+  if (!sum) {
+    return plain(h('div', { class: 'panel' }, h('div', { class: 'rep-empty' }, h('b', {}, t('No schema memory for {db} yet', { db: state.db })),
+      h('p', {}, t('It fills as your agent describes tables (describe_table) and runs reports.')))));
+  }
+  const mv = state.memView;
+  if (!mv || mv.profile !== state.db || (mv.data && mv.data.generatedAt !== sum.generatedAt)) {
+    ensureMemView(state.db);
+    if (!mv || mv.profile !== state.db) return plain(h('div', { class: 'panel' }, h('div', { class: 'rep-empty' }, t('Loading…'))));
+  }
+  if (mv.error) return plain(h('div', { class: 'panel' }, h('div', { class: 'error-box', style: 'margin:16px' }, mv.error)));
+  const tp = pageOf(tab);
+  if (tp?.db === state.db && tp.trail.length) { state[listKey] = null; renderTablePage(view, mv.data, tab); return; }
+  setPageKey(tab, null);
+  const data = mv.data;
+  const source = tab === 'views' ? data.nodes.filter(n => tpIsView(n.kind)) : (Array.isArray(data.functions) ? data.functions : []);
   const schemas = [...new Set(source.map(x => x?.schema).filter(Boolean))].sort();
-  const cur = schemas.includes(state.memSchema) ? state.memSchema : '';
-  const key = ['list', state.db, data.generatedAt, type, cur, lang].join('|');
-  if (state.schemaKey === key && view.firstChild) { applyMemSearch(); return; }
-  state.schemaKey = key;
-  stopGraph();
-  state.memListSchema = cur;
-  const schemaSel = schemas.length > 1 ? h('div', { class: 'field' }, h('label', { for: 'objSchema' }, t('Schema')), (() => {
-    const s = h('select', { id: 'objSchema', onchange: ev => pickSchema(data, ev.target.value) }, h('option', { value: '' }, t('All')), schemas.map(x => h('option', { value: x }, x)));
+  const filter = () => state.objFilter?.[tab] ?? { q: '', schema: '' };
+  const setFilter = patch => { state.objFilter = { ...state.objFilter, [tab]: { ...filter(), ...patch } }; };
+  const cur = schemas.includes(filter().schema) ? filter().schema : '';
+  const key = [state.db, data.generatedAt, cur, lang].join('|');
+  if (state[listKey] === key && view.firstChild) return;
+  state[listKey] = key;
+  const label = t(tab === 'views' ? 'Search views' : 'Search functions');
+  const host = h('div', { class: 'obj-host' });
+  const input = h('input', { type: 'search', id: `${tab}Search`, class: 'tp-q obj-q', value: filter().q, placeholder: label, 'aria-label': label, autocomplete: 'off', spellcheck: 'false',
+    oninput: ev => { setFilter({ q: ev.target.value }); draw(); } });
+  const draw = () => put(host, schemaObjectList(schemaObjectGroups(data, tab, filter().q, cur), {
+    onOpen: x => (tab === 'views' ? openPage('views', state.db, x.id) : openFunctionPage(state.db, x.id)),
+    onClearSearch: () => { setFilter({ q: '' }); input.value = ''; draw(); input.focus(); },
+  }));
+  const schemaSel = schemas.length > 1 ? h('div', { class: 'field' }, h('label', { for: `${tab}Schema` }, t('Schema')), (() => {
+    const s = h('select', { id: `${tab}Schema`, onchange: ev => { setFilter({ schema: ev.target.value }); state[listKey] = null; renderObjectTab(tab); } },
+      h('option', { value: '' }, t('All')), schemas.map(x => h('option', { value: x }, x)));
     s.value = cur;
     return s;
   })()) : null;
-  const bar = h('div', { class: 'panel' }, h('div', { class: 'sch-bar' }, memTypeSwitch(data), schemaSel,
-    h('span', { class: 'muted sch-hint' }, t('Type in the search box above to filter by name.'))));
-  state.memSearchHost = null;
-  state.memListHost = h('div', { class: 'obj-host' });
-  put(view, bar, state.memListHost);
-  applyMemSearch();
+  put(view, h('div', { class: 'panel' }, h('div', { class: 'sch-bar' }, h('div', { class: 'tp-search-box obj-search' }, input), schemaSel)), host);
+  draw();
 }
 function renderSchema() {
   const profiles = memProfiles();
@@ -6446,8 +6505,6 @@ function renderSchema() {
     return;
   }
   state.tablePageKey = null;
-  if (memTypeOf() !== 'tables') { renderObjectList(view, mv.data); return; }
-  state.memListHost = null;
 
   const data = mv.data;
   const g = memGraph(data);
@@ -6482,7 +6539,6 @@ function renderSchema() {
   const nNew = newChanges(sum);
   const bar = h('div', { class: 'panel' },
     h('div', { class: 'sch-bar' },
-      memTypeSwitch(data),
       h('div', { class: 'seg', role: 'group', 'aria-label': t('View') }, [['graph', t('Graph')], ['er', t('ER diagram')], ['flow', t('Flow')]].map(([k, label]) =>
         h('button', { class: state.memMode === k ? 'on' : '', onclick: () => {
           if (k === 'graph' && state.memMode !== 'graph') { state.memShowAll = false; state.mem3dDepth = 1; }
@@ -6556,6 +6612,8 @@ function render() {
   renderProfiles(rows);
   renderReports();
   renderSchema();
+  renderObjectTab('views');
+  renderObjectTab('functions');
   renderRules();
   if (state.tab === 'overview') renderOverview(rows);
   if (state.tab === 'ops') renderOps(rows);
@@ -6569,8 +6627,8 @@ function moveInk() {
   const nav = b.parentElement;
   if (b.offsetLeft < nav.scrollLeft || b.offsetLeft + b.offsetWidth > nav.scrollLeft + nav.clientWidth) nav.scrollLeft = Math.max(0, b.offsetLeft - 8);
 }
-const tabNames = ['overview', 'ops', 'tables', 'reports', 'schema', 'rules', 'profiles'];
-const ownToolbarTabs = ['reports', 'profiles', 'schema', 'rules'];
+const tabNames = ['overview', 'ops', 'tables', 'views', 'functions', 'reports', 'schema', 'rules', 'profiles'];
+const ownToolbarTabs = ['reports', 'profiles', 'schema', 'rules', 'views', 'functions'];
 function switchTab(tab) {
   if (!tabNames.includes(tab)) tab = 'overview';
   state.tab = tab; persist();
@@ -7451,11 +7509,11 @@ $('refreshBtn').addEventListener('click', () => load());
 
 document.addEventListener('keydown', ev => {
   const typing = isTypingIn(document.activeElement);
-  if (ev.key === '/' && !typing) { ev.preventDefault(); (state.tab === 'schema' && $('tpSearch') || F.text).focus(); }
+  if (ev.key === '/' && !typing) { ev.preventDefault(); (['schema', 'views', 'functions'].includes(state.tab) && $('tpSearch') || ['views', 'functions'].includes(state.tab) && $(`${state.tab}Search`) || F.text).focus(); }
   else if (ev.key === 'Escape') { if (closeThemeMenu(true)) { ev.preventDefault(); return; } closeDbMenu(); if (typing) document.activeElement.blur(); else if (state.open) { state.open = null; render(); } else if (state.tab === 'schema' && graph3d) graph3d.showAll(); }
   else if (!typing && (ev.key === 'r' || ev.key === 'R') && !ev.ctrlKey && !ev.metaKey) load();
   else if (!typing && (ev.key === 'd' || ev.key === 'D') && !ev.ctrlKey && !ev.metaKey) { $('dbsel').classList.contains('open') ? closeDbMenu() : openDbMenu(); }
-  else if (!typing && ['1', '2', '3', '4', '5', '6', '7'].includes(ev.key)) switchTab(tabNames[Number(ev.key) - 1]);
+  else if (!typing && ['1', '2', '3', '4', '5', '6', '7', '8', '9'].includes(ev.key)) switchTab(tabNames[Number(ev.key) - 1]);
 });
 addEventListener('resize', moveInk);
 addEventListener('scroll', hideTip, { passive: true });

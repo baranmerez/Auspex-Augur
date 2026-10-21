@@ -255,10 +255,11 @@ test('Rules tab: table and column headers open the table page (column opens the 
 });
 
 test('opening a table page with a column opens that row in the detailed view', () => {
-  const src = page.match(/function openTablePage\(db, id, opts = \{\}\) \{[\s\S]*?\r?\n\}\r?\n/)?.[0];
-  assert.ok(src, 'openTablePage found');
+  const src = page.match(/\/\/ page-tabs:start[\s\S]*?\/\/ page-tabs:end/)?.[0];
+  assert.ok(src, 'page-tabs block found');
   const state = { db: 'exampledb', tab: 'schema', tablePage: null };
-  const ctx = vm.createContext({ state, setDb() {}, switchTab() {}, renderSchema() {}, scrollTo() {} });
+  const ctx = vm.createContext({ state, setDb() {}, switchTab() {}, renderSchema() {}, renderObjectTab() {}, scrollTo() {}, setMemSel() {},
+    fnFromTrail: () => null, fnTrailId: id => id, tpIsView: k => k === 'view' || k === 'matview' });
   vm.runInContext(`${src}\nthis.openTablePage = openTablePage;`, ctx);
   ctx.openTablePage('exampledb', 'example.orders', { column: 'status_code' });
   assert.deepEqual(plain(state.tablePage), { db: 'exampledb', trail: ['example.orders'], open: 'status_code', showAll: true, view: 'detail', reveal: 'status_code' });
