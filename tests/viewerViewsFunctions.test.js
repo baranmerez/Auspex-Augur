@@ -358,3 +358,21 @@ test('listed-only overloads, flag change fields and pg_catalog names are shown a
   assert.match(text, /flags changed: volatility, owner/);
   assert.match(text, /pg_catalog\.pg_class/);
 });
+
+test('summary: an empty chip group says "None known." (Used by views, Referenced and Referencing tables)', () => {
+  const ctx = load();
+  const sum = { view: 'summary', reports: { items: [], pending: 0 }, onView() {}, onColumn() {}, onUnused() {} };
+  const groupText = (view, title) => textOf(byClass(view, 'sum-group').find(g => g.attrs['aria-label'] === title));
+  const rec = { ...viewRec(), usedByViews: [] };
+  const v = ctx.tablePageView(ctx.tablePageModel(graph(), 'example.v_order_list', rec), ['x'], ctxOf(sum));
+  const used = byClass(v, 'sum-group').find(g => g.attrs['aria-label'] === 'Used by views');
+  assert.equal(byClass(used, 'sum-chips').length, 0);
+  assert.match(groupText(v, 'Used by views'), /None known\./);
+  const t = ctx.tablePageView(ctx.tablePageModel(graph(), 'example.customers', { describedAt: 'x', kind: 'table', columns: [], constraints: [], history: [] }), ['x'], ctxOf(sum));
+  assert.match(groupText(t, 'Referenced tables'), /None known\./);
+  assert.match(groupText(t, 'Referencing tables'), /None known\./);
+  // A non-empty group keeps its chips.
+  const full = ctx.tablePageView(ctx.tablePageModel(graph(), 'example.v_order_list', viewRec()), ['x'], ctxOf(sum));
+  assert.match(groupText(full, 'Used by views'), /example\.mv_daily_totals/);
+  assert.doesNotMatch(groupText(full, 'Used by views'), /None known/);
+});
