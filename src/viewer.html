@@ -752,10 +752,33 @@
   .rn-split:focus-visible { outline: none; }
   .rn-none { font-size: 12px; padding: 8px 12px; }
   .rn-detail { min-width: 0; scroll-margin-top: calc(var(--sticky-top) + 8px); }
+  .rules-nav.with-info { grid-template-columns: var(--rn-w, 320px) 14px minmax(0, 1fr) minmax(260px, 320px); }
+  .rules-nav.collapsed.with-info { grid-template-columns: auto minmax(0, 1fr) minmax(260px, 320px); }
+  .rules-nav.with-info > .rn-info { margin-left: 14px; }
+  .rn-info { position: sticky; top: var(--sticky-top); max-height: calc(100vh - var(--sticky-top) - 20px); overflow: auto; scrollbar-width: thin; padding: 12px 14px; display: grid; gap: 16px; align-content: start; font-size: 13px; min-width: 0; }
+  .rn-i-head { display: grid; gap: 2px; min-width: 0; }
+  .rn-i-head b { font: 600 13px var(--mono); overflow-wrap: anywhere; }
+  .rn-i-head .muted { font-size: 12px; }
+  .rn-info h4 { margin: 0 0 6px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: var(--text-3); }
+  .rn-i-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+  .rn-i-list li { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  .rn-i-list .rl-link { min-width: 0; font: 12.5px var(--mono); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: none; }
+  .rn-i-list .rl-link:hover { color: var(--accent-ink); }
+  .rn-i-tags { margin-left: auto; display: inline-flex; gap: 5px; flex: none; font-size: 10.5px; color: var(--text-3); }
+  .rn-i-score { min-width: 16px; padding: 0 3px; text-align: center; border-radius: 4px; background: var(--surface-2); color: var(--text-2); font-weight: 600; }
+  .rn-i-dir { color: var(--text-3); margin-right: 6px; }
+  .rn-i-n { margin-left: auto; flex: none; font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .rn-i-open { justify-self: start; }
+  @media (max-width: 1280px) {
+    .rules-nav.with-info { grid-template-columns: var(--rn-w, 320px) 14px minmax(0, 1fr); }
+    .rules-nav.collapsed.with-info { grid-template-columns: auto minmax(0, 1fr); }
+    .rules-nav.with-info > .rn-info { grid-column: -2; margin: 14px 0 0; position: static; max-height: none; }
+  }
   @media (max-width: 900px) {
     .rules-nav, .rules-nav.collapsed { grid-template-columns: minmax(0, 1fr); gap: 14px; }
     .rn-split { display: none; }
     .rn-side { position: static; max-height: 360px; }
+    .rules-nav.with-info > .rn-info { grid-column: auto; margin: 0; }
   }
   .rn-detail .rules-list { padding-top: 14px; }
   .note .nh .tgt { font: 11px var(--mono); color: var(--accent-ink); }
@@ -1065,7 +1088,7 @@ const put = (node, ...kids) => node.replaceChildren(...kids.flat(Infinity).filte
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 // ---------- i18n (English is the key; Turkish is the translation) ----------
 const TR = {
-  '(table)': '(tablo)', 'Observations': 'Gözlemler', 'Inferences': 'Çıkarımlar', 'Other tables': 'Diğer tablolar', 'number: notes': 'sayı: not', 'Show the table list': 'Tablo listesini göster', 'Hide the table list': 'Tablo listesini gizle', 'Resize the table list': 'Tablo listesinin genişliği', 'Drag to resize; double-click for the default width': 'Genişlik için sürükle; varsayılan için çift tıkla', '{n} rule': '{n} kural', '{n} rules': '{n} kural', '{n} observation': '{n} gözlem', '{n} observations': '{n} gözlem',
+  '(table)': '(tablo)', 'Observations': 'Gözlemler', 'Inferences': 'Çıkarımlar', 'Other tables': 'Diğer tablolar', 'Important columns': 'Önemli kolonlar', 'Linked tables': 'Bağlı tablolar', 'Table summary': 'Tablo özeti', 'number: notes': 'sayı: not', 'Show the table list': 'Tablo listesini göster', 'Hide the table list': 'Tablo listesini gizle', 'Resize the table list': 'Tablo listesinin genişliği', 'Drag to resize; double-click for the default width': 'Genişlik için sürükle; varsayılan için çift tıkla', '{n} rule': '{n} kural', '{n} rules': '{n} kural', '{n} observation': '{n} gözlem', '{n} observations': '{n} gözlem',
   '{n} inference': '{n} çıkarım', '{n} inferences': '{n} çıkarım', '{n} archived': '{n} arşivli', 'Counts follow the filters, except the status switch.': 'Sayılar durum seçimi dışındaki filtreleri izler.',
   'Rules': 'Kurallar', 'Kind': 'Tür', 'Table': 'Tablo', 'Active': 'Aktif', 'Archived': 'Arşivlenmiş',
   'Filter by table': 'Tabloya göre süz', 'Search note text': 'Not metninde ara', 'No notes match the filters.': 'Filtrelere uyan not yok.',
@@ -4516,12 +4539,47 @@ function renderRules() {
     ? h('div', { class: 'rules-list' }, ruleGroup(current),
       h('div', { class: 'muted', style: 'font-size:12px;margin-top:8px' }, t('Adding or confirming notes stays with your agent.')))
     : emptyState(t('No notes match the filters.')));
+  // The third column: what memory knows about the chosen table, read from the
+  // table file like the table page does (loaded once, then cached).
+  const rulesInfo = g => {
+    const data = mv.data;
+    const node = (data.nodes || []).find(n => n.id === g.key) || null;
+    const recKey = node?.file && node.state !== 'unexplored' ? `${state.db}|${node.file}|${data.generatedAt}` : null;
+    const failed = recKey && state.rulesInfoError?.key === recKey ? state.rulesInfoError.message : null;
+    if (recKey && !tpRecCache.has(recKey) && !failed && state.rulesInfoLoading !== recKey) {
+      state.rulesInfoLoading = recKey;
+      tpLoadRec(() => getJson(`/api/memory/table?profile=${encodeURIComponent(state.db)}&file=${encodeURIComponent(node.file)}`), tpRecCache, recKey)
+        .catch(err => { state.rulesInfoError = { key: recKey, message: err?.message || String(err) }; })
+        .finally(() => { state.rulesInfoLoading = null; state.rulesKey = null; renderRules(); });
+    }
+    const loading = recKey && !tpRecCache.has(recKey) && !failed;
+    const model = tablePageModel(data, g.key, recKey ? tpRecCache.get(recKey) ?? null : null);
+    const openPage = column => () => openTablePage(state.db, g.key, column ? { column } : {});
+    const facts = [model.estimatedRows != null ? t('{n} rows', { n: compact(model.estimatedRows) }) : null,
+      model.columnCount ? t('{n} columns', { n: fmt(model.columnCount) }) : null].filter(Boolean).join(' · ');
+    const top = (model.scored ? model.columns.filter(c => (c.score ?? 0) >= 4) : model.columns).slice(0, 8);
+    const link = (label, title, onclick, dir) => h('button', { type: 'button', class: 'tp-link rl-link', title, onclick },
+      dir ? h('span', { class: 'rn-i-dir', 'aria-hidden': 'true' }, dir) : null, label);
+    const nbRow = (n, dir) => h('li', {}, link(n.id, t('Open table page'), () => openTablePage(state.db, n.id), dir),
+      n.estRows != null ? h('span', { class: 'rn-i-n' }, compact(n.estRows)) : null);
+    const linked = [...model.neighbours.refs.slice(0, 6).map(n => nbRow(n, '→')), ...model.neighbours.deps.slice(0, 6).map(n => nbRow(n, '←'))];
+    return h('aside', { class: 'panel rn-info', 'aria-label': t('Table summary') },
+      h('div', { class: 'rn-i-head' }, h('b', {}, g.key), facts ? h('span', { class: 'muted' }, facts) : null),
+      h('section', {}, h('h4', {}, model.scored ? t('Important columns') : t('Columns')),
+        top.length ? h('ul', { class: 'rn-i-list' }, top.map(c => h('li', {}, link(c.name, t('Open table page'), openPage(c.name)),
+          h('span', { class: 'rn-i-tags' }, c.pk ? h('span', {}, 'PK') : null, c.fk ? h('span', {}, 'FK') : null,
+            c.score != null ? h('span', { class: 'rn-i-score', title: t('Score') }, String(c.score)) : null))))
+          : h('div', { class: 'muted' }, loading ? t('Loading…') : failed || (model.described ? t('None known.') : t('Not described yet')))),
+      linked.length ? h('section', {}, h('h4', {}, t('Linked tables')), h('ul', { class: 'rn-i-list' }, linked)) : null,
+      h('button', { type: 'button', class: 'icon-btn sm rn-i-open', onclick: openPage() }, t('Open table page')));
+  };
+  const info = current?.key ? rulesInfo(current) : null;
   const toggleList = () => { state.rulesListCollapsed = !state.rulesListCollapsed; persist(); renderRules(); };
   if (state.rulesListCollapsed) {
-    put(view, h('div', { class: 'stack' }, bar, h('div', { class: 'rules-nav collapsed' },
+    put(view, h('div', { class: 'stack' }, bar, h('div', { class: 'rules-nav collapsed' + (info ? ' with-info' : '') },
       h('div', { class: 'panel rep-rail' }, h('button', { class: 'icon-btn', 'aria-expanded': 'false', title: t('Show the table list'), onclick: toggleList }, '»'),
         h('span', { class: 'rail-label' }, t('Tables'), ' ', fmt(tables.length))),
-      detail)));
+      detail, info)));
     for (const [id, saved] of focus) restoreFocus(document, id, saved);
     return;
   }
@@ -4568,7 +4626,7 @@ function renderRules() {
       setW(next, true);
     },
     ondblclick: () => setW(rulesSideDefault, true) });
-  nav = h('div', { class: 'rules-nav', style: `--rn-w:${sideW(state.rulesSideW)}px` }, side, split, detail);
+  nav = h('div', { class: 'rules-nav' + (info ? ' with-info' : ''), style: `--rn-w:${sideW(state.rulesSideW)}px` }, side, split, detail, info);
   put(view, h('div', { class: 'stack' }, bar, nav));
   for (const [id, saved] of focus) restoreFocus(document, id, saved);
   const tree = side.querySelector('.rn-tree');
