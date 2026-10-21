@@ -899,6 +899,75 @@
   .tp-pick legend { font-size: 12px; color: var(--text-3); padding: 0 4px; }
   .tp-pick-opt { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; cursor: pointer; }
   .tp-switch { margin-left: auto; }
+  /* views and functions: graph marks, badges, SQL boxes, lists, function page */
+  .g-node .vring { fill: none; stroke: var(--good-ink); stroke-width: 1.4; stroke-dasharray: 3 2; }
+  .g-edge.view { stroke: var(--good-ink); stroke-dasharray: 5 3; }
+  .badge.kind-view { background: var(--good-soft); color: var(--good-ink); }
+  .badge.kind-fn { background: var(--sum-fn, var(--surface-2)); color: var(--sum-fn-ink, var(--text)); }
+  .badge.risk-warn { background: var(--warn-soft); color: var(--warn-ink); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn-ink) 40%, transparent); }
+  .badge.risk-crit { background: var(--critical-soft); color: var(--critical); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--critical) 40%, transparent); }
+  .sum-chip.c-fn-risk { --chip-bg: var(--warn-soft); --chip-line: var(--warn-ink); --chip-ink: var(--warn-ink); }
+  .code-box { border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); min-width: 0; overflow: hidden; }
+  .code-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 8px; border-bottom: 1px solid var(--line); background: var(--surface); }
+  .code-bar .grow { flex: 1; }
+  .code-box pre.sql { margin: 0; padding: 10px 12px 10px 0; font: 12.5px/1.6 var(--mono); white-space: pre; word-break: normal; overflow-x: auto; tab-size: 4; counter-reset: ln; }
+  .code-box pre.sql.wrap { white-space: pre-wrap; overflow-wrap: anywhere; overflow-x: hidden; }
+  .code-box pre.sql .sq-line { position: relative; min-height: 1.6em; padding-left: 5.5ch; }
+  .code-box pre.sql.wrap .sq-line { padding-left: calc(5.5ch + (var(--ind, 0) + 2) * 1ch); text-indent: calc((var(--ind, 0) + 2) * -1ch); }
+  .code-box pre.sql .sq-line::before { counter-increment: ln; content: counter(ln); position: absolute; left: 0; width: 4ch; text-align: right; text-indent: 0; color: var(--text-3); opacity: .75; user-select: none; }
+  .code-box pre.sql:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .code-box.clipped pre.sql { max-height: calc(24 * 1.6em + 10px); overflow-y: hidden; -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent); mask-image: linear-gradient(to bottom, #000 70%, transparent); }
+  .code-more { display: block; width: 100%; border: 0; border-top: 1px solid var(--line); background: var(--surface); color: var(--accent-ink); font-size: 12px; font-weight: 600; padding: 7px; }
+  .code-more:hover { background: var(--accent-soft); }
+  .code-more:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .code-note { margin: 0; padding: 6px 10px; font-size: 12px; color: var(--warn-ink); background: var(--warn-soft); border-top: 1px solid var(--line); }
+  .tp-opts { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+  .tp-fns li { align-items: center; }
+  .tp-nb-h { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; min-width: 0; }
+  .tp-rep-notes { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; font-size: 12px; }
+  .tp-deps-col { grid-area: deps; display: grid; gap: 14px; min-width: 0; align-content: start; }
+  .tp-search-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; flex-basis: 100%; min-width: 0; }
+  .sch-type .n { margin-left: 6px; font: 600 11px var(--mono); color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .sch-type button.on .n { color: inherit; opacity: .75; }
+  .sch-hint { font-size: 12px; }
+  .obj-list .panel-b { display: grid; gap: 14px; }
+  .obj-schema { margin: 0 0 4px; font: 600 12px var(--mono); color: var(--text-2); }
+  .obj-rows { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .obj-rows li + li { border-top: 1px solid var(--line); }
+  .obj-row { width: 100%; display: flex; flex-wrap: wrap; gap: 2px 14px; align-items: center; justify-content: space-between; border: 0; background: none; padding: 7px 10px; text-align: left; color: var(--text); font: inherit; min-width: 0; }
+  .obj-row:hover { background: var(--surface-2); }
+  .obj-row:hover .obj-nm { color: var(--accent-ink); }
+  .obj-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .obj-name { display: inline-flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; min-width: 0; }
+  .obj-nm { font-weight: 650; font-size: 13px; overflow-wrap: anywhere; }
+  .obj-meta { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .fn-sig-h { flex-wrap: wrap; align-items: center; }
+  .fn-sig { margin: 0; font: 600 15px/1.45 var(--mono); overflow-wrap: anywhere; min-width: 0; flex: 1 1 260px; }
+  .fn-sig .fn-nm { font-weight: 700; }
+  .fn-sig .fn-args { color: var(--text-2); font-weight: 400; }
+  .fn-sig .fn-arrow { color: var(--text-3); font-weight: 400; }
+  .fn-sig .fn-ret { color: var(--accent-ink); }
+  .fn-sig-badges { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .fn-ov-b { display: grid; gap: 10px; min-width: 0; }
+  .fn-flags { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+  .fn-chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+  .fn-flag { border: 1px solid var(--line-strong); border-radius: 999px; padding: 1px 9px; font: 12px/1.5 var(--mono); color: var(--text-2); background: var(--surface); cursor: help; overflow-wrap: anywhere; }
+  .fn-flag.warn { border-color: color-mix(in srgb, var(--warn-ink) 45%, transparent); background: var(--warn-soft); color: var(--warn-ink); }
+  .fn-flag.crit { border-color: color-mix(in srgb, var(--critical) 45%, transparent); background: var(--critical-soft); color: var(--critical); }
+  .fn-flag.ok { border-color: color-mix(in srgb, var(--good-ink) 35%, transparent); background: var(--good-soft); color: var(--good-ink); }
+  .fn-help-btn { font-size: 12px; }
+  .fn-help { margin: 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 12px; font-size: 12px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); }
+  .fn-help dt { font-family: var(--mono); color: var(--text); overflow-wrap: anywhere; }
+  .fn-help dd { margin: 0; color: var(--text-2); }
+  @media (max-width: 560px) { .fn-help { grid-template-columns: minmax(0, 1fr); } .fn-help dd { margin-bottom: 4px; } }
+  .risk-box { border-radius: 8px; padding: 8px 10px; font-size: 13px; line-height: 1.5; border: 1px solid; overflow-wrap: anywhere; }
+  .risk-box.warn { background: var(--warn-soft); color: var(--warn-ink); border-color: color-mix(in srgb, var(--warn-ink) 35%, transparent); }
+  .risk-box.crit { background: var(--critical-soft); color: var(--critical); border-color: color-mix(in srgb, var(--critical) 35%, transparent); }
+  .fn-sub { margin: 2px 0 0; font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: .5px; }
+  .fn-side-h { margin: 12px 0 6px; font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: .5px; }
+  .fn-side-h .muted { text-transform: none; letter-spacing: 0; }
+  .fp .tp-side .tp-nbs { margin-top: 0; }
+  .fn-hist li { overflow-wrap: anywhere; }
   .rl-link { font: inherit; color: inherit; text-align: left; }
   .rl-link:hover, .rl-link:focus-visible { color: var(--accent-ink); }
   .sum { display: grid; gap: 12px; min-width: 0; }
@@ -1399,12 +1468,12 @@ const state = {
   tab: 'overview', sort: { key: 'ts', dir: 'desc' }, page: 0, pageSize: 50,
   open: null, live: false, seen: new Set(), firstLoad: true, systemTables: false,
   db: '', reports: null, reportSel: null, stageFilter: 'all', reportDoc: null, repTreeOpen: {}, repTreeRevealed: null,
-  memory: null, memView: null, memMode: 'graph', memSelBy: {}, memFocusBy: {}, memShowAll: false, memTimeline: false,
+  memory: null, memView: null, memMode: 'graph', memSelBy: {}, memFocusBy: {}, memType: 'tables', memShowAll: false, memTimeline: false,
   memSchema: '', memErAll: false, memPos: new Map(), schemaKey: null,
 };
 state.themeMode = 'auto';
 try { Object.assign(state, JSON.parse(localStorage.getItem('auspex.viewer') || '{}'), { all: [], seen: new Set(), firstLoad: true, open: null, reports: null, reportDoc: null, memory: null, memView: null, memPos: new Map() }); } catch {}
-const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, themeMode: state.themeMode, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy, memHideFaint: state.memHideFaint, memGraph3d: state.memGraph3d, memGraphSoft: state.memGraphSoft, memExpand: state.memExpand, repListCollapsed: state.repListCollapsed, repTreeOpen: state.repTreeOpen, repFavOpen: state.repFavOpen, repRecentOpen: state.repRecentOpen, rulesOpen: state.rulesOpen, rulesListCollapsed: state.rulesListCollapsed, rulesSideW: state.rulesSideW, sqlWrap: state.sqlWrap, perfOpen: state.perfOpen, tpView: state.tpView, tpGroup: state.tpGroup })); } catch {} };
+const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, themeMode: state.themeMode, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memType: state.memType, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy, memHideFaint: state.memHideFaint, memGraph3d: state.memGraph3d, memGraphSoft: state.memGraphSoft, memExpand: state.memExpand, repListCollapsed: state.repListCollapsed, repTreeOpen: state.repTreeOpen, repFavOpen: state.repFavOpen, repRecentOpen: state.repRecentOpen, rulesOpen: state.rulesOpen, rulesListCollapsed: state.rulesListCollapsed, rulesSideW: state.rulesSideW, sqlWrap: state.sqlWrap, perfOpen: state.perfOpen, tpView: state.tpView, tpGroup: state.tpGroup })); } catch {} };
 
 // In the Tauri desktop app the same routes are served by the Rust `api` command.
 const tauriCore = window.__TAURI__?.core;
@@ -3306,13 +3375,21 @@ function focusTable(id) {
   renderSchema();
 }
 
-function legend() {
+function legend(views) {
   const dot = cls => { const s = svg('svg', { width: 14, height: 14, viewBox: '-7 -7 14 14' }); const g = svg('g', { class: 'g-node ' + cls }); g.append(svg('circle', { class: 'body', r: cls === 'unexplored' ? 4.5 : 5.5 })); s.append(g); return s; };
   const line = cls => { const s = svg('svg', { width: 24, height: 8, viewBox: '0 0 24 8' }); s.append(svg('line', { class: 'g-edge ' + cls, x1: 0, y1: 4, x2: 24, y2: 4 })); return s; };
   return h('div', { class: 'sch-legend' },
     h('span', {}, dot('explored'), t('explored')), h('span', {}, dot('seen'), t('seen')), h('span', {}, dot('unexplored'), t('not explored')),
     h('span', {}, line('fk'), 'FK'), h('span', {}, line('used'), t('used')), h('span', {}, line('suggested'), t('suggested')),
+    views ? [h('span', {}, viewDot(), t('view')), h('span', {}, line('view'), t('reads (view)'))] : null,
     roleLegend(true));
+}
+function viewDot() {
+  const s = svg('svg', { width: 18, height: 18, viewBox: '-9 -9 18 18' });
+  const g = svg('g', { class: 'g-node explored is-view' });
+  g.append(svg('circle', { class: 'vring', r: 7.5 }), svg('circle', { class: 'body', r: 4.5 }));
+  s.append(g);
+  return s;
 }
 // Role colors of the selected table's FK edges: rank 1 (strong) to rank 10 (faint).
 function roleLegend(withFaint) {
@@ -3690,7 +3767,10 @@ function graphCanvas(g, visible, depth, data) {
     el: svg('line', { class: 'g-edge ' + e.level + (g.outside.has(e.from) || g.outside.has(e.to) ? ' outside' : '') }) }));
   for (const l of links) edgeLayer.append(l.el);
   for (const nd of nodes) {
-    const el = svg('g', { class: `g-node ${nd.n.state}${g.outside.has(nd.id) ? ' outside' : ''}`, 'data-id': nd.id });
+    const isView = tpIsView(nd.n.kind);
+    const el = svg('g', { class: `g-node ${nd.n.state}${g.outside.has(nd.id) ? ' outside' : ''}${isView ? ' is-view' : ''}`, 'data-id': nd.id });
+    // A view or matview gets an outer ring (the body circle stays for selection and roles).
+    if (isView) el.append(svg('circle', { class: 'vring', r: nd.r + 3.5 }));
     el.append(svg('circle', { class: 'body', r: nd.r }));
     const lbl = svg('text', { class: 'lbl', y: nd.r + 13, 'text-anchor': 'middle' });
     lbl.textContent = nd.n.table;
@@ -3880,7 +3960,7 @@ function graphCanvas(g, visible, depth, data) {
   });
 
   const zoomBy = f => { sim.k = Math.min(4, Math.max(0.15, sim.k * f)); sim.tx *= f; sim.ty *= f; sim.follow = false; apply(); };
-  wrap.append(root, legend(), h('div', { class: 'sch-zoom' },
+  wrap.append(root, legend(nodes.some(nd => tpIsView(nd.n.kind)) || links.some(l => l.e.level === 'view')), h('div', { class: 'sch-zoom' },
     h('button', { class: 'icon-btn', title: t('Zoom in'), onclick: () => zoomBy(1.25) }, '+'),
     h('button', { class: 'icon-btn', title: t('Zoom out'), onclick: () => zoomBy(1 / 1.25) }, '−'),
     h('button', { class: 'icon-btn', title: t('Fit to view'), onclick: () => { sim.follow = true; follow(1); } }, '⤢')));
@@ -3919,6 +3999,13 @@ function applyMemSearch() {
   graphSim?.search(q);
   graph3d?.search(q);
   if (state.memSearchHost?.isConnected) put(state.memSearchHost, memSearchResults(state.memView?.profile === state.db ? state.memView.data : null, q));
+  if (state.memListHost?.isConnected && state.memView?.profile === state.db && state.memView.data) {
+    const type = memTypeOf();
+    put(state.memListHost, schemaObjectList(schemaObjectGroups(state.memView.data, type, q, state.memListSchema || ''), {
+      onOpen: x => (type === 'views' ? openTablePage(state.db, x.id) : openFunctionPage(state.db, x.id)),
+      onClearSearch: () => { F.text.value = ''; render(); },
+    }));
+  }
 }
 
 // ---------- ER diagram ----------
@@ -4736,6 +4823,16 @@ const tpRoleTexts = {
   display: 'display: SELECT list', aggregate: 'aggregate: sum, count, avg, ...', 'sort/group': 'sort/group: ORDER BY or GROUP BY',
 };
 const tpCmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+// Views and materialized views share the table page (their records are table
+// records with kind view | matview).
+const tpIsView = kind => kind === 'view' || kind === 'matview';
+// A function page lives in the same breadcrumb trail as table pages. Its trail
+// entry starts with a NUL character, which no PostgreSQL identifier (and so no
+// table key) can contain.
+const fnTrailPrefix = '\u0000fn:';
+const fnTrailId = id => fnTrailPrefix + id;
+const fnFromTrail = entry => (typeof entry === 'string' && entry.startsWith(fnTrailPrefix) ? entry.slice(fnTrailPrefix.length) : null);
+const tpCrumbLabel = entry => { const fn = fnFromTrail(entry); return fn === null ? entry : `${fn}()`; };
 // One remember evidenceCode reference as text: root:path:line · symbol.
 function codeRefText(r) {
   return `${r?.root ?? '?'}:${r?.path ?? '?'}${Number.isInteger(r?.line) ? `:${r.line}` : ''}${r?.symbol ? ` · ${r.symbol}` : ''}`;
@@ -4795,6 +4892,53 @@ function tpEffective(entry) {
 // Current state plus history of one layer, newest first, at most 5.
 const tpLayerHistory = layer => (layer ? [{ ...layer, history: undefined }, ...(Array.isArray(layer.history) ? layer.history : [])].slice(0, 5) : []);
 
+// A relation a view reads or that reads this one, as a link target. Every field
+// of the view facts is optional: memory written before views were recorded has
+// none of them.
+const tpArr = v => (Array.isArray(v) ? v : []);
+function tpRelRef(nodes, id, kind, columns) {
+  const n = nodes.find(x => x.id === id);
+  return { id, kind: kind ?? n?.kind ?? null, columns: tpArr(columns).filter(c => typeof c === 'string'), explored: n?.state === 'explored' };
+}
+// The graph's entry of function schema.name (graph.json functions[]), or null.
+const tpFnEntry = (data, schema, name) => tpArr(data?.functions).find(f => f && f.schema === schema && f.name === name) ?? null;
+// What the page shows for a view or matview: the definition and options from
+// the table file; sources and called functions from the file, else from the
+// graph node (ids only). A function counts as volatile when the file says so,
+// else when the graph's function entry is flagged volatile.
+function tpViewFacts(data, node, rec, kind) {
+  const nodes = tpArr(data?.nodes);
+  const fromRec = Array.isArray(rec?.viewSources);
+  const sources = fromRec
+    ? rec.viewSources.filter(r => r && r.table).map(r => tpRelRef(nodes, tableKey(r.schema, r.table), r.kind ?? null, r.columns))
+    : tpArr(node?.viewSources).filter(id => typeof id === 'string').map(id => tpRelRef(nodes, id, null, []));
+  const fn = (schema, name, args, volatility) => {
+    const entry = tpFnEntry(data, schema, name);
+    const vol = typeof volatility === 'string' ? volatility : entry?.flags?.volatile ? 'volatile' : null;
+    return { id: tableKey(schema, name), schema, name, arguments: typeof args === 'string' ? args : null, volatility: vol, volatile: vol === 'volatile', recorded: !!entry };
+  };
+  const functions = Array.isArray(rec?.viewFunctions)
+    ? rec.viewFunctions.filter(f => f && f.name).map(f => fn(f.schema, f.name, f.arguments, f.volatility))
+    : tpArr(node?.viewFunctions).map(id => splitTableKey(id)).filter(Boolean).map(p => fn(p.schema, p.table, null, null));
+  const def = typeof rec?.viewDefinition === 'string' ? rec.viewDefinition : null;
+  const check = rec?.viewOptions?.checkOption;
+  return {
+    kind, definition: def, definitionLength: Number.isInteger(rec?.viewDefinitionLength) ? rec.viewDefinitionLength : def === null ? null : def.length,
+    truncated: !!rec?.viewDefinitionTruncated,
+    securityBarrier: rec?.viewOptions?.securityBarrier === true, checkOption: check === 'local' || check === 'cascaded' ? check : null,
+    populated: kind === 'matview' && typeof rec?.populated === 'boolean' ? rec.populated : null,
+    sources, functions, volatileCalls: functions.filter(f => f.volatile).length,
+  };
+}
+// Views that read relation id: from the table file (usedByViews), else from
+// the graph nodes whose viewSources name it.
+function tpUsedByViews(data, id, rec) {
+  const nodes = tpArr(data?.nodes);
+  const list = Array.isArray(rec?.usedByViews)
+    ? rec.usedByViews.filter(v => v && v.table).map(v => tpRelRef(nodes, tableKey(v.schema, v.table), v.kind ?? null, []))
+    : nodes.filter(n => n.id !== id && tpArr(n.viewSources).includes(id)).map(n => tpRelRef(nodes, n.id, n.kind ?? null, []));
+  return list.sort((a, b) => tpCmp(a.id, b.id));
+}
 // Everything the page shows for table id. rec: the table file (null when the
 // table is not described or not loaded).
 function tablePageModel(data, id, rec) {
@@ -4851,9 +4995,12 @@ function tablePageModel(data, id, rec) {
   };
   const triggers = Array.isArray(node?.triggers) ? node.triggers : described && Array.isArray(rec.triggers) ? rec.triggers : [];
   const byType = type => constraints.filter(c => c.type === type).map(c => ({ name: c.name, columns: c.columns || [], definition: c.definition ?? '' }));
+  const kind = rec?.kind ?? node?.kind ?? null;
   return {
     id, schema, table, profile: data?.profile ?? null, state: node?.state ?? 'unexplored', described,
-    kind: rec?.kind ?? node?.kind ?? null, comment: rec?.comment ?? null,
+    kind, comment: rec?.comment ?? null,
+    view: tpIsView(kind) ? tpViewFacts(data, node, rec, kind) : null,
+    usedByViews: tpUsedByViews(data, id, rec),
     estimatedRows: rec?.estimatedRows ?? node?.estimatedRows ?? null, columnCount: described ? structure.length : (node?.columnCount ?? 0),
     noteCount: notes.length, scoredAt: node?.scoredAt ?? rec?.scoredAt ?? null, sourcesMax, lastChanges, describedAt: rec?.describedAt ?? null,
     columns, scored,
@@ -4870,10 +5017,10 @@ function tablePageModel(data, id, rec) {
 // The table file of the page: a successful read is cached by key; a failed
 // read is thrown and never cached, so Retry reads again (an explored table
 // whose file could not be read is not shown as "not described").
-async function tpLoadRec(fetchRec, cache, key) {
+async function tpLoadRec(fetchRec, cache, key, what = 'table') {
   if (cache.has(key)) return cache.get(key);
   const rec = await fetchRec();
-  if (!rec || typeof rec !== 'object') throw new Error('The table file could not be read.');
+  if (!rec || typeof rec !== 'object') throw new Error(`The ${what} file could not be read.`);
   if (cache.size > 50) cache.clear();
   cache.set(key, rec);
   return rec;
@@ -5057,7 +5204,82 @@ function tpNeighbours(list, side, ctx) {
           n.links.map(l => h('span', { class: 'tp-mono tp-jn' }, cols(l))),
           h('span', { class: 'tp-meta' }, n.estRows === null ? '' : t('~{n} rows (est.)', { n: compact(n.estRows) }), n.explored ? '' : h('span', {}, t('not explored yet'))))))) : h('div', { class: 'muted' }, t('None known.'))));
 }
+// ----- views: definition, source relations, called functions, used by views -----
+// A SQL text with line numbers, copy and soft wrap; longer than tpCodeClip
+// lines it starts clipped with a "show all" button. o: { id, label, open,
+// onToggle, truncated, length }. ctx.highlight (the page's sqlLineNodes) colours
+// it; without it each line is a plain text node.
+const tpCodeClip = 24;
+function tpCode(text, o, ctx) {
+  const n = text.split('\n').length;
+  const long = n > tpCodeClip;
+  const open = !long || !!o.open;
+  const wrap = ctx.wrap !== false;
+  const body = ctx.highlight ? ctx.highlight(text) : text.split('\n').map(line => h('div', { class: 'sq-line' }, line));
+  return h('div', { class: 'code-box' + (open ? '' : ' clipped') },
+    h('div', { class: 'code-bar' },
+      h('span', { class: 'hint' }, t(n === 1 ? '1 line' : '{n} lines', { n: fmt(n) })),
+      h('span', { class: 'grow' }),
+      long && open && o.onToggle ? h('button', { type: 'button', class: 'icon-btn sm', 'aria-expanded': 'true', 'aria-controls': o.id, onclick: () => o.onToggle(false) }, t('Collapse')) : null,
+      ctx.onWrap ? h('button', { type: 'button', class: 'icon-btn sm', 'aria-pressed': String(wrap), title: t('Wrap long lines'), onclick: () => ctx.onWrap(!wrap) }, t('Wrap lines')) : null,
+      ctx.onCopy ? h('button', { type: 'button', class: 'icon-btn sm', onclick: () => ctx.onCopy(text) }, t('Copy SQL')) : null),
+    h('pre', { class: 'sql numbered' + (wrap ? ' wrap' : ''), id: o.id, tabindex: '0', role: 'region', 'aria-label': o.label }, body),
+    !open && o.onToggle ? h('button', { type: 'button', class: 'code-more', 'aria-expanded': 'false', 'aria-controls': o.id, onclick: () => o.onToggle(true) }, t('Show all {n} lines', { n: fmt(n) })) : null,
+    o.truncated ? h('p', { class: 'code-note', role: 'note' }, t('Cut at {n} of {all} characters; the full text stays in the database.', { n: fmt(text.length), all: fmt(o.length ?? text.length) })) : null);
+}
+const tpVolatileText = 'A view that calls a VOLATILE function cannot be flattened: filters are not pushed into it and the function runs for every row.';
+function tpViewDefinition(model, ctx) {
+  const v = model.view;
+  const opts = [v.securityBarrier ? h('span', { class: 'badge code', title: t('security_barrier: conditions from outside run only after the view\'s own WHERE, so they cannot see hidden rows.') }, 'security_barrier') : null,
+    v.checkOption ? h('span', { class: 'badge code', title: t('WITH CHECK OPTION: inserts and updates through the view must satisfy its WHERE ({o}).', { o: v.checkOption }) }, `check option: ${v.checkOption}`) : null].filter(Boolean);
+  return h('section', { class: 'panel', 'aria-label': t('Definition') },
+    h('div', { class: 'panel-h' }, h('h2', {}, t('Definition')), opts.length ? h('span', { class: 'tp-opts' }, opts) : null),
+    h('div', { class: 'panel-b' }, v.definition !== null
+      ? tpCode(v.definition, { id: 'tp-viewdef', label: t('Definition of {id}', { id: model.id }), open: ctx.codeOpen, onToggle: ctx.onCodeOpen, truncated: v.truncated, length: v.definitionLength }, ctx)
+      : h('div', { class: 'tp-empty sm' }, h('b', {}, t('No definition recorded')),
+        h('p', {}, t('Ask your agent to run describe_table on {id}; for a view it also records the definition, the source relations and the called functions.', { id: model.id })))));
+}
+// A relation card list on the left (sources) or right (used by views).
+function tpRelPanel(list, side, title, hint, ctx) {
+  return h('section', { class: `panel tp-side tp-${side}`, 'aria-label': t(title) },
+    h('div', { class: 'panel-h' }, h('h2', {}, t(title)), h('span', { class: 'hint' }, fmt(list.length))),
+    h('div', { class: 'panel-b' }, h('p', { class: 'tp-hint' }, t(hint)),
+      list.length ? h('ul', { class: 'tp-nbs' }, list.map(r => h('li', {},
+        h('button', { type: 'button', class: 'tp-nb' + (r.explored ? '' : ' muted-card'), onclick: () => ctx.onOpen(r.id), title: r.explored ? null : t('Not explored yet: describe_table records it.') },
+          h('span', { class: 'tp-nb-h' }, h('span', { class: 'tp-mono tp-nm' }, r.id), tpIsView(r.kind) ? h('span', { class: 'badge kind-view' }, t(r.kind === 'matview' ? 'Materialized view' : 'View{k}', { k: '' })) : null),
+          r.columns.length ? h('span', { class: 'tp-mono tp-jn', title: t('Columns the view uses') }, r.columns.join(', ')) : null,
+          r.explored ? null : h('span', { class: 'tp-meta' }, t('not explored yet')))))) : h('div', { class: 'muted' }, t('None known.'))));
+}
+function tpVolBadge(f) {
+  if (f.volatile) return h('span', { class: 'badge risk-warn', title: t(tpVolatileText) }, '⚠ ', t('volatile'));
+  return f.volatility ? h('span', { class: 'badge code' }, t(f.volatility)) : null;
+}
+function tpViewFunctions(model, ctx) {
+  const list = model.view.functions;
+  return h('section', { class: 'panel', 'aria-label': t('Functions called') },
+    h('div', { class: 'panel-h' }, h('h2', {}, t('Functions called')), h('span', { class: 'hint' }, list.length ? fmt(list.length) : ''),
+      model.view.volatileCalls ? h('span', { class: 'badge risk-warn', title: t(tpVolatileText) }, '⚠ ', t('{n} volatile', { n: fmt(model.view.volatileCalls) })) : null),
+    h('div', { class: 'panel-b' }, list.length ? h('ul', { class: 'tp-list tp-fns' }, list.map(f => h('li', {},
+      h('button', { type: 'button', class: 'tp-link tp-mono tp-nm', onclick: () => ctx.onOpenFunction?.(f.id) }, `${f.id}(${f.arguments ?? ''})`),
+      tpVolBadge(f), f.recorded ? null : h('span', { class: 'muted' }, t('not recorded yet')))))
+      : h('div', { class: 'muted' }, model.described ? t('This view calls no functions (or none were recorded).') : t('Not described yet'))));
+}
+// Reports whose SQL mentions schema.name (or the bare name); a panel for the
+// detailed view page and the function page.
+function tpReportsPanel(reports, schema, name, empty, ctx) {
+  const items = tpArr(reports?.items).filter(r => tpMentions(r.sql, schema, name))
+    .sort((a, b) => String(a.title).localeCompare(String(b.title), undefined, { sensitivity: 'base' }) || tpCmp(a.id, b.id));
+  const notes = [reports?.pending ? h('span', { class: 'muted', role: 'status' }, t('{n} still loading', { n: fmt(reports.pending) })) : null,
+    reports?.failed ? h('span', { class: 'muted', role: 'status' }, t('{n} could not be read', { n: fmt(reports.failed) }), ' ', h('button', { type: 'button', class: 'tp-link', onclick: ctx.onRetryReports }, t('Retry'))) : null,
+    reports?.capped ? h('span', { class: 'muted', role: 'status' }, t('first {n} reports checked', { n: fmt(reports.capped) })) : null].filter(Boolean);
+  return h('section', { class: 'panel', 'aria-label': t('Reports') },
+    h('div', { class: 'panel-h' }, h('h2', {}, t('Reports')), h('span', { class: 'hint' }, t('Mentioned in SQL'))),
+    h('div', { class: 'panel-b' },
+      items.length ? h('div', { class: 'sum-chips' }, items.map(r => tpChip('report', r.title, { onclick: () => ctx.onReport?.(r.id), title: t('Open on the Reports tab') }))) : h('div', { class: 'muted' }, t(empty)),
+      notes.length ? h('div', { class: 'tp-rep-notes' }, notes) : null));
+}
 function tpHeader(model, ctx) {
+  if (model.view) return tpViewHeader(model, ctx);
   const facts = [
     [t('Est. rows'), model.estimatedRows === null ? '–' : compact(model.estimatedRows)],
     [t('Columns'), fmt(model.columnCount)],
@@ -5076,12 +5298,35 @@ function tpHeader(model, ctx) {
     model.comment ? h('p', { class: 'tp-comment' }, model.comment) : null,
     h('div', { class: 'tp-facts' }, facts.map(([k, v, title]) => h('span', { title: title ?? null }, h('b', {}, v), ' ', k))));
 }
+function tpViewHeader(model, ctx) {
+  const v = model.view;
+  const facts = [
+    v.kind === 'matview' ? [t('Est. rows'), model.estimatedRows === null ? '–' : compact(model.estimatedRows)] : null,
+    [t('Columns'), fmt(model.columnCount)],
+    [t('Source relations'), fmt(v.sources.length)],
+    [t('Functions called'), fmt(v.functions.length)],
+    [t('Used by views'), fmt(model.usedByViews.length)],
+    [t('Notes'), fmt(model.noteCount)],
+  ].filter(Boolean);
+  const changes = model.lastChanges;
+  return h('section', { class: 'panel tp-head' },
+    h('div', { class: 'tp-title' }, h('h2', {}, model.id),
+      h('span', { class: 'badge kind-view' }, t(v.kind === 'matview' ? 'Materialized view' : 'View{k}', { k: '' })),
+      v.populated === false ? h('span', { class: 'badge risk-warn', title: t('Never refreshed: reading it fails until REFRESH MATERIALIZED VIEW runs.') }, t('not populated')) : null,
+      h('span', { class: 'badge ' + model.state }, t({ explored: 'explored', seen: 'seen in a plan', unexplored: 'not explored' }[model.state] || model.state)),
+      v.volatileCalls ? h('span', { class: 'badge risk-warn', title: t(tpVolatileText) }, '⚠ ', t('calls a volatile function')) : null,
+      changes.length ? h('span', { class: 'chg-badge', title: changes.map(changeLabel).join('\n') }, h('span', { class: 'dot' }),
+        t(changes.length === 1 ? '1 change at the last describe' : '{n} changes at the last describe', { n: fmt(changes.length) })) : null,
+      tpViewSwitch(ctx)),
+    model.comment ? h('p', { class: 'tp-comment' }, model.comment) : null,
+    h('div', { class: 'tp-facts' }, facts.map(([k, val]) => h('span', {}, h('b', {}, val), ' ', k))));
+}
 function tpCrumbs(trail, ctx) {
   return h('nav', { class: 'tp-crumbs', 'aria-label': t('Breadcrumb') },
     h('button', { type: 'button', class: 'icon-btn sm', onclick: ctx.onBack }, '← ', t('Back')),
     h('button', { type: 'button', class: 'crumb', onclick: ctx.onClose }, t('Schema')),
     trail.map((id, i) => [h('span', { 'aria-hidden': 'true' }, '›'),
-      i === trail.length - 1 ? h('span', { class: 'crumb cur', 'aria-current': 'page' }, id) : h('button', { type: 'button', class: 'crumb', onclick: () => ctx.onCrumb(i) }, id)]));
+      i === trail.length - 1 ? h('span', { class: 'crumb cur', 'aria-current': 'page' }, tpCrumbLabel(id)) : h('button', { type: 'button', class: 'crumb', onclick: () => ctx.onCrumb(i) }, tpCrumbLabel(id))]));
 }
 function tpLoadError(id, message, trail, ctx) {
   return h('div', { class: 'tp' }, tpCrumbs(trail, ctx),
@@ -5153,6 +5398,9 @@ function tpSummaryModel(model, reports) {
     pending: reports?.pending ?? 0, failed: reports?.failed ?? 0, capped: reports?.capped ?? 0,
     refs: model.neighbours.refs.map(n => n.id),
     deps: model.neighbours.deps.map(n => n.id),
+    viewSources: model.view ? model.view.sources.map(r => r.id) : [],
+    viewFunctions: model.view ? model.view.functions : [],
+    usedByViews: tpArr(model.usedByViews).map(r => r.id),
   };
 }
 // One chip: a button when it does something, a plain span otherwise.
@@ -5197,19 +5445,25 @@ function tpSummary(model, sum, ctx) {
   const reportNotes = [sum.pending ? h('span', { class: 'muted sum-none', role: 'status' }, t('{n} still loading', { n: fmt(sum.pending) })) : null,
     sum.failed ? h('span', { class: 'muted sum-none', role: 'status' }, t('{n} could not be read', { n: fmt(sum.failed) }), ' ', h('button', { type: 'button', class: 'tp-link', onclick: ctx.onRetryReports }, t('Retry'))) : null,
     sum.capped ? h('span', { class: 'muted sum-none', role: 'status' }, t('first {n} reports checked', { n: fmt(sum.capped) })) : null].filter(Boolean);
+  const isView = !!model.view;
+  const fnChip = f => tpChip(f.volatile ? 'fn-risk' : 'fn', `${f.id}()`, { onclick: () => ctx.onOpenFunction?.(f.id), title: f.volatile ? `${t('volatile')}: ${t(tpVolatileText)}` : f.volatility ? t(f.volatility) : null });
   return h('div', { class: 'sum', role: 'region', 'aria-label': t('Summary') },
     !model.described ? h('div', { class: 'tp-empty sm' }, h('b', {}, t('Not described yet')),
       h('p', {}, t('Ask your agent to run describe_table on {id}; it reads the catalog only and records the columns, keys, indexes and triggers.', { id: model.id }))) : null,
-    group('Primary key', null, sum.primary.map(byName), null, true),
-    group('Foreign keys', t('(best column score first)'), limited('fk', sum.foreign, f => tpChip('fk', f.label, { onclick: () => ctx.onOpen(f.id), title: `${f.columns.join(', ')} → ${f.id}.${f.refColumns.join(', ')}` })), null, true),
+    isView && model.described ? tpViewDefinition(model, ctx) : null,
+    isView ? null : group('Primary key', null, sum.primary.map(byName), null, true),
+    isView ? null : group('Foreign keys', t('(best column score first)'), limited('fk', sum.foreign, f => tpChip('fk', f.label, { onclick: () => ctx.onOpen(f.id), title: `${f.columns.join(', ')} → ${f.id}.${f.refColumns.join(', ')}` })), null, true),
+    isView ? group('Source relations', t('(this view reads them)'), limited('src', sum.viewSources, tableChip('ref')), null, true) : null,
     columnsGroup,
     h('div', { class: 'sum-grid' },
-      group('Triggers', null, sum.triggers.map(tr => tpChip('trigger', tr.name, { off: tr.disabled, title: tr.disabled ? t('disabled') : null }))),
-      group('Trigger functions', null, sum.functions.map(f => tpChip('fn', f))),
+      isView ? group('Functions called', null, sum.viewFunctions.map(fnChip)) : null,
+      isView && !sum.triggers.length ? null : group('Triggers', null, sum.triggers.map(tr => tpChip('trigger', tr.name, { off: tr.disabled, title: tr.disabled ? t('disabled') : null }))),
+      isView && !sum.functions.length ? null : group('Trigger functions', null, sum.functions.map(f => tpChip('fn', f))),
       group('Reports', t('Mentioned in SQL'), [sum.reports.map(r => tpChip('report', r.title, { onclick: () => ctx.onReport(r.id), title: t('Open on the Reports tab') })), reportNotes].flat(Infinity).filter(Boolean),
-        t('No report mentions this table.')),
-      group('Referenced tables', t('(this table points to them)'), limited('refs', sum.refs, tableChip('ref'))),
-      group('Referencing tables', t('(they point to this table)'), limited('deps', sum.deps, tableChip('dep')))));
+        isView ? t('No report mentions this view.') : t('No report mentions this table.')),
+      isView ? null : group('Referenced tables', t('(this table points to them)'), limited('refs', sum.refs, tableChip('ref'))),
+      isView ? null : group('Referencing tables', t('(they point to this table)'), limited('deps', sum.deps, tableChip('dep'))),
+      isView || sum.usedByViews.length ? group('Used by views', t('(they read this one)'), limited('views', sum.usedByViews, tableChip('dep'))) : null));
 }
 // The page's own choice, else the remembered one, else Summary (first visit).
 const tpViewChoice = (own, saved) => ((own ?? saved) === 'detail' ? 'detail' : 'summary');
@@ -5217,11 +5471,23 @@ const tpViewSwitch = ctx => (ctx.onView ? h('div', { class: 'seg tp-switch', rol
   [['detail', t('Detailed')], ['summary', t('Summary')]].map(([v, label]) => h('button', { type: 'button', class: ctx.view === v ? 'on' : '', 'aria-pressed': String(ctx.view === v), onclick: () => ctx.onView(v) }, label))) : null);
 function tablePageView(model, trail, ctx) {
   if (ctx.view === 'summary') return h('div', { class: 'tp' }, tpCrumbs(trail, ctx), tpHeader(model, ctx), tpSummary(model, tpSummaryModel(model, ctx.reports), ctx));
+  const usedBy = () => tpRelPanel(model.usedByViews, 'deps', 'Used by views', 'Views that read this one', ctx);
+  if (model.view) {
+    const keys = Object.values(model.keys).some(v => v.length);
+    return h('div', { class: 'tp' }, tpCrumbs(trail, ctx), tpHeader(model, ctx),
+      h('div', { class: 'tp-body' },
+        h('div', { class: 'tp-main' }, tpViewDefinition(model, ctx), tpViewFunctions(model, ctx), tpColumns(model, ctx),
+          keys ? tpKeys(model, ctx) : null, model.triggers.length ? tpTriggers(model) : null,
+          tpReportsPanel(ctx.reports, model.schema, model.table, 'No report mentions this view.', ctx)),
+        tpRelPanel(model.view.sources, 'refs', 'Source relations', 'Relations this view reads, with the columns it uses', ctx),
+        usedBy()));
+  }
+  const deps = tpNeighbours(model.neighbours.deps, 'deps', ctx);
   return h('div', { class: 'tp' }, tpCrumbs(trail, ctx), tpHeader(model, ctx),
     h('div', { class: 'tp-body' },
       h('div', { class: 'tp-main' }, tpColumns(model, ctx), tpKeys(model, ctx), tpTriggers(model)),
       tpNeighbours(model.neighbours.refs, 'refs', ctx),
-      tpNeighbours(model.neighbours.deps, 'deps', ctx)));
+      model.usedByViews.length ? h('div', { class: 'tp-deps-col' }, deps, usedBy()) : deps));
 }
 const tablePageTr = {
   'core': 'temel', 'frequent': 'sık', 'topical': 'konuya özel', 'rare': 'nadir', 'unused': 'kullanılmıyor',
@@ -5268,8 +5534,361 @@ const tablePageTr = {
   'Keys and links': 'Anahtarlar ve bağlantılar', 'Date and time': 'Tarih ve saat', 'Amounts and numbers': 'Tutarlar ve sayılar', 'Text': 'Metin', 'Flags': 'Bayraklar', 'Other': 'Diğer',
   'Columns by type': 'Türe göre kolonlar',
   'Open on the Reports tab': 'Raporlar sekmesinde aç', 'No report mentions this table.': 'Bu tabloyu anan rapor yok.', '{n} still loading': '{n} tanesi yükleniyor',
+  'View{k}': 'View', 'Materialized view': 'Materialized view', 'not populated': 'doldurulmamış',
+  'Never refreshed: reading it fails until REFRESH MATERIALIZED VIEW runs.': 'Hiç yenilenmedi: REFRESH MATERIALIZED VIEW çalışana kadar okunamaz.',
+  'calls a volatile function': 'volatile fonksiyon çağırıyor', 'volatile': 'volatile', 'stable': 'stable', 'immutable': 'immutable', '{n} volatile': '{n} volatile',
+  'A view that calls a VOLATILE function cannot be flattened: filters are not pushed into it and the function runs for every row.': 'VOLATILE bir fonksiyon çağıran view düzleştirilemez: filtreler içine itilemez ve fonksiyon her satır için çalışır.',
+  'Definition': 'Tanım', 'Definition of {id}': '{id} tanımı', 'No definition recorded': 'Kayıtlı tanım yok',
+  'Ask your agent to run describe_table on {id}; for a view it also records the definition, the source relations and the called functions.': 'Ajanınızdan {id} için describe_table çalıştırmasını isteyin; bir view için tanımı, kaynak tabloları ve çağrılan fonksiyonları da kaydeder.',
+  'security_barrier: conditions from outside run only after the view\'s own WHERE, so they cannot see hidden rows.': 'security_barrier: dışarıdan gelen koşullar view\'ın kendi WHERE\'inden sonra çalışır, gizli satırları göremez.',
+  'WITH CHECK OPTION: inserts and updates through the view must satisfy its WHERE ({o}).': 'WITH CHECK OPTION: view üzerinden yapılan ekleme ve güncellemeler WHERE koşulunu sağlamalı ({o}).',
+  'Source relations': 'Kaynak tablolar', 'Relations this view reads, with the columns it uses': 'Bu view\'ın okuduğu tablolar ve kullandığı kolonlar', '(this view reads them)': '(bu view onları okur)',
+  'Used by views': 'Kullanan view\'lar', 'Views that read this one': 'Bunu okuyan view\'lar', '(they read this one)': '(bunu okurlar)', 'Columns the view uses': 'View\'ın kullandığı kolonlar',
+  'Functions called': 'Çağrılan fonksiyonlar', 'not recorded yet': 'henüz kaydedilmedi', 'This view calls no functions (or none were recorded).': 'Bu view fonksiyon çağırmıyor (ya da hiçbiri kaydedilmedi).',
+  'No report mentions this view.': 'Bu view\'ı anan rapor yok.',
+  '1 line': '1 satır', '{n} lines': '{n} satır', 'Collapse': 'Daralt', 'Show all {n} lines': '{n} satırın tümünü göster',
+  'Cut at {n} of {all} characters; the full text stays in the database.': '{all} karakterin ilk {n} tanesi saklandı; metnin tamamı veritabanında.',
+  'Wrap long lines': 'Uzun satırları kaydır', 'Wrap lines': 'Satır kaydır', 'Copy SQL': 'SQL kopyala',
 };
 // table-page:end
+
+// fn-page:start (tests/viewerFunctionPage.test.js runs this block with table-page)
+// Views and functions in the Schema tab: the counts of the type switch, the
+// compact lists grouped by schema, and the function page (one file per schema
+// and name with all overloads, GET /api/memory/function). Built from graph.json
+// and the function file only; nothing here reads a database. Every field from
+// the files is optional: memory written before functions were recorded has none.
+const schemaObjectTypes = ['tables', 'views', 'functions'];
+const schemaObjectTypeLabels = { tables: 'Tables', views: 'Views', functions: 'Functions' };
+function schemaObjectCounts(data) {
+  const nodes = tpArr(data?.nodes);
+  const views = nodes.filter(n => tpIsView(n.kind)).length;
+  return { tables: nodes.length - views, views, functions: tpArr(data?.functions).filter(f => f && f.name).length };
+}
+// One row of the Views or Functions list.
+function schemaObjectItem(data, type, x) {
+  if (type === 'views') {
+    const fns = tpArr(x.viewFunctions).map(id => splitTableKey(id)).filter(Boolean);
+    return { id: x.id, schema: x.schema ?? '', name: x.table ?? x.id, kind: x.kind, state: x.state ?? 'unexplored',
+      columns: Number.isInteger(x.columnCount) ? x.columnCount : 0, sources: tpArr(x.viewSources).length, functions: fns.length,
+      volatile: fns.filter(p => tpFnEntry(data, p.schema, p.table)?.flags?.volatile).length, notes: x.notes || 0, changes: x.changes || 0 };
+  }
+  const flags = x.flags && typeof x.flags === 'object' ? x.flags : {};
+  const views = tpArr(x.calledBy?.views).length || tpArr(data?.nodes).filter(n => tpArr(n.viewFunctions).includes(x.id)).length;
+  return { id: x.id ?? tableKey(x.schema, x.name), schema: x.schema ?? '', name: x.name, state: x.state === 'explored' ? 'explored' : 'seen',
+    overloads: Number.isInteger(x.overloads) ? x.overloads : 1, kinds: tpArr(x.kinds), language: typeof x.language === 'string' ? x.language : null,
+    volatile: flags.volatile === true, definer: flags.securityDefiner === true, definerRisk: flags.definerWithoutSearchPath === true,
+    calledByViews: views, calledByFunctions: tpArr(x.calledBy?.functions).length,
+    triggers: Number.isInteger(x.usedByTriggers) ? x.usedByTriggers : 0,
+    reads: tpArr(x.touches?.reads).length, writes: tpArr(x.touches?.writes).length, changes: x.changes || 0 };
+}
+// The Views or Functions list: every word of the query (Turkish-aware fold)
+// must appear in schema.name; schema limits it to one schema ('' = all).
+// Groups by schema, rows by name.
+function schemaObjectGroups(data, type, query, schema) {
+  const source = type === 'views' ? tpArr(data?.nodes).filter(n => tpIsView(n.kind)) : tpArr(data?.functions).filter(f => f && f.name);
+  const all = source.map(x => schemaObjectItem(data, type, x)).filter(x => !schema || x.schema === schema);
+  const words = tpQueryWords(query);
+  const shown = words.length ? all.filter(x => words.every(w => foldText(x.id).includes(w))) : all;
+  const bySchema = new Map();
+  for (const x of shown) bySchema.set(x.schema, [...(bySchema.get(x.schema) || []), x]);
+  const groups = [...bySchema].sort((a, b) => tpCmp(a[0], b[0])).map(([s, items]) => ({ schema: s, items: items.sort((a, b) => tpCmp(a.name, b.name) || tpCmp(a.id, b.id)) }));
+  return { type, groups, total: all.length, shown: shown.length, searching: words.length > 0 };
+}
+const schemaListLimit = 400;
+// Quiet meta of one row: counts only when they are not zero.
+function schemaObjectMeta(x, type) {
+  const part = (n, one, many) => (n ? t(n === 1 ? one : many, { n: fmt(n) }) : null);
+  if (type === 'views') return [part(x.columns, '{n} column', '{n} columns'), part(x.sources, '{n} source', '{n} sources'), part(x.functions, '{n} function', '{n} functions')].filter(Boolean).join(' · ');
+  return [x.overloads > 1 ? t('{n} overloads', { n: fmt(x.overloads) }) : null, x.language, part(x.calledByViews, 'used by {n} view', 'used by {n} views'),
+    part(x.triggers, '{n} trigger', '{n} triggers'), x.writes ? t('writes {n}', { n: fmt(x.writes) }) : null].filter(Boolean).join(' · ');
+}
+function schemaObjectRow(x, type, ctx) {
+  const badges = type === 'views'
+    ? [x.kind === 'matview' ? h('span', { class: 'badge kind-view' }, t('Materialized view')) : null,
+      x.state !== 'explored' ? h('span', { class: 'badge seen' }, t('not described')) : null,
+      x.volatile ? h('span', { class: 'badge risk-warn', title: t(tpVolatileText) }, '⚠ ', t('volatile call')) : null]
+    : [x.kinds.filter(k => k !== 'function').map(k => h('span', { class: 'badge code' }, t(k))),
+      x.state !== 'explored' ? h('span', { class: 'badge seen', title: t('Listed by list_functions: no body or flags beyond volatility yet.') }, t('listed only')) : null,
+      x.definerRisk ? h('span', { class: 'badge risk-crit', title: t(fnRiskTexts['definer-no-search-path']) }, '⚠ ', t('definer, no search_path'))
+        : x.definer ? h('span', { class: 'badge code', title: t(fnFlagTexts['security definer']) }, t('security definer')) : null,
+      x.volatile && x.calledByViews ? h('span', { class: 'badge risk-warn', title: t(fnRiskTexts['volatile-in-view']) }, '⚠ ', t('volatile in a view')) : null];
+  return h('li', {}, h('button', { type: 'button', class: 'obj-row', onclick: () => ctx.onOpen(x) },
+    h('span', { class: 'obj-name' }, h('span', { class: 'tp-mono obj-nm' }, type === 'views' ? x.name : `${x.name}()`), badges),
+    h('span', { class: 'obj-meta' }, schemaObjectMeta(x, type))));
+}
+function schemaObjectList(res, ctx) {
+  const type = res.type;
+  const title = schemaObjectTypeLabels[type];
+  let left = schemaListLimit;
+  const empty = type === 'views'
+    ? ['No views recorded yet', 'Views appear here once your agent describes them with describe_table or describe_tables (list_tables lists them).']
+    : ['No functions recorded yet', 'Ask your agent to run list_functions for an inventory, or describe_functions to record bodies and flags.'];
+  return h('section', { class: 'panel obj-list', 'aria-label': t(title) },
+    h('div', { class: 'panel-h' }, h('h2', {}, t(title)),
+      h('span', { class: 'hint', role: 'status' }, res.searching ? t('{n} / {all}', { n: fmt(res.shown), all: fmt(res.total) }) : fmt(res.total))),
+    h('div', { class: 'panel-b' },
+      !res.total ? h('div', { class: 'tp-empty' }, h('b', {}, t(empty[0])), h('p', {}, t(empty[1])))
+        : !res.shown ? h('div', { class: 'tp-empty sm' }, t('Nothing matches the search.'), ctx.onClearSearch ? [' ', h('button', { type: 'button', class: 'tp-link', onclick: ctx.onClearSearch }, t('Clear search'))] : null)
+        : [res.groups.map(g => {
+          if (left <= 0) return null;
+          const items = g.items.slice(0, left);
+          left -= items.length;
+          return h('section', { class: 'obj-group', 'aria-label': g.schema },
+            h('h3', { class: 'obj-schema' }, g.schema || '–', h('span', { class: 'muted' }, ` (${fmt(g.items.length)})`)),
+            h('ul', { class: 'obj-rows' }, items.map(x => schemaObjectRow(x, type, ctx))));
+        }),
+        res.shown > schemaListLimit ? h('p', { class: 'tp-hint' }, t('First {n} shown; search to narrow the list.', { n: fmt(schemaListLimit) })) : null]));
+}
+
+// ----- function page -----
+const fnRiskTexts = {
+  'definer-no-search-path': 'Security definer without a fixed search_path: a caller can create objects that shadow the ones the body expects, and they run with the owner\'s rights. Set search_path in the function\'s configuration.',
+  'volatile-in-view': 'Volatile and called from a view: the view cannot be flattened, filters are not pushed into it and the function runs for every row.',
+};
+const fnRiskLabels = { 'definer-no-search-path': 'Security definer without search_path', 'volatile-in-view': 'Volatile, called from a view' };
+const fnRiskLevel = { 'definer-no-search-path': 'crit', 'volatile-in-view': 'warn' };
+const fnFlagTexts = {
+  immutable: 'immutable: same result for the same arguments; it never reads the database',
+  stable: 'stable: same result within one statement; it may read the database',
+  volatile: 'volatile: may change data or return a different result on every call; never folded or cached',
+  strict: 'strict: returns NULL at once when any argument is NULL',
+  'parallel safe': 'parallel safe: may run in parallel workers',
+  'parallel restricted': 'parallel restricted: runs only in the leader process of a parallel query',
+  'parallel unsafe': 'parallel unsafe: a query that calls it never runs in parallel',
+  'security definer': 'security definer: runs with the owner\'s privileges, not the caller\'s',
+  'security invoker': 'security invoker: runs with the caller\'s privileges',
+  config: 'a setting applied only while the function runs (SET clause)',
+  owner: 'owner of the function',
+  'can execute': 'the Auspex role may execute this function',
+  'cannot execute': 'the Auspex role may not execute this function',
+};
+const fnStr = v => (typeof v === 'string' ? v : null);
+const fnSearchPath = config => {
+  const c = config.find(x => /^\s*search_path\s*=/i.test(x));
+  return c === undefined ? null : c.replace(/^\s*search_path\s*=\s*/i, '');
+};
+// One overload as the page shows it. calledByViews: how many views call the
+// function (by name; the graph does not say which overload).
+function fnOverloadModel(o, name, calledByViews, i) {
+  const config = tpArr(o.config).filter(c => typeof c === 'string');
+  const searchPath = fnSearchPath(config);
+  const securityDefiner = o.securityDefiner === true;
+  const volatility = ['immutable', 'stable', 'volatile'].includes(o.volatility) ? o.volatility : null;
+  const risks = [];
+  if (securityDefiner && searchPath === null) risks.push('definer-no-search-path');
+  if (volatility === 'volatile' && calledByViews > 0) risks.push('volatile-in-view');
+  const ids = list => [...new Set(tpArr(list).filter(x => typeof x === 'string'))].sort(tpCmp);
+  const definition = fnStr(o.definition);
+  return {
+    index: i, arguments: fnStr(o.arguments) ?? '', returns: fnStr(o.returns), kind: fnStr(o.kind) ?? 'function', language: fnStr(o.language),
+    volatility, strict: o.strict === true, parallel: ['safe', 'restricted', 'unsafe'].includes(o.parallel) ? o.parallel : null,
+    securityDefiner, securityKnown: typeof o.securityDefiner === 'boolean', config, searchPath, owner: fnStr(o.owner),
+    canExecute: typeof o.canExecute === 'boolean' ? o.canExecute : null, comment: fnStr(o.comment),
+    definition, definitionLength: Number.isInteger(o.definitionLength) ? o.definitionLength : definition === null ? null : definition.length, truncated: o.truncated === true,
+    touches: { reads: ids(o.touches?.reads), writes: ids(o.touches?.writes) },
+    triggers: tpArr(o.usedByTriggers).filter(x => x && typeof x.table === 'string').map(x => ({ table: x.table, trigger: fnStr(x.trigger) ?? '' })),
+    risks, listedOnly: o.listedOnly === true, signature: `${name}(${fnStr(o.arguments) ?? ''})`,
+  };
+}
+// Everything the function page shows for id (schema.name). rec: the function
+// file (null when it is not recorded or not loaded yet).
+function functionPageModel(data, id, rec) {
+  const parts = splitTableKey(id);
+  const entry = tpArr(data?.functions).find(f => f && (f.id === id || (parts && f.schema === parts.schema && f.name === parts.table))) ?? null;
+  const schema = fnStr(rec?.schema) ?? entry?.schema ?? parts?.schema ?? '';
+  const name = fnStr(rec?.name) ?? entry?.name ?? parts?.table ?? String(id);
+  const nodes = tpArr(data?.nodes);
+  const viewIds = entry && Array.isArray(entry.calledBy?.views) ? entry.calledBy.views : nodes.filter(n => tpArr(n.viewFunctions).includes(id)).map(n => n.id);
+  const views = [...new Set(viewIds.filter(v => typeof v === 'string'))].sort(tpCmp).map(v => tpRelRef(nodes, v, null, []));
+  const functions = [...new Set(tpArr(entry?.calledBy?.functions).filter(f => typeof f === 'string' && f !== id))].sort(tpCmp)
+    .map(f => ({ id: f, recorded: tpArr(data?.functions).some(x => x && x.id === f) }));
+  const overloads = tpArr(rec?.overloads).filter(o => o && typeof o === 'object').map((o, i) => fnOverloadModel(o, name, views.length, i));
+  const union = key => (overloads.length ? [...new Set(overloads.flatMap(o => o.touches[key]))] : tpArr(entry?.touches?.[key]).filter(x => typeof x === 'string')).sort(tpCmp);
+  // Unqualified pg_* names resolve to pg_catalog: shown apart, muted, not as links.
+  const isSystem = x => x.startsWith('pg_catalog.');
+  const touch = list => list.filter(x => !isSystem(x)).map(x => tpRelRef(nodes, x, null, []));
+  const flags = entry?.flags && typeof entry.flags === 'object' ? entry.flags : {};
+  const risks = overloads.length ? [...new Set(overloads.flatMap(o => o.risks))]
+    : [flags.definerWithoutSearchPath === true ? 'definer-no-search-path' : null, flags.volatile === true && views.length ? 'volatile-in-view' : null].filter(Boolean);
+  const triggers = overloads.flatMap(o => o.triggers.map(x => ({ ...x, signature: o.signature })));
+  const history = tpArr(rec?.history).filter(x => x && Array.isArray(x.changes)).slice().reverse()
+    .map(x => ({ at: x.at ?? null, changes: x.changes.filter(c => c && c.change).map(c => ({ change: c.change, arguments: fnStr(c.arguments), fields: tpArr(c.fields).filter(f => typeof f === 'string') })) }));
+  const described = !!rec?.describedAt || entry?.state === 'explored';
+  return {
+    id, schema, name, profile: data?.profile ?? null, recorded: !!(entry || rec), described, state: described ? 'explored' : entry || rec ? 'seen' : 'unexplored',
+    describedAt: fnStr(rec?.describedAt), lastSeen: fnStr(rec?.lastSeen),
+    language: overloads[0]?.language ?? fnStr(entry?.language),
+    overloadCount: overloads.length || (Number.isInteger(entry?.overloads) ? entry.overloads : 0),
+    overloads, risks,
+    touches: { reads: touch(union('reads')), writes: touch(union('writes')), system: [...new Set([...union('reads'), ...union('writes')].filter(isSystem))].sort(tpCmp) },
+    triggers: triggers.length || overloads.length ? triggers : [],
+    triggerCount: triggers.length || (Number.isInteger(entry?.usedByTriggers) ? entry.usedByTriggers : 0),
+    calledBy: { views, functions }, history,
+  };
+}
+// Flag chips of one overload: [label, explanation key, tone].
+function fnFlagChips(o) {
+  return [
+    o.volatility ? [o.volatility, o.volatility, o.volatility === 'volatile' ? 'warn' : 'quiet'] : null,
+    o.parallel ? [`parallel ${o.parallel}`, `parallel ${o.parallel}`, 'quiet'] : null,
+    o.strict ? ['strict', 'strict', 'quiet'] : null,
+    o.securityKnown ? (o.securityDefiner ? ['security definer', 'security definer', o.searchPath === null ? 'crit' : 'warn'] : ['security invoker', 'security invoker', 'quiet']) : null,
+    ...o.config.map(c => [c, 'config', 'quiet']),
+    o.owner ? [`owner ${o.owner}`, 'owner', 'quiet'] : null,
+    o.canExecute === null ? null : o.canExecute ? ['can execute', 'can execute', 'ok'] : ['cannot execute', 'cannot execute', 'warn'],
+  ].filter(Boolean);
+}
+const fnChangeTexts = { 'overload-added': 'overload added', 'overload-removed': 'overload removed', 'definition-changed': 'body changed', 'flags-changed': 'flags changed' };
+function fnRiskBox(key) {
+  return h('div', { class: `risk-box ${fnRiskLevel[key] || 'warn'}`, role: 'note' }, h('b', {}, '⚠ ', t(fnRiskLabels[key] || key)), ' ', t(fnRiskTexts[key] || ''));
+}
+function fnOverloadCard(model, o, ctx) {
+  const chips = fnFlagChips(o);
+  const openKey = `${model.id}#${o.index}`;
+  const helpId = `fn-flags-${o.index}`;
+  const helpOpen = !!ctx.flagHelp?.[openKey];
+  return h('section', { class: 'panel fn-ov', 'aria-label': o.signature },
+    h('div', { class: 'panel-h fn-sig-h' },
+      h('h2', { class: 'fn-sig' }, h('span', { class: 'fn-nm' }, model.name), h('span', { class: 'fn-args' }, `(${o.arguments})`),
+        o.returns ? [h('span', { class: 'fn-arrow', 'aria-label': t('returns') }, ' → '), h('span', { class: 'fn-ret' }, o.returns)] : null),
+      h('span', { class: 'fn-sig-badges' }, h('span', { class: 'badge kind-fn' }, t(o.kind)), o.language ? h('span', { class: 'badge code' }, o.language) : null,
+        o.listedOnly ? h('span', { class: 'badge seen', title: t('Listed by list_functions: no body or flags beyond volatility yet.') }, t('listed only')) : null)),
+    h('div', { class: 'panel-b fn-ov-b' },
+      chips.length ? h('div', { class: 'fn-flags' },
+        h('ul', { class: 'fn-chips', 'aria-label': t('Flags') }, chips.map(([label, key, tone]) => h('li', { class: `fn-flag ${tone}`, title: t(fnFlagTexts[key] || key) }, label))),
+        h('button', { type: 'button', class: 'tp-link fn-help-btn', 'aria-expanded': String(helpOpen), 'aria-controls': helpId, onclick: () => ctx.onFlagHelp?.(openKey, !helpOpen) }, helpOpen ? t('Hide explanations') : t('What do these mean?'))) : null,
+      helpOpen ? h('dl', { class: 'fn-help', id: helpId }, chips.map(([label, key]) => [h('dt', {}, label), h('dd', {}, t(fnFlagTexts[key] || key))])) : null,
+      o.risks.map(fnRiskBox),
+      o.comment ? h('p', { class: 'tp-comment' }, o.comment) : null,
+      h('h3', { class: 'fn-sub' }, t('Body')),
+      o.definition !== null
+        ? tpCode(o.definition, { id: `fn-body-${o.index}`, label: t('Body of {s}', { s: o.signature }), open: ctx.codeOpen?.[openKey], onToggle: v => ctx.onCodeOpen?.(openKey, v), truncated: o.truncated, length: o.definitionLength }, ctx)
+        : h('div', { class: 'muted' }, o.listedOnly ? t('Listed only, not described yet: describe_functions records the body and flags.')
+          : o.kind === 'aggregate' ? t('An aggregate has no body text.') : t('No body recorded: describe_functions records it (list_functions only lists).'))));
+}
+function fnLinkList(items, row, empty) {
+  return items.length ? h('ul', { class: 'tp-nbs' }, items.map(x => h('li', {}, row(x)))) : h('div', { class: 'muted' }, t(empty));
+}
+function fnTouches(model, ctx) {
+  const card = r => h('button', { type: 'button', class: 'tp-nb' + (r.explored ? '' : ' muted-card'), onclick: () => ctx.onOpen(r.id), title: r.explored ? null : t('Not explored yet: describe_table records it.') },
+    h('span', { class: 'tp-mono tp-nm' }, r.id), r.explored ? null : h('span', { class: 'tp-meta' }, t('not explored yet')));
+  return h('section', { class: 'panel tp-side tp-refs', 'aria-label': t('Touches (inferred)') },
+    h('div', { class: 'panel-h' }, h('h2', {}, t('Touches')), h('span', { class: 'badge inference', title: t('Read from the body text, not from the catalog: dynamic SQL (EXECUTE) and tables reached through other functions are missed.') }, t('inferred'))),
+    h('div', { class: 'panel-b' }, h('p', { class: 'tp-hint' }, t('Read from the body text, not from the catalog: dynamic SQL (EXECUTE) and tables reached through other functions are missed.')),
+      h('h4', { class: 'fn-side-h' }, t('Writes'), h('span', { class: 'muted' }, ` (${fmt(model.touches.writes.length)})`)), fnLinkList(model.touches.writes, card, 'None found.'),
+      h('h4', { class: 'fn-side-h' }, t('Reads'), h('span', { class: 'muted' }, ` (${fmt(model.touches.reads.length)})`)), fnLinkList(model.touches.reads, card, 'None found.'),
+      model.touches.system.length ? h('p', { class: 'tp-hint tp-mono', title: t('System catalog names the body uses') }, model.touches.system.join(', ')) : null));
+}
+function fnUsedBy(model, ctx) {
+  const c = model.calledBy;
+  const n = model.triggers.length + c.views.length + c.functions.length;
+  return h('section', { class: 'panel tp-side tp-deps', 'aria-label': t('Used by') },
+    h('div', { class: 'panel-h' }, h('h2', {}, t('Used by')), h('span', { class: 'hint' }, fmt(n))),
+    h('div', { class: 'panel-b' },
+      h('h4', { class: 'fn-side-h' }, t('Triggers'), h('span', { class: 'muted' }, ` (${fmt(model.triggers.length)})`)),
+      fnLinkList(model.triggers, x => h('button', { type: 'button', class: 'tp-nb', onclick: () => ctx.onOpen(x.table), title: model.overloads.length > 1 ? x.signature : null },
+        h('span', { class: 'tp-mono tp-nm' }, x.trigger || '?'), h('span', { class: 'tp-mono tp-jn' }, t('on {t}', { t: x.table }))), model.recorded && !model.described && model.triggerCount ? 'Trigger names are recorded by describe_functions.' : 'None known.'),
+      h('h4', { class: 'fn-side-h' }, t('Views'), h('span', { class: 'muted' }, ` (${fmt(c.views.length)})`)),
+      fnLinkList(c.views, r => h('button', { type: 'button', class: 'tp-nb' + (r.explored ? '' : ' muted-card'), onclick: () => ctx.onOpen(r.id) },
+        h('span', { class: 'tp-mono tp-nm' }, r.id), model.risks.includes('volatile-in-view') ? h('span', { class: 'tp-meta' }, '⚠ ', t('volatile call')) : null), 'None known.'),
+      h('h4', { class: 'fn-side-h' }, t('Functions'), h('span', { class: 'muted' }, ` (${fmt(c.functions.length)})`)),
+      fnLinkList(c.functions, f => h('button', { type: 'button', class: 'tp-nb' + (f.recorded ? '' : ' muted-card'), onclick: () => ctx.onOpenFunction?.(f.id) },
+        h('span', { class: 'tp-mono tp-nm' }, `${f.id}()`), f.recorded ? null : h('span', { class: 'tp-meta' }, t('not recorded yet'))), 'None known.'),
+      c.functions.length ? h('p', { class: 'tp-hint' }, t('Callers found by name in other recorded function bodies.')) : null));
+}
+function fnHistory(model) {
+  if (!model.history.length) return null;
+  return h('section', { class: 'panel', 'aria-label': t('Change history') },
+    h('div', { class: 'panel-h' }, h('h2', {}, t('Change history')), h('span', { class: 'hint' }, fmt(model.history.length))),
+    h('div', { class: 'panel-b' }, h('ul', { class: 'tp-hist fn-hist' }, model.history.map(x => h('li', {},
+      h('span', { class: 'muted' }, x.at ? tpDay(x.at) : '?'), ' ',
+      x.changes.map((c, i) => [i ? '; ' : '', t(fnChangeTexts[c.change] || c.change), c.fields.length ? h('span', { class: 'muted' }, `: ${c.fields.join(', ')}`) : null,
+        c.arguments !== null ? h('span', { class: 'tp-mono' }, ` (${c.arguments})`) : null]))))));
+}
+function functionPageView(model, trail, ctx) {
+  const kinds = [...new Set(model.overloads.map(o => o.kind))];
+  const facts = [
+    [t('Overloads'), fmt(model.overloadCount)],
+    model.language ? [t('Language'), model.language] : null,
+    [t('Calling views'), fmt(model.calledBy.views.length)],
+    [t('Using triggers'), fmt(model.triggerCount)],
+    [t('Tables written'), fmt(model.touches.writes.length), t('Tables it writes (inferred from the body)')],
+    model.describedAt ? [t('Last described'), tpDay(model.describedAt)] : null,
+  ].filter(Boolean);
+  const head = h('section', { class: 'panel tp-head' },
+    h('div', { class: 'tp-title' }, h('h2', {}, `${model.id}()`),
+      (kinds.length ? kinds : ['function']).map(k => h('span', { class: 'badge kind-fn' }, t(k))),
+      h('span', { class: 'badge ' + (model.described ? 'explored' : 'seen') }, model.described ? t('described') : model.recorded ? t('listed only') : t('not recorded')),
+      model.risks.map(r => h('span', { class: `badge risk-${fnRiskLevel[r] || 'warn'}`, title: t(fnRiskTexts[r]) }, '⚠ ', t(fnRiskLabels[r])))),
+    h('div', { class: 'tp-facts' }, facts.map(([k, v, title]) => h('span', { title: title ?? null }, h('b', {}, v), ' ', k))));
+  const main = !model.recorded
+    ? h('section', { class: 'panel' }, h('div', { class: 'tp-empty' }, h('b', {}, t('Not recorded yet')),
+      h('p', {}, t('Ask your agent to run describe_functions on {id}; it reads the catalog only and records the overloads, flags and bodies.', { id: model.id }))))
+    : model.overloads.length ? model.overloads.map(o => fnOverloadCard(model, o, ctx))
+      : h('section', { class: 'panel' }, h('div', { class: 'tp-empty' }, h('b', {}, t('No overloads recorded')),
+        h('p', {}, t('Ask your agent to run describe_functions on {id}; it reads the catalog only and records the overloads, flags and bodies.', { id: model.id }))));
+  return h('div', { class: 'tp fp' }, tpCrumbs(trail, ctx), head,
+    h('div', { class: 'tp-body' },
+      h('div', { class: 'tp-main' }, main, tpReportsPanel(ctx.reports, model.schema, model.name, 'No report mentions this function.', ctx), fnHistory(model)),
+      fnTouches(model, ctx), fnUsedBy(model, ctx)));
+}
+function fnLoadError(id, message, trail, ctx) {
+  return h('div', { class: 'tp' }, tpCrumbs(trail, ctx),
+    h('div', { class: 'panel' }, h('div', { class: 'error-box', role: 'alert', style: 'margin:16px' },
+      t('The function file of {id} could not be loaded: {m}', { id, m: message }), ' ',
+      h('button', { type: 'button', class: 'icon-btn sm', onclick: ctx.onRetry }, t('Retry')))));
+}
+const fnPageTr = {
+  'Tables': 'Tablolar', 'Views': 'View\'lar', 'Functions': 'Fonksiyonlar',
+  '{n} column': '{n} kolon', '{n} columns': '{n} kolon', '{n} source': '{n} kaynak', '{n} sources': '{n} kaynak', '{n} function': '{n} fonksiyon', '{n} functions': '{n} fonksiyon',
+  '{n} overloads': '{n} overload', 'used by {n} view': '{n} view kullanıyor', 'used by {n} views': '{n} view kullanıyor', '{n} trigger': '{n} trigger', '{n} triggers': '{n} trigger', 'writes {n}': '{n} tabloya yazar',
+  'Materialized view': 'Materialized view', 'not described': 'tanımlanmadı', 'volatile call': 'volatile çağrı',
+  'function': 'fonksiyon', 'procedure': 'prosedür', 'aggregate': 'aggregate', 'window': 'window',
+  'Listed by list_functions: no body or flags beyond volatility yet.': 'list_functions ile listelendi: henüz gövde ya da volatility dışında bayrak yok.',
+  'listed only': 'yalnızca listelendi', 'definer, no search_path': 'definer, search_path yok', 'security definer': 'security definer', 'volatile in a view': 'view içinde volatile',
+  'No views recorded yet': 'Henüz kayıtlı view yok',
+  'Views appear here once your agent describes them with describe_table or describe_tables (list_tables lists them).': 'Ajanınız view\'ları describe_table ya da describe_tables ile tanımladığında burada görünür (list_tables onları listeler).',
+  'No functions recorded yet': 'Henüz kayıtlı fonksiyon yok',
+  'Ask your agent to run list_functions for an inventory, or describe_functions to record bodies and flags.': 'Envanter için ajanınızdan list_functions, gövde ve bayrakları kaydetmek için describe_functions çalıştırmasını isteyin.',
+  '{n} / {all}': '{n} / {all}', 'Nothing matches the search.': 'Aramaya uyan yok.', 'Clear search': 'Aramayı temizle',
+  'First {n} shown; search to narrow the list.': 'İlk {n} tanesi gösteriliyor; listeyi daraltmak için arayın.',
+  'Security definer without a fixed search_path: a caller can create objects that shadow the ones the body expects, and they run with the owner\'s rights. Set search_path in the function\'s configuration.': 'Sabit search_path olmadan security definer: çağıran, gövdenin beklediği nesneleri gölgeleyen nesneler oluşturabilir ve bunlar sahibin yetkileriyle çalışır. Fonksiyonun ayarlarında search_path belirleyin.',
+  'Volatile and called from a view: the view cannot be flattened, filters are not pushed into it and the function runs for every row.': 'Volatile ve bir view\'dan çağrılıyor: view düzleştirilemez, filtreler içine itilemez ve fonksiyon her satır için çalışır.',
+  'Security definer without search_path': 'search_path olmadan security definer', 'Volatile, called from a view': 'Volatile, view\'dan çağrılıyor',
+  'immutable: same result for the same arguments; it never reads the database': 'immutable: aynı argümanlar için aynı sonuç; veritabanını hiç okumaz',
+  'stable: same result within one statement; it may read the database': 'stable: tek bir ifade içinde aynı sonuç; veritabanını okuyabilir',
+  'volatile: may change data or return a different result on every call; never folded or cached': 'volatile: veriyi değiştirebilir ya da her çağrıda farklı sonuç döndürebilir; hiç katlanmaz ya da önbelleğe alınmaz',
+  'strict: returns NULL at once when any argument is NULL': 'strict: herhangi bir argüman NULL ise hemen NULL döndürür',
+  'parallel safe: may run in parallel workers': 'parallel safe: paralel çalışanlarda çalışabilir',
+  'parallel restricted: runs only in the leader process of a parallel query': 'parallel restricted: paralel sorguda yalnızca lider süreçte çalışır',
+  'parallel unsafe: a query that calls it never runs in parallel': 'parallel unsafe: onu çağıran sorgu hiç paralel çalışmaz',
+  'security definer: runs with the owner\'s privileges, not the caller\'s': 'security definer: çağıranın değil sahibinin yetkileriyle çalışır',
+  'security invoker: runs with the caller\'s privileges': 'security invoker: çağıranın yetkileriyle çalışır',
+  'a setting applied only while the function runs (SET clause)': 'yalnızca fonksiyon çalışırken uygulanan ayar (SET ifadesi)',
+  'owner of the function': 'fonksiyonun sahibi', 'the Auspex role may execute this function': 'Auspex rolü bu fonksiyonu çalıştırabilir',
+  'the Auspex role may not execute this function': 'Auspex rolü bu fonksiyonu çalıştıramaz',
+  'overload added': 'overload eklendi', 'overload removed': 'overload kaldırıldı', 'body changed': 'gövde değişti', 'flags changed': 'bayraklar değişti',
+  'returns': 'döndürür', 'Flags': 'Bayraklar', 'Hide explanations': 'Açıklamaları gizle', 'What do these mean?': 'Bunlar ne anlama geliyor?',
+  'Listed only, not described yet: describe_functions records the body and flags.': 'Yalnızca listelendi, henüz tanımlanmadı: describe_functions gövdeyi ve bayrakları kaydeder.',
+  'System catalog names the body uses': 'Gövdenin kullandığı sistem kataloğu adları',
+  'Body': 'Gövde', 'Body of {s}': '{s} gövdesi', 'An aggregate has no body text.': 'Aggregate\'in gövde metni yoktur.',
+  'No body recorded: describe_functions records it (list_functions only lists).': 'Kayıtlı gövde yok: describe_functions kaydeder (list_functions yalnızca listeler).',
+  'Not explored yet: describe_table records it.': 'Henüz keşfedilmedi: describe_table kaydeder.', 'not explored yet': 'henüz keşfedilmedi',
+  'Touches (inferred)': 'Dokunduğu tablolar (çıkarım)', 'Touches': 'Dokunduğu tablolar', 'inferred': 'çıkarım',
+  'Read from the body text, not from the catalog: dynamic SQL (EXECUTE) and tables reached through other functions are missed.': 'Katalogdan değil gövde metninden okunur: dinamik SQL (EXECUTE) ve başka fonksiyonlar üzerinden erişilen tablolar kaçar.',
+  'Writes': 'Yazdığı', 'Reads': 'Okuduğu', 'None found.': 'Bulunamadı.', 'None known.': 'Bilinen yok.',
+  'Used by': 'Kullananlar', 'Triggers': 'Trigger\'lar', 'on {t}': '{t} üzerinde',
+  'Trigger names are recorded by describe_functions.': 'Trigger adlarını describe_functions kaydeder.', 'not recorded yet': 'henüz kaydedilmedi',
+  'Callers found by name in other recorded function bodies.': 'Çağıranlar, kayıtlı diğer fonksiyon gövdelerinde adla bulundu.',
+  'Change history': 'Değişiklik geçmişi', 'Overloads': 'Overload', 'Language': 'Dil', 'Calling views': 'Çağıran view', 'Using triggers': 'Kullanan trigger', 'Tables written': 'Yazdığı tablo',
+  'Tables it writes (inferred from the body)': 'Yazdığı tablolar (gövdeden çıkarım)', 'Last described': 'Son tanımlama',
+  'described': 'tanımlandı', 'not recorded': 'kaydedilmedi', 'Not recorded yet': 'Henüz kaydedilmedi', 'No overloads recorded': 'Kayıtlı overload yok',
+  'Ask your agent to run describe_functions on {id}; it reads the catalog only and records the overloads, flags and bodies.': 'Ajanınızdan {id} için describe_functions çalıştırmasını isteyin; yalnızca kataloğu okur ve overload\'ları, bayrakları ve gövdeleri kaydeder.',
+  'No report mentions this function.': 'Bu fonksiyonu anan rapor yok.',
+  'The function file of {id} could not be loaded: {m}': '{id} fonksiyon dosyası yüklenemedi: {m}', 'Retry': 'Yeniden dene',
+};
+// fn-page:end
 
 // column-score:start (tests/viewerTablePage.test.js runs this block with stage-change)
 // A person's own column score from the table page: score 1-5 with optional
@@ -5314,13 +5933,14 @@ async function invokeColumnScore(invoke, req) {
 // Opened from the Tables tab, the Schema inspector or the Schema search; lives
 // in the Schema tab. trail: the visited tables, the last one is shown.
 // Translations of the page; keys the dictionary already has keep their text.
-for (const [k, v] of Object.entries({ ...tablePageTr, ...{
-  'Open table page': 'Tablo sayfasını aç', 'Your score for {c}': '{c} için puanınız', 'Roles (optional)': 'Roller (isteğe bağlı)',
+for (const [k, v] of Object.entries({ ...tablePageTr, ...fnPageTr, ...{
+  'Open table page': 'Tablo sayfasını aç', 'Object type': 'Nesne türü', 'Type in the search box above to filter by name.': 'Ada göre süzmek için yukarıdaki arama kutusuna yazın.',
+  'view': 'view', 'reads (view)': 'okur (view)', 'Your score for {c}': '{c} için puanınız', 'Roles (optional)': 'Roller (isteğe bağlı)',
   'Only the user layer changes; the agent score stays. Only local Auspex files change; no database is touched.': 'Yalnızca kullanıcı katmanı değişir; ajan puanı kalır. Yalnızca yerel Auspex dosyaları değişir; hiçbir veritabanına dokunulmaz.',
   'A usage note ("mostly in WHERE") can be given to Claude in chat; it is stored as a rule on the column.': 'Kullanım notu ("çoğunlukla WHERE\'de") sohbette Claude\'a verilebilir; kolona kural olarak kaydedilir.',
   'Remove my score': 'Puanımı kaldır', 'Save': 'Kaydet', 'Saving…': 'Kaydediliyor…', 'Score saved': 'Puan kaydedildi', 'Your score was removed': 'Puanınız kaldırıldı',
   'Summary palette': 'Özet paleti', 'Reset palette': 'Paleti sıfırla', 'Disabled': 'Kapalı', 'Preview of the summary chips': 'Özet çiplerinin önizlemesi',
-  'Choose a score from 1 to 5.': '1 ile 5 arasında bir puan seçin.', 'Current': 'Şu an', 'Tables matching the search': 'Aramaya uyan tablolar',
+  'Choose a score from 1 to 5.': '1 ile 5 arasında bir puan seçin.', 'Current': 'Şu an', 'Tables matching the search': 'Aramaya uyan tablolar', 'Tables, views and functions matching the search': 'Aramaya uyan tablolar, view\'lar ve fonksiyonlar',
 } })) if (!Object.hasOwn(TR, k)) TR[k] = v;
 const tpRecCache = new Map();
 let tpQTimer = 0, tpQPending = null;
@@ -5379,9 +5999,11 @@ function closeTablePage() {
   state.tablePage = null;
   state.tablePageKey = null;
   state.schemaKey = null;
-  if (last) setMemSel(last);
+  if (last && fnFromTrail(last) === null) setMemSel(last);
   renderSchema();
 }
+// A function page opens in the same trail as table pages.
+const openFunctionPage = (db, id) => openTablePage(db, fnTrailId(id));
 function tablePageBack() {
   const tp = state.tablePage;
   if (!tp || tp.trail.length <= 1) return closeTablePage();
@@ -5389,8 +6011,58 @@ function tablePageBack() {
   state.tablePageKey = null;
   renderSchema();
 }
+// SQL boxes of the view and function pages: highlighting, copy, the shared
+// wrap choice of the Reports tab, and the "show all lines" state per page.
+const tpCodeCtx = (tp, pageId, set) => ({
+  highlight: sqlLineNodes, onCopy: text => copy(text, 'SQL'), wrap: state.sqlWrap !== false,
+  onWrap: v => { state.sqlWrap = v; persist(); state.reportViewNode = null; state.tablePageKey = null; renderSchema(); },
+  codeOpen: !!tp.codeOpen?.[`${pageId}#def`], onCodeOpen: v => set({ codeOpen: { ...tp.codeOpen, [`${pageId}#def`]: v } }),
+});
+// The function page: the graph entry names the file; the file is read through
+// GET /api/memory/function like a table file (cached, Retry on error).
+function renderFunctionPage(view, data, fnId) {
+  const tp = state.tablePage;
+  const parts = splitTableKey(fnId);
+  const entry = (Array.isArray(data.functions) ? data.functions : []).find(f => f && (f.id === fnId || (parts && f.schema === parts.schema && f.name === parts.table))) || null;
+  const recKey = typeof entry?.file === 'string' ? `${tp.db}|${entry.file}|${data.generatedAt}` : null;
+  const crumbCtx = {
+    onBack: tablePageBack, onClose: closeTablePage,
+    onCrumb: i => { state.tablePage = { ...tp, trail: tp.trail.slice(0, i + 1), open: null, showAll: false }; renderSchema(); },
+    onRetry: () => { state.tablePageError = null; state.tablePageKey = null; renderSchema(); },
+  };
+  if (recKey && state.tablePageError?.key === recKey) {
+    state.tablePageKey = null;
+    put(view, fnLoadError(fnId, state.tablePageError.message, tp.trail, crumbCtx));
+    return;
+  }
+  if (recKey && !tpRecCache.has(recKey)) {
+    if (!view.querySelector('.tp')) put(view, h('div', { class: 'panel' }, h('div', { class: 'rep-empty' }, t('Loading…'))));
+    if (state.tablePageLoading === recKey) return;
+    state.tablePageLoading = recKey;
+    tpLoadRec(() => getJson(`/api/memory/function?profile=${encodeURIComponent(tp.db)}&file=${encodeURIComponent(entry.file)}`), tpRecCache, recKey, 'function')
+      .catch(err => { state.tablePageError = { key: recKey, message: err?.message || String(err) }; })
+      .finally(() => { state.tablePageLoading = null; state.tablePageKey = null; renderSchema(); });
+    return;
+  }
+  const index = tpReportIndex(tp.db);
+  const key = JSON.stringify(['fn', tp.db, data.generatedAt, tp.trail, lang, tp.codeOpen ?? null, tp.flagHelp ?? null, state.sqlWrap !== false, [index.items.length, index.pending, index.failed]]);
+  if (state.tablePageKey === key && view.querySelector('.tp')) return;
+  state.tablePageKey = key;
+  const model = functionPageModel(data, fnId, recKey ? tpRecCache.get(recKey) : null);
+  const set = patch => { state.tablePage = { ...state.tablePage, ...patch }; renderSchema(); };
+  put(view, functionPageView(model, tp.trail, {
+    ...crumbCtx, ...tpCodeCtx(tp, fnId, set),
+    codeOpen: tp.codeOpen || {}, onCodeOpen: (k, v) => set({ codeOpen: { ...tp.codeOpen, [k]: v } }),
+    flagHelp: tp.flagHelp || {}, onFlagHelp: (k, v) => set({ flagHelp: { ...tp.flagHelp, [k]: v } }),
+    onOpen: next => openTablePage(tp.db, next), onOpenFunction: next => openFunctionPage(tp.db, next),
+    reports: index, onReport: id => { const r = index.reps.find(x => repKey(x) === id); if (r) openReportFromPage(r); },
+    onRetryReports: () => { tpSqlFailed.clear(); state.tablePageKey = null; renderSchema(); },
+  }));
+  if (index.pending) tpLoadReportSql(index.reps);
+}
 function renderTablePage(view, data) {
   const tp = state.tablePage, id = tp.trail.at(-1);
+  if (fnFromTrail(id) !== null) { renderFunctionPage(view, data, fnFromTrail(id)); return; }
   const node = data.nodes.find(n => n.id === id) || null;
   const recKey = node?.file && node.state !== 'unexplored' ? `${tp.db}|${node.file}|${data.generatedAt}` : null;
   const crumbCtx = {
@@ -5413,8 +6085,9 @@ function renderTablePage(view, data) {
     return;
   }
   const viewKind = tpViewOf(tp);
-  const index = viewKind === 'summary' ? tpReportIndex(tp.db) : null;
-  const key = JSON.stringify([tp.db, data.generatedAt, tp.trail, tp.open, tp.showAll, lang, state.scorePending ?? null, viewKind, tpGroupOf(tp), tp.q ?? '', !!tp.unusedOpen, tp.moreOpen ?? null, index ? [index.items.length, index.pending, index.failed] : null]);
+  const isView = tpIsView(node?.kind);
+  const index = viewKind === 'summary' || isView ? tpReportIndex(tp.db) : null;
+  const key = JSON.stringify([tp.db, data.generatedAt, tp.trail, tp.open, tp.showAll, lang, state.scorePending ?? null, viewKind, tpGroupOf(tp), tp.q ?? '', !!tp.unusedOpen, tp.moreOpen ?? null, index ? [index.items.length, index.pending, index.failed] : null, tp.codeOpen ?? null, state.sqlWrap !== false]);
   if (state.tablePageKey === key && view.querySelector('.tp')) return;
   state.tablePageKey = key;
   const model = tablePageModel(data, id, recKey ? tpRecCache.get(recKey) : null);
@@ -5438,6 +6111,7 @@ function renderTablePage(view, data) {
     onMore: (k, v) => set({ moreOpen: { ...tp.moreOpen, [k]: v } }),
     onRetryReports: () => { tpSqlFailed.clear(); state.tablePageKey = null; renderSchema(); },
     onReport: id => { const r = index?.reps.find(x => repKey(x) === id); if (r) openReportFromPage(r); },
+    ...tpCodeCtx(tp, id, set), onOpenFunction: fn => openFunctionPage(tp.db, fn),
   })), tpQPending);
   if (index?.pending) tpLoadReportSql(index.reps);
   if (tp.reveal) {
@@ -5453,11 +6127,19 @@ function renderTablePage(view, data) {
 function memSearchResults(data, q) {
   if (!q || !data) return null;
   const words = foldText(q).split(/\s+/).filter(Boolean);
-  const hits = data.nodes.filter(n => words.every(w => foldText(n.id).includes(w))).sort((a, b) => (a.state === 'explored' ? 0 : 1) - (b.state === 'explored' ? 0 : 1) || a.id.localeCompare(b.id));
-  if (!hits.length) return null;
-  return h('div', { class: 'tp-search', role: 'region', 'aria-label': t('Tables matching the search') },
-    h('span', { class: 'muted' }, t('Open table page')), hits.slice(0, 12).map(n => h('button', { type: 'button', class: 'crumb' + (n.state === 'explored' ? '' : ' dim'), onclick: () => openTablePage(state.db, n.id) }, n.id)),
-    hits.length > 12 ? h('span', { class: 'muted' }, t('+{n} more', { n: fmt(hits.length - 12) })) : null);
+  const match = id => words.every(w => foldText(id).includes(w));
+  const order = (a, b) => (a.state === 'explored' ? 0 : 1) - (b.state === 'explored' ? 0 : 1) || a.id.localeCompare(b.id);
+  const nodes = data.nodes.filter(n => match(n.id)).sort(order);
+  const tables = nodes.filter(n => !tpIsView(n.kind)), views = nodes.filter(n => tpIsView(n.kind));
+  const fns = (Array.isArray(data.functions) ? data.functions : []).filter(f => f && typeof f.id === 'string' && match(f.id)).sort(order);
+  if (!nodes.length && !fns.length) return null;
+  const row = (label, list, open, text) => (list.length ? h('div', { class: 'tp-search-row' }, h('span', { class: 'muted' }, label),
+    list.slice(0, 12).map(x => h('button', { type: 'button', class: 'crumb' + (x.state === 'explored' ? '' : ' dim'), onclick: () => open(x.id) }, text(x))),
+    list.length > 12 ? h('span', { class: 'muted' }, t('+{n} more', { n: fmt(list.length - 12) })) : null) : null);
+  return h('div', { class: 'tp-search', role: 'region', 'aria-label': t('Tables, views and functions matching the search') },
+    row(t('Open table page'), tables, id => openTablePage(state.db, id), x => x.id),
+    row(t('Views'), views, id => openTablePage(state.db, id), x => x.id),
+    row(t('Functions'), fns, id => openFunctionPage(state.db, id), x => `${x.id}()`));
 }
 
 function confirmColumnScore(model, c) {
@@ -5683,6 +6365,38 @@ function timelinePanel(data, schema) {
       e.changes ? h('ul', {}, e.changes.map(c => h('li', {}, changeLabel(c)))) : null))) : h('div', { class: 'muted', style: 'padding:10px 0' }, t('No events yet.')));
 }
 
+// The Tables / Views / Functions switch of the Schema tab (remembered).
+const memTypeOf = () => (schemaObjectTypes.includes(state.memType) ? state.memType : 'tables');
+function memTypeSwitch(data) {
+  const counts = schemaObjectCounts(data), cur = memTypeOf();
+  return h('div', { class: 'seg sch-type', role: 'group', 'aria-label': t('Object type') }, schemaObjectTypes.map(k =>
+    h('button', { type: 'button', class: cur === k ? 'on' : '', 'aria-pressed': String(cur === k), onclick: () => { if (cur === k) return; state.memType = k; persist(); state.schemaKey = null; renderSchema(); } },
+      t(schemaObjectTypeLabels[k]), h('span', { class: 'n' }, fmt(counts[k])))));
+}
+// Views or Functions: a compact list grouped by schema, filtered by the search
+// box of the toolbar (applyMemSearch draws the rows).
+function renderObjectList(view, data) {
+  const type = memTypeOf();
+  const source = type === 'views' ? data.nodes.filter(n => tpIsView(n.kind)) : (Array.isArray(data.functions) ? data.functions : []);
+  const schemas = [...new Set(source.map(x => x?.schema).filter(Boolean))].sort();
+  const cur = schemas.includes(state.memSchema) ? state.memSchema : '';
+  const key = ['list', state.db, data.generatedAt, type, cur, lang].join('|');
+  if (state.schemaKey === key && view.firstChild) { applyMemSearch(); return; }
+  state.schemaKey = key;
+  stopGraph();
+  state.memListSchema = cur;
+  const schemaSel = schemas.length > 1 ? h('div', { class: 'field' }, h('label', { for: 'objSchema' }, t('Schema')), (() => {
+    const s = h('select', { id: 'objSchema', onchange: ev => pickSchema(data, ev.target.value) }, h('option', { value: '' }, t('All')), schemas.map(x => h('option', { value: x }, x)));
+    s.value = cur;
+    return s;
+  })()) : null;
+  const bar = h('div', { class: 'panel' }, h('div', { class: 'sch-bar' }, memTypeSwitch(data), schemaSel,
+    h('span', { class: 'muted sch-hint' }, t('Type in the search box above to filter by name.'))));
+  state.memSearchHost = null;
+  state.memListHost = h('div', { class: 'obj-host' });
+  put(view, bar, state.memListHost);
+  applyMemSearch();
+}
 function renderSchema() {
   const profiles = memProfiles();
   const sum = state.db ? memSummaryFor(state.db) : null;
@@ -5711,6 +6425,8 @@ function renderSchema() {
     return;
   }
   state.tablePageKey = null;
+  if (memTypeOf() !== 'tables') { renderObjectList(view, mv.data); return; }
+  state.memListHost = null;
 
   const data = mv.data;
   const g = memGraph(data);
@@ -5745,6 +6461,7 @@ function renderSchema() {
   const nNew = newChanges(sum);
   const bar = h('div', { class: 'panel' },
     h('div', { class: 'sch-bar' },
+      memTypeSwitch(data),
       h('div', { class: 'seg', role: 'group', 'aria-label': t('View') }, [['graph', t('Graph')], ['er', t('ER diagram')], ['flow', t('Flow')]].map(([k, label]) =>
         h('button', { class: state.memMode === k ? 'on' : '', onclick: () => {
           if (k === 'graph' && state.memMode !== 'graph') { state.memShowAll = false; state.mem3dDepth = 1; }
