@@ -135,7 +135,7 @@ test('rules navigator: table list left in schema and prefix groups, a divider, t
   assert.match(page, /class: 'rn-split', role: 'separator', tabindex: '0', 'aria-orientation': 'vertical'/);
   assert.match(page, /const rulesSideMin = 220, rulesSideMax = 560, rulesSideDefault = 320;/);
   // The folded list is a rail like the Reports tab's.
-  assert.match(page, /class: 'rules-nav collapsed' \},\s*h\('div', \{ class: 'panel rep-rail' \}/);
+  assert.match(page, /class: 'rules-nav collapsed' \+ \(info \? ' with-info' : ''\) \},\s*h\('div', \{ class: 'panel rep-rail' \}/);
   // The chosen row, open groups and the fold are part of the render key; without them a click would not redraw.
   assert.match(page, /const key = JSON\.stringify\(\[[^\]]*state\.rulesSel \?\? null, state\.rulesOpen \?\? null, !!state\.rulesListCollapsed\]\)/);
   assert.match(page, /'No notes': 'Not yok'/);
