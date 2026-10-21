@@ -386,3 +386,12 @@ test('completed exports wait for the file descriptor to close before returning',
     fs.rmSync(target, { force: true });
   }
 });
+
+test('spreadsheet mode treats a negative interval as text', async () => {
+  const db = fakeDb({ batches: [[['-1 days +02:00:00', '1 day']]], fields: [{ name: 'gap', dataTypeID: 1186 }, { name: 'span', dataTypeID: 1186 }] });
+  const chunks = [];
+  db.exportPath = () => path.join(exportDir, 'interval.csv');
+  db.openExportStream = () => new Writable({ write(chunk, enc, cb) { chunks.push(chunk.toString()); cb(); } });
+  await db._exportCsv('local', 'select 1', [], 'x', ',', undefined, 'spreadsheet');
+  assert.ok(chunks.join('').includes("\r\n'-1 days +02:00:00,1 day\r\n"));
+});
