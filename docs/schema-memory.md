@@ -94,6 +94,11 @@ that is a node; sources that are not in the memory get no node of their own.
 function: { id: "schema.name", schema, name, file: "functions/<schema>/<name>.json",
             state: "explored" | "seen",           // seen: only listed by list_functions
             overloads: number, kinds: ["function", ...], language,
+            role: "trigger" | "procedure" | "aggregate" | "window" | "function",
+                                                  // trigger when an overload returns trigger, else the
+                                                  // first of procedure, aggregate, window an overload is
+            timings: ["after", "before", "instead"],  // sorted, from usedByTriggers (empty when unknown)
+            triggerTables: ["schema.table", ...],     // sorted tableKey ids of the tables whose triggers call it
             flags: { volatile, securityDefiner, definerWithoutSearchPath },  // true when any overload has it
             usedByTriggers: number,               // distinct calling triggers over all overloads
             calledBy: { views: ["schema.table", ...],    // views whose viewFunctions name it
@@ -134,7 +139,9 @@ apart, because the plan text they come from has no quotes.
     "kind": "function", "language": "plpgsql", "volatility": "stable",
     "securityDefiner": false, "strict": false, "parallel": "unsafe",
     "config": ["search_path=example"], "owner": "report_reader", "canExecute": true, "comment": null,
-    "usedByTriggers": [{ "table": "example.orders", "trigger": "orders_audit" }],
+    "returnsTrigger": false,
+    "usedByTriggers": [{ "table": "example.orders", "schema": "example", "tableName": "orders", "trigger": "orders_audit",
+                         "timing": "after", "events": ["insert", "update"], "level": "row" }],
     "definition": "CREATE OR REPLACE FUNCTION ...",   // cut at 20000 characters; null for aggregates
     "definitionLength": 2345, "truncated": false,
     "definitionHash": "16 hex characters (sha256 of the stored text)",
@@ -150,10 +157,17 @@ apart, because the plan text they come from has no quotes.
   entries, like tables.
 - An overload only listed by `list_functions` has `listedOnly: true`,
   `definition: null` and only the inventory fields (`arguments`, `returns`,
-  `kind`, `language`, `volatility`). `list_functions` never changes an
-  overload that is already recorded; a later `describe_functions` replaces
+  `kind`, `language`, `volatility`, `returnsTrigger`, `usedByTriggers`). A
+  later `list_functions` refreshes only `returnsTrigger` and `usedByTriggers`
+  of listed-only overloads and never changes a described overload or a
+  definition; a later `describe_functions` replaces
   the listed overload with the full one (reported as `overload-added` when the
   function was described before).
+- Records written before trigger timing was stored have `usedByTriggers`
+  entries with only `table` and `trigger`, and no `returnsTrigger`: they load
+  as before; the graph then takes `role` from the return type text
+  (`trigger`), `triggerTables` from the stored `table` and leaves `timings`
+  empty until the function is described or listed again.
 - `touches` is a textual inference from the body, not a catalog fact
   (PostgreSQL records no dependencies for function bodies), and only for
   `sql` and `plpgsql`: comments, string literals and nested dollar-quoted
