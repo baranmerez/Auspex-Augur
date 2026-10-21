@@ -378,7 +378,7 @@ test('summary: an empty chip group says "None known." (Used by views, Referenced
 });
 
 test('change label: view-sources-changed lists added and removed sources (EN and TR)', () => {
-  const src = page.match(/^function changeLabel\(c\) \{[\s\S]*?\n\}\n/m)[0];
+  const src = page.match(/^function changeLabel\(c\) \{[\s\S]*?\r?\n\}\r?\n/m)[0];
   const run = lang => {
     const ctx = vm.createContext({});
     vm.runInContext(`const TR = ${JSON.stringify(pageTr)};
@@ -433,7 +433,7 @@ test('trigger tables: the raw schema.relname resolves to the graph node key (quo
 test('XSS: the view and function page code builds text nodes only; hostile names and SQL stay text', () => {
   const tablePage = blockOf('table-page');
   for (const fn of ['tpCode', 'tpViewDefinition', 'tpRelPanel', 'tpViewFunctions', 'tpReportsPanel', 'tpViewHeader']) {
-    const src = tablePage.match(new RegExp(`function ${fn}\\([\\s\\S]*?\\n\\}\\n`))?.[0];
+    const src = tablePage.match(new RegExp(`function ${fn}\\([\\s\\S]*?\\r?\\n\\}\\r?\\n`))?.[0];
     assert.ok(src, `${fn} found`);
     assert.doesNotMatch(src, /innerHTML|outerHTML|insertAdjacentHTML|document\.write|srcdoc/, fn);
   }
