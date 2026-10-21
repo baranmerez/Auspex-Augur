@@ -1244,7 +1244,7 @@ const TR = {
   'note #{id} ({kind})': 'not #{id} ({kind})', 'schema changed': 'şema değişti', 'No events yet.': 'Henüz olay yok.',
   'column {c} added ({t})': '{c} kolonu eklendi ({t})', 'column {c} dropped': '{c} kolonu silindi', 'column {f} renamed to {to}': '{f} kolonunun adı {to} oldu',
   'column {c}: {f} → {to}': '{c} kolonu: {f} → {to}', 'column {c} is now NOT NULL': '{c} kolonu artık NOT NULL', 'column {c} is now nullable': '{c} kolonu artık NULL olabilir',
-  'kind {f} → {to}': 'tür {f} → {to}', 'view definition changed': 'view tanımı değişti', 'constraint': 'kısıt',
+  'kind {f} → {to}': 'tür {f} → {to}', 'view definition changed': 'view tanımı değişti', 'view sources changed': 'view kaynakları değişti', 'view sources changed: {d}': 'view kaynakları değişti: {d}', 'constraint': 'kısıt',
   'index': 'indeks', 'incoming FK': 'gelen FK', 'added': 'eklendi',
   'dropped': 'silindi', 'changed': 'değişti', 'No schema memory for {db} yet': '{db} için henüz şema hafızası yok',
   'It fills as your agent describes tables (describe_table) and runs reports.': 'Agent tabloları inceledikçe (describe_table) ve rapor çalıştırdıkça dolar.', 'No schema memory yet': 'Henüz şema hafızası yok', 'Pick a database': 'Bir veritabanı seçin',
@@ -3276,6 +3276,12 @@ function changeLabel(c) {
     case 'column-nullability-changed': return t(c.notNull ? 'column {c} is now NOT NULL' : 'column {c} is now nullable', { c: c.column });
     case 'kind-changed': return t('kind {f} → {to}', { f: c.from, to: c.to });
     case 'view-definition-changed': return t('view definition changed');
+    case 'view-sources-changed': {
+      const list = v => (Array.isArray(v) ? v.filter(x => typeof x === 'string') : []);
+      const added = list(c.added), removed = list(c.removed);
+      const parts = [added.length ? '+' + added.join(', ') : null, removed.length ? '−' + removed.join(', ') : null].filter(Boolean);
+      return parts.length ? t('view sources changed: {d}', { d: parts.join(' / ') }) : t('view sources changed');
+    }
     default: {
       const cut = c.change.lastIndexOf('-');
       const what = { constraint: 'constraint', index: 'index', 'incoming-fk': 'incoming FK' }[c.change.slice(0, cut)] || c.change.slice(0, cut);
