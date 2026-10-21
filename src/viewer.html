@@ -2792,11 +2792,18 @@ function buildAskPrompt(r, data, lng, maxColumns = 6) {
 }
 // The request a preset chip copies: run this report with that preset (the
 // viewer never runs SQL, so running stays a Claude action). preset: an entry
-// of offeredPresets.
+// of offeredPresets. The key is written exactly (JSON string, whitespace kept)
+// since run_report looks it up as given; the placeholders are filled in one
+// pass, so text in a title or name is never read as a placeholder or a $ pattern.
 function buildPresetPrompt(r, preset, lng) {
   const x = askTexts[lng] || askTexts.en;
-  const name = preset.key === preset.label ? `"${oneLine(preset.key)}"` : `"${oneLine(preset.label)}" (${oneLine(preset.key)})`;
-  return x.runPreset.replace('{title}', oneLine(r.title || r.name)).replace('{path}', [r.db, r.schema, r.category, r.name].join('/')).replace('{preset}', name);
+  const key = JSON.stringify(String(preset.key));
+  const fields = {
+    title: oneLine(r.title || r.name),
+    path: [r.db, r.schema, r.category, r.name].join('/'),
+    preset: preset.key === preset.label ? key : `"${oneLine(preset.label)}" (${key})`,
+  };
+  return x.runPreset.replace(/\{(title|path|preset)\}/g, (_, k) => fields[k]);
 }
 // The preset chips of a report from its embedded presets block: built-in
 // keys with their label, then custom presets; those that no longer fit the
