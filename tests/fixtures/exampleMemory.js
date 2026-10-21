@@ -89,3 +89,73 @@ export function seedExampleMemory(memoryDir, profile = 'exampledb', { now } = {}
   memory.recordDescribe(ordersDescribe(profile, { triggerChanged: true }));
   return memory;
 }
+
+// A view, a materialized view and functions on top of the example memory:
+//   example.v_order_list   view reading example.orders and example.customers,
+//                          calling example.order_total
+//   example.mv_order_days  materialized view (not populated) reading example.orders
+//   example.order_total    plpgsql, two overloads, reads example.order_items
+//   example.order_report   sql, SECURITY DEFINER without search_path, calls
+//                          example.order_total, writes example.order_events
+//   example.order_count    only listed (seen)
+export function viewDescribe(profile) {
+  return {
+    profile, relation: 'example.v_order_list', schema: 'example', table: 'v_order_list', kind: 'view', oid: 2101, estimated_rows: null, comment: null,
+    columns: [col('order_id', 1, 'bigint'), col('customer_id', 2, 'bigint'), col('total', 3, 'numeric')],
+    constraints: [], indexes: [], referencedBy: [], triggers: [],
+    viewDefinition: ' SELECT o.order_id, c.customer_id, example.order_total(o.order_id) AS total\n   FROM example.orders o\n     JOIN example.customers c USING (customer_id);',
+    viewOptions: { securityBarrier: false, checkOption: null },
+    viewSources: [
+      { schema: 'example', table: 'customers', kind: 'table', columns: ['customer_id'] },
+      { schema: 'example', table: 'orders', kind: 'table', columns: ['customer_id', 'order_id'] },
+    ],
+    viewFunctions: [{ schema: 'example', name: 'order_total', arguments: 'p_order_id bigint', volatility: 'stable' }],
+    usedByViews: [],
+  };
+}
+
+export function matviewDescribe(profile) {
+  return {
+    profile, relation: 'example.mv_order_days', schema: 'example', table: 'mv_order_days', kind: 'matview', oid: 2102, estimated_rows: 0, comment: null,
+    columns: [col('day', 1, 'date'), col('orders', 2, 'bigint')],
+    constraints: [], indexes: [], referencedBy: [], triggers: [],
+    viewDefinition: ' SELECT created_at::date AS day, count(*) AS orders\n   FROM example.orders\n  GROUP BY (created_at::date);',
+    viewOptions: { securityBarrier: false, checkOption: null },
+    populated: false,
+    viewSources: [{ schema: 'example', table: 'orders', kind: 'table', columns: ['created_at'] }],
+    viewFunctions: [],
+    usedByViews: [],
+  };
+}
+
+const fnEntry = (name, args, extra = {}) => ({
+  schema: 'example', name, arguments: args, returns: 'numeric', kind: 'function', language: 'plpgsql', volatility: 'stable',
+  securityDefiner: false, strict: false, parallel: 'unsafe', config: [], owner: 'report_reader', canExecute: true, comment: null,
+  usedByTriggers: [], definitionLength: null, ...extra,
+});
+
+export function exampleFunctions() {
+  const total = body => `CREATE OR REPLACE FUNCTION example.order_total(p_order_id bigint)\n RETURNS numeric\n LANGUAGE plpgsql\n STABLE\nAS $function$\nBEGIN\n  RETURN (SELECT sum(amount) FROM order_items WHERE order_id = p_order_id${body});\nEND\n$function$\n`;
+  return [
+    fnEntry('order_total', 'p_order_id bigint', { definition: total('') }),
+    fnEntry('order_total', 'p_order_id bigint, p_currency text', { definition: total(' AND p_currency IS NOT NULL') }),
+    fnEntry('order_report', 'p_day date', {
+      returns: 'TABLE(order_id bigint, total numeric)', language: 'sql', volatility: 'volatile', securityDefiner: true, config: ['work_mem=64MB'],
+      usedByTriggers: [{ table: 'example.orders', trigger: 'orders_log' }],
+      definition: "CREATE OR REPLACE FUNCTION example.order_report(p_day date)\n RETURNS TABLE(order_id bigint, total numeric)\n LANGUAGE sql\n SECURITY DEFINER\n SET work_mem TO '64MB'\nAS $function$\n  INSERT INTO example.order_events (order_id, event_name) SELECT order_id, 'report' FROM example.orders WHERE created_at::date = p_day;\n  SELECT o.order_id, example.order_total(o.order_id) FROM example.orders o WHERE o.created_at::date = p_day;\n$function$\n",
+    }),
+  ];
+}
+
+// Seeds the views and functions into an existing example memory (see
+// seedExampleMemory); returns the SchemaMemory.
+export function seedExampleViewsAndFunctions(memoryDir, profile = 'exampledb', { now } = {}) {
+  const memory = new SchemaMemory(memoryDir, now ? { now } : {});
+  memory.recordDescribeMany(profile, [viewDescribe(profile), matviewDescribe(profile)]);
+  memory.recordFunctions(profile, exampleFunctions());
+  memory.recordListedFunctions(profile, [
+    { schema: 'example', name: 'order_count', arguments: 'p_customer_id bigint', returns: 'bigint', kind: 'function', language: 'sql', volatility: 'stable' },
+    { schema: 'example', name: 'order_total', arguments: 'p_order_id bigint', returns: 'numeric', kind: 'function', language: 'plpgsql', volatility: 'stable' },
+  ]);
+  return memory;
+}

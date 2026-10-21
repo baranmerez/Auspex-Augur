@@ -4,6 +4,10 @@
 // crawling the catalog. Reading the memory never touches the database.
 //
 //   tables/<schema>/<table>.json   structure, used columns, change history
+//   functions/<schema>/<name>.json all overloads of one function name:
+//                                  properties, definition, inferred touches,
+//                                  change history (describe_functions,
+//                                  list_functions)
 //   notes.json                     rules, observations and inferences
 //   changelog.jsonl                explored tables and schema changes, for timelines
 //   scanned-files.json             script files read for column scores: path
@@ -17,6 +21,7 @@ import { withFileLock } from '../fileLock.js';
 import { writePrivateAtomic, appendPrivate, linkBelow } from '../privateFiles.js';
 import path from 'node:path';
 import { splitColumnRef } from './planUsage.js';
+import { functionTouches, functionCalls } from './functionTouches.js';
 
 export const noteKinds = ['rule', 'observation', 'inference'];
 const historyLimit = 50;
@@ -94,6 +99,34 @@ function splitTableKey(key) {
 
 const sameTable = (a, b) => a.schema === b.schema && a.table === b.table;
 
+// Definitions (view and function) are stored up to this many characters.
+export const storedTextChars = 20000;
+const charCount = text => Array.from(String(text)).length;
+const cutText = (text, n) => (String(text).length <= n ? String(text) : Array.from(String(text)).slice(0, n).join(''));
+const textOrder = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+
+// The view fields of a describe result as stored: the definition cut at
+// storedTextChars (viewHash stays the hash of the full text), options,
+// populated (materialized views), sources and called functions. Fields the
+// describe result does not have are left out.
+function viewRecord(desc) {
+  if (desc.viewDefinition === undefined || desc.viewDefinition === null) return {};
+  const length = charCount(desc.viewDefinition);
+  return {
+    viewDefinition: cutText(desc.viewDefinition, storedTextChars),
+    viewDefinitionLength: length,
+    viewDefinitionTruncated: length > storedTextChars,
+    ...(desc.viewOptions ? { viewOptions: { securityBarrier: !!desc.viewOptions.securityBarrier, checkOption: desc.viewOptions.checkOption ?? null } } : {}),
+    ...(typeof desc.populated === 'boolean' ? { populated: desc.populated } : {}),
+    ...(Array.isArray(desc.viewSources) ? {
+      viewSources: desc.viewSources.map(v => ({ schema: v.schema, table: v.table, kind: v.kind ?? null, columns: [...new Set(v.columns ?? [])].sort(textOrder) })),
+    } : {}),
+    ...(Array.isArray(desc.viewFunctions) ? {
+      viewFunctions: desc.viewFunctions.map(f => ({ schema: f.schema, name: f.name, arguments: f.arguments ?? '', volatility: f.volatility ?? null })),
+    } : {}),
+  };
+}
+
 // The structural part of a describe_table result, in the form stored and diffed.
 export function recordFromDescribe(desc) {
   return {
@@ -115,6 +148,9 @@ export function recordFromDescribe(desc) {
       name: r.name, schema: r.from_schema, table: r.from_name, columns: r.columns ?? [], refColumns: r.ref_columns ?? [],
     })),
     viewHash: desc.viewDefinition ? crypto.createHash('sha256').update(desc.viewDefinition).digest('hex').slice(0, 16) : null,
+    ...viewRecord(desc),
+    // Views and materialized views that read this relation (any kind).
+    ...(Array.isArray(desc.usedByViews) ? { usedByViews: desc.usedByViews.map(v => ({ schema: v.schema, table: v.table, kind: v.kind ?? null })) } : {}),
     // Triggers as describe_table read them (CREATE TRIGGER text, never the
     // function source). Absent when the describe result had none.
     ...(Array.isArray(desc.triggers) ? { triggers: desc.triggers.map(triggerRecord) } : {}),
@@ -161,6 +197,19 @@ export function diffTable(prev, next) {
   diffNamed(changes, 'index', prev.indexes, next.indexes, i => i.name, i => i.definition);
   diffNamed(changes, 'incoming-fk', prev.referencedBy || [], next.referencedBy || [], r => `${r.schema}.${r.table}.${r.name}`, r => r.columns.join(','));
   if (prev.viewHash && next.viewHash && prev.viewHash !== next.viewHash) changes.push({ change: 'view-definition-changed' });
+  // Records from before view sources were stored have no field: no change.
+  if (Array.isArray(prev.viewSources) && Array.isArray(next.viewSources)) {
+    const ids = list => list.map(v => tableKey(v.schema, v.table)).sort(textOrder).join('\n');
+    if (ids(prev.viewSources) !== ids(next.viewSources)) {
+      const before = new Set(prev.viewSources.map(v => tableKey(v.schema, v.table)));
+      const after = new Set(next.viewSources.map(v => tableKey(v.schema, v.table)));
+      changes.push({
+        change: 'view-sources-changed',
+        added: [...after].filter(k => !before.has(k)).sort(textOrder),
+        removed: [...before].filter(k => !after.has(k)).sort(textOrder),
+      });
+    }
+  }
   // Records from before triggers were stored have no field: no false "added".
   if (Array.isArray(prev.triggers) && Array.isArray(next.triggers)) {
     diffNamed(changes, 'trigger', prev.triggers, next.triggers, t => t.name, t => t.definition);
@@ -192,6 +241,11 @@ export function changeText(c) {
     case 'column-nullability-changed': return `column ${c.column} is now ${c.notNull ? 'NOT NULL' : 'nullable'}`;
     case 'kind-changed': return `relation kind ${c.from} -> ${c.to}`;
     case 'view-definition-changed': return 'view definition changed';
+    case 'view-sources-changed': return `view sources changed${c.added?.length ? `: added ${c.added.join(', ')}` : ''}${c.removed?.length ? `${c.added?.length ? ';' : ':'} removed ${c.removed.join(', ')}` : ''}`;
+    case 'overload-added': return `overload (${c.arguments}) added`;
+    case 'overload-removed': return `overload (${c.arguments}) removed`;
+    case 'definition-changed': return `definition of (${c.arguments}) changed`;
+    case 'flags-changed': return `properties of (${c.arguments}) changed: ${(c.fields ?? []).join(', ')}`;
     case 'trigger-enabled-changed': return `trigger ${c.name} ${c.from} -> ${c.to}`;
     default: {
       const [what, verb] = [c.change.slice(0, c.change.lastIndexOf('-')), c.change.slice(c.change.lastIndexOf('-') + 1)];
@@ -474,6 +528,185 @@ export class SchemaMemory {
       });
       this.rebuildViewUnlocked(profile);
       return { explored: new Set([...rels.keys()].filter(key => this.readTable(profile, rels.get(key).schema, rels.get(key).table)?.describedAt)) };
+    });
+  }
+
+  // ---------- functions ----------
+  // One file per schema and function name with every overload known.
+  functionPath(profile, schema, name) {
+    return this.checkPath(path.join(this.profileDir(profile), 'functions', fileSegment(schema), `${fileSegment(name)}.json`));
+  }
+
+  readFunction(profile, schema, name) {
+    return this.readJson(this.functionPath(profile, schema, name), null);
+  }
+
+  listFunctions(profile) {
+    const dir = this.checkPath(path.join(this.profileDir(profile), 'functions'));
+    if (!fs.existsSync(dir)) return [];
+    const out = [];
+    for (const schemaDir of fs.readdirSync(dir, { withFileTypes: true }).filter(d => d.isDirectory())) {
+      for (const f of fs.readdirSync(path.join(dir, schemaDir.name)).filter(f => f.endsWith('.json'))) {
+        try {
+          out.push(this.readJson(path.join(dir, schemaDir.name, f), null));
+        } catch (err) {
+          if (!err.linkRefused) throw err;
+          process.stderr.write(`auspex: schema memory function skipped: ${err.message}\n`);
+        }
+      }
+    }
+    return out.filter(Boolean).sort((a, b) => textOrder(tableKey(a.schema, a.name), tableKey(b.schema, b.name)));
+  }
+
+  // describe_functions read these overloads (catalog.describeFunctions
+  // entries without error): store them per schema and name and report what
+  // changed since the last describe. partial: keys (tableKey of schema and
+  // name) whose overloads may be incomplete (a pattern result cut at its
+  // limit); their missing overloads are kept, never reported as removed.
+  // One view rebuild. Returns one entry per function name, in input order.
+  recordFunctions(profile, fns, { partial = new Set() } = {}) {
+    return this.locked(profile, () => {
+      const groups = new Map();
+      for (const f of fns) {
+        const key = tableKey(f.schema, f.name);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(f);
+      }
+      const out = [...groups].map(([key, list]) => {
+        try {
+          return { function: key, ...this.recordFunctionUnlocked(profile, list, !partial.has(key)) };
+        } catch (err) {
+          return { function: key, memoryError: err.message };
+        }
+      });
+      this.rebuildViewUnlocked(profile);
+      return out;
+    });
+  }
+
+  recordFunctionUnlocked(profile, list, complete) {
+    const { schema, name } = list[0];
+    const prev = this.readFunction(profile, schema, name);
+    const at = this.now();
+    const next = list.map(f => overloadFromDescribe(f));
+    const firstTime = !prev?.describedAt;
+    const changes = firstTime ? [] : diffFunction(prev.overloads ?? [], next, complete);
+    const fresh = new Set(next.map(o => o.arguments));
+    const kept = complete ? [] : (prev?.overloads ?? []).filter(o => !fresh.has(o.arguments));
+    const record = {
+      schema, name,
+      firstSeen: prev?.firstSeen ?? at,
+      lastSeen: at,
+      describedAt: at,
+      overloads: [...kept, ...next].sort((a, b) => textOrder(a.arguments, b.arguments)),
+      history: [...(prev?.history ?? []), ...(changes.length ? [{ at, changes }] : [])].slice(-historyLimit),
+    };
+    this.writeJson(this.functionPath(profile, schema, name), record);
+    return {
+      recorded: firstTime ? 'first time' : 'updated',
+      ...(prev?.describedAt ? { lastDescribedAt: prev.describedAt } : {}),
+      changesSinceLast: changes.map(changeText),
+    };
+  }
+
+  // list_functions: overloads seen in the catalog inventory, without
+  // definitions. A new function is recorded as seen; an existing record keeps
+  // every overload it has (definitions included) and only gains the overloads
+  // it did not know yet (listedOnly). Unchanged records are not rewritten.
+  recordListedFunctions(profile, rows) {
+    return this.locked(profile, () => {
+      const groups = new Map();
+      for (const r of rows) {
+        const key = tableKey(r.schema, r.name);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(r);
+      }
+      let added = 0;
+      let overloadsAdded = 0;
+      let failed = 0;
+      for (const list of groups.values()) {
+        try {
+          const { schema, name } = list[0];
+          const prev = this.readFunction(profile, schema, name);
+          const known = new Set((prev?.overloads ?? []).map(o => o.arguments));
+          const fresh = list.filter(r => !known.has(r.arguments ?? '')).map(seenOverload);
+          if (prev && !fresh.length) continue;
+          const at = this.now();
+          const record = prev
+            ? { ...prev, lastSeen: at, overloads: [...prev.overloads, ...fresh].sort((a, b) => textOrder(a.arguments, b.arguments)) }
+            : { schema, name, firstSeen: at, lastSeen: at, describedAt: null, overloads: fresh.sort((a, b) => textOrder(a.arguments, b.arguments)), history: [] };
+          this.writeJson(this.functionPath(profile, schema, name), record);
+          if (prev) overloadsAdded += fresh.length;
+          else added += 1;
+        } catch (err) {
+          failed += 1;
+          process.stderr.write(`auspex: schema memory function not recorded: ${err.message}\n`);
+        }
+      }
+      if (added || overloadsAdded) this.rebuildViewUnlocked(profile);
+      return { functionsAdded: added, overloadsAdded, ...(failed ? { failed } : {}) };
+    });
+  }
+
+  // Function calls found in a stored definition, cached by its hash.
+  callsOf(overload) {
+    if (!overload.definition) return [];
+    this.callCache ??= new Map();
+    const key = overload.definitionHash ?? definitionHash(overload.definition);
+    if (!this.callCache.has(key)) {
+      if (this.callCache.size > 5000) this.callCache.clear();
+      this.callCache.set(key, functionCalls(overload.definition));
+    }
+    return this.callCache.get(key);
+  }
+
+  // graph.json functions: one light entry per stored function name (no
+  // definitions), with the views and stored functions that call it.
+  functionsView(profile, tables) {
+    const fns = this.listFunctions(profile);
+    const byViews = new Map();
+    for (const t of tables) {
+      for (const f of t.viewFunctions ?? []) {
+        const id = tableKey(f.schema, f.name);
+        if (!byViews.has(id)) byViews.set(id, new Set());
+        byViews.get(id).add(tableKey(t.schema, t.table));
+      }
+    }
+    const byFunctions = new Map();
+    for (const g of fns) {
+      const caller = tableKey(g.schema, g.name);
+      for (const o of g.overloads ?? []) {
+        for (const ref of this.callsOf(o)) {
+          const id = tableKey(ref.schema ?? g.schema, ref.name);
+          if (id === caller) continue;
+          if (!byFunctions.has(id)) byFunctions.set(id, new Set());
+          byFunctions.get(id).add(caller);
+        }
+      }
+    }
+    const sorted = set => [...(set ?? [])].sort(textOrder);
+    return fns.map(f => {
+      const id = tableKey(f.schema, f.name);
+      const overloads = f.overloads ?? [];
+      const union = field => [...new Set(overloads.flatMap(o => o.touches?.[field] ?? []))].sort(textOrder).slice(0, 50);
+      const triggers = new Set(overloads.flatMap(o => (o.usedByTriggers ?? []).map(t => `${t.table}\n${t.trigger}`)));
+      return {
+        id, schema: f.schema, name: f.name,
+        file: `functions/${fileSegment(f.schema)}/${fileSegment(f.name)}.json`,
+        state: f.describedAt ? 'explored' : 'seen',
+        overloads: overloads.length,
+        kinds: [...new Set(overloads.map(o => o.kind).filter(Boolean))].sort(textOrder),
+        language: overloads[0]?.language ?? null,
+        flags: {
+          volatile: overloads.some(o => o.volatility === 'volatile'),
+          securityDefiner: overloads.some(o => o.securityDefiner === true),
+          definerWithoutSearchPath: overloads.some(o => o.securityDefiner === true && !(o.config ?? []).some(c => /^search_path=/i.test(String(c)))),
+        },
+        usedByTriggers: triggers.size,
+        calledBy: { views: sorted(byViews.get(id)), functions: sorted(byFunctions.get(id)) },
+        touches: { reads: union('reads'), writes: union('writes') },
+        changes: (f.history ?? []).length,
+      };
     });
   }
 
@@ -839,6 +1072,8 @@ export class SchemaMemory {
       ...(t.estRows !== undefined ? { estRows: t.estRows } : {}),
       ...(t.columnScores ? { scoredAt: t.scoredAt, columnScores: columnScoresView(t.columnScores) } : {}),
       ...(t.triggers?.length ? { triggers: triggersWithSummaries(t) } : {}),
+      ...(Array.isArray(t.viewSources) ? { viewSources: [...new Set(t.viewSources.map(v => tableKey(v.schema, v.table)))] } : {}),
+      ...(Array.isArray(t.viewFunctions) ? { viewFunctions: [...new Set(t.viewFunctions.map(f => tableKey(f.schema, f.name)))] } : {}),
     }]));
     for (const e of edges) {
       for (const id of [e.from, e.to]) {
@@ -847,13 +1082,18 @@ export class SchemaMemory {
         nodes.set(id, { id, schema, table, state: 'unexplored', kind: null, estimatedRows: null, columnCount: 0, changes: 0, notes: 0 });
       }
     }
-    return { profile, nodes: [...nodes.values()], edges };
+    // A view or materialized view reads its sources: one edge to each source
+    // that is a node (columns: the source columns the view uses).
+    const viewEdges = tables.flatMap(t => (t.viewSources ?? [])
+      .filter(v => nodes.has(tableKey(v.schema, v.table)) && !sameTable(v, t))
+      .map(v => ({ level: 'view', from: tableKey(t.schema, t.table), to: tableKey(v.schema, v.table), columns: v.columns ?? [], refColumns: [] })));
+    return { profile, nodes: [...nodes.values()], edges: [...edges, ...viewEdges], functions: this.functionsView(profile, tables) };
   }
 
   // Everything the viewer shows for one profile, in one file the viewer and
   // the desktop app read as is (no relation logic outside this module).
   view(profile) {
-    const { nodes, edges } = this.graph(profile);
+    const { nodes, edges, functions } = this.graph(profile);
     const notes = this.readNotes(profile).notes;
     const changelog = this.readChangelog(profile, 300);
     const count = state => nodes.filter(n => n.state === state).length;
@@ -866,7 +1106,7 @@ export class SchemaMemory {
         changeTimes: changelog.filter(e => e.event === 'changed').map(e => e.at),
         lastActivity: changelog.at(-1)?.at ?? null,
       },
-      nodes, edges, notes, changelog,
+      nodes, edges, functions, notes, changelog,
     };
   }
 
@@ -877,6 +1117,67 @@ export class SchemaMemory {
   rebuildViewUnlocked(profile) {
     this.writeJson(path.join(this.profileDir(profile), 'graph.json'), this.view(profile));
   }
+}
+
+const functionFlagFields = ['volatility', 'securityDefiner', 'strict', 'parallel', 'config', 'owner'];
+
+// One overload of a describe_functions entry as stored. The definition is the
+// text the memory keeps (memoryDefinition, cut at storedTextChars) when the
+// entry has it, else the returned one.
+export function overloadFromDescribe(f) {
+  const stored = f.memoryDefinition !== undefined ? f.memoryDefinition : f.definition;
+  const definition = stored === null || stored === undefined ? null : cutText(stored, storedTextChars);
+  const length = f.definitionLength ?? (definition === null ? null : charCount(definition));
+  return {
+    arguments: f.arguments ?? '',
+    returns: f.returns ?? null,
+    kind: f.kind ?? null,
+    language: f.language ?? null,
+    volatility: f.volatility ?? null,
+    securityDefiner: !!f.securityDefiner,
+    strict: !!f.strict,
+    parallel: f.parallel ?? null,
+    config: f.config ?? [],
+    owner: f.owner ?? null,
+    canExecute: !!f.canExecute,
+    comment: f.comment ?? null,
+    usedByTriggers: f.usedByTriggers ?? [],
+    definition,
+    definitionLength: length,
+    truncated: definition !== null && length !== null && length > charCount(definition),
+    definitionHash: definition === null ? null : definitionHash(definition),
+    touches: functionTouches({ definition, schema: f.schema, language: f.language, arguments: f.arguments ?? '' }),
+  };
+}
+
+// An overload only listed (list_functions): no definition, no properties
+// beyond the inventory.
+function seenOverload(r) {
+  return {
+    arguments: r.arguments ?? '', returns: r.returns ?? null, kind: r.kind ?? null, language: r.language ?? null, volatility: r.volatility ?? null,
+    definition: null, definitionLength: null, truncated: false, definitionHash: null, touches: null, listedOnly: true,
+  };
+}
+
+// Changes between the stored overloads of a function and a new describe.
+// Listed-only overloads count as new when described; removals are only
+// reported when the describe saw every overload (complete).
+export function diffFunction(prev, next, complete = true) {
+  const changes = [];
+  const before = new Map(prev.map(o => [o.arguments, o]));
+  const after = new Set(next.map(o => o.arguments));
+  if (complete) for (const o of prev) if (!after.has(o.arguments)) changes.push({ change: 'overload-removed', arguments: o.arguments });
+  for (const o of next) {
+    const old = before.get(o.arguments);
+    if (!old || old.listedOnly) {
+      changes.push({ change: 'overload-added', arguments: o.arguments });
+      continue;
+    }
+    if (old.definitionHash && o.definitionHash && old.definitionHash !== o.definitionHash) changes.push({ change: 'definition-changed', arguments: o.arguments });
+    const fields = functionFlagFields.filter(k => JSON.stringify(old[k] ?? null) !== JSON.stringify(o[k] ?? null));
+    if (fields.length) changes.push({ change: 'flags-changed', arguments: o.arguments, fields });
+  }
+  return changes;
 }
 
 // A column named exactly like the single-column primary key of exactly one

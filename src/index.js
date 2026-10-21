@@ -7,8 +7,8 @@ import { loadConfig, describeConnection } from './config.js';
 import { ReadOnlyDatabase } from './db.js';
 import { classifyError, ToolError } from './errors.js';
 import {
-  listSchemas, listTables, describeTable, describeTables, describeFunctions, profileTables, relationStats, search,
-  maxDescribeTables, maxDescribeFunctions, defaultDefinitionChars, maxDefinitionChars,
+  listSchemas, listTables, describeTable, describeTables, describeFunctions, listFunctions, profileTables, relationStats, search,
+  maxDescribeTables, maxDescribeFunctions, defaultDefinitionChars, maxDefinitionChars, defaultListFunctions, maxListFunctions, storedDefinitionChars,
   describeDetails, describeSummaryNote, summarizeDescribedTable, summaryReferencedBy,
   maxProfileTables, maxRelationStatsTables, defaultSampleRows, maxSampleRows,
   parentFilterOps, maxParentFilters, maxParentFilterValues,
@@ -58,7 +58,7 @@ const instructions = [
   'Call approve_report only after the user explicitly approved that report in this conversation.',
   'Change scripts (INSERT/UPDATE/DELETE/DDL) are never executed through Auspex: write them with save_execute_script for the user to run with a privileged role.',
   'run_report with analyze="auto" skips EXPLAIN ANALYZE when the previous run took longer than 30 s; ask the user before forcing analyze="always" on such reports.',
-  'Schema memory: Auspex keeps local notes per profile about the tables you worked with. describe_table and describe_tables record a table and report changesSinceLast (tell the user about them); run_report and explain record the tables and columns their plans used. It never crawls the catalog on its own.',
+  'Schema memory: Auspex keeps local notes per profile about the tables you worked with. describe_table and describe_tables record a table and report changesSinceLast (tell the user about them); describe_functions records functions the same way and list_functions records an inventory of them; run_report and explain record the tables and columns their plans used. It never crawls the catalog on its own.',
   'Before describing a table again, call table_knowledge: it answers from memory without touching the database.',
   `When you need several tables, do not loop over describe_table or send one measuring query per table: use describe_tables for the structure of up to ${maxDescribeTables} tables and profile_tables for row estimates, fill rates, distinct counts and parent-child fan-out of up to ${maxProfileTables} tables. Each takes a constant number of statements however many tables are listed. To see which neighbours of a table matter most, relation_stats ranks its referenced (instance) and referencing (dependent) tables by estimated linked rows from planner statistics, without reading data.`,
   'When the user states a business rule, save it with remember kind=rule. Save a finding from data as kind=observation with evidence (the SQL and aggregate figures only, never row values or personal data). Your own interpretations are kind=inference; never present them as fact, and confirm one only after the user agreed.',
@@ -204,7 +204,7 @@ tool('list_tables', {
 
 tool('describe_table', {
   title: 'Describe table',
-  description: 'Shows columns (with identity, generated and owned sequence when set), types, nullability, defaults, comments, constraints (incl. check definitions), indexes, incoming foreign keys, triggers (timing, events, level, enabled, function, WHEN condition, definition), row level security flags, partitioning and (for views) the definition. Reads the catalog only. Also records the table in the schema memory; the memory field reports changes since the last time and notes on the table.',
+  description: 'Shows columns (with identity, generated and owned sequence when set), types, nullability, defaults, comments, constraints (incl. check definitions), indexes, incoming foreign keys, triggers (timing, events, level, enabled, function, WHEN condition, definition), row level security flags, partitioning, the views and materialized views that read it (usedByViews) and, for a view or materialized view, the definition, options (viewOptions), populated (materialized views), the relations it reads with the columns used (viewSources) and the functions it calls (viewFunctions). Reads the catalog only. Also records the table in the schema memory; the memory field reports changes since the last time and notes on the table.',
   inputSchema: {
     profile: profileArg,
     schema: z.string(),
@@ -224,7 +224,7 @@ const parentFilterValueArg = z.union([z.string(), z.number(), z.boolean()]);
 
 tool('describe_tables', {
   title: 'Describe many tables',
-  description: `Like describe_table for up to ${maxDescribeTables} relations at once. detail "summary" (default) keeps the answer small enough for many tables: per table estRows, comment, one line per column (name, type, not null, PK, FK -> target, short default), one line per constraint, index (name and columns) and trigger (name, timing, events), incoming foreign keys as a count plus the first ${summaryReferencedBy} referencing tables, and viewDefinitionOmitted for views (field note explains the format). detail "full": columns (with identity, generated and owned sequence when set), types, nullability, defaults, comments, constraints (incl. foreign keys and check definitions), indexes, incoming foreign keys, triggers (with definitions), row level security flags, partitioning, estimated rows and (for views) the definition. Reads the catalog only, with a constant number of statements however many tables are listed, in either mode: 6, or 7 when one of them is a view or materialized view (field statements). Unknown or invalid names are reported per table (field error) without failing the call. Each found table is recorded in the schema memory from the full catalog data in either mode, like describe_table (memory per table, incl. changesSinceLast). Prefer this over calling describe_table in a loop; ask for "full" only for the few tables whose definitions you need.`,
+  description: `Like describe_table for up to ${maxDescribeTables} relations at once. detail "summary" (default) keeps the answer small enough for many tables: per table estRows, comment, one line per column (name, type, not null, PK, FK -> target, short default), one line per constraint, index (name and columns) and trigger (name, timing, events), incoming foreign keys as a count plus the first ${summaryReferencedBy} referencing tables, and viewDefinitionOmitted for views (field note explains the format). detail "full": columns (with identity, generated and owned sequence when set), types, nullability, defaults, comments, constraints (incl. foreign keys and check definitions), indexes, incoming foreign keys, triggers (with definitions), row level security flags, partitioning, estimated rows, usedByViews and (for views) the definition, viewOptions, populated, viewSources and viewFunctions; the summary lists viewSources, viewFunctions and usedByViews as one line each. Reads the catalog only, with a constant number of statements however many tables are listed, in either mode: 7, or 8 when one of them is a view or materialized view (field statements). Unknown or invalid names are reported per table (field error) without failing the call. Each found table is recorded in the schema memory from the full catalog data in either mode, like describe_table (memory per table, incl. changesSinceLast). Prefer this over calling describe_table in a loop; ask for "full" only for the few tables whose definitions you need.`,
   inputSchema: {
     profile: profileArg,
     tables: tableListArg(maxDescribeTables).describe('Relations as schema.table, e.g. ["sales.orders", "sales.customers"].'),
@@ -251,7 +251,7 @@ tool('describe_tables', {
 
 tool('describe_functions', {
   title: 'Describe functions',
-  description: `Reads up to ${maxDescribeFunctions} functions, procedures or aggregates from the catalog, by schema.name (every overload) or by a name pattern: signature, return type, kind, language, volatility, SECURITY DEFINER, strict, parallel safety, SET options, owner, EXECUTE privilege, comment, the triggers that call it and the full definition (pg_get_functiondef, capped at maxChars characters with truncated=true and definitionLength when longer; null for aggregates). One statement. Use it to read trigger functions found by describe_tables or search.`,
+  description: `Reads up to ${maxDescribeFunctions} functions, procedures or aggregates from the catalog, by schema.name (every overload) or by a name pattern: signature, return type, kind, language, volatility, SECURITY DEFINER, strict, parallel safety, SET options, owner, EXECUTE privilege, comment, the triggers that call it and the full definition (pg_get_functiondef, capped at maxChars characters with truncated=true and definitionLength when longer; null for aggregates). One statement. Use it to read trigger functions found by describe_tables or search. Each function name is recorded in the schema memory with all its overloads (definition up to ${storedDefinitionChars} characters, and for sql and plpgsql the tables its body appears to read and write, a textual inference); the memory field lists per function changesSinceLast (overloads added or removed, definition or properties changed; empty the first time).`,
   inputSchema: {
     profile: profileArg,
     functions: z.array(z.string().min(1)).min(1).max(maxDescribeFunctions).optional().describe('Functions as schema.name, e.g. ["sales.order_before_insert"].'),
@@ -259,7 +259,29 @@ tool('describe_functions', {
     schema: z.string().min(1).optional().describe('With pattern: only this schema.'),
     maxChars: z.number().int().min(1).max(maxDefinitionChars).optional().describe(`Characters of each definition to return. Default ${defaultDefinitionChars}.`),
   },
-}, async ({ profile, ...options }) => describeFunctions(db, profile, options));
+}, async ({ profile, ...options }) => {
+  const result = await describeFunctions(db, profile, options);
+  const found = result.functions.filter(f => !f.error);
+  // A pattern result cut at its limit may miss overloads of its last name.
+  const last = found.at(-1);
+  const partial = new Set(result.truncated && last ? [tableKey(last.schema, last.name)] : []);
+  return { ...result, memory: found.length ? learn(() => ({ functions: memory.recordFunctions(result.profile, found, { partial }) })) : {} };
+});
+
+tool('list_functions', {
+  title: 'List functions',
+  description: `Lists functions, procedures, aggregates and window functions in one schema or all non-system schemas, optionally filtered by name: schema, name, arguments, return type, kind, language and volatility per overload, without definitions. One statement. Functions that belong to an extension are left out unless includeExtensions. At most limit overloads (default ${defaultListFunctions}, at most ${maxListFunctions}; truncated=true when there were more). The overloads are recorded in the schema memory as seen (a function already described keeps its definition; only overloads it did not know are added). Use describe_functions to read the ones that matter.`,
+  inputSchema: {
+    profile: profileArg,
+    schema: z.string().min(1).optional().describe('Only this schema; default all non-system schemas.'),
+    pattern: z.string().min(1).optional().describe('Name filter (always a contains-match; % and _ inside the text are ILIKE wildcards).'),
+    limit: z.number().int().min(1).max(maxListFunctions).optional().describe(`Maximum overloads to return. Default ${defaultListFunctions}.`),
+    includeExtensions: z.boolean().optional().describe('Also list functions that belong to an installed extension. Default false.'),
+  },
+}, async ({ profile, ...options }) => {
+  const result = await listFunctions(db, profile, options);
+  return { ...result, memory: result.functions.length ? learn(() => memory.recordListedFunctions(result.profile, result.functions)) : {} };
+});
 
 tool('profile_tables', {
   title: 'Profile many tables',

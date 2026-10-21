@@ -89,8 +89,8 @@ test('describe_tables sends the same number of statements for 1 and 10 tables', 
   const r1 = await describeTables(one.db, 'example', orders(1));
   const ten = fakeDb();
   const r10 = await describeTables(ten.db, 'example', orders(10));
-  assert.equal(r1.statements, 6);
-  assert.equal(r10.statements, 6);
+  assert.equal(r1.statements, 7);
+  assert.equal(r10.statements, 7);
   assert.equal(one.sent.length, ten.sent.length, 'BEGIN, settings, catalog statements and ROLLBACK only');
   assert.equal(r10.found, 10);
   assert.deepEqual(r10.tables[9].columns.map(c => c.column), ['id', 'customer_id', 'note']);
