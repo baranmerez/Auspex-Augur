@@ -69,12 +69,12 @@ test('invalid input is refused, never thrown', () => {
   }
 });
 
-test('ready themes: light, dark and plain are built in, twenty-two in all with the five Auspex themes', () => {
+test('ready themes: light, dark and plain are built in, thirty-two in all with the five Auspex themes and twelve glass themes', () => {
   const { themePresets, themeSpecOf } = load();
-  assert.equal(themePresets.length, 22);
+  assert.equal(themePresets.length, 32);
   assert.deepEqual(plain(themePresets.filter(p => p.auspex).map(p => p.id)), ['auspex', 'forge', 'phosphor', 'verdigris', 'ivory']);
   assert.equal(themeSpecOf('plain', []), null);
-  assert.deepEqual(plain(themePresets.filter(p => p.glass).map(p => p.id)), ['glass', 'glassDark']);
+  assert.deepEqual(plain(themePresets.filter(p => p.glass).map(p => p.id)), ['glass', 'glassDark', 'glassAurora', 'glassAbyss', 'glassDusk', 'glassEmber', 'glassPomegranate', 'glassSynthwave', 'glassNebula', 'glassEmerald', 'glassPearl', 'glassLagoon']);
   assert.equal(themeSpecOf('light', []), null);
   assert.equal(themeSpecOf('auto', []), null);
   assert.equal(themeSpecOf('midnight', []).bg, '#0e1a2f');
@@ -216,7 +216,7 @@ test('summary palette: score steps are clearly apart in light and dark, for defa
 test('glass presets: light and dark variants load and pass the contrast check on the glass panel', () => {
   const { themeTokens, themePresets, contrastRatio, hexRgb } = load();
   const variants = themePresets.filter(p => p.glass);
-  assert.deepEqual(plain(variants.map(v => themeTokens(v).base)), ['light', 'dark']);
+  assert.deepEqual(plain(variants.slice(0, 2).map(v => themeTokens(v).base)), ['light', 'dark']);
   for (const spec of variants) {
     const r = themeTokens(spec);
     assert.equal(r.ok, true);
@@ -401,7 +401,23 @@ test('theme menu groups: Auspex, light and dark, ready and accessibility', () =>
   assert.deepEqual(of('auspex'), ['auspex', 'forge', 'phosphor', 'verdigris', 'ivory']);
   assert.deepEqual(of('access'), ['contrast']);
   assert.deepEqual(of('pair'), ['fjord', 'nocturne', 'rosewood', 'ocean', 'amber', 'slate', 'moss', 'sunset']);
-  assert.deepEqual(of('ready'), ['light', 'dark', 'midnight', 'sepia', 'forest', 'glass', 'glassDark', 'plain']);
+  assert.deepEqual(of('ready'), ['light', 'dark', 'midnight', 'sepia', 'forest', 'plain']);
+  assert.equal(of('glass').length, 12);
+  assert.deepEqual(of('glass').slice(0, 2), ['glass', 'glassDark']);
+});
+
+test('glass backdrop: the glows come from the accent and the theme tints, the status hues without tints', () => {
+  const { themeTokens, themePresets } = load();
+  const glows = spec => themeTokens(spec).glass['--page-bg'].match(/#[0-9a-f]{6}/g).slice(0, 3);
+  const base = { bg: '#0d1122', accent: '#8a98ff', glass: { blur: 16, opacity: 60 } };
+  const tinted = glows({ ...base, tints: { ref: '#00e5ff', dep: '#ff4fd8' } });
+  assert.equal(tinted[0], glows(base)[0], 'the accent glow does not depend on the tints');
+  assert.notEqual(tinted[1], glows(base)[1]);
+  assert.notEqual(tinted[2], glows(base)[2]);
+  // Twelve glass presets, at least two light ones, each with its own backdrop.
+  const glass = themePresets.filter(p => p.glass);
+  assert.ok(glass.filter(p => themeTokens(p).base === 'light').length >= 2);
+  assert.equal(new Set(glass.map(p => glows(p).join())).size, glass.length);
 });
 
 test('studio: every token is editable and listed in a group', () => {
