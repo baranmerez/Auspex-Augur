@@ -2998,7 +2998,7 @@ function centerColumns(data, centerId, rec) {
   const pk = new Set(pkList);
   const used = rec?.usedColumns || {};
   const noted = new Set(notes.map(n => n.column).filter(Boolean));
-  const tagsOf = c => [pk.has(c) && 'PK', (fkOut.has(c) || selfFk.has(c)) && 'FK', refIn.has(c) && !pk.has(c) && '←', used[c] && 'U', noted.has(c) && 'N'].filter(Boolean);
+  const tagsOf = c => [pk.has(c) && 'PK', (fkOut.has(c) || selfFk.has(c)) && 'FK', refIn.has(c) && !pk.has(c) && '←', Object.hasOwn(used, c) && 'U', noted.has(c) && 'N'].filter(Boolean);
   const cols = rec?.columns?.length ? rec.columns.map(c => ({ name: c.name, type: c.type }))
     : [...new Set([...fkOut, ...refIn, ...Object.keys(used)])].map(name => ({ name, type: '' }));
   const keyCols = cols.filter(c => tagsOf(c.name).length);
@@ -5340,7 +5340,7 @@ function dictionaryModel(data, tables, generatedAt) {
     const noted = new Set(notes.map(n => n.column).filter(Boolean));
     const used = rec?.usedColumns || {};
     const keyColumns = (rec?.columns || []).map(c => ({ name: c.name, type: c.type, notNull: !!c.notNull, comment: c.comment || null,
-      tags: [pk.includes(c.name) && 'pk', fk.has(c.name) && 'fk', used[c.name] && 'used', noted.has(c.name) && 'note'].filter(Boolean) }))
+      tags: [pk.includes(c.name) && 'pk', fk.has(c.name) && 'fk', Object.hasOwn(used, c.name) && 'used', noted.has(c.name) && 'note'].filter(Boolean) }))
       .filter(c => c.tags.length);
     const mine = edges.filter(e => e.level === 'fk' || e.level === 'used');
     return {

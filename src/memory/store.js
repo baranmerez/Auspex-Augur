@@ -421,8 +421,8 @@ export class SchemaMemory {
       };
       record.lastSeen = at;
       for (const col of rel.columns || []) {
-        const used = record.usedColumns[col] ?? { count: 0 };
-        record.usedColumns[col] = { count: used.count + 1, lastUsed: at };
+        const used = Object.hasOwn(record.usedColumns, col) ? record.usedColumns[col] : { count: 0 };
+        setOwn(record.usedColumns, col, { count: (used?.count ?? 0) + 1, lastUsed: at });
       }
       update?.(record, rel, at);
       this.writeTable(profile, record);
@@ -754,7 +754,7 @@ export class SchemaMemory {
     const fkCols = new Set(rec.constraints.filter(c => c.references).flatMap(c => c.columns));
     const noted = new Set(notes.map(n => n.column).filter(Boolean));
     const used = rec.usedColumns || {};
-    const tags = c => [pk.includes(c.name) && 'pk', fkCols.has(c.name) && 'fk', used[c.name] && 'used', noted.has(c.name) && 'note'].filter(Boolean);
+    const tags = c => [pk.includes(c.name) && 'pk', fkCols.has(c.name) && 'fk', Object.hasOwn(used, c.name) && 'used', noted.has(c.name) && 'note'].filter(Boolean);
     const keyColumns = rec.columns.filter(c => tags(c).length).map(c => `${c.name} ${c.type} [${tags(c).join(',')}]`);
     const seenOnly = Object.keys(used).filter(name => !rec.columns.some(c => c.name === name)).map(name => `${name} [used]`);
     const edgeText = e => (e.from === key
