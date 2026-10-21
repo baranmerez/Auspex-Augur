@@ -395,8 +395,19 @@
   .rep-list { max-height: calc(100vh - var(--sticky-top) - 20px); overflow: auto; position: sticky; top: var(--sticky-top); }
   .rep-filter { flex: 1 1 100%; min-width: 0; height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 13px; outline: none; }
   .rep-filter:focus { border-color: var(--accent); }
-  .rep-list .stagebar .seg { flex: 1 1 0; min-width: 0; flex-wrap: wrap; }
-  .rep-list .stagebar > .icon-btn { flex: none; align-self: flex-start; }
+  .rep-list .stagebar .seg { flex: 1 1 100%; min-width: 0; }
+  .rep-list .stagebar .seg button { flex: 1 1 auto; min-width: 0; white-space: nowrap; padding: 4px 6px; }
+  .rep-list .stagebar .seg button .n { margin-left: 5px; font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .rep-list .stagebar .seg button.on .n { color: inherit; }
+  .rep-list .stagebar .rep-filter { flex: 1 1 0; }
+  .rep-list .stagebar > .icon-btn { flex: none; }
+  /* Wide screens: the list and the report fill the window height, so short lists do not leave a ragged edge. */
+  @media (min-width: 901px) {
+    .rep-list { height: calc(100vh - var(--sticky-top) - 20px); }
+    .rep > .rep-view { min-height: calc(100vh - var(--sticky-top) - 20px); }
+  }
+  .rep-view > .rep-empty:only-child { margin: auto 0; }
+  .rep-view > .rep-empty:only-child b { display: block; font-size: 15px; margin-bottom: 4px; }
   .rep-list .stagebar { padding: 10px 12px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--surface); z-index: 1; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
   .rep.collapsed { grid-template-columns: auto minmax(0, 1fr); }
   .rep-rail { position: sticky; top: var(--sticky-top); display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 10px 6px; }
@@ -1288,7 +1299,7 @@ const TR = {
   'Loading…': 'Yükleniyor…', 'approved v{v}': 'onaylı v{v}', 'draft': 'taslak', 'approved': 'onaylı', 'execute': 'değişiklik script\'i',
   'Could not read the report library: ': 'Rapor kütüphanesi okunamadı: ', 'No reports for {db} yet': '{db} için henüz rapor yok', 'The report library is empty': 'Rapor kütüphanesi boş',
   'Ask your agent to save an analysis query with ': 'Agent\'tan bir analiz sorgusunu ', ' and run it with ': ' ile kaydetmesini ve ', '.': ' ile çalıştırmasını isteyin.',
-  'Library: ': 'Kütüphane: ', 'Wrap lines': 'Satır kaydır', 'Filter by name, category or stage': 'Ad, kategori ya da aşamaya göre süz', 'Filter reports': 'Raporları süz', 'Wrap long lines': 'Uzun satırları kaydır', 'Stage': 'Aşama', 'Drafts': 'Taslaklar', 'Approved': 'Onaylı', 'Execute': 'Değişiklik script\'i', 'not run by Auspex': 'Auspex çalıştırmaz', 'No reports match.': 'Eşleşen rapor yok.',
+  'Library: ': 'Kütüphane: ', 'Wrap lines': 'Satır kaydır', 'Filter by name, category or stage': 'Ad, kategori ya da aşamaya göre süz', 'Filter reports': 'Raporları süz', 'Wrap long lines': 'Uzun satırları kaydır', 'Stage': 'Aşama', 'Drafts': 'Taslaklar', 'Approved': 'Onaylı', 'Execute': 'Değişiklik script\'i', 'Scripts': 'Script\'ler', 'not run by Auspex': 'Auspex çalıştırmaz', 'No reports match.': 'Eşleşen rapor yok.',
   'estimated plan': 'tahmini plan', '{n} rows': '{n} satır', 'change script': 'değişiklik script\'i', 'not run yet': 'henüz çalıştırılmadı',
   ' · schema {s}': ' · şema {s}', 'Language': 'Dil', 'Run report': 'Rapor çalıştırma',
   'Save report': 'Rapor kaydetme', 'Approve report': 'Rapor onayı', 'Save change script': 'Değişiklik script\'i kaydetme',
@@ -2853,12 +2864,13 @@ function drawReports() {
       reportView(selectedRep)));
     return;
   }
+  // One row of stage buttons (short labels, the full one in the tooltip), then the filter and the hide button.
   const stagebar = h('div', { class: 'stagebar' }, h('div', { class: 'seg', role: 'group', 'aria-label': t('Stage') },
-    [['all', t('All')], ['draft', t('Drafts')], ['approved', t('Approved')], ['execute', t('Execute')]].map(([k, label]) =>
-      h('button', { class: state.stageFilter === k ? 'on' : '', onclick: () => { state.stageFilter = k; persist(); renderReports(); } }, `${label} ${count(k)}`))),
-    h('button', { class: 'icon-btn sm', 'aria-expanded': 'true', title: t('Hide the report list'), onclick: toggleList }, '«'),
+    [['all', t('All')], ['draft', t('Drafts')], ['approved', t('Approved')], ['execute', t('Scripts'), t('Execute')]].map(([k, label, title]) =>
+      h('button', { class: state.stageFilter === k ? 'on' : '', title: title || null, onclick: () => { state.stageFilter = k; persist(); renderReports(); } }, label, h('span', { class: 'n' }, fmt(count(k)))))),
     h('input', { id: 'repFilter', class: 'rep-filter', type: 'search', value: rq, placeholder: t('Filter by name, category or stage'), 'aria-label': t('Filter reports'),
-      oninput: ev => { state.repFilter = ev.target.value; renderReports(); } }));
+      oninput: ev => { state.repFilter = ev.target.value; renderReports(); } }),
+    h('button', { class: 'icon-btn sm', 'aria-expanded': 'true', title: t('Hide the report list'), onclick: toggleList }, '«'));
   const selectedRep = all.find(r => repKey(r) === state.reportSel);
   // A newly selected report is revealed once: its category levels open.
   if (selectedRep && state.repTreeRevealed !== state.reportSel) {
