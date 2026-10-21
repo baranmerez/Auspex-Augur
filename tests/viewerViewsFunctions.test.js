@@ -336,13 +336,102 @@ test('TR and EN: every string of the fn-page block has a Turkish text', () => {
   assert.match(list, /Fonksiyonlar/);
 });
 
-test('glue: the Schema tab remembers the type, lists views and functions and the search finds them', () => {
-  assert.match(page, /memType: state\.memType/, 'persisted');
-  assert.match(page, /if \(memTypeOf\(\) !== 'tables'\) \{ renderObjectList\(view, mv\.data\); return; \}/);
-  assert.match(page, /\/api\/memory\/function\?profile=\$\{encodeURIComponent\(tp\.db\)\}&file=\$\{encodeURIComponent\(entry\.file\)\}/);
-  assert.match(page, /row\(t\('Functions'\), fns, id => openFunctionPage\(state\.db, id\)/);
+test('tabs: Views and Functions follow Tables, restore after reload and have counts, own toolbar and shortcuts', () => {
+  assert.match(page, /<button data-tab="tables">[\s\S]*?<\/button>\s*<button data-tab="views"><span data-i18n="Views">Views<\/span><span class="count" id="cViews"><\/span><\/button>\s*<button data-tab="functions"><span data-i18n="Functions">Functions<\/span><span class="count" id="cFunctions"><\/span><\/button>/);
+  assert.match(page, /<section id="v-views" class="view" hidden><\/section>\s*<section id="v-functions" class="view" hidden><\/section>/);
+  assert.match(page, /const tabNames = \['overview', 'ops', 'tables', 'views', 'functions', 'reports', 'schema', 'rules', 'profiles'\];/);
+  assert.match(page, /const ownToolbarTabs = \[[^\]]*'views', 'functions'\]/);
+  assert.match(page, /'1', '2', '3', '4', '5', '6', '7', '8', '9'\]\.includes\(ev\.key\)/);
+  assert.match(page, /renderObjectTab\('views'\);\s*renderObjectTab\('functions'\);\s*renderRules\(\);/, 'render() draws both tabs');
+  // The counts: views and matviews from the graph nodes, functions from functions[].
+  assert.deepEqual(plain(load().schemaObjectCounts(graph())), { tables: 2, views: 3, functions: 3 });
+  // A database must be chosen: the same chooser as Schema and Rules.
+  assert.match(page, /if \(!state\.db\) return plain\(memChooser\(profiles\)\);\s*if \(!sum\) \{\s*return plain\(h\('div', \{ class: 'panel' \}, h\('div', \{ class: 'rep-empty' \}, h\('b', \{\}, t\('No schema memory for \{db\} yet'/);
+});
+
+test('the Schema tab has no type switch any more; a stale memType is ignored', () => {
+  assert.doesNotMatch(page, /memType|memTypeSwitch|renderObjectList|memListHost/);
+  assert.match(page, /\/api\/memory\/function\?profile=\$\{encodeURIComponent\(tp\.db\)\}&file=\$\{encodeURIComponent\(entry\?\.file \?\? ''\)\}/);
+  assert.match(page, /row\(t\('Functions'\), fns, id => openFunctionPage\(state\.db, id\)/, 'the Schema search still lists functions');
   assert.match(page, /\.g-edge\.view \{/);
 });
+
+// The page-tabs block with a recording page: which tab a page opens in and how
+// its trail grows, goes back and closes.
+function loadTabs(stateInit = {}) {
+  const src = page.match(/\/\/ page-tabs:start[\s\S]*?\/\/ page-tabs:end/)?.[0];
+  assert.ok(src, 'page-tabs block found');
+  const log = [];
+  const state = { db: 'exampledb', tab: 'views', memView: { profile: 'exampledb', data: graph() }, ...stateInit };
+  const ctx = vm.createContext({ state, log, setDb: db => { state.db = db; }, switchTab: tab => { log.push(['switch', tab]); state.tab = tab; },
+    renderSchema: () => log.push(['render', 'schema']), renderObjectTab: tab => log.push(['render', tab]), scrollTo() {}, setMemSel: id => log.push(['sel', id]) });
+  const tp = page.match(/^const tpIsView = .*$/m)[0];
+  const fn = page.match(/^const fnTrailPrefix = [\s\S]*?^const fnFromTrail = .*$/m)[0];
+  vm.runInContext(`${tp}\n${fn}\n${src}\nObject.assign(this, { openTablePage, openFunctionPage, openPage, pageBack, closePage, pageTabOf, pageOf, fnTrailId });`, ctx);
+  return ctx;
+}
+
+test('page routing: tables in Schema, views in Views, functions in Functions; cross links switch tabs and start a new trail', () => {
+  const ctx = loadTabs({ tab: 'views' });
+  assert.equal(ctx.pageTabOf('exampledb', 'example.orders'), 'schema');
+  assert.equal(ctx.pageTabOf('exampledb', 'example.mv_daily_totals'), 'views');
+  assert.equal(ctx.pageTabOf('exampledb', ctx.fnTrailId('example.order_total')), 'functions');
+  // In the Views tab: a view opens there and the trail grows within the tab.
+  ctx.openTablePage('exampledb', 'example.v_order_list');
+  ctx.openTablePage('exampledb', 'example.mv_daily_totals');
+  assert.deepEqual(plain(ctx.state.viewPage.trail), ['example.v_order_list', 'example.mv_daily_totals']);
+  assert.deepEqual(plain(ctx.log.splice(0)), [['render', 'views'], ['render', 'views']]);
+  // A view's source table goes to the Schema tab with a fresh trail.
+  ctx.state.tablePage = { db: 'exampledb', trail: ['example.customers', 'example.old'] };
+  ctx.openTablePage('exampledb', 'example.orders');
+  assert.deepEqual(plain(ctx.state.tablePage.trail), ['example.orders']);
+  assert.deepEqual(plain(ctx.log.splice(0)), [['switch', 'schema']]);
+  // A table's "Used by views" goes back to the Views tab (fresh trail there).
+  ctx.openTablePage('exampledb', 'example.v_order_list');
+  assert.equal(ctx.state.tab, 'views');
+  assert.deepEqual(plain(ctx.state.viewPage.trail), ['example.v_order_list']);
+  // A view's called function goes to the Functions tab; its calling view back to Views.
+  ctx.openFunctionPage('exampledb', 'example.order_total');
+  assert.equal(ctx.state.tab, 'functions');
+  assert.deepEqual(plain(ctx.state.fnPage.trail), [ctx.fnTrailId('example.order_total')]);
+  ctx.openFunctionPage('exampledb', 'example.order_report');
+  assert.equal(ctx.state.fnPage.trail.length, 2, 'function to function stays in the tab');
+  ctx.log.splice(0);
+  ctx.openTablePage('exampledb', 'example.v_order_list');
+  assert.deepEqual(plain(ctx.log.splice(0)), [['switch', 'views']]);
+});
+
+test('page routing: Back walks the tab trail, then returns to that tab\'s list; Schema keeps its selection', () => {
+  const ctx = loadTabs({ tab: 'functions' });
+  ctx.openFunctionPage('exampledb', 'example.order_total');
+  ctx.openFunctionPage('exampledb', 'example.order_report');
+  ctx.log.splice(0);
+  ctx.pageBack('functions');
+  assert.deepEqual(plain(ctx.state.fnPage.trail), [ctx.fnTrailId('example.order_total')]);
+  ctx.pageBack('functions');
+  assert.equal(ctx.state.fnPage, null, 'back on the first page shows the list');
+  assert.deepEqual(plain(ctx.log.splice(0)), [['render', 'functions'], ['render', 'functions']]);
+  const s = loadTabs({ tab: 'schema' });
+  s.openTablePage('exampledb', 'example.orders');
+  s.log.splice(0);
+  s.closePage('schema');
+  assert.deepEqual(plain(s.log), [['sel', 'example.orders'], ['render', 'schema']]);
+});
+
+test('page cross links: view sources and touched tables open table pages, functions and views their own pages', () => {
+  // The pages only call onOpen (tables and views, routed by kind) and
+  // onOpenFunction; the glue maps them to openTablePage / openFunctionPage.
+  assert.match(page, /onOpen: next => openTablePage\(tp\.db, next\), onOpenFunction: next => openFunctionPage\(tp\.db, next\),/);
+  assert.match(page, /\.\.\.tpCodeCtx\(tab, tp, id, set\), onOpenFunction: fn => openFunctionPage\(tp\.db, fn\),/);
+  assert.match(page, /onOpen: x => \(tab === 'views' \? openPage\('views', state\.db, x\.id\) : openFunctionPage\(state\.db, x\.id\)\),/);
+  const ctx = load();
+  const m = ctx.functionPageModel(graph(), 'example.order_total', fnRec());
+  const view = ctx.functionPageView(m, ['x'], ctxOf({ reports: { items: [] } }));
+  all(byClass(view, 'tp-deps')[0], n => n.tag === 'button' && textOf(n).includes('example.v_order_list'))[0].attrs.onclick();
+  assert.deepEqual(calls.at(-1), ['open', 'example.v_order_list'], 'a calling view goes through onOpen (routed to Views by kind)');
+});
+
+
 
 test('listed-only overloads, flag change fields and pg_catalog names are shown apart', () => {
   const ctx = load();
