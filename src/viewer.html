@@ -769,6 +769,11 @@
   .rn-i-dir { color: var(--text-3); margin-right: 6px; }
   .rn-i-n { margin-left: auto; flex: none; font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
   .rn-i-open { justify-self: start; }
+  .rn-i-notes { gap: 8px; }
+  .rn-i-list .rn-i-note { display: grid; gap: 1px; width: 100%; min-width: 0; padding: 0; border: 0; background: none; font: inherit; white-space: normal; text-align: left; cursor: pointer; }
+  .rn-i-key { font: 11.5px var(--mono); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rn-i-text { font-size: 12.5px; line-height: 1.45; color: var(--text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .rn-i-note:hover .rn-i-text { color: var(--text); }
   @media (max-width: 1280px) {
     .rules-nav.with-info { grid-template-columns: var(--rn-w, 320px) 14px minmax(0, 1fr); }
     .rules-nav.collapsed.with-info { grid-template-columns: auto minmax(0, 1fr); }
@@ -1088,7 +1093,7 @@ const put = (node, ...kids) => node.replaceChildren(...kids.flat(Infinity).filte
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 // ---------- i18n (English is the key; Turkish is the translation) ----------
 const TR = {
-  '(table)': '(tablo)', 'Observations': 'Gözlemler', 'Inferences': 'Çıkarımlar', 'Other tables': 'Diğer tablolar', 'Important columns': 'Önemli kolonlar', 'Linked tables': 'Bağlı tablolar', 'Table summary': 'Tablo özeti', 'number: notes': 'sayı: not', 'Show the table list': 'Tablo listesini göster', 'Hide the table list': 'Tablo listesini gizle', 'Resize the table list': 'Tablo listesinin genişliği', 'Drag to resize; double-click for the default width': 'Genişlik için sürükle; varsayılan için çift tıkla', '{n} rule': '{n} kural', '{n} rules': '{n} kural', '{n} observation': '{n} gözlem', '{n} observations': '{n} gözlem',
+  '(table)': '(tablo)', 'Observations': 'Gözlemler', 'Inferences': 'Çıkarımlar', 'Other tables': 'Diğer tablolar', 'Important columns': 'Önemli kolonlar', 'Linked tables': 'Bağlı tablolar', 'Table summary': 'Tablo özeti', 'Recent notes': 'Son notlar', 'Most notes': 'En çok not', '{n} tables': '{n} tablo', 'number: notes': 'sayı: not', 'Show the table list': 'Tablo listesini göster', 'Hide the table list': 'Tablo listesini gizle', 'Resize the table list': 'Tablo listesinin genişliği', 'Drag to resize; double-click for the default width': 'Genişlik için sürükle; varsayılan için çift tıkla', '{n} rule': '{n} kural', '{n} rules': '{n} kural', '{n} observation': '{n} gözlem', '{n} observations': '{n} gözlem',
   '{n} inference': '{n} çıkarım', '{n} inferences': '{n} çıkarım', '{n} archived': '{n} arşivli', 'Counts follow the filters, except the status switch.': 'Sayılar durum seçimi dışındaki filtreleri izler.',
   'Rules': 'Kurallar', 'Kind': 'Tür', 'Table': 'Tablo', 'Active': 'Aktif', 'Archived': 'Arşivlenmiş',
   'Filter by table': 'Tabloya göre süz', 'Search note text': 'Not metninde ara', 'No notes match the filters.': 'Filtrelere uyan not yok.',
@@ -4573,7 +4578,23 @@ function renderRules() {
       linked.length ? h('section', {}, h('h4', {}, t('Linked tables')), h('ul', { class: 'rn-i-list' }, linked)) : null,
       h('button', { type: 'button', class: 'icon-btn sm rn-i-open', onclick: openPage() }, t('Open table page')));
   };
-  const info = current?.key ? rulesInfo(current) : null;
+  // With the database-wide box chosen the third column sums up the database:
+  // the latest notes and the tables with the most notes, each one click away.
+  const rulesDbInfo = () => {
+    const latest = list.filter(n => n.table).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')) || b.id - a.id).slice(0, 6);
+    const busiest = [...tables].sort((a, b) => b.notes.length - a.notes.length || a.key.localeCompare(b.key)).slice(0, 6);
+    return h('aside', { class: 'panel rn-info', 'aria-label': t('Table summary') },
+      h('div', { class: 'rn-i-head' }, h('b', {}, state.db),
+        h('span', { class: 'muted' }, `${t('{n} tables', { n: fmt(tables.length) })} · ${t('{n} notes', { n: fmt(list.length) })}`)),
+      latest.length ? h('section', {}, h('h4', {}, t('Recent notes')), h('ul', { class: 'rn-i-list rn-i-notes' }, latest.map(n => {
+        const key = tableKey(n.schema, n.table);
+        return h('li', {}, h('button', { type: 'button', class: 'rl-link rn-i-note', title: n.text, onclick: () => choose(key) },
+          h('span', { class: 'rn-i-key' }, key), h('span', { class: 'rn-i-text' }, n.text)));
+      }))) : null,
+      busiest.length ? h('section', {}, h('h4', {}, t('Most notes')), h('ul', { class: 'rn-i-list' }, busiest.map(g =>
+        h('li', {}, h('button', { type: 'button', class: 'tp-link rl-link', title: g.key, onclick: () => choose(g.key) }, g.key), h('span', { class: 'rn-i-n' }, fmt(g.notes.length)))))) : null);
+  };
+  const info = current?.key ? rulesInfo(current) : rulesDbInfo();
   const toggleList = () => { state.rulesListCollapsed = !state.rulesListCollapsed; persist(); renderRules(); };
   if (state.rulesListCollapsed) {
     put(view, h('div', { class: 'stack' }, bar, h('div', { class: 'rules-nav collapsed' + (info ? ' with-info' : '') },
