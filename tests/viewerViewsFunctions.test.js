@@ -48,7 +48,7 @@ const graph = () => ({
     { id: 'example.mv_daily_totals', schema: 'example', table: 'mv_daily_totals', state: 'explored', kind: 'matview', columnCount: 2, viewSources: ['example.v_order_list'], viewFunctions: [] },
     { id: 'test.v_invoices', schema: 'test', table: 'v_invoices', state: 'seen', kind: 'view', columnCount: 0 },
   ],
-  edges: [{ from: 'example.v_order_list', to: 'example.orders', level: 'view', columns: [], refColumns: [] }],
+  edges: [{ from: 'example.v_order_list', to: 'example.orders', level: 'view', columns: ['order_id', 'status_code'], refColumns: [] }],
   functions: [
     { id: 'example.order_total', schema: 'example', name: 'order_total', file: 'functions/example/order_total.json', state: 'explored', overloads: 2, kinds: ['function'], language: 'plpgsql',
       flags: { volatile: true, securityDefiner: true, definerWithoutSearchPath: true }, usedByTriggers: 0,
@@ -392,4 +392,26 @@ ${src}\nthis.changeLabel = changeLabel;`, ctx);
   assert.equal(en({ change: 'view-sources-changed', added: [], removed: ['test.invoices'] }), 'view sources changed: −test.invoices');
   assert.equal(en({ change: 'view-sources-changed' }), 'view sources changed');
   assert.equal(run('tr')({ change: 'view-sources-changed', added: ['example.orders'] }), 'view kaynakları değişti: +example.orders');
+});
+
+test('a view edge gives no FK tags and reads as "reads: columns" in the inspector', () => {
+  const block = blockOf('roles');
+  assert.ok(block, 'roles block found');
+  const ctx = vm.createContext({ Map, Set, Math, Number });
+  vm.runInContext(`${tableKeyLines}
+const t = (en, vars = {}) => String(en).replace(/\\{(\\w+)\\}/g, (_, k) => vars[k] ?? '');
+${block}
+this.centerColumns = centerColumns; this.relColsText = relColsText;`, ctx);
+  const g = graph();
+  const edge = g.edges[0];
+  const view = ctx.centerColumns(g, 'example.v_order_list', viewRec());
+  assert.deepEqual(plain(view.keyCols), [], 'the view center gets no FK tags from its source columns');
+  const src = ctx.centerColumns(g, 'example.orders', { columns: [{ name: 'order_id', type: 'bigint' }, { name: 'status_code', type: 'text' }], constraints: [] });
+  assert.deepEqual(plain(src.tagsOf('order_id')), [], 'the source gets no ← tags from a view');
+  assert.equal(ctx.relColsText(edge, true), 'reads: order_id, status_code');
+  assert.equal(ctx.relColsText(edge, false), 'read by view: order_id, status_code');
+  assert.equal(ctx.relColsText({ ...edge, columns: [] }, true), 'reads');
+  assert.equal(ctx.relColsText({ level: 'fk', columns: ['customer_id'], refColumns: ['customer_id'] }, true), 'customer_id → customer_id');
+  const tr = ['view source', 'reads: {c}', 'read by view: {c}', 'reads', 'read by view'].filter(k => pageTr[k] === undefined);
+  assert.deepEqual(tr, []);
 });

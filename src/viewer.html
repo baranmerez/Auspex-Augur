@@ -1244,7 +1244,7 @@ const TR = {
   'note #{id} ({kind})': 'not #{id} ({kind})', 'schema changed': 'şema değişti', 'No events yet.': 'Henüz olay yok.',
   'column {c} added ({t})': '{c} kolonu eklendi ({t})', 'column {c} dropped': '{c} kolonu silindi', 'column {f} renamed to {to}': '{f} kolonunun adı {to} oldu',
   'column {c}: {f} → {to}': '{c} kolonu: {f} → {to}', 'column {c} is now NOT NULL': '{c} kolonu artık NOT NULL', 'column {c} is now nullable': '{c} kolonu artık NULL olabilir',
-  'kind {f} → {to}': 'tür {f} → {to}', 'view definition changed': 'view tanımı değişti', 'view sources changed': 'view kaynakları değişti', 'view sources changed: {d}': 'view kaynakları değişti: {d}', 'constraint': 'kısıt',
+  'kind {f} → {to}': 'tür {f} → {to}', 'view definition changed': 'view tanımı değişti', 'view sources changed': 'view kaynakları değişti', 'view source': 'view kaynağı', 'reads: {c}': 'okur: {c}', 'read by view: {c}': 'view okur: {c}', 'reads': 'okur', 'read by view': 'view okur', 'view sources changed: {d}': 'view kaynakları değişti: {d}', 'constraint': 'kısıt',
   'index': 'indeks', 'incoming FK': 'gelen FK', 'added': 'eklendi',
   'dropped': 'silindi', 'changed': 'değişti', 'No schema memory for {db} yet': '{db} için henüz şema hafızası yok',
   'It fills as your agent describes tables (describe_table) and runs reports.': 'Agent tabloları inceledikçe (describe_table) ve rapor çalıştırdıkça dolar.', 'No schema memory yet': 'Henüz şema hafızası yok', 'Pick a database': 'Bir veritabanı seçin',
@@ -2860,7 +2860,7 @@ function drawReports() {
 // Reads graph.json, the view the memory module writes after every change, and
 // table files for the ER view. All relation logic stays in src/memory/store.js.
 const stateLabel = s => t({ explored: 'explored', seen: 'seen in a plan', unexplored: 'not explored' }[s] || s || '');
-const levelLabel = l => t({ fk: 'foreign key', used: 'used in an approved report', suggested: 'name match (unconfirmed)' }[l] || l);
+const levelLabel = l => t({ fk: 'foreign key', used: 'used in an approved report', suggested: 'name match (unconfirmed)', view: 'view source' }[l] || l);
 let memSeenAt = {};
 try { memSeenAt = JSON.parse(localStorage.getItem('auspex.viewer.memSeen') || '{}') || {}; } catch {}
 const memProfiles = () => state.memory?.profiles || [];
@@ -3118,6 +3118,9 @@ function centerColumns(data, centerId, rec) {
   const selfFk = new Set(), fkOut = new Set(), refIn = new Set();
   for (const e of data.edges) {
     if (e.from !== centerId && e.to !== centerId) continue;
+    // A view edge's columns are the source's columns the view reads (the
+    // reverse of FK and used edges); they are no key of either side.
+    if (e.level === 'view') continue;
     if (e.from === e.to) { e.columns.forEach(c => selfFk.add(c)); continue; }
     if (e.from === centerId) e.columns.forEach(c => fkOut.add(c)); else e.refColumns.forEach(c => refIn.add(c));
   }
@@ -3130,6 +3133,14 @@ function centerColumns(data, centerId, rec) {
     : [...new Set([...fkOut, ...refIn, ...Object.keys(used)])].map(name => ({ name, type: '' }));
   const keyCols = cols.filter(c => tagsOf(c.name).length);
   return { cols, keyCols, tagsOf, pk: pkList, notes };
+}
+// The column text of one relation in the inspector: "a, b → x, y" for FK,
+// used and suggested edges; a view edge lists only the source columns it
+// reads (from the view's side "reads: ...", from the source's "read by view: ...").
+function relColsText(e, out) {
+  const cols = (Array.isArray(e.columns) ? e.columns : []).join(', ');
+  if (e.level === 'view') return cols ? t(out ? 'reads: {c}' : 'read by view: {c}', { c: cols }) : t(out ? 'reads' : 'read by view');
+  return `${cols} → ${(Array.isArray(e.refColumns) ? e.refColumns : []).join(', ')}`;
 }
 // roles:end
 
@@ -3326,14 +3337,14 @@ function inspector(data, id) {
   // used and suggested relations; every relation is listed, drawn or not.
   const roles = roleGroups(data, id);
   const rankOf = new Map([...roles.ref.map(g => ['ref|' + g.id, g.rank]), ...roles.dep.map(g => ['dep|' + g.id, g.rank])]);
-  const order = { fk: 0, used: 1, suggested: 2 };
+  const order = { fk: 0, used: 1, suggested: 2, view: 3 };
   const rels = data.edges.filter(e => e.from !== e.to && (e.from === id || e.to === id))
     .map(e => {
       const out = e.from === id, nb = out ? e.to : e.from;
       const role = e.level === 'fk' ? (out ? 'ref' : 'dep') : null;
-      return { id: nb, level: e.level, out, role, rank: role ? rankOf.get(`${role}|${nb}`) : null, cols: `${e.columns.join(', ')} → ${e.refColumns.join(', ')}` };
+      return { id: nb, level: e.level, out, role, rank: role ? rankOf.get(`${role}|${nb}`) : null, cols: relColsText(e, out) };
     })
-    .sort((a, b) => order[a.level] - order[b.level] || (a.role === b.role ? 0 : a.role === 'ref' ? -1 : 1) || (a.rank ?? 0) - (b.rank ?? 0) || a.id.localeCompare(b.id));
+    .sort((a, b) => (order[a.level] ?? 4) - (order[b.level] ?? 4) || (a.role === b.role ? 0 : a.role === 'ref' ? -1 : 1) || (a.rank ?? 0) - (b.rank ?? 0) || a.id.localeCompare(b.id));
   const events = data.changelog.filter(e => e.schema === n.schema && e.table === n.table).slice().reverse();
   const relLimit = 200;
   return h('div', { class: 'panel insp' }, h('div', { class: 'panel-b' },
