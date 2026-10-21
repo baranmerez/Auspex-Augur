@@ -11,7 +11,7 @@ const block = page.match(/\/\/ themes:start[\s\S]*?\/\/ themes:end/)?.[0];
 function load() {
   assert.ok(block, 'themes block found in viewer.html');
   const context = vm.createContext({});
-  vm.runInContext(`${block}\nObject.assign(this, { themeTokens, themePresets, themeRecord, themeUpsert, themeExport, themeImport, themeSpecOf, themeBgFrom, contrastRatio, hexRgb, themeIdOf, summaryDefaults, summaryPaletteRecord, summaryGroups, summaryKeys, summaryMinStep, glassRecord, tintsRecord, glassFallback, glassDefaults, themeDuplicate, themeMaterialize, themeAutoFix, themeContrast, themeResolve, themeDefaultId, themeColorKeys, themeColorGroups, themeBodyRecord, bgIsDark, themeMaxCount, themeDialogRecover });`, context);
+  vm.runInContext(`${block}\nObject.assign(this, { themeTokens, themePresets, themeRecord, themeUpsert, themeExport, themeImport, themeSpecOf, themeBgFrom, contrastRatio, hexRgb, themeIdOf, summaryDefaults, summaryPaletteRecord, summaryGroups, summaryKeys, summaryMinStep, glassRecord, tintsRecord, glassFallback, glassDefaults, themeDuplicate, themeMaterialize, themeAutoFix, themeContrast, themeResolve, themeDefaultId, themeColorKeys, themeColorGroups, themeBodyRecord, bgIsDark, themeMaxCount, themeDialogRecover, themePresetGroup });`, context);
   return context;
 }
 const plain = v => JSON.parse(JSON.stringify(v));
@@ -69,9 +69,9 @@ test('invalid input is refused, never thrown', () => {
   }
 });
 
-test('ready themes: light, dark and plain are built in, fourteen in all with the five Auspex themes', () => {
+test('ready themes: light, dark and plain are built in, twenty-three in all with the five Auspex themes', () => {
   const { themePresets, themeSpecOf } = load();
-  assert.equal(themePresets.length, 14);
+  assert.equal(themePresets.length, 23);
   assert.deepEqual(plain(themePresets.filter(p => p.auspex).map(p => p.id)), ['auspex', 'forge', 'phosphor', 'verdigris', 'ivory']);
   assert.equal(themeSpecOf('plain', []), null);
   assert.deepEqual(plain(themePresets.filter(p => p.glass).map(p => p.id)), ['glass', 'glassDark']);
@@ -375,6 +375,33 @@ test('every preset passes the contrast check, including pairs of the studio pane
     assert.equal(themeTokens(spec).warnings.length, 0, spec.id);
     for (const p of themeContrast(spec)) assert.ok(p.pass, `${spec.id} ${p.id}: ${p.ratio}:1 < ${p.min}`);
   }
+});
+
+test('light and dark presets: one light and one dark variant, both pass every contrast check', () => {
+  const { themePresets, themeContrast, themeTokens, themeResolve, bgIsDark } = load();
+  const pairs = themePresets.filter(p => p.pair);
+  assert.deepEqual(plain(pairs.map(p => p.id)), ['contrast', 'fjord', 'solar', 'nocturne', 'rosewood', 'ocean', 'amber', 'slate', 'moss', 'sunset']);
+  for (const spec of pairs) {
+    assert.notEqual(bgIsDark(spec.bg), bgIsDark(spec.pair.bg), spec.id);
+    for (const dark of [true, false]) {
+      const body = themeResolve(spec, dark);
+      assert.equal(themeTokens(body).base, dark ? 'dark' : 'light', spec.id);
+      assert.equal(themeTokens(body).warnings.length, 0, `${spec.id} ${dark ? 'dark' : 'light'}`);
+      for (const p of themeContrast(body)) assert.ok(p.pass, `${spec.id} ${dark ? 'dark' : 'light'} ${p.id}: ${p.ratio}:1 < ${p.min}`);
+    }
+  }
+  // High contrast keeps 7:1 in both variants.
+  const hc = themePresets.find(p => p.id === 'contrast');
+  assert.equal(hc.pair.contrast, 'high');
+});
+
+test('theme menu groups: Auspex, light and dark, ready and accessibility', () => {
+  const { themePresets, themePresetGroup } = load();
+  const of = g => plain(themePresets.filter(p => themePresetGroup(p) === g).map(p => p.id));
+  assert.deepEqual(of('auspex'), ['auspex', 'forge', 'phosphor', 'verdigris', 'ivory']);
+  assert.deepEqual(of('access'), ['contrast']);
+  assert.deepEqual(of('pair'), ['fjord', 'solar', 'nocturne', 'rosewood', 'ocean', 'amber', 'slate', 'moss', 'sunset']);
+  assert.deepEqual(of('ready'), ['light', 'dark', 'midnight', 'sepia', 'forest', 'glass', 'glassDark', 'plain']);
 });
 
 test('studio: every token is editable and listed in a group', () => {
