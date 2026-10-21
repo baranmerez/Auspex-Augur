@@ -32,7 +32,7 @@ ${blockOf('fn-page')}
 const TR = Object.assign({}, ${JSON.stringify(pageTr)});
 for (const [k, v] of Object.entries({ ...tablePageTr, ...fnPageTr })) if (!Object.hasOwn(TR, k)) TR[k] = v;
 const t = (en, vars = {}) => String(${JSON.stringify(lang)} === 'tr' && TR[en] !== undefined ? TR[en] : en).replace(/\\{(\\w+)\\}/g, (_, k) => vars[k] ?? '');
-Object.assign(this, { tablePageModel, tablePageView, functionPageModel, functionPageView, schemaObjectCounts, schemaObjectGroups, schemaObjectList,
+Object.assign(this, { tablePageModel, tablePageView, functionPageModel, functionPageView, schemaObjectCounts, schemaObjectGroups, schemaObjectList, functionSections, fnImportantTables, functionList, fnTableColumns, fnRoleOf, tpImportance,
   fnTrailId, fnFromTrail, tpCrumbLabel, tpMentions, tpReportsPanel, tpCode, fnFlagTexts, fnRiskTexts, fnRiskLabels, tpVolatileText, TR, t });`, context);
   return context;
 }
@@ -133,7 +133,7 @@ test('view page: badge, definition with options and copy, sources, volatile warn
   const m = ctx.tablePageModel(graph(), 'example.v_order_list', viewRec());
   const copied = [];
   const reports = { items: [{ id: 'r1', title: 'Open orders', sql: 'select * from example.v_order_list' }, { id: 'r2', title: 'Other', sql: 'select * from example.v_order_list_old' }], pending: 0, failed: 0, capped: 0 };
-  const view = ctx.tablePageView(m, ['example.v_order_list'], ctxOf({ onCopy: s => copied.push(s), reports }));
+  const view = ctx.tablePageView(m, ['example.v_order_list'], ctxOf({ onCopy: s => copied.push(s), reports, sqlShown: true }));
   const text = textOf(view);
   assert.ok(byClass(view, 'kind-view').some(b => textOf(b) === 'View'));
   assert.match(text, /security_barrier/);
@@ -178,7 +178,8 @@ test('view summary shows the definition, sources, called functions and used by v
   const groups = byClass(view, 'sum-group').map(g => g.attrs['aria-label']);
   assert.ok(groups.includes('Source relations') && groups.includes('Functions called') && groups.includes('Used by views'));
   assert.ok(!groups.includes('Primary key') && !groups.includes('Foreign keys'));
-  assert.equal(all(view, n => n.tag === 'pre').length, 1, 'definition box');
+  assert.equal(all(view, n => n.tag === 'pre').length, 0, 'the SQL stays collapsed');
+  assert.ok(byClass(view, 'tp-sql-btn').length === 1, 'a Show SQL button');
   assert.ok(byClass(view, 'c-fn-risk').length === 1, 'the volatile function chip is marked');
 });
 
@@ -257,7 +258,8 @@ test('function page model without a file uses the graph entry; an unknown functi
   // A triggered function: links go to the table page.
   const t = ctx.functionPageModel(graph(), 'example.check_order', { schema: 'example', name: 'check_order', describedAt: 'x',
     overloads: [ov({ arguments: '', returns: 'trigger', config: ['search_path=example'], usedByTriggers: [{ table: 'example.orders', trigger: 'orders_check_status' }] })] });
-  assert.deepEqual(plain(t.triggers), [{ table: 'example.orders', trigger: 'orders_check_status', signature: 'check_order()' }]);
+  assert.deepEqual(plain(t.triggers), [{ table: 'example.orders', trigger: 'orders_check_status', timing: null, events: [], level: null, signature: 'check_order()' }]);
+  assert.equal(t.isTrigger, true, 'returns trigger');
   assert.deepEqual(plain(t.risks), [], 'not called from a view');
 });
 
@@ -515,8 +517,9 @@ test('trigger tables: the raw schema.relname resolves to the graph node key (quo
   const m = ctx.functionPageModel(g, 'example.check_order', rec);
   assert.deepEqual(plain(m.triggers.map(x => x.table)), ['example."order.archive"', 'example.orders', 'test.invoices']);
   const view = ctx.functionPageView(m, ['x'], ctxOf({ reports: { items: [] } }));
-  const used = byClass(view, 'tp-deps')[0];
-  all(used, n => n.tag === 'button' && textOf(n).includes('archive_check'))[0].attrs.onclick();
+  const panel = byClass(view, 'fn-trg')[0];
+  const row = all(panel, n => n.tag === 'li' && textOf(n).includes('archive_check'))[0];
+  all(row, n => n.tag === 'button')[0].attrs.onclick();
   assert.deepEqual(calls.at(-1), ['open', 'example."order.archive"']);
 });
 
@@ -563,4 +566,199 @@ test('used by views: a stale [] in the record is joined with the graph (view edg
   assert.deepEqual(plain(t.usedByViews.map(v => v.id)), ['example.v_order_list']);
   const view = ctx.tablePageView(t, ['example.orders'], ctxOf());
   assert.match(textOf(all(view, n => n.attrs['aria-label'] === 'Used by views')[0]), /example\.v_order_list/);
+});
+
+// ----- Functions tab sections, important tables, signatures; view page layout -----
+const fnGraph = () => {
+  const g = graph();
+  g.nodes.push({ id: 'example.order_items', schema: 'example', table: 'order_items', state: 'seen', kind: 'table' });
+  g.notes = [{ id: 1, status: 'active', kind: 'rule', schema: 'example', table: 'orders', column: null, text: 'Orders are never deleted.' },
+    { id: 2, status: 'active', kind: 'observation', schema: 'example', table: 'orders', column: 'status_code', text: 'Mostly open.' }];
+  g.functions.push(
+    { id: 'example.orders_audit', schema: 'example', name: 'orders_audit', state: 'explored', role: 'trigger', timings: ['after'], triggerTables: ['example.orders'], kinds: ['function'], language: 'plpgsql', flags: {} },
+    { id: 'example.orders_check', schema: 'example', name: 'orders_check', state: 'seen', role: 'trigger', timings: ['before', 'after'], triggerTables: ['example.orders', 'example.customers'], kinds: ['function'], language: 'plpgsql', flags: {} },
+    { id: 'example.v_guard', schema: 'example', name: 'v_guard', state: 'seen', role: 'trigger', timings: ['instead'], triggerTables: ['example.v_order_list'], kinds: ['function'], language: 'plpgsql', flags: {} },
+    { id: 'example.old_trigger', schema: 'example', name: 'old_trigger', state: 'seen', returns: 'trigger', kinds: ['function'], language: 'plpgsql', flags: {} },
+    { id: 'example.order_sum', schema: 'example', name: 'order_sum', state: 'seen', kinds: ['aggregate'], language: 'internal', flags: {} });
+  return g;
+};
+
+test('function roles: role field first, then trigger fallbacks (trigger count, returns trigger), then kinds', () => {
+  const ctx = load();
+  assert.equal(ctx.fnRoleOf({ role: 'procedure', usedByTriggers: 3 }), 'procedure');
+  assert.equal(ctx.fnRoleOf({ usedByTriggers: 1, kinds: ['function'] }), 'trigger');
+  assert.equal(ctx.fnRoleOf({ returns: 'trigger' }), 'trigger');
+  assert.equal(ctx.fnRoleOf({ returnsTrigger: true }), 'trigger');
+  assert.equal(ctx.fnRoleOf({ kinds: ['procedure'] }), 'procedure');
+  assert.equal(ctx.fnRoleOf({ kinds: ['function', 'procedure'] }), 'function', 'mixed overloads stay functions');
+  assert.equal(ctx.fnRoleOf({}), 'function');
+});
+
+test('function sections: trigger functions by timing (a function with two timings in both), then functions, procedures, aggregates', () => {
+  const ctx = load();
+  const res = ctx.functionSections(fnGraph());
+  assert.deepEqual(plain(res.sections.map(s => [s.key, s.count])), [['trigger', 5], ['function', 1], ['procedure', 1], ['aggregate', 1]]);
+  const trg = res.sections[0];
+  assert.deepEqual(plain(trg.groups.map(g => [g.key, g.items.map(x => x.name)])), [
+    ['before', ['orders_check']], ['after', ['orders_audit', 'orders_check']], ['instead', ['v_guard']], ['unknown', ['check_order', 'old_trigger']]]);
+  assert.equal(res.listedOnly, true);
+  const q = ctx.functionSections(fnGraph(), { query: 'check' });
+  assert.deepEqual(plain(q.sections.map(s => s.key)), ['trigger']);
+  assert.equal(q.shown, 2);
+});
+
+test('important tables: ranked by notes, top columns, reports and explored state; a chip filters to related functions', () => {
+  const ctx = load();
+  const g = fnGraph();
+  const reports = [{ id: 'r1', title: 'R', sql: 'select * from example.customers' }, { id: 'r2', title: 'R2', sql: 'select * from example.customers c' }];
+  assert.equal(ctx.tpImportance(g, 'example.orders', []), 2 * 2 + 1, 'two active notes on the table or its columns (2 each), explored (1)');
+  assert.equal(ctx.tpImportance(g, 'example.customers', reports), 3 * 2 + 1);
+  const imp = ctx.fnImportantTables(g, reports);
+  assert.deepEqual(plain(imp.slice(0, 2).map(x => x.id)), ['example.customers', 'example.orders']);
+  const orders = imp.find(x => x.id === 'example.orders');
+  assert.ok(orders.count >= 3, 'trigger functions and the view caller relate to orders');
+  const res = ctx.functionSections(g, { table: 'example.orders' });
+  const names = res.sections.flatMap(s => s.groups.flatMap(x => x.items.map(i => i.name)));
+  assert.ok(names.includes('orders_audit') && names.includes('orders_check'), 'trigger functions on it');
+  assert.ok(names.includes('order_total'), 'called by a view on it');
+  assert.ok(!names.includes('v_guard'));
+  const both = ctx.functionSections(g, { table: 'example.orders', query: 'audit' });
+  assert.equal(both.shown, 1, 'search and chip filter apply together');
+  const picked = [];
+  const list = ctx.functionList(res, imp, { onOpen() {}, onTable: id => picked.push(id), onSection() {} });
+  const chip = byClass(list, 'fn-imp-c').find(c => textOf(c).startsWith('example.orders'));
+  assert.equal(chip.attrs['aria-pressed'], 'true');
+  chip.attrs.onclick();
+  assert.deepEqual(picked, [''], 'clicking the active chip clears the filter');
+  assert.ok(all(list, n => n.tag === 'button' && textOf(n).includes('Clear filter')).length === 1);
+});
+
+test('function list: compact rows, timing chips and tables for triggers, a quiet dot for listed only, collapsible remembered sections', () => {
+  const ctx = load();
+  const toggles = [];
+  const list = ctx.functionList(ctx.functionSections(fnGraph()), [], { onOpen() {}, onTable() {}, onSection: (k, v) => toggles.push([k, v]), secOpen: { procedure: false } });
+  const rows = byClass(list, 'fn-row');
+  const checks = rows.filter(r => textOf(r).includes('orders_check'));
+  assert.deepEqual(checks.map(r => byClass(r, 'fn-tm').map(textOf)), [['AFTER'], ['BEFORE']], 'in each timing group only the other timing is repeated');
+  const check = checks[0];
+  assert.match(textOf(check), /on example\.orders, example\.customers/);
+  assert.match(check.attrs.class, /listed/);
+  assert.equal(byClass(list, 'badge').filter(b => textOf(b) === 'listed only').length, 0, 'no listed-only badge on rows');
+  assert.equal(byClass(list, 'fn-legend').length, 1, 'one legend line');
+  const proc = byClass(list, 'fn-sec').find(s => s.attrs['aria-label'] === 'Procedures');
+  assert.match(proc.attrs.class, /closed/);
+  const btn = byClass(proc, 'fn-sec-b')[0];
+  assert.equal(btn.attrs['aria-expanded'], 'false');
+  btn.attrs.onclick();
+  assert.deepEqual(toggles, [['procedure', true]]);
+  assert.match(page, /fnSecOpen: state\.fnSecOpen/, 'section state is persisted');
+});
+
+test('signature: a long RETURNS TABLE is clamped with a toggle; open, its columns are a list', () => {
+  const ctx = load();
+  const cols = Array.from({ length: 30 }, (_, i) => `col_${i} numeric(12,2)`);
+  assert.deepEqual(plain(ctx.fnTableColumns('TABLE(a integer, b numeric(12,2), c text)')), ['a integer', 'b numeric(12,2)', 'c text']);
+  assert.equal(ctx.fnTableColumns('numeric'), null);
+  const rec = { schema: 'example', name: 'order_report', describedAt: 'x', overloads: [ov({ arguments: 'p_from date, p_to date', returns: `TABLE(${cols.join(', ')})` })] };
+  const m = ctx.functionPageModel(graph(), 'example.order_report', rec);
+  const sigs = [];
+  const closed = ctx.functionPageView(m, ['x'], ctxOf({ reports: { items: [] }, onSigOpen: (k, v) => sigs.push([k, v]) }));
+  const sig = byClass(closed, 'fn-sig')[0];
+  assert.match(sig.attrs.class, /clamp/);
+  assert.match(textOf(sig), /TABLE \(30 columns\)/);
+  assert.equal(byClass(closed, 'fn-cols').length, 0);
+  byClass(closed, 'fn-sig-more')[0].attrs.onclick();
+  assert.deepEqual(sigs, [['example.order_report#0', true]]);
+  const open = ctx.functionPageView(m, ['x'], ctxOf({ reports: { items: [] }, sigOpen: { 'example.order_report#0': true } }));
+  assert.doesNotMatch(byClass(open, 'fn-sig')[0].attrs.class, /clamp/);
+  assert.equal(all(byClass(open, 'fn-cols')[0], n => n.tag === 'li').length, 30);
+  // Short signatures have no toggle; flags sit in one row with the kind badge.
+  const short = ctx.functionPageView(ctx.functionPageModel(graph(), 'example.order_total', fnRec()), ['x'], ctxOf({ reports: { items: [] } }));
+  assert.equal(byClass(short, 'fn-sig-more').length, 0);
+  const row = byClass(byClass(short, 'fn-ov')[0], 'fn-flags')[0];
+  assert.ok(byClass(row, 'kind-fn').length === 1 && byClass(row, 'fn-chips').length === 1);
+});
+
+test('a trigger function shows its triggers first: table, timing, events, level', () => {
+  const ctx = load();
+  const rec = { schema: 'example', name: 'check_order', describedAt: 'x', overloads: [ov({ arguments: '', returns: 'trigger', config: ['search_path=example'],
+    usedByTriggers: [{ table: 'example.orders', schema: 'example', tableName: 'orders', trigger: 'orders_check_status', timing: 'BEFORE', events: ['INSERT', 'UPDATE'], level: 'row' }] })] };
+  const m = ctx.functionPageModel(graph(), 'example.check_order', rec);
+  const view = ctx.functionPageView(m, ['x'], ctxOf({ reports: { items: [] } }));
+  const main = byClass(view, 'tp-main')[0];
+  assert.match(main.kids[0].attrs.class, /fn-trg/, 'the trigger panel comes first');
+  const text = textOf(main.kids[0]);
+  assert.match(text, /example\.orders/);
+  assert.match(text, /BEFORE/);
+  assert.match(text, /INSERT OR UPDATE/);
+  assert.match(text, /for each row/);
+});
+
+test('view page: the description comes first, the SQL stays collapsed behind Show SQL', () => {
+  const ctx = load();
+  const g = graph();
+  g.notes = [{ id: 7, status: 'active', kind: 'rule', schema: 'example', table: 'v_order_list', column: null, text: 'Open orders for the sales screen.' },
+    { id: 8, status: 'active', kind: 'observation', schema: 'example', table: 'v_order_list', column: 'total', text: 'Column note, not shown here.' }];
+  const rec = { ...viewRec(), comment: 'Open orders with totals' };
+  const shown = [];
+  for (const mode of ['detail', 'summary']) {
+    const view = ctx.tablePageView(ctx.tablePageModel(g, 'example.v_order_list', rec), ['x'], ctxOf({ view: mode, reports: { items: [] }, onSqlShown: v => shown.push(v), onView() {}, onColumn() {}, onUnused() {} }));
+    const about = byClass(view, 'tp-about')[0];
+    const def = byClass(view, 'tp-def-panel')[0];
+    const order = all(view, n => n === about || n === def);
+    assert.deepEqual(order.map(n => n.attrs.class.split(' ')[1]), ['tp-about', 'tp-def-panel'], `${mode}: description before SQL`);
+    assert.match(textOf(about), /Open orders with totals/);
+    assert.match(textOf(about), /Open orders for the sales screen/);
+    assert.doesNotMatch(textOf(about), /Column note/);
+    assert.equal(all(def, n => n.tag === 'pre').length, 0, `${mode}: SQL collapsed`);
+    const btn = byClass(def, 'tp-sql-btn')[0];
+    assert.equal(btn.attrs['aria-expanded'], 'false');
+    assert.match(textOf(btn), /Show SQL \(3 lines\)/);
+    btn.attrs.onclick();
+  }
+  assert.deepEqual(shown, [true, true]);
+  const none = ctx.tablePageView(ctx.tablePageModel(graph(), 'example.v_order_list', viewRec()), ['x'], ctxOf({ reports: { items: [] } }));
+  assert.match(textOf(byClass(none, 'tp-about')[0]), /No description yet/);
+});
+
+test('view columns: summary shows 4–5 only (scored) or the first 24 (unscored) with a show-all toggle; detail limits an unscored view too', () => {
+  const ctx = load();
+  const many = Array.from({ length: 300 }, (_, i) => ({ name: `c${String(i).padStart(3, '0')}`, type: 'text' }));
+  const rec = { ...viewRec(), columns: many };
+  const sumCtx = extra => ctxOf({ view: 'summary', reports: { items: [] }, onView() {}, onColumn() {}, onUnused() {}, ...extra });
+  const colGroup = v => byClass(v, 'sum-group').find(x => /^Columns/.test(x.attrs['aria-label']));
+  const unscored = ctx.tablePageView(ctx.tablePageModel(graph(), 'example.v_order_list', rec), ['x'], sumCtx());
+  assert.equal(byClass(colGroup(unscored), 'c-s0').length, 24);
+  const toggles = [];
+  const more = byClass(colGroup(unscored), 'c-more').find(c => /Show all 300 columns/.test(textOf(c)));
+  assert.ok(more);
+  const all300 = ctx.tablePageView(ctx.tablePageModel(graph(), 'example.v_order_list', rec), ['x'], sumCtx({ showAll: true, onShowAll: v => toggles.push(v) }));
+  assert.equal(byClass(colGroup(all300), 'c-s0').length, 300);
+  const g = graph();
+  g.nodes.find(n => n.id === 'example.v_order_list').columnScores = { c010: { agent: { score: 5, roles: [], reason: 'r', sources: 2, at: 'a', history: [] } },
+    c020: { agent: { score: 4, roles: [], reason: 'r', sources: 1, at: 'a', history: [] } }, c030: { agent: { score: 2, roles: [], reason: 'r', sources: 1, at: 'a', history: [] } } };
+  const scored = ctx.tablePageView(ctx.tablePageModel(g, 'example.v_order_list', rec), ['x'], sumCtx());
+  assert.deepEqual(byClass(colGroup(scored), 'sum-chip').filter(c => !/c-more/.test(c.attrs.class)).map(textOf), ['c010', 'c020']);
+  const detail = ctx.tablePageView(ctx.tablePageModel(graph(), 'example.v_order_list', rec), ['x'], ctxOf({ reports: { items: [] } }));
+  assert.equal(byClass(detail, 'tp-cname').length, 24);
+  assert.ok(all(detail, n => n.tag === 'button' && textOf(n) === 'Show all 300 columns').length === 1);
+  // Tables keep their old behaviour: an unscored table lists every column.
+  const table = ctx.tablePageModel(graph(), 'example.orders', { describedAt: 'x', kind: 'table', columns: many, constraints: [], history: [] });
+  assert.equal(byClass(ctx.tablePageView(table, ['x'], ctxOf()), 'tp-cname').length, 300);
+});
+
+test('view sources: the most important first; more than 12 sit behind a toggle', () => {
+  const ctx = load();
+  const g = graph();
+  const srcs = Array.from({ length: 20 }, (_, i) => ({ schema: 'example', table: `s${String(i).padStart(2, '0')}`, kind: 'table', columns: [] }));
+  g.nodes.push(...srcs.map(s => ({ id: `example.${s.table}`, schema: 'example', table: s.table, state: 'seen', kind: 'table' })));
+  g.notes = [{ id: 1, status: 'active', kind: 'rule', schema: 'example', table: 's19', column: null, text: 'Key table.' }];
+  const m = ctx.tablePageModel(g, 'example.v_order_list', { ...viewRec(), viewSources: srcs });
+  assert.equal(m.view.sources[0].id, 'example.s19');
+  const opened = [];
+  const view = ctx.tablePageView(m, ['x'], ctxOf({ reports: { items: [] }, moreOpen: {}, onMore: (k, v) => opened.push([k, v]) }));
+  const left = byClass(view, 'tp-refs')[0];
+  assert.equal(byClass(left, 'tp-nb').length, 12);
+  byClass(left, 'tp-rel-more')[0].attrs.onclick();
+  assert.deepEqual(opened, [['panel-refs', true]]);
 });
