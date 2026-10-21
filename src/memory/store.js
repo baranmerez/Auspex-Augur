@@ -623,6 +623,7 @@ export class SchemaMemory {
       }
       let added = 0;
       let overloadsAdded = 0;
+      let overloadsRefreshed = 0;
       let failed = 0;
       for (const list of groups.values()) {
         try {
@@ -630,21 +631,36 @@ export class SchemaMemory {
           const prev = this.readFunction(profile, schema, name);
           const known = new Set((prev?.overloads ?? []).map(o => o.arguments));
           const fresh = list.filter(r => !known.has(r.arguments ?? '')).map(seenOverload);
-          if (prev && !fresh.length) continue;
+          // A listed-only overload takes the trigger facts of the new list
+          // (the catalog may have gained or lost triggers); a described
+          // overload and every definition stay as they are.
+          const listed = new Map(list.map(r => [r.arguments ?? '', r]));
+          let refreshed = 0;
+          const kept = (prev?.overloads ?? []).map(o => {
+            const r = listed.get(o.arguments);
+            if (!o.listedOnly || !r) return o;
+            const facts = triggerFacts(r);
+            if (JSON.stringify(facts) === JSON.stringify(triggerFacts(o))) return o;
+            refreshed += 1;
+            return { ...o, ...facts };
+          });
+          if (prev && !fresh.length && !refreshed) continue;
           const at = this.now();
           const record = prev
-            ? { ...prev, lastSeen: at, overloads: [...prev.overloads, ...fresh].sort((a, b) => textOrder(a.arguments, b.arguments)) }
+            ? { ...prev, lastSeen: at, overloads: [...kept, ...fresh].sort((a, b) => textOrder(a.arguments, b.arguments)) }
             : { schema, name, firstSeen: at, lastSeen: at, describedAt: null, overloads: fresh.sort((a, b) => textOrder(a.arguments, b.arguments)), history: [] };
           this.writeJson(this.functionPath(profile, schema, name), record);
-          if (prev) overloadsAdded += fresh.length;
-          else added += 1;
+          if (prev) {
+            overloadsAdded += fresh.length;
+            overloadsRefreshed += refreshed;
+          } else added += 1;
         } catch (err) {
           failed += 1;
           process.stderr.write(`auspex: schema memory function not recorded: ${err.message}\n`);
         }
       }
-      if (added || overloadsAdded) this.rebuildViewUnlocked(profile);
-      return { functionsAdded: added, overloadsAdded, ...(failed ? { failed } : {}) };
+      if (added || overloadsAdded || overloadsRefreshed) this.rebuildViewUnlocked(profile);
+      return { functionsAdded: added, overloadsAdded, ...(overloadsRefreshed ? { overloadsRefreshed } : {}), ...(failed ? { failed } : {}) };
     });
   }
 
@@ -696,6 +712,9 @@ export class SchemaMemory {
         state: f.describedAt ? 'explored' : 'seen',
         overloads: overloads.length,
         kinds: [...new Set(overloads.map(o => o.kind).filter(Boolean))].sort(textOrder),
+        role: functionRole(overloads),
+        timings: [...new Set(overloads.flatMap(o => (o.usedByTriggers ?? []).map(t => t.timing).filter(Boolean)))].sort(textOrder),
+        triggerTables: [...new Set(overloads.flatMap(o => (o.usedByTriggers ?? []).map(triggerTableId).filter(Boolean)))].sort(textOrder),
         language: overloads[0]?.language ?? null,
         flags: {
           volatile: overloads.some(o => o.volatility === 'volatile'),
@@ -1142,6 +1161,7 @@ export function overloadFromDescribe(f) {
     canExecute: !!f.canExecute,
     comment: f.comment ?? null,
     usedByTriggers: f.usedByTriggers ?? [],
+    returnsTrigger: f.returnsTrigger ?? f.returns === 'trigger',
     definition,
     definitionLength: length,
     truncated: definition !== null && length !== null && length > charCount(definition),
@@ -1150,11 +1170,31 @@ export function overloadFromDescribe(f) {
   };
 }
 
+// graph role of a function name from catalog facts: trigger when an
+// overload returns trigger (records without returnsTrigger: the return type
+// text), else the first of procedure, aggregate, window any overload is.
+function functionRole(overloads) {
+  if (overloads.some(o => o.returnsTrigger ?? o.returns === 'trigger')) return 'trigger';
+  for (const kind of ['procedure', 'aggregate', 'window']) if (overloads.some(o => o.kind === kind)) return kind;
+  return 'function';
+}
+
+// Table id of a usedByTriggers entry: tableKey from schema and tableName, or
+// the stored table text of older records.
+const triggerTableId = t => (t.schema !== undefined && t.tableName !== undefined ? tableKey(t.schema, t.tableName) : t.table ?? null);
+
+// Trigger facts of an overload: whether it returns trigger and the triggers
+// that call it (catalog.functionTriggerFromRow shape).
+function triggerFacts(o) {
+  return { returnsTrigger: o.returnsTrigger ?? o.returns === 'trigger', usedByTriggers: o.usedByTriggers ?? [] };
+}
+
 // An overload only listed (list_functions): no definition, no properties
-// beyond the inventory.
+// beyond the inventory and the trigger facts.
 function seenOverload(r) {
   return {
     arguments: r.arguments ?? '', returns: r.returns ?? null, kind: r.kind ?? null, language: r.language ?? null, volatility: r.volatility ?? null,
+    ...triggerFacts(r),
     definition: null, definitionLength: null, truncated: false, definitionHash: null, touches: null, listedOnly: true,
   };
 }

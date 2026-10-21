@@ -77,7 +77,7 @@ test('list_functions records seen overloads and never overwrites a described def
   assert.equal(after.describedAt, before.describedAt);
   assert.deepEqual(after.overloads[1], {
     arguments: 'p_order_id integer', returns: 'numeric', kind: 'function', language: 'plpgsql', volatility: 'stable',
-    definition: null, definitionLength: null, truncated: false, definitionHash: null, touches: null, listedOnly: true,
+    returnsTrigger: false, usedByTriggers: [], definition: null, definitionLength: null, truncated: false, definitionHash: null, touches: null, listedOnly: true,
   });
   const seen = mem.readFunction(profile, 'example', 'order_count');
   assert.equal(seen.describedAt, null);
@@ -154,7 +154,7 @@ test('graph: view nodes with sources and functions, view edges, functions with c
   const [count, report, total] = graph.functions;
   assert.deepEqual(count, {
     id: 'example.order_count', schema: 'example', name: 'order_count', file: 'functions/example/order_count.json', state: 'seen', overloads: 1,
-    kinds: ['function'], language: 'sql', flags: { volatile: false, securityDefiner: false, definerWithoutSearchPath: false }, usedByTriggers: 0,
+    kinds: ['function'], role: 'function', timings: [], triggerTables: [], language: 'sql', flags: { volatile: false, securityDefiner: false, definerWithoutSearchPath: false }, usedByTriggers: 0,
     calledBy: { views: [], functions: [] }, touches: { reads: [], writes: [] }, changes: 0,
   });
   assert.equal(total.state, 'explored');
