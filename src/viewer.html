@@ -719,34 +719,48 @@
   .rl-act .icon-btn:hover { color: var(--text); background: var(--surface-2); }
   .rl-act svg { width: 15px; height: 15px; }
   @media (max-width: 560px) { .rl-row { grid-template-columns: 80px minmax(0, 1fr) auto; gap: 4px 8px; padding: 8px 4px; } .rl-col { margin-left: 4px; } }
-  /* Rules navigator: the database-wide box apart, one box per table, notes of the chosen box beside */
-  .rules-nav { display: grid; grid-template-columns: minmax(300px, 400px) minmax(0, 1fr); gap: 14px; align-items: start; }
-  .rn-side { position: sticky; top: var(--sticky-top); max-height: calc(100vh - var(--sticky-top) - 20px); overflow: auto; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; display: grid; gap: 10px; padding: 12px; align-content: start; }
-  .rn-head { display: flex; align-items: baseline; gap: 6px; margin-top: 4px; font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: .5px; }
+  /* Rules navigator: the table list on the left (schema and name-prefix
+     groups, foldable to a rail), a draggable divider, the chosen notes right */
+  .rules-nav { display: grid; grid-template-columns: var(--rn-w, 320px) 14px minmax(0, 1fr); align-items: start; }
+  .rules-nav.collapsed { grid-template-columns: auto minmax(0, 1fr); gap: 14px; }
+  .rn-side { position: sticky; top: var(--sticky-top); max-height: calc(100vh - var(--sticky-top) - 20px); display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+  .rn-bar { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  .rn-bar .icon-btn { margin-left: auto; }
+  .rn-head { display: flex; align-items: baseline; gap: 6px; font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: .5px; }
   .rn-head b { color: var(--text-2); font-variant-numeric: tabular-nums; }
-  .rn-group { display: grid; gap: 6px; }
-  .rn-sub { display: flex; align-items: baseline; gap: 6px; font-size: 11px; color: var(--text-3); }
-  .rn-sub code { font: 600 11px var(--mono); color: var(--text-2); }
-  .rn-sub b { font-weight: 400; font-variant-numeric: tabular-nums; }
-  .rn-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
-  .rn-tile { display: grid; gap: 3px; min-width: 0; text-align: left; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--text); font: inherit; cursor: pointer; transition: border-color .15s, background .15s; }
-  .rn-tile:hover { border-color: var(--line-strong); background: var(--surface-2); }
-  .rn-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .rn-tile.on { border-color: color-mix(in srgb, var(--accent) 65%, var(--line)); background: color-mix(in srgb, var(--accent) 9%, var(--surface)); box-shadow: inset 3px 0 0 var(--accent); }
-  .rn-tile .rn-schema { font: 11px var(--mono); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .rn-tile .rn-name { font: 500 12.5px/1.35 var(--mono); overflow-wrap: break-word; }
-  .rn-tile.on .rn-name { font-weight: 600; }
-  .rn-tile .rn-cnt { font-size: 11px; color: var(--text-2); }
-  .rn-tile.global { padding: 11px 13px; border-style: dashed; border-color: var(--line-strong); }
-  .rn-tile.global .rn-schema { font-family: inherit; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: var(--accent-ink); }
-  .rn-tile.global.on { border-style: solid; border-color: var(--accent); }
-  .rn-none { font-size: 12px; }
-  .rn-detail { min-width: 0; }
-  .rn-detail .rules-list { padding-top: 14px; }
+  .rn-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 6px 12px; border-bottom: 1px solid var(--line); font-size: 11px; color: var(--text-3); }
+  .rn-legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .rn-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .rn-dot.r { background: var(--accent); } .rn-dot.o { background: var(--good-ink); } .rn-dot.i { background: var(--warn-ink); }
+  .rn-tree { overflow: auto; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; padding: 4px 0 8px; }
+  .rn-tree .rep-group { padding-top: 12px; }
+  .rn-grp:disabled { cursor: default; }
+  .rn-row { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; border: 0; border-left: 3px solid transparent; background: none; text-align: left; padding: 6px 12px; color: var(--text); font: inherit; cursor: pointer; }
+  .rn-row:hover { background: var(--surface-2); }
+  .rn-row.on { background: var(--accent-soft); border-left-color: var(--accent); }
+  .rn-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .rn-row .rn-name { flex: 1; min-width: 0; font: 500 12.5px/1.5 var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rn-row.on .rn-name { font-weight: 600; }
+  .rn-row.global { margin-bottom: 2px; }
+  .rn-row.global .rn-name { font-family: inherit; font-weight: 600; }
+  .rn-cnts { display: inline-flex; gap: 3px; flex: none; }
+  .rn-c { min-width: 18px; padding: 0 5px; border-radius: 999px; font-size: 11px; font-weight: 600; line-height: 17px; text-align: center; font-variant-numeric: tabular-nums; }
+  .rn-c.r { background: var(--accent-soft); color: var(--accent-ink); }
+  .rn-c.o { background: var(--good-soft); color: var(--good-ink); }
+  .rn-c.i { background: var(--warn-soft); color: var(--warn-ink); }
+  .rn-c.a { background: var(--surface-2); color: var(--text-3); }
+  .rn-split { position: sticky; top: var(--sticky-top); height: calc(100vh - var(--sticky-top) - 20px); display: flex; justify-content: center; cursor: col-resize; touch-action: none; }
+  .rn-split::before { content: ""; width: 2px; border-radius: 2px; background: var(--line); transition: background .15s; }
+  .rn-split:hover::before, .rn-split.drag::before, .rn-split:focus-visible::before { background: var(--accent); }
+  .rn-split:focus-visible { outline: none; }
+  .rn-none { font-size: 12px; padding: 8px 12px; }
+  .rn-detail { min-width: 0; scroll-margin-top: calc(var(--sticky-top) + 8px); }
   @media (max-width: 900px) {
-    .rules-nav { grid-template-columns: minmax(0, 1fr); }
-    .rn-side { position: static; max-height: none; overflow: visible; }
+    .rules-nav, .rules-nav.collapsed { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+    .rn-split { display: none; }
+    .rn-side { position: static; max-height: 360px; }
   }
+  .rn-detail .rules-list { padding-top: 14px; }
   .note .nh .tgt { font: 11px var(--mono); color: var(--accent-ink); }
   .note .na { display: flex; justify-content: flex-end; margin-top: 6px; }
   .note details > summary { font-size: 12px; cursor: pointer; margin-top: 4px; color: var(--text-3); }
@@ -1054,7 +1068,7 @@ const put = (node, ...kids) => node.replaceChildren(...kids.flat(Infinity).filte
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 // ---------- i18n (English is the key; Turkish is the translation) ----------
 const TR = {
-  '(table)': '(tablo)', 'Observations': 'Gözlemler', 'Inferences': 'Çıkarımlar', '{n} rule': '{n} kural', '{n} rules': '{n} kural', '{n} observation': '{n} gözlem', '{n} observations': '{n} gözlem',
+  '(table)': '(tablo)', 'Observations': 'Gözlemler', 'Inferences': 'Çıkarımlar', 'Other tables': 'Diğer tablolar', 'Show the table list': 'Tablo listesini göster', 'Hide the table list': 'Tablo listesini gizle', 'Resize the table list': 'Tablo listesinin genişliği', 'Drag to resize; double-click for the default width': 'Genişlik için sürükle; varsayılan için çift tıkla', '{n} rule': '{n} kural', '{n} rules': '{n} kural', '{n} observation': '{n} gözlem', '{n} observations': '{n} gözlem',
   '{n} inference': '{n} çıkarım', '{n} inferences': '{n} çıkarım', '{n} archived': '{n} arşivli', 'Counts follow the filters, except the status switch.': 'Sayılar durum seçimi dışındaki filtreleri izler.',
   'Rules': 'Kurallar', 'Kind': 'Tür', 'Table': 'Tablo', 'Active': 'Aktif', 'Archived': 'Arşivlenmiş',
   'Filter by table': 'Tabloya göre süz', 'Search note text': 'Not metninde ara', 'No notes match the filters.': 'Filtrelere uyan not yok.',
@@ -1365,7 +1379,7 @@ const state = {
 };
 state.themeMode = 'auto';
 try { Object.assign(state, JSON.parse(localStorage.getItem('auspex.viewer') || '{}'), { all: [], seen: new Set(), firstLoad: true, open: null, reports: null, reportDoc: null, memory: null, memView: null, memPos: new Map() }); } catch {}
-const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, themeMode: state.themeMode, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy, memHideFaint: state.memHideFaint, memGraph3d: state.memGraph3d, memGraphSoft: state.memGraphSoft, memExpand: state.memExpand, repListCollapsed: state.repListCollapsed, repTreeOpen: state.repTreeOpen, repFavOpen: state.repFavOpen, repRecentOpen: state.repRecentOpen, sqlWrap: state.sqlWrap, perfOpen: state.perfOpen, tpView: state.tpView, tpGroup: state.tpGroup })); } catch {} };
+const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, themeMode: state.themeMode, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy, memHideFaint: state.memHideFaint, memGraph3d: state.memGraph3d, memGraphSoft: state.memGraphSoft, memExpand: state.memExpand, repListCollapsed: state.repListCollapsed, repTreeOpen: state.repTreeOpen, repFavOpen: state.repFavOpen, repRecentOpen: state.repRecentOpen, rulesOpen: state.rulesOpen, rulesListCollapsed: state.rulesListCollapsed, rulesSideW: state.rulesSideW, sqlWrap: state.sqlWrap, perfOpen: state.perfOpen, tpView: state.tpView, tpGroup: state.tpGroup })); } catch {} };
 
 // In the Tauri desktop app the same routes are served by the Rust `api` command.
 const tauriCore = window.__TAURI__?.core;
@@ -4290,6 +4304,27 @@ function pickRulesSel(sel, dbWideCount, tableKeys) {
   if (sel && tableKeys.includes(sel)) return sel;
   return dbWideCount || !tableKeys.length ? '' : tableKeys[0];
 }
+// Width of the Rules navigator's table list (px), set with its divider.
+const rulesSideMin = 220, rulesSideMax = 560, rulesSideDefault = 320;
+// Rules navigator boxes per schema, then per name prefix (the part before the
+// first "_"). A prefix shared by at least two tables is a group; the other
+// tables share one group with prefix null, listed last. A schema with fewer
+// than minTables tables stays one group.
+function groupRuleTables(tables, minTables = 10) {
+  const out = [];
+  for (const [schema, list] of Map.groupBy(tables, g => String(g.schema))) {
+    if (list.length < minTables) { out.push({ schema, count: list.length, groups: [{ prefix: null, tables: list }] }); continue; }
+    const groups = [];
+    const rest = [];
+    for (const [prefix, gs] of Map.groupBy(list, g => String(g.table).split('_')[0])) {
+      if (gs.length > 1) groups.push({ prefix, tables: gs }); else rest.push(...gs);
+    }
+    groups.sort((a, b) => a.prefix.localeCompare(b.prefix));
+    if (rest.length) groups.push({ prefix: null, tables: rest });
+    out.push({ schema, count: list.length, groups });
+  }
+  return out;
+}
 // "13 Oct 2026" / "13 Eki 2026": a day without time of day.
 const ruleDay = (ts, loc) => {
   const d = ts ? new Date(ts) : null;
@@ -4373,7 +4408,7 @@ const ruleCountText = c => [['rule', '{n} rule', '{n} rules'], ['observation', '
 function ruleGroup(g) {
   const open = column => () => openTablePage(state.db, g.key, column ? { column } : {});
   return [h('div', { class: 'rl-table' }, h('h4', { class: g.key ? null : 'plain' }, g.key ? h('button', { type: 'button', class: 'tp-link rl-link', title: t('Open table page'), onclick: open() }, g.key) : t('Database-wide')), h('span', { class: 'cnt' }, ruleCountText(ruleCounts(g.notes)))),
-    g.columns.map(c => [c.column || g.key ? h('div', { class: 'rl-col' }, c.column && g.key ? h('button', { type: 'button', class: 'tp-link rl-link', title: t('Open table page'), onclick: open(c.column) }, c.column) : c.column || t('(table)')) : null, c.notes.map(ruleCard)])];
+    g.columns.map(c => [c.column || (g.key && g.columns.length > 1) ? h('div', { class: 'rl-col' }, c.column && g.key ? h('button', { type: 'button', class: 'tp-link rl-link', title: t('Open table page'), onclick: open(c.column) }, c.column) : c.column || t('(table)')) : null, c.notes.map(ruleCard)])];
 }
 
 function renderRules() {
@@ -4398,7 +4433,7 @@ function renderRules() {
   if (mv.error) return plain(null, h('div', { class: 'panel' }, h('div', { class: 'error-box', style: 'margin:16px' }, mv.error)));
 
   const f = state.rulesFilter ??= { kind: '', table: '', status: 'active', q: '' };
-  const key = JSON.stringify([state.db, mv.data.generatedAt, lang, f, state.archivePending ?? null, state.rulesSel ?? null]);
+  const key = JSON.stringify([state.db, mv.data.generatedAt, lang, f, state.archivePending ?? null, state.rulesSel ?? null, state.rulesOpen ?? null, !!state.rulesListCollapsed]);
   if (state.rulesKey === key && view.firstChild) { state.rulesJump = false; return; }
   state.rulesKey = key;
   const focus = ['rulesText', 'rulesTable'].map(id => [id, captureFocus(document, id)]);
@@ -4428,8 +4463,8 @@ function renderRules() {
     for (const [id, saved] of focus) restoreFocus(document, id, saved);
     return;
   }
-  // Navigator: the database-wide box on its own, then one box per table;
-  // the chosen box's notes are shown next to it (below it on narrow screens).
+  // Navigator: the database-wide box on its own, then one box per table in
+  // schema and prefix groups; the chosen box's notes are shown below.
   const groups = groupRules(list);
   const dbWide = groups.find(g => !g.key) || { key: '', notes: [], columns: [] };
   const tables = groups.filter(g => g.key);
@@ -4440,37 +4475,105 @@ function renderRules() {
     if (key === sel) return;
     state.rulesSel = key; state.rulesJump = true; renderRules();
   };
-  // The boxes are drawn anew: keep the side panel's scroll and a box's focus.
-  const oldSide = view.querySelector('.rn-side');
-  const sideScroll = oldSide ? oldSide.scrollTop : 0;
-  const focusedKey = document.activeElement?.classList?.contains('rn-tile') ? document.activeElement.dataset.key : null;
-  // Long snake_case names wrap after an underscore, not inside a word.
-  const breakAtUnderscores = name => name.split('_').flatMap((part, i, all) => (i < all.length - 1 ? [part + '_', h('wbr')] : [part]));
-  // Boxes sit under one heading per schema instead of repeating it in each box.
-  const bySchema = [...Map.groupBy(tables, g => String(g.schema))];
-  const tile = (g, wide) => {
+  // The list is drawn anew: keep its scroll and a focused row or group.
+  const oldTree = view.querySelector('.rn-tree');
+  const treeScroll = oldTree ? oldTree.scrollTop : 0;
+  const focusedKey = document.activeElement?.dataset?.rnKey ?? null;
+  const focusedGroup = document.activeElement?.dataset?.rnGrp ?? null;
+  // Counts as small coloured numbers; the words stay in the title and label.
+  const chips = c => [['rule', 'r'], ['observation', 'o'], ['inference', 'i'], ['archived', 'a']]
+    .filter(([k]) => c[k]).map(([k, cls]) => h('span', { class: 'rn-c ' + cls }, fmt(c[k])));
+  // Inside a prefix group a row leaves out the prefix its group shows.
+  const row = (g, wide, prefix = null, depth = 0) => {
     const on = sel === g.key;
-    return h('button', { type: 'button', class: 'rn-tile' + (wide ? ' global' : '') + (on ? ' on' : ''), 'aria-pressed': String(on), 'data-key': g.key, title: wide ? t('Database-wide') : g.key, onclick: () => choose(g.key) },
-      wide ? h('span', { class: 'rn-schema' }, t('Database-wide')) : null,
-      h('span', { class: 'rn-name' }, wide ? state.db : breakAtUnderscores(String(g.table))),
-      h('span', { class: 'rn-cnt' }, ruleCountText(ruleCounts(g.notes)) || t('No notes')));
+    const c = ruleCounts(g.notes);
+    const label = `${wide ? `${t('Database-wide')} · ${state.db}` : g.key} · ${ruleCountText(c) || t('No notes')}`;
+    return h('button', { type: 'button', class: 'rn-row' + (wide ? ' global' : '') + (on ? ' on' : ''), 'aria-current': on ? 'true' : null, 'data-rn-key': g.key,
+      title: label, 'aria-label': label, style: `padding-left:${12 + depth * 18}px`, onclick: () => choose(g.key) },
+      h('span', { class: 'rn-name' }, wide ? t('Database-wide') : prefix ? String(g.table).slice(prefix.length + 1) : String(g.table)),
+      h('span', { class: 'rn-cnts' }, chips(c)));
   };
+  // A prefix group opens when it holds the chosen row, unless the user closed
+  // it; while a filter is typed every group is open.
+  const filtering = !!(f.table || f.q);
+  const toggleGroup = (k, open) => { state.rulesOpen = { ...state.rulesOpen, [k]: open }; persist(); renderRules(); };
+  const prefixGroup = (schema, grp) => {
+    const k = `${schema}\u0001${grp.prefix ?? ''}`;
+    const hasSel = grp.tables.some(g => g.key === sel);
+    const open = filtering || (state.rulesOpen?.[k] ?? hasSel);
+    return [h('button', { type: 'button', class: 'rep-node rn-grp' + (hasSel ? ' has-sel' : ''), 'aria-expanded': String(open), 'data-rn-grp': k, disabled: filtering, onclick: () => toggleGroup(k, !open) },
+      h('span', { class: 'tw', 'aria-hidden': 'true' }, '▸'),
+      h('span', { class: 'lbl' }, grp.prefix === null ? t('Other tables') : `${grp.prefix}_*`),
+      h('span', { class: 'n' }, fmt(grp.tables.length))),
+    open ? grp.tables.map(g => row(g, false, grp.prefix, 1)) : null];
+  };
+  const legend = h('div', { class: 'rn-legend', 'aria-hidden': 'true' },
+    [['r', 'rule'], ['o', 'observation'], ['i', 'inference']].map(([cls, k]) => h('span', {}, h('i', { class: 'rn-dot ' + cls }), t(k))));
   const current = sel === '' ? dbWide : tables.find(g => g.key === sel);
   const detail = h('div', { class: 'panel rn-detail' }, current?.notes.length
     ? h('div', { class: 'rules-list' }, ruleGroup(current),
       h('div', { class: 'muted', style: 'font-size:12px;margin-top:8px' }, t('Adding or confirming notes stays with your agent.')))
     : emptyState(t('No notes match the filters.')));
+  const toggleList = () => { state.rulesListCollapsed = !state.rulesListCollapsed; persist(); renderRules(); };
+  if (state.rulesListCollapsed) {
+    put(view, h('div', { class: 'stack' }, bar, h('div', { class: 'rules-nav collapsed' },
+      h('div', { class: 'panel rep-rail' }, h('button', { class: 'icon-btn', 'aria-expanded': 'false', title: t('Show the table list'), onclick: toggleList }, '»'),
+        h('span', { class: 'rail-label' }, t('Tables'), ' ', fmt(tables.length))),
+      detail)));
+    for (const [id, saved] of focus) restoreFocus(document, id, saved);
+    return;
+  }
   const side = h('nav', { class: 'panel rn-side', 'aria-label': t('Tables') },
-    tile(dbWide, true),
-    h('div', { class: 'rn-head' }, t('Tables'), h('b', {}, fmt(tables.length))),
-    tables.length ? bySchema.map(([schema, gs]) => h('section', { class: 'rn-group', 'aria-label': schema },
-      h('div', { class: 'rn-sub' }, h('code', {}, schema), h('b', {}, fmt(gs.length))),
-      h('div', { class: 'rn-tiles' }, gs.map(g => tile(g, false))))) : h('div', { class: 'muted rn-none' }, t('No tables match.')));
-  put(view, h('div', { class: 'stack' }, bar, h('div', { class: 'rules-nav' }, side, detail)));
+    h('div', { class: 'rn-bar' }, h('span', { class: 'rn-head' }, t('Tables'), h('b', {}, fmt(tables.length))),
+      h('button', { class: 'icon-btn sm', 'aria-expanded': 'true', title: t('Hide the table list'), onclick: toggleList }, '«')),
+    legend,
+    h('div', { class: 'rn-tree' }, row(dbWide, true),
+      tables.length ? groupRuleTables(tables).map(({ schema, count, groups: gs }) => [
+        h('div', { class: 'rep-group' }, h('span', { class: 'path' }, schema), ' · ', fmt(count)),
+        gs.length === 1 ? gs[0].tables.map(g => row(g, false)) : gs.map(grp => prefixGroup(schema, grp))])
+        : h('div', { class: 'muted rn-none' }, t('No tables match.'))));
+  // The divider between the list and the notes: drag it, use the arrow keys,
+  // or double-click it for the default width. The width is remembered.
+  const sideW = v => Math.round(Math.min(rulesSideMax, Math.max(rulesSideMin, Number(v) || rulesSideDefault)));
+  let nav = null;
+  const setW = (v, save) => {
+    state.rulesSideW = sideW(v);
+    nav.style.setProperty('--rn-w', `${state.rulesSideW}px`);
+    split.setAttribute('aria-valuenow', String(state.rulesSideW));
+    if (save) persist();
+  };
+  const split = h('div', { class: 'rn-split', role: 'separator', tabindex: '0', 'aria-orientation': 'vertical', 'aria-label': t('Resize the table list'),
+    'aria-valuemin': String(rulesSideMin), 'aria-valuemax': String(rulesSideMax), 'aria-valuenow': String(sideW(state.rulesSideW)), title: t('Drag to resize; double-click for the default width'),
+    onpointerdown: ev => {
+      if (ev.button !== 0) return;
+      ev.preventDefault();
+      split.setPointerCapture(ev.pointerId);
+      split.classList.add('drag');
+      const x0 = ev.clientX;
+      const w0 = side.getBoundingClientRect().width;
+      const move = e => setW(w0 + e.clientX - x0, false);
+      const up = () => { split.removeEventListener('pointermove', move); split.classList.remove('drag'); persist(); };
+      split.addEventListener('pointermove', move);
+      split.addEventListener('pointerup', up, { once: true });
+      split.addEventListener('pointercancel', up, { once: true });
+    },
+    onkeydown: ev => {
+      const step = ev.shiftKey ? 48 : 16;
+      const w = sideW(state.rulesSideW);
+      const next = { ArrowLeft: w - step, ArrowRight: w + step, Home: rulesSideMin, End: rulesSideMax }[ev.key];
+      if (next === undefined) return;
+      ev.preventDefault();
+      setW(next, true);
+    },
+    ondblclick: () => setW(rulesSideDefault, true) });
+  nav = h('div', { class: 'rules-nav', style: `--rn-w:${sideW(state.rulesSideW)}px` }, side, split, detail);
+  put(view, h('div', { class: 'stack' }, bar, nav));
   for (const [id, saved] of focus) restoreFocus(document, id, saved);
-  side.scrollTop = sideScroll;
-  if (focusedKey !== null) [...side.querySelectorAll('.rn-tile')].find(b => b.dataset.key === focusedKey)?.focus({ preventScroll: true });
-  // On a narrow screen the notes sit below the boxes: bring them into view.
+  const tree = side.querySelector('.rn-tree');
+  tree.scrollTop = treeScroll;
+  if (focusedKey !== null) [...tree.querySelectorAll('.rn-row')].find(b => b.dataset.rnKey === focusedKey)?.focus({ preventScroll: true });
+  if (focusedGroup !== null) [...tree.querySelectorAll('.rn-grp')].find(b => b.dataset.rnGrp === focusedGroup)?.focus({ preventScroll: true });
+  // On a narrow screen the notes sit below the list: bring them into view.
   if (state.rulesJump) {
     state.rulesJump = false;
     if (detail.getBoundingClientRect().top > window.innerHeight * 0.6) detail.scrollIntoView({ block: 'start', behavior: reduceMotion ? 'auto' : 'smooth' });

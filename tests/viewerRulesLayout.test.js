@@ -13,7 +13,7 @@ function load() {
   for (const name of ['report-filter', 'rules-list']) assert.ok(blockOf(name), `${name} block found`);
   const context = vm.createContext({ JSON });
   vm.runInContext(`${tableKeyLines}\n${blockOf('report-filter')}\n${blockOf('rules-list')}
-this.filterRules = filterRules; this.groupRules = groupRules; this.ruleCounts = ruleCounts; this.ruleDay = ruleDay; this.pickRulesSel = pickRulesSel;`, context);
+this.filterRules = filterRules; this.groupRules = groupRules; this.ruleCounts = ruleCounts; this.ruleDay = ruleDay; this.pickRulesSel = pickRulesSel; this.groupRuleTables = groupRuleTables;`, context);
   return context;
 }
 
@@ -118,16 +118,24 @@ test('the pending archive button spins and the dialog confirm button is the only
   assert.match(page, /'icon-btn secondary-danger', value: 'ok', disabled: true \}, t\('Archive'\)/);
 });
 
-test('rules navigator: database-wide box apart, one box per table, the chosen box redraws the notes', () => {
-  assert.match(page, /\.rules-nav \{ display: grid; grid-template-columns: minmax\(300px, 400px\) minmax\(0, 1fr\)/);
-  assert.match(page, /@media \(max-width: 900px\) \{\s*\.rules-nav \{ grid-template-columns: minmax\(0, 1fr\); \}/);
-  assert.match(page, /tile\(dbWide, true\)/);
-  // Boxes sit under one heading per schema; a box does not repeat its schema.
-  assert.match(page, /Map\.groupBy\(tables, g => String\(g\.schema\)\)/);
-  assert.match(page, /gs\.map\(g => tile\(g, false\)\)/);
-  assert.match(page, /wide \? h\('span', \{ class: 'rn-schema' \}, t\('Database-wide'\)\) : null/);
-  // The chosen box is part of the render key; without it a click would not redraw.
-  assert.match(page, /const key = JSON\.stringify\(\[[^\]]*state\.rulesSel \?\? null\]\)/);
+test('rules navigator: table list left in schema and prefix groups, a divider, the chosen notes right', () => {
+  assert.match(page, /\.rules-nav \{ display: grid; grid-template-columns: var\(--rn-w, 320px\) 14px minmax\(0, 1fr\);/);
+  assert.match(page, /@media \(max-width: 900px\) \{\s*\.rules-nav, \.rules-nav\.collapsed \{ grid-template-columns: minmax\(0, 1fr\);/);
+  assert.match(page, /\.rn-row \.rn-name \{[^}]*text-overflow: ellipsis; white-space: nowrap;/);
+  assert.match(page, /row\(dbWide, true\)/);
+  assert.match(page, /groupRuleTables\(tables\)\.map/);
+  assert.match(page, /gs\.length === 1 \? gs\[0\]\.tables\.map\(g => row\(g, false\)\) : gs\.map\(grp => prefixGroup\(schema, grp\)\)/);
+  // Open groups, the folded list and the list width are remembered per viewer.
+  assert.match(page, /rulesOpen: state\.rulesOpen, rulesListCollapsed: state\.rulesListCollapsed, rulesSideW: state\.rulesSideW,/);
+  assert.match(page, /const open = filtering \|\| \(state\.rulesOpen\?\.\[k\] \?\? hasSel\);/);
+  assert.match(page, /'Other tables': 'Diğer tablolar'/);
+  // The divider is a keyboard-usable separator with clamped width.
+  assert.match(page, /class: 'rn-split', role: 'separator', tabindex: '0', 'aria-orientation': 'vertical'/);
+  assert.match(page, /const rulesSideMin = 220, rulesSideMax = 560, rulesSideDefault = 320;/);
+  // The folded list is a rail like the Reports tab's.
+  assert.match(page, /class: 'rules-nav collapsed' \},\s*h\('div', \{ class: 'panel rep-rail' \}/);
+  // The chosen row, open groups and the fold are part of the render key; without them a click would not redraw.
+  assert.match(page, /const key = JSON\.stringify\(\[[^\]]*state\.rulesSel \?\? null, state\.rulesOpen \?\? null, !!state\.rulesListCollapsed\]\)/);
   assert.match(page, /'No notes': 'Not yok'/);
 });
 
@@ -150,10 +158,26 @@ test('navigator selection: the pick while it has notes, else database-wide with 
   assert.equal(pickRulesSel('example.orders', 0, []), '', 'no tables left: the database-wide box');
 });
 
-test('navigator redraw keeps the side scroll and a focused box; a database switch forgets the pick', () => {
-  assert.ok(page.includes('side.scrollTop = sideScroll;'));
-  assert.ok(page.includes("'data-key': g.key"));
+test('navigator redraw keeps the list scroll and a focused row; a database switch forgets the pick', () => {
+  assert.ok(page.includes("'data-rn-key': g.key"));
+  assert.ok(page.includes('tree.scrollTop = treeScroll;'));
   assert.ok(page.includes('.focus({ preventScroll: true })'));
   assert.match(page, /state\.db = db;[\s\S]{0,120}state\.rulesSel = null; state\.rulesJump = false;/);
   assert.ok(page.includes('if (state.rulesKey === key && view.firstChild) { state.rulesJump = false; return; }'));
+});
+
+test('navigator groups: per schema, then by a name prefix shared by two or more tables, the rest last', () => {
+  const { groupRuleTables } = load();
+  const box = key => { const [schema, table] = key.split('.'); return { key, schema, table, notes: [] }; };
+  const keys = ['example.order_events', 'example.order_items', 'example.orders', 'example.customers', 'example.shipments',
+    'example.shipment_items', 'example.shipment_events', 'example.status_codes', 'example.invoices', 'example.payments', 'test.invoices'];
+  const out = JSON.parse(JSON.stringify(groupRuleTables(keys.map(box))));
+  assert.deepEqual(out.map(s => [s.schema, s.count]), [['example', 10], ['test', 1]]);
+  assert.deepEqual(out[0].groups.map(g => [g.prefix, g.tables.map(x => x.table)]), [
+    ['order', ['order_events', 'order_items']],
+    ['shipment', ['shipment_items', 'shipment_events']],
+    [null, ['orders', 'customers', 'shipments', 'status_codes', 'invoices', 'payments']],
+  ]);
+  assert.deepEqual(out[1].groups.map(g => g.prefix), [null], 'a small schema stays one group');
+  assert.equal(groupRuleTables(keys.slice(0, 9).map(box))[0].groups.length, 1, 'fewer than ten tables: no prefix groups');
 });
