@@ -600,7 +600,7 @@ function rawCell(value) {
 // Type OIDs whose values are never free text (numbers, dates, booleans,
 // uuid...). They stay exact in spreadsheet mode, so a real negative number is
 // not turned into text. Any other type, including unknown ones, counts as text.
-const nonTextTypes = new Set([16, 20, 21, 23, 26, 700, 701, 790, 1082, 1083, 1114, 1184, 1186, 1266, 1700, 2950]);
+const nonTextTypes = new Set([16, 20, 21, 23, 26, 700, 701, 790, 1082, 1083, 1114, 1184, 1266, 1700, 2950]);
 
 // A cell starting with = + - @ or a tab/carriage return can run as a formula
 // in Excel, LibreOffice or Google Sheets; a leading apostrophe makes it text.

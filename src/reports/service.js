@@ -172,7 +172,13 @@ export class ReportService {
   learn(profile, plan, summary) {
     if (!this.memory) return {};
     try {
-      return this.memory.recordSeen(profile, relationsFromJsonPlan(plan, summary.joins));
+      // Bare column names in a plan count only for tables already described.
+      const known = new Map();
+      for (const rel of relationsFromJsonPlan(plan)) {
+        const record = this.memory.readTable(profile, rel.schema, rel.table);
+        if (record?.describedAt) known.set(`${rel.schema}.${rel.table}`, (record.columns || []).map(c => c.name));
+      }
+      return this.memory.recordSeen(profile, relationsFromJsonPlan(plan, summary.joins, known));
     } catch (err) {
       return { memoryError: err.message };
     }

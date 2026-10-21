@@ -51,8 +51,10 @@ const expressionWords = new Set(('and or not is null true false in any all some 
 // Unqualified identifiers of plan expressions, for a plan with a single scan:
 // every bare name there can only belong to that relation. Skipped: names after
 // a cast (::), names used as function (followed by "("), qualifiers (followed
-// by "."), the part after a "." and the words above. When the caller knows the
-// relation's column names, only those count.
+// by "."), the part after a "." and the words above. Only names that are known
+// columns of the relation count: expressions also hold keywords, cast and
+// window names (CURRENT_DATE, FROM, "C", w1) that no syntax rule lists
+// completely. Without known columns, no bare name is recorded.
 function bareColumns(texts, known) {
   const re = new RegExp(identifier, 'g'); // a quoted name is one token, so quotes inside it never start another
   const found = new Set();
@@ -64,7 +66,7 @@ function bareColumns(texts, known) {
       if (/[\w$.:À-￿]/.test(before) || after === '(' || after === '.') continue;
       const name = unquote(m[1]);
       const isWord = !m[1].startsWith('"') && expressionWords.has(name.toLowerCase());
-      if (!isWord && (!known || known.has(name))) found.add(name);
+      if (!isWord && known.has(name)) found.add(name);
     }
   }
   return found;
@@ -99,7 +101,8 @@ export function relationsFromJsonPlan(explainJson, joins = [], knownColumns = ne
   const scans = nodes.filter(n => n['Relation Name']);
   const otherScan = nodes.some(n => !n['Relation Name'] && / Scan$/.test(n['Node Type'] || '') && n['Node Type'] !== 'Bitmap Index Scan');
   const single = scans.length === 1 && !otherScan && relations.size === 1 ? relations.get(`${scans[0].Schema}.${scans[0]['Relation Name']}`) : null;
-  const known = single && knownColumns.get(`${single.schema}.${single.table}`);
+  const knownList = single && knownColumns.get(`${single.schema}.${single.table}`);
+  const known = knownList ? new Set(knownList) : null;
   for (const node of nodes) {
     const isScan = !!node['Relation Name'];
     const texts = expressionKeys.flatMap(k => [].concat(node[k] ?? []));
@@ -109,7 +112,7 @@ export function relationsFromJsonPlan(explainJson, joins = [], knownColumns = ne
       const rel = relations.get([...keys][0]);
       for (const col of aliasColumns(alias, texts)) rel.columns.add(col);
     }
-    if (single) for (const col of bareColumns(texts, known ? new Set(known) : null)) single.columns.add(col);
+    if (single && known) for (const col of bareColumns(texts, known)) single.columns.add(col);
   }
   // Join columns from the plan summary (schema.table.column on both sides).
   for (const join of joins) {

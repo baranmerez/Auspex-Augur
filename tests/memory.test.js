@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { SchemaMemory, MemoryError, fileSegment, diffTable, recordFromDescribe } from '../src/memory/store.js';
+import { ReportService } from '../src/reports/service.js';
 import { relationsFromJsonPlan, relationsFromTextPlan } from '../src/memory/planUsage.js';
 
 let clock = 0;
@@ -263,29 +264,63 @@ test('a table recorded under the old file name of an astral-character name is st
   assert.equal(mem.listTables('example').filter(t => t.table === '😀').length, 1, 'listed once');
 });
 
-test('unqualified columns of a single-table plan belong to that table', () => {
+const exampleScan = { 'Node Type': 'Seq Scan', 'Relation Name': 'orders', Schema: 'example', Alias: 'orders', Output: ['id', 'total', 'status_code'], Filter: '(orders.id > 50)' };
+const exampleKnown = new Map([['example.orders', ['id', 'total', 'status_code', 'created_at']]]);
+
+test('unqualified columns of a single-table plan belong to that table when its columns are known', () => {
   // EXPLAIN (VERBOSE, FORMAT JSON) of select total, sum(total) ... from example.orders where id > 50
-  const scan = { 'Node Type': 'Seq Scan', 'Relation Name': 'orders', Schema: 'example', Alias: 'orders', Output: ['id', 'total', 'status_code'], Filter: '(orders.id > 50)' };
-  const plain = [{ Plan: { ...scan, Output: ['total'] } }];
-  assert.deepEqual(relationsFromJsonPlan(plain)[0].columns, ['id', 'total']);
+  const plain = [{ Plan: { ...exampleScan, Output: ['total'] } }];
+  assert.deepEqual(relationsFromJsonPlan(plain, [], exampleKnown)[0].columns, ['id', 'total']);
 
   const aggregate = [{ Plan: {
-    'Node Type': 'Aggregate', Strategy: 'Plain', Output: ['sum(total)', "(max(created_at))::text", "'orders.ghost'::text", 'count(*)'],
-    Plans: [scan],
+    'Node Type': 'Aggregate', Strategy: 'Plain', Output: ['sum(total)', '(max(created_at))::text', "'orders.ghost'::text", 'count(*)'],
+    Plans: [exampleScan],
   } }];
-  // scan Output (a physical target list) is still ignored when the scan is not the whole plan
-  assert.deepEqual(relationsFromJsonPlan(aggregate)[0].columns, ['created_at', 'id', 'total']);
+  // the scan's own Output (a physical target list) is still ignored when the scan is not the whole plan
+  assert.deepEqual(relationsFromJsonPlan(aggregate, [], exampleKnown)[0].columns, ['created_at', 'id', 'total']);
 
-  // known column names narrow the choice
-  const known = new Map([['example.orders', ['id', 'total']]]);
-  assert.deepEqual(relationsFromJsonPlan(aggregate, [], known)[0].columns, ['id', 'total']);
+  // without known columns no bare name is recorded; qualified names still are
+  assert.deepEqual(relationsFromJsonPlan(plain)[0].columns, ['id']);
+  assert.deepEqual(relationsFromJsonPlan(aggregate)[0].columns, ['id']);
 
   // two scans: bare names are ambiguous and stay unattributed
   const join = [{ Plan: { 'Node Type': 'Nested Loop', Output: ['o.total', 'amount'], Plans: [
-    { ...scan, Alias: 'o', Output: ['total'] },
+    { ...exampleScan, Alias: 'o', Output: ['total'] },
     { 'Node Type': 'Seq Scan', 'Relation Name': 'customers', Schema: 'example', Alias: 'c', Output: ['amount'] },
   ] } }];
-  assert.deepEqual(relationsFromJsonPlan(join).map(r => [r.table, r.columns]), [['orders', ['total']], ['customers', []]]);
+  const known = new Map([['example.orders', ['total']], ['example.customers', ['amount']]]);
+  assert.deepEqual(relationsFromJsonPlan(join, [], known).map(r => [r.table, r.columns]), [['orders', ['total']], ['customers', []]]);
+});
+
+test('keywords, functions, casts and window names are never recorded as bare columns', () => {
+  const expressions = [
+    '(CURRENT_DATE)::text', 'CURRENT_USER', 'LOCALTIMESTAMP', '(orders.id IS DISTINCT FROM 5)',
+    "EXTRACT(year FROM orders.created_at)", "SUBSTRING(orders.note FROM 1 FOR 3)",
+    "string_agg(orders.note, ',' ORDER BY orders.id)", 'percentile_cont(0.5) WITHIN GROUP (ORDER BY orders.id)',
+    '(orders.note COLLATE "C")', 'sum(orders.id) OVER w1',
+  ];
+  const plan = [{ Plan: { 'Node Type': 'Aggregate', Output: expressions, Plans: [{ ...exampleScan, Output: [] }] } }];
+  const [relation] = relationsFromJsonPlan(plan, [], new Map([['example.orders', ['id', 'created_at', 'note']]]));
+  assert.deepEqual(relation.columns, ['created_at', 'id', 'note']);
+  const [bare] = relationsFromJsonPlan(plan);
+  assert.deepEqual(bare.columns, ['created_at', 'id', 'note'], 'qualified columns still count without known columns');
+  const onlyBare = [{ Plan: { 'Node Type': 'Aggregate', Output: ['CURRENT_DATE', 'CURRENT_USER', 'localtimestamp', 'EXTRACT(year FROM now())', 'x IS DISTINCT FROM y', '(a COLLATE "C")', 'sum(b) OVER w1', 'string_agg(c ORDER BY d)'], Plans: [{ ...exampleScan, Filter: undefined, Output: [] }] } }];
+  assert.deepEqual(relationsFromJsonPlan(onlyBare, [], new Map([['example.orders', ['total']]]))[0].columns, []);
+});
+
+test('ReportService.learn records bare columns only for described tables', () => {
+  const memory = tempMemory();
+  memory.recordDescribe({ ...ordersDescribe(), profile: 'exampledb', relation: 'example.orders', schema: 'example', columns: [col('id', 1), col('total', 2, 'numeric')] });
+  const service = new ReportService({}, fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-lib-test-')), memory);
+  const plan = [{ Plan: { ...exampleScan, Output: ['total'] } }, ];
+  const aggregate = [{ Plan: { 'Node Type': 'Aggregate', Output: ['sum(total)', 'CURRENT_DATE'], Plans: [exampleScan] } }];
+  service.learn('exampledb', plan, { joins: [] });
+  service.learn('exampledb', aggregate, { joins: [] });
+  assert.deepEqual(Object.keys(memory.readTable('exampledb', 'example', 'orders').usedColumns).sort(), ['id', 'total']);
+
+  const undescribed = [{ Plan: { ...exampleScan, 'Relation Name': 'order_items', Output: ['total'] } }];
+  service.learn('exampledb', undescribed, { joins: [] });
+  assert.deepEqual(Object.keys(memory.readTable('exampledb', 'example', 'order_items')?.usedColumns ?? {}), ['id']);
 });
 
 test('backward index scans are recognised in text plans', () => {
