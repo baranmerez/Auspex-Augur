@@ -160,7 +160,7 @@
 
   .tile { padding: 14px 16px; }
   .tile .k { font-size: 12px; color: var(--text-2); }
-  .tile .v { font-size: 26px; font-weight: 600; margin-top: 2px; letter-spacing: -.3px; }
+  .tile .v { font-size: 26px; font-weight: 600; margin-top: 2px; letter-spacing: -.3px; font-variant-numeric: tabular-nums; }
   .tile .d { font-size: 12px; color: var(--text-3); margin-top: 2px; }
   .tile.hero .v { font-size: 48px; line-height: 1.05; letter-spacing: -1px; }
   .tile .v.bad { color: var(--critical); }
@@ -1106,6 +1106,14 @@
     .hide-sm { display: none; }
     td.op-sql .op-sql-text { max-width: 160px; }
     .brand .sub { display: none; }
+    /* Compact header: the logo stands for the name, buttons show their icons and the live state its dot;
+       the schema-change badge moves to the end. Two rows, three with the badge. */
+    .brand { gap: 6px; }
+    .brand h1, .brand .spacer, #dbBtn .lbl, #liveText, #liveBtn > span, #themeMenuName { display: none; }
+    .dbsel { min-width: 0; }
+    #live { padding: 4px 8px; gap: 0; }
+    #lang button, #theme button { padding: 4px 8px; }
+    #chgBadge { order: 1; }
   }
 </style>
 </head>
