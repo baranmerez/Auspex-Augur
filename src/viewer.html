@@ -152,9 +152,10 @@
   .panel-h .grow { flex: 1; }
   .panel-b { padding: 12px 16px 16px; }
   .grid { display: grid; gap: 14px; }
-  .g-tiles { grid-template-columns: 1.4fr repeat(5, 1fr); }
-  .g-2 { grid-template-columns: 1fr 1fr; }
-  .g-main { grid-template-columns: 2fr 1fr; }
+  /* minmax(0, …): a long unbroken line (SQL) never widens a column past the window. */
+  .g-tiles { grid-template-columns: minmax(0, 1.4fr) repeat(5, minmax(0, 1fr)); }
+  .g-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .g-main { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
   .stack > * + * { margin-top: 14px; }
 
   .tile { padding: 14px 16px; }
@@ -203,7 +204,7 @@
   .mini li { display: flex; gap: 10px; align-items: baseline; padding: 8px 0; border-top: 1px solid var(--line); cursor: pointer; }
   .mini li:first-child { border-top: 0; }
   .mini li:hover .sql { color: var(--text); }
-  .mini .sql { font: 12px var(--mono); color: var(--text-2); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color .15s; }
+  .mini .sql { font: 12px var(--mono); color: var(--text-2); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color .15s; }
   .mini .ms { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
   .mini .when { color: var(--text-3); font-size: 12px; white-space: nowrap; }
   .mini .err { color: var(--critical); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
@@ -1079,7 +1080,7 @@
     *, *::before, *::after { animation: none !important; transition: none !important; }
     .chart .bar.grow-y, .chart .bar.grow-x, .hbars .fill { transform: none !important; }
   }
-  @media (max-width: 1100px) { .g-tiles { grid-template-columns: repeat(3, 1fr); } .g-main, .g-2 { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 1100px) { .g-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } .g-main, .g-2 { grid-template-columns: minmax(0, 1fr); } }
   @media (max-width: 640px) {
     .top-inner, main { padding-left: 16px; padding-right: 16px; }
     .g-tiles { grid-template-columns: 1fr 1fr; }
