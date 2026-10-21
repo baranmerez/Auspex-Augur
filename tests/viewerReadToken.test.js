@@ -59,6 +59,7 @@ const readRoutes = ['/api/logs?day=2026-01-01', '/api/days', '/api/health', '/ap
   '/api/report?stage=draft&db=exampledb&schema=example&category=General&name=example-report', '/api/memory',
   '/api/reports/trend?db=exampledb&schema=example&category=General&name=example-report',
   '/api/memory/graph?profile=exampledb', '/api/memory/table?profile=exampledb&schema=example&table=orders',
+  '/api/memory/function?profile=exampledb&file=functions/example/order_total.json',
   '/api/example-unknown'];
 
 test('read routes refuse requests without the token and return no data', async () => {

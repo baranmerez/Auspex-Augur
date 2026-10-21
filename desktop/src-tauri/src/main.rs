@@ -75,12 +75,21 @@ fn valid_profile(s: &str) -> bool {
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
 }
 
-// A table file of the schema memory: tables/<segment>/<segment>.json, with the
-// segment alphabet of memory/store.js (fileSegment).
-fn valid_memory_file(s: &str) -> bool {
+// A file of the schema memory: <folder>/<segment>/<segment>.json, with the
+// segment alphabet of memory/store.js (fileSegment); folder is "tables" for
+// table files, "functions" for function files.
+fn valid_memory_path(s: &str, folder: &str) -> bool {
     let seg = |p: &str| !p.is_empty() && p.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || "_~-".contains(c));
     let parts: Vec<&str> = s.split('/').collect();
-    parts.len() == 3 && parts[0] == "tables" && seg(parts[1]) && parts[2].strip_suffix(".json").is_some_and(seg)
+    parts.len() == 3 && parts[0] == folder && seg(parts[1]) && parts[2].strip_suffix(".json").is_some_and(seg)
+}
+
+fn valid_memory_file(s: &str) -> bool {
+    valid_memory_path(s, "tables")
+}
+
+fn valid_memory_function_file(s: &str) -> bool {
+    valid_memory_path(s, "functions")
 }
 
 fn read_json(path: &std::path::Path) -> Result<Value, String> {
@@ -570,6 +579,13 @@ fn api_route(path: &str, query: &HashMap<String, String>) -> Result<Value, Strin
         "/api/memory/table" => {
             let file = query.get("file").cloned().unwrap_or_default();
             if !valid_memory_file(&file) {
+                return Err("Invalid memory file".into());
+            }
+            read_json(&file.split('/').fold(memory_profile(&query)?, |p, part| p.join(part)))
+        }
+        "/api/memory/function" => {
+            let file = query.get("file").cloned().unwrap_or_default();
+            if !valid_memory_function_file(&file) {
                 return Err("Invalid memory file".into());
             }
             read_json(&file.split('/').fold(memory_profile(&query)?, |p, part| p.join(part)))
@@ -1232,6 +1248,26 @@ mod tests {
         for bad in ["tables/../x.json", "tables/a/b/c.json", "tables/a/.json", "graph.json", "tables/a/b.JSON", "tables/A/b.json", r"tables\a\b.json"] {
             assert!(!valid_memory_file(bad), "{bad}");
         }
+        assert!(!valid_memory_file("functions/example/order_total.json"));
+    }
+
+    #[test]
+    fn memory_function_paths_stay_inside_the_functions_folder() {
+        assert!(valid_memory_function_file("functions/example/order_total.json"));
+        assert!(valid_memory_function_file("functions/~41b/~con.json"));
+        for bad in ["functions/../x.json", "functions/a/b/c.json", "functions/a/.json", "functions/a/b.JSON", "functions/A/b.json",
+                    r"functions\a\b.json", "tables/example/orders.json", "graph.json", "functions//b.json"] {
+            assert!(!valid_memory_function_file(bad), "{bad}");
+        }
+        let mut q = HashMap::new();
+        q.insert("profile".to_string(), "exampledb".to_string());
+        q.insert("file".to_string(), "functions/../graph.json".to_string());
+        assert_eq!(api_route("/api/memory/function", &q), Err("Invalid memory file".to_string()));
+        q.insert("file".to_string(), "tables/example/orders.json".to_string());
+        assert_eq!(api_route("/api/memory/function", &q), Err("Invalid memory file".to_string()));
+        q.insert("profile".to_string(), "../x".to_string());
+        q.insert("file".to_string(), "functions/example/order_total.json".to_string());
+        assert_eq!(api_route("/api/memory/function", &q), Err("Invalid profile name".to_string()));
     }
 
     #[test]

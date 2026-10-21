@@ -34,6 +34,8 @@ const vendorFiles = new Map(['3d-force-graph-1.80.1.min.js'].map(f => [`/vendor/
 const dayPattern = /^\d{4}-\d{2}-\d{2}$/;
 const profilePattern = /^[a-z][a-z0-9_-]{0,39}$/;
 const memoryFilePattern = /^tables\/[a-z0-9_~-]+\/[a-z0-9_~-]+\.json$/;
+// A function file: functions/<schema>/<name>.json, same segment rules.
+const memoryFunctionPattern = /^functions\/[a-z0-9_~-]+\/[a-z0-9_~-]+\.json$/;
 // Per-process secret for every /api route (reads and writes). Only the served
 // page carries it; a page of another origin cannot read it (no CORS headers,
 // Host check). GET / still serves it to any local client that reaches the
@@ -159,9 +161,9 @@ function memorySummary() {
   return { memoryDir: dir, profiles };
 }
 
-function memoryTable(params) {
+function memoryFile(params, pattern = memoryFilePattern) {
   const file = params.get('file') || '';
-  if (!memoryFilePattern.test(file)) throw new LibraryError('Invalid memory file');
+  if (!pattern.test(file)) throw new LibraryError('Invalid memory file');
   return readJsonFile(path.join(memoryProfile(params), ...file.split('/')));
 }
 
@@ -415,7 +417,8 @@ function handle(req, res) {
     if (url.pathname === '/api/report') return send(res, 200, reportContent(url.searchParams));
     if (url.pathname === '/api/memory') return send(res, 200, memorySummary());
     if (url.pathname === '/api/memory/graph') return send(res, 200, readJsonFile(path.join(memoryProfile(url.searchParams), 'graph.json')));
-    if (url.pathname === '/api/memory/table') return send(res, 200, memoryTable(url.searchParams));
+    if (url.pathname === '/api/memory/table') return send(res, 200, memoryFile(url.searchParams));
+    if (url.pathname === '/api/memory/function') return send(res, 200, memoryFile(url.searchParams, memoryFunctionPattern));
     if (url.pathname === '/api/health') {
       const days = listDays();
       return send(res, 200, { ok: true, latestDay: days[0]?.day ?? null, latestCount: days[0]?.count ?? 0, totalDays: days.length });
