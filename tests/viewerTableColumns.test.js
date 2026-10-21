@@ -153,7 +153,7 @@ test('search box key handling: Escape clears a query, typing calls onQuery', () 
   assert.deepEqual(calls, [], 'an empty box lets Escape through to the page');
   input.attrs.oninput({ target: { value: 'xyz' } });
   assert.deepEqual(calls.at(-1), ['query', 'xyz']);
-  assert.match(page, /ev\.key === '\/' && !typing\) \{ ev\.preventDefault\(\); \(\['schema', 'views', 'functions'\]\.includes\(state\.tab\) && \$\('tpSearch'\) \|\|/, '/ focuses the column search when a table or view page is open');
+  assert.match(page, /ev\.key === '\/' && !typing\) \{ ev\.preventDefault\(\); \(slashTarget\(state\.tab, \$\) \|\| F\.text\)\.focus\(\)/, '/ focuses the column search of the open page (per tab), else the list search');
 });
 
 test('Type groups: PK, FK and unique go to keys even when numeric; the other types by catalog type', () => {
