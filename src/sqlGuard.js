@@ -79,8 +79,10 @@ function escapeStringContinuationEnd(sql, start) {
 // found in the masked text are valid in the original. When `identifiers` is
 // an array, every quoted identifier is pushed to it as { end, name }, where
 // end is the index after the closing quote and name is the real (decoded,
-// case-preserved) identifier.
-function stripLiteralsAndComments(sql, identifiers = null) {
+// case-preserved) identifier. When `quotedSpans` is an array, every string
+// literal fragment, quoted identifier and dollar-quoted string is pushed to it
+// as [start, end] (end exclusive, quotes included), in text order.
+function stripLiteralsAndComments(sql, identifiers = null, quotedSpans = null) {
   let out = '';
   let i = 0;
   const n = sql.length;
@@ -108,6 +110,7 @@ function stripLiteralsAndComments(sql, identifiers = null) {
       mask(start, blank);
     } else if (c === "'") {
       const escaped = /[eE]/.test(sql[i - 1] || '') && !/[A-Za-z0-9_]/.test(sql[i - 2] || '');
+      let fragmentStart = i;
       i++;
       let closed = false;
       while (i < n) {
@@ -116,13 +119,20 @@ function stripLiteralsAndComments(sql, identifiers = null) {
           if (sql[i + 1] === "'") { i += 2; continue; }
           i++;
           const continuationEnd = escaped ? escapeStringContinuationEnd(sql, i) : null;
-          if (continuationEnd !== null) { i = continuationEnd; continue; }
+          if (continuationEnd !== null) {
+            // The gap between fragments is whitespace and comments, not value.
+            quotedSpans?.push([fragmentStart, i]);
+            fragmentStart = continuationEnd - 1;
+            i = continuationEnd;
+            continue;
+          }
           closed = true;
           break;
         }
         i++;
       }
       if (!closed) throw new SqlGuardError('Unterminated string literal.');
+      quotedSpans?.push([fragmentStart, i]);
       mask(start, quoted("'"));
     } else if (c === '"') {
       i++;
@@ -145,6 +155,7 @@ function stripLiteralsAndComments(sql, identifiers = null) {
         if (unicode) unicodeIds.push({ end: i, body: name });
         else identifiers.push({ end: i, name });
       }
+      quotedSpans?.push([start, i]);
       mask(start, quoted('"'));
     } else if (c === '$') {
       // PostgreSQL tags allow non-ASCII identifier characters, but not an embedded $.
@@ -154,6 +165,7 @@ function stripLiteralsAndComments(sql, identifiers = null) {
         const end = sql.indexOf(tag, i + tag.length);
         if (end < 0) throw new SqlGuardError('Unterminated dollar-quoted string.');
         i = end + tag.length;
+        quotedSpans?.push([start, i]);
         mask(start, quoted("'"));
       } else {
         out += c;

@@ -88,7 +88,27 @@ export function normalizeRef(ref) {
 
 export const refLabel = r => `${r.db}/${r.schema}/${r.category}/${r.name}`;
 export const sqlHash = sql => crypto.createHash('sha256').update(normalizeSql(sql)).digest('hex').slice(0, 12);
-const normalizeSql = sql => String(sql).replace(/\r\n/g, '\n').trim();
+// CRLF line ends become LF and the text is trimmed. Inside a string literal,
+// quoted identifier or dollar-quoted body a CRLF is part of the value and is
+// kept byte for byte. SQL the tokenizer cannot read (the guard refuses it)
+// keeps the plain replacement, so its hash does not change either.
+function normalizeSql(sql) {
+  const text = String(sql);
+  if (!text.includes('\r\n')) return text.trim();
+  const quotedSpans = [];
+  try {
+    stripLiteralsAndComments(text, null, quotedSpans);
+  } catch {
+    return text.replace(/\r\n/g, '\n').trim();
+  }
+  let out = '';
+  let from = 0;
+  for (const [start, end] of quotedSpans) {
+    out += text.slice(from, start).replace(/\r\n/g, '\n') + text.slice(start, end);
+    from = end;
+  }
+  return (out + text.slice(from).replace(/\r\n/g, '\n')).trim();
+}
 // The format of sqlHash: 12 lower-case hex characters.
 export const sqlHashPattern = /^[0-9a-f]{12}$/;
 
