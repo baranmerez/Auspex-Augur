@@ -187,9 +187,21 @@ the catalog tools return the structure needed to rebuild it:
   `schema.name` (all overloads) or by a name pattern (at most 50, `truncated`):
   `arguments`, `returns`, `kind`, `language`, `volatility`, `securityDefiner`,
   `strict`, `parallel`, `config` (`SET` options such as `search_path`),
-  `owner`, `canExecute`, `comment`, `usedByTriggers` and `definition`
-  (`pg_get_functiondef`, cut at `maxChars`, default 20000, with
+  `owner`, `canExecute`, `comment`, `returnsTrigger`, `usedByTriggers` and
+  `definition` (`pg_get_functiondef`, cut at `maxChars`, default 20000, with
   `definitionLength` and `truncated`; null for aggregates). One statement.
+  `returnsTrigger` is true when the return type is `trigger`
+  (`prorettype = 'trigger'::regtype`). `usedByTriggers` lists the
+  non-internal triggers that call the overload, decoded from
+  `pg_trigger.tgtype`:
+
+  ```jsonc
+  { "table": "example.orders",      // tableKey: a dot or double quote in a name is quoted
+    "schema": "example", "tableName": "orders", "trigger": "orders_audit",
+    "timing": "before",             // "before" | "after" | "instead"
+    "events": ["insert", "update"], // any of insert, update, delete, truncate
+    "level": "row" }                // "row" | "statement"
+  ```
   Each function name is recorded in the schema memory with all its overloads
   (definition kept up to 20000 characters whatever `maxChars` was, see
   docs/schema-memory.md); the answer's `memory.functions` has one entry per
@@ -205,11 +217,14 @@ the catalog tools return the structure needed to rebuild it:
   `describe_functions`), `limit` (default 500, at most 2000; `truncated`) and
   `includeExtensions` (default false: functions that belong to an installed
   extension are left out). Per overload: `schema`, `name`, `arguments`,
-  `returns`, `kind`, `language`, `volatility`; no definitions. One statement.
-  The overloads are recorded in the schema memory as seen: a new function gets
-  a record without definitions, a known one only gains the overloads it did
-  not have (`listedOnly`); a described definition is never overwritten. The
-  answer's `memory` is `{ functionsAdded, overloadsAdded }`.
+  `returns`, `kind`, `language`, `volatility`, `returnsTrigger` and
+  `usedByTriggers` (as in `describe_functions`); no definitions. One
+  statement. The overloads are recorded in the schema memory as seen: a new
+  function gets a record without definitions, a known one gains the overloads
+  it did not have (`listedOnly`), and a listed-only overload takes the new
+  `returnsTrigger` and `usedByTriggers`; a described overload and every
+  definition are never changed. The answer's `memory` is
+  `{ functionsAdded, overloadsAdded, overloadsRefreshed? }`.
 - `search` also matches function names and comments and trigger names
   (`includeRoutines`, default true), and with `searchSource: true` the source
   text of functions (`matchedIn: "source"`; the text itself is not returned).
