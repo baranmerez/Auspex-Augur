@@ -376,3 +376,20 @@ test('summary: an empty chip group says "None known." (Used by views, Referenced
   assert.match(groupText(full, 'Used by views'), /example\.mv_daily_totals/);
   assert.doesNotMatch(groupText(full, 'Used by views'), /None known/);
 });
+
+test('change label: view-sources-changed lists added and removed sources (EN and TR)', () => {
+  const src = page.match(/^function changeLabel\(c\) \{[\s\S]*?\n\}\n/m)[0];
+  const run = lang => {
+    const ctx = vm.createContext({});
+    vm.runInContext(`const TR = ${JSON.stringify(pageTr)};
+const t = (en, vars = {}) => String(${JSON.stringify(lang)} === 'tr' && TR[en] !== undefined ? TR[en] : en).replace(/\\{(\\w+)\\}/g, (_, k) => vars[k] ?? '');
+${src}\nthis.changeLabel = changeLabel;`, ctx);
+    return ctx.changeLabel;
+  };
+  const en = run('en');
+  assert.equal(en({ change: 'view-sources-changed', added: ['example.orders', 'example.customers'], removed: ['test.invoices'] }),
+    'view sources changed: +example.orders, example.customers / −test.invoices');
+  assert.equal(en({ change: 'view-sources-changed', added: [], removed: ['test.invoices'] }), 'view sources changed: −test.invoices');
+  assert.equal(en({ change: 'view-sources-changed' }), 'view sources changed');
+  assert.equal(run('tr')({ change: 'view-sources-changed', added: ['example.orders'] }), 'view kaynakları değişti: +example.orders');
+});
