@@ -24,9 +24,12 @@ database statements, and leave the answer in the schema memory.
 4. **Batch, never loop.** `describe_tables` (up to 50) instead of
    `describe_table` in a loop; `profile_tables` (up to 30) instead of one
    measuring query per table; `relation_stats` for a center table's
-   neighbors when the server offers it.
+   neighbors when the server offers it. For a view, `viewSources` and
+   `viewFunctions` say what it reads and calls, and `usedByViews` on any
+   table names the views built on it: read those instead of parsing the
+   view definition.
 5. **Announce the cost.** Before each batch tell the user in one line how many
-   statements it takes (the tool descriptions state it: `describe_tables` 6-7,
+   statements it takes (the tool descriptions state it: `describe_tables` 7-8,
    `profile_tables` at most 3). The profile has a per-minute query budget
    (`maxQueriesPerMinute`); a refused call (`QUERY_BUDGET_EXCEEDED`) is not
    retried in a loop: wait `retryAfterSeconds` or tell the user.

@@ -152,7 +152,7 @@ cd auspex && npm install && npm test
 | Group | Tools |
 |---|---|
 | 🗂️ Profiles | `list_profiles` · `check_profile` |
-| 🔎 Explore | `search` · `list_schemas` · `list_tables` · `describe_table` · `describe_tables` · `describe_functions` · `profile_tables` · `relation_stats` |
+| 🔎 Explore | `search` · `list_schemas` · `list_tables` · `describe_table` · `describe_tables` · `describe_functions` · `list_functions` · `profile_tables` · `relation_stats` |
 | ▶️ Query | `query` · `explain` · `export_csv` |
 | 📚 Reports | `save_report` · `run_report` · `approve_report` · `list_reports` · `render_reports` · `share_report` · `save_execute_script` |
 | 🧠 Memory | `table_knowledge` · `remember` · `score_columns` · `scanned_files` |
