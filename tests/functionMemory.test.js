@@ -105,6 +105,10 @@ test('diffFunction compares definitions only when both are known', () => {
   const o = { arguments: '', definitionHash: 'a', volatility: 'stable', config: [] };
   assert.deepEqual(diffFunction([o], [{ ...o, definitionHash: null }]), []);
   assert.deepEqual(diffFunction([o], [{ ...o, definitionHash: 'b' }]), [{ change: 'definition-changed', arguments: '' }]);
+  // A change after the stored 20000 characters only shows in the full length.
+  const long = { ...o, definitionLength: 25000 };
+  assert.deepEqual(diffFunction([long], [{ ...long, definitionLength: 25010 }]), [{ change: 'definition-changed', arguments: '' }]);
+  assert.deepEqual(diffFunction([long], [{ ...long, definitionLength: null }]), [], 'an unknown length is no change');
 });
 
 test('view records keep the view fields; sources changes are reported; old records load fine', () => {
