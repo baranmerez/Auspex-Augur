@@ -129,6 +129,8 @@ test('rules navigator: table list left in schema and prefix groups, a divider, t
   assert.match(page, /rulesOpen: state\.rulesOpen, rulesListCollapsed: state\.rulesListCollapsed, rulesSideW: state\.rulesSideW,/);
   assert.match(page, /const open = filtering \|\| \(state\.rulesOpen\?\.\[k\] \?\? hasSel\);/);
   assert.match(page, /'Other tables': 'Diğer tablolar'/);
+  // A table named just like its prefix keeps its name instead of an empty row.
+  assert.match(page, /const shortName = \(table, prefix\) => \(prefix && table\.startsWith\(prefix \+ '_'\) \? table\.slice\(prefix\.length \+ 1\) : table\);/);
   // The divider is a keyboard-usable separator with clamped width.
   assert.match(page, /class: 'rn-split', role: 'separator', tabindex: '0', 'aria-orientation': 'vertical'/);
   assert.match(page, /const rulesSideMin = 220, rulesSideMax = 560, rulesSideDefault = 320;/);

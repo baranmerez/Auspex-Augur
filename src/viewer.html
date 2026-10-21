@@ -730,25 +730,22 @@
   .rn-head b { color: var(--text-2); font-variant-numeric: tabular-nums; }
   .rn-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 6px 12px; border-bottom: 1px solid var(--line); font-size: 11px; color: var(--text-3); }
   .rn-legend span { display: inline-flex; align-items: center; gap: 5px; }
-  .rn-dot { width: 8px; height: 8px; border-radius: 50%; }
-  .rn-dot.r { background: var(--accent); } .rn-dot.o { background: var(--good-ink); } .rn-dot.i { background: var(--warn-ink); }
+  .rn-dot.r { background: var(--accent); } .rn-dot.i { background: var(--warn-ink); }
   .rn-tree { overflow: auto; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; padding: 4px 0 8px; }
   .rn-tree .rep-group { padding-top: 12px; }
   .rn-grp:disabled { cursor: default; }
-  .rn-row { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; border: 0; border-left: 3px solid transparent; background: none; text-align: left; padding: 6px 12px; color: var(--text); font: inherit; cursor: pointer; }
-  .rn-row:hover { background: var(--surface-2); }
-  .rn-row.on { background: var(--accent-soft); border-left-color: var(--accent); }
+  .rn-row { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; border: 0; border-left: 2px solid transparent; background: none; text-align: left; padding: 4px 12px; color: var(--text-2); font: inherit; cursor: pointer; }
+  .rn-row:hover { background: var(--surface-2); color: var(--text); }
+  .rn-row.on { background: color-mix(in srgb, var(--accent) 10%, transparent); border-left-color: var(--accent); color: var(--text); }
   .rn-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-  .rn-row .rn-name { flex: 1; min-width: 0; font: 500 12.5px/1.5 var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rn-row .rn-name { flex: 1; min-width: 0; font: 400 12.5px/1.6 var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rn-row.on .rn-name { font-weight: 600; }
   .rn-row.global { margin-bottom: 2px; }
   .rn-row.global .rn-name { font-family: inherit; font-weight: 600; }
-  .rn-cnts { display: inline-flex; gap: 3px; flex: none; }
-  .rn-c { min-width: 18px; padding: 0 5px; border-radius: 999px; font-size: 11px; font-weight: 600; line-height: 17px; text-align: center; font-variant-numeric: tabular-nums; }
-  .rn-c.r { background: var(--accent-soft); color: var(--accent-ink); }
-  .rn-c.o { background: var(--good-soft); color: var(--good-ink); }
-  .rn-c.i { background: var(--warn-soft); color: var(--warn-ink); }
-  .rn-c.a { background: var(--surface-2); color: var(--text-3); }
+  .rn-cnts { display: inline-flex; align-items: center; gap: 5px; flex: none; }
+  .rn-n { min-width: 14px; text-align: right; font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .rn-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+  .rn-tree .rn-grp.has-sel .lbl { color: var(--text); }
   .rn-split { position: sticky; top: var(--sticky-top); height: calc(100vh - var(--sticky-top) - 20px); display: flex; justify-content: center; cursor: col-resize; touch-action: none; }
   .rn-split::before { content: ""; width: 2px; border-radius: 2px; background: var(--line); transition: background .15s; }
   .rn-split:hover::before, .rn-split.drag::before, .rn-split:focus-visible::before { background: var(--accent); }
@@ -1068,7 +1065,7 @@ const put = (node, ...kids) => node.replaceChildren(...kids.flat(Infinity).filte
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 // ---------- i18n (English is the key; Turkish is the translation) ----------
 const TR = {
-  '(table)': '(tablo)', 'Observations': 'Gözlemler', 'Inferences': 'Çıkarımlar', 'Other tables': 'Diğer tablolar', 'Show the table list': 'Tablo listesini göster', 'Hide the table list': 'Tablo listesini gizle', 'Resize the table list': 'Tablo listesinin genişliği', 'Drag to resize; double-click for the default width': 'Genişlik için sürükle; varsayılan için çift tıkla', '{n} rule': '{n} kural', '{n} rules': '{n} kural', '{n} observation': '{n} gözlem', '{n} observations': '{n} gözlem',
+  '(table)': '(tablo)', 'Observations': 'Gözlemler', 'Inferences': 'Çıkarımlar', 'Other tables': 'Diğer tablolar', 'number: notes': 'sayı: not', 'Show the table list': 'Tablo listesini göster', 'Hide the table list': 'Tablo listesini gizle', 'Resize the table list': 'Tablo listesinin genişliği', 'Drag to resize; double-click for the default width': 'Genişlik için sürükle; varsayılan için çift tıkla', '{n} rule': '{n} kural', '{n} rules': '{n} kural', '{n} observation': '{n} gözlem', '{n} observations': '{n} gözlem',
   '{n} inference': '{n} çıkarım', '{n} inferences': '{n} çıkarım', '{n} archived': '{n} arşivli', 'Counts follow the filters, except the status switch.': 'Sayılar durum seçimi dışındaki filtreleri izler.',
   'Rules': 'Kurallar', 'Kind': 'Tür', 'Table': 'Tablo', 'Active': 'Aktif', 'Archived': 'Arşivlenmiş',
   'Filter by table': 'Tabloya göre süz', 'Search note text': 'Not metninde ara', 'No notes match the filters.': 'Filtrelere uyan not yok.',
@@ -4480,18 +4477,23 @@ function renderRules() {
   const treeScroll = oldTree ? oldTree.scrollTop : 0;
   const focusedKey = document.activeElement?.dataset?.rnKey ?? null;
   const focusedGroup = document.activeElement?.dataset?.rnGrp ?? null;
-  // Counts as small coloured numbers; the words stay in the title and label.
-  const chips = c => [['rule', 'r'], ['observation', 'o'], ['inference', 'i'], ['archived', 'a']]
-    .filter(([k]) => c[k]).map(([k, cls]) => h('span', { class: 'rn-c ' + cls }, fmt(c[k])));
-  // Inside a prefix group a row leaves out the prefix its group shows.
+  // A quiet note count; colour only where it means something: a dot when the
+  // notes include rules or inferences. The words stay in the title and label.
+  const marks = notes => {
+    const c = ruleCounts(notes);
+    return h('span', { class: 'rn-cnts' }, c.rule ? h('i', { class: 'rn-dot r' }) : null, c.inference ? h('i', { class: 'rn-dot i' }) : null,
+      h('span', { class: 'rn-n' }, fmt(notes.length)));
+  };
+  // Inside a prefix group a row leaves out the prefix its group shows; a table
+  // named just like the prefix keeps its whole name.
+  const shortName = (table, prefix) => (prefix && table.startsWith(prefix + '_') ? table.slice(prefix.length + 1) : table);
   const row = (g, wide, prefix = null, depth = 0) => {
     const on = sel === g.key;
-    const c = ruleCounts(g.notes);
-    const label = `${wide ? `${t('Database-wide')} · ${state.db}` : g.key} · ${ruleCountText(c) || t('No notes')}`;
+    const label = `${wide ? `${t('Database-wide')} · ${state.db}` : g.key} · ${ruleCountText(ruleCounts(g.notes)) || t('No notes')}`;
     return h('button', { type: 'button', class: 'rn-row' + (wide ? ' global' : '') + (on ? ' on' : ''), 'aria-current': on ? 'true' : null, 'data-rn-key': g.key,
       title: label, 'aria-label': label, style: `padding-left:${12 + depth * 18}px`, onclick: () => choose(g.key) },
-      h('span', { class: 'rn-name' }, wide ? t('Database-wide') : prefix ? String(g.table).slice(prefix.length + 1) : String(g.table)),
-      h('span', { class: 'rn-cnts' }, chips(c)));
+      h('span', { class: 'rn-name' }, wide ? t('Database-wide') : shortName(String(g.table), prefix)),
+      marks(g.notes));
   };
   // A prefix group opens when it holds the chosen row, unless the user closed
   // it; while a filter is typed every group is open.
@@ -4508,7 +4510,7 @@ function renderRules() {
     open ? grp.tables.map(g => row(g, false, grp.prefix, 1)) : null];
   };
   const legend = h('div', { class: 'rn-legend', 'aria-hidden': 'true' },
-    [['r', 'rule'], ['o', 'observation'], ['i', 'inference']].map(([cls, k]) => h('span', {}, h('i', { class: 'rn-dot ' + cls }), t(k))));
+    h('span', {}, h('i', { class: 'rn-dot r' }), t('rule')), h('span', {}, h('i', { class: 'rn-dot i' }), t('inference')), h('span', {}, t('number: notes')));
   const current = sel === '' ? dbWide : tables.find(g => g.key === sel);
   const detail = h('div', { class: 'panel rn-detail' }, current?.notes.length
     ? h('div', { class: 'rules-list' }, ruleGroup(current),
