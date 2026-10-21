@@ -80,6 +80,13 @@ CREATE TABLE auspex_test.import_secret (
 );
 ALTER TABLE auspex_test.import_secret ENABLE ROW LEVEL SECURITY;
 
+-- A legacy updatable view: its DO INSTEAD rule writes to import_log, which is
+-- not a source of the view (view dependencies read the SELECT rule only).
+CREATE VIEW auspex_test.v_import_job AS
+SELECT id, status FROM auspex_test.import_job;
+CREATE RULE v_import_job_insert AS ON INSERT TO auspex_test.v_import_job
+  DO INSTEAD INSERT INTO auspex_test.import_log (job_id, logged_on, message) VALUES (NEW.id, DATE '2026-01-15', 'via view');
+
 INSERT INTO auspex_test.import_job (region_id, payload, payload_b64) VALUES
   (1,    '{"firma": "ExampleCo", "satır": 1}', 'eyJhIjoxfQ=='),
   (1,    '{"firma": "ExampleCo", "satır": 2}', NULL),

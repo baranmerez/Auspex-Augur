@@ -183,6 +183,8 @@ where c.oid = any($1::oid[]) and c.relkind in ('v', 'm')`;
 //   the columns it uses, from refobjsubid) and functions it calls; the view
 //   itself is left out.
 // - 'used_by': the views and materialized views that read a relation in $1.
+// Only the SELECT rule (ev_type '1', "_RETURN") counts: the targets of
+// DO INSTEAD INSERT / UPDATE / DELETE rules on a view are not its sources.
 const viewDependenciesSql = `
 select 'source' as dep, r.ev_class::bigint as relid,
        case when d.refclassid = 'pg_class'::regclass then 'relation' else 'function' end as ref_type,
@@ -202,7 +204,7 @@ left join pg_namespace rn on rn.oid = rc.relnamespace
 left join pg_attribute a on rc.oid is not null and a.attrelid = rc.oid and a.attnum = d.refobjsubid
 left join pg_proc p on d.refclassid = 'pg_proc'::regclass and p.oid = d.refobjid
 left join pg_namespace pn on pn.oid = p.pronamespace
-where r.ev_class = any($1::oid[])
+where r.ev_class = any($1::oid[]) and r.ev_type = '1'
   and (rc.oid is null or rc.relkind in ('r', 'p', 'v', 'm', 'f'))
   and (rc.oid is not null or p.oid is not null)
 union all
@@ -212,7 +214,7 @@ join pg_rewrite r on r.oid = d.objid
 join pg_class vc on vc.oid = r.ev_class and vc.relkind in ('v', 'm')
 join pg_namespace vn on vn.oid = vc.relnamespace
 where d.classid = 'pg_rewrite'::regclass and d.refclassid = 'pg_class'::regclass
-  and d.refobjid = any($1::oid[]) and r.ev_class <> d.refobjid
+  and d.refobjid = any($1::oid[]) and r.ev_class <> d.refobjid and r.ev_type = '1'
 order by 1, 2, 4, 5, 7`;
 
 // Searches relation names (tables, views, ...), column names, function names
