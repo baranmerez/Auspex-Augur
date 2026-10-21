@@ -88,10 +88,10 @@ test('list_functions records seen overloads and never overwrites a described def
   assert.equal(mem.recordFunctions(profile, [{ schema: 'example', name: 'order_count', arguments: '', language: 'sql', definition: 'x' }])[0].recorded, 'first time');
 });
 
-test('stored definitions are cut at 20000 characters; touches only for sql and plpgsql', () => {
-  const long = `CREATE FUNCTION example.f()\n LANGUAGE sql\nAS $function$ SELECT 1 FROM example.orders ${'-- x\n'.repeat(5000)} $function$`;
+test('stored definitions are cut at 200000 characters; touches only for sql and plpgsql', () => {
+  const long = `CREATE FUNCTION example.f()\n LANGUAGE sql\nAS $function$ SELECT 1 FROM example.orders ${'-- x\n'.repeat(50000)} $function$`;
   const o = overloadFromDescribe({ schema: 'example', name: 'f', arguments: '', language: 'sql', definition: long, definitionLength: long.length });
-  assert.equal(o.definition.length, 20000);
+  assert.equal(o.definition.length, 200000);
   assert.equal(o.truncated, true);
   assert.deepEqual(o.touches.reads, ['example.orders']);
   const hidden = { schema: 'example', name: 'f', arguments: '', language: 'sql', definition: 'short', definitionLength: 5 };
@@ -105,8 +105,8 @@ test('diffFunction compares definitions only when both are known', () => {
   const o = { arguments: '', definitionHash: 'a', volatility: 'stable', config: [] };
   assert.deepEqual(diffFunction([o], [{ ...o, definitionHash: null }]), []);
   assert.deepEqual(diffFunction([o], [{ ...o, definitionHash: 'b' }]), [{ change: 'definition-changed', arguments: '' }]);
-  // A change after the stored 20000 characters only shows in the full length.
-  const long = { ...o, definitionLength: 25000 };
+  // A change after the stored 200000 characters only shows in the full length.
+  const long = { ...o, definitionLength: 250000 };
   assert.deepEqual(diffFunction([long], [{ ...long, definitionLength: 25010 }]), [{ change: 'definition-changed', arguments: '' }]);
   assert.deepEqual(diffFunction([long], [{ ...long, definitionLength: null }]), [], 'an unknown length is no change');
 });
@@ -124,10 +124,10 @@ test('view records keep the view fields; sources changes are reported; old recor
   const old = { ...rec };
   delete old.viewSources;
   assert.deepEqual(diffTable(old, next), [], 'records without viewSources report no sources change');
-  const long = recordFromDescribe({ ...viewDescribe(profile), viewDefinition: 'x'.repeat(25000) });
-  assert.deepEqual([long.viewDefinition.length, long.viewDefinitionLength, long.viewDefinitionTruncated], [20000, 25000, true]);
-  assert.equal(long.viewHash, recordFromDescribe({ ...viewDescribe(profile), viewDefinition: 'x'.repeat(25000) }).viewHash);
-  assert.notEqual(long.viewHash, recordFromDescribe({ ...viewDescribe(profile), viewDefinition: `${'x'.repeat(25000)}y` }).viewHash, 'the hash covers the full text');
+  const long = recordFromDescribe({ ...viewDescribe(profile), viewDefinition: 'x'.repeat(250000) });
+  assert.deepEqual([long.viewDefinition.length, long.viewDefinitionLength, long.viewDefinitionTruncated], [200000, 250000, true]);
+  assert.equal(long.viewHash, recordFromDescribe({ ...viewDescribe(profile), viewDefinition: 'x'.repeat(250000) }).viewHash);
+  assert.notEqual(long.viewHash, recordFromDescribe({ ...viewDescribe(profile), viewDefinition: `${'x'.repeat(250000)}y` }).viewHash, 'the hash covers the full text');
   const table = recordFromDescribe(ordersDescribe(profile));
   assert.equal(table.viewSources, undefined);
   assert.equal(table.usedByViews, undefined, 'absent when the describe result has none');

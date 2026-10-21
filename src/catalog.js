@@ -609,7 +609,7 @@ export const defaultDefinitionChars = 20000;
 export const maxDefinitionChars = 200000;
 // The schema memory keeps each definition up to this many characters,
 // whatever maxChars the call used (src/memory/store.js).
-export const storedDefinitionChars = 20000;
+export const storedDefinitionChars = 200000;
 
 // The first n characters (code points, like PostgreSQL's left()).
 export function cutChars(text, n) {

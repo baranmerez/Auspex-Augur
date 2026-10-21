@@ -204,7 +204,7 @@ the catalog tools return the structure needed to rebuild it:
     "level": "row" }                // "row" | "statement"
   ```
   Each function name is recorded in the schema memory with all its overloads
-  (definition kept up to 20000 characters whatever `maxChars` was, see
+  (definition kept up to 200000 characters whatever `maxChars` was, see
   docs/schema-memory.md); the answer's `memory.functions` has one entry per
   name: `{ function: "example.order_total", recorded: "first time" | "updated",
   lastDescribedAt?, changesSinceLast: [...] }`. `changesSinceLast` is empty

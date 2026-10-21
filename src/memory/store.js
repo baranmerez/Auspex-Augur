@@ -100,7 +100,7 @@ function splitTableKey(key) {
 const sameTable = (a, b) => a.schema === b.schema && a.table === b.table;
 
 // Definitions (view and function) are stored up to this many characters.
-export const storedTextChars = 20000;
+export const storedTextChars = 200000;
 const charCount = text => Array.from(String(text)).length;
 const cutText = (text, n) => (String(text).length <= n ? String(text) : Array.from(String(text)).slice(0, n).join(''));
 const textOrder = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
