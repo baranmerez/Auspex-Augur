@@ -272,7 +272,9 @@ looks alive (a process id reused after a reboot).
 due slot, not the time the run happens. A catch-up on Tuesday for Monday's
 08:00 slot gets the same `last_7_days` as a run on Monday would have.
 Slots are local wall-clock times computed with calendar arithmetic, so a
-daylight saving change does not move a slot to another day or hour.
+daylight saving change does not move a slot to another day or hour. A slot
+inside a skipped hour falls due at the first valid moment after it, even
+when that is past midnight; its preset still uses the slot's own date.
 
 **Same path as `run_report`:** every scheduled run goes through the report
 service and `ReadOnlyDatabase` (SQL guard, `READ ONLY` transaction, role

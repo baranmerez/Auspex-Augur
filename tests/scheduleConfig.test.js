@@ -91,6 +91,23 @@ test('slots keep their local time and day across daylight saving changes', () =>
   assert.equal(latestDueSlot(mon, new Date(2026, 2, 30, 7, 0)).key, '2026-03-23T08:00');
 });
 
+test('a slot keeps its own calendar day when a daylight saving gap across midnight moves its due time', () => {
+  // America/Nuuk springs forward from Saturday 23:00 to Sunday 00:00 on 2026-03-28.
+  process.env.TZ = 'America/Nuuk';
+  try {
+    const sat = { weekly: 'saturday', weekday: 6, at: '23:30', hour: 23, minute: 30 };
+    const s = latestDueSlot(sat, new Date(2026, 2, 29, 1, 0));
+    assert.equal(s.at.getDate(), 29, 'precondition: the zone skips Saturday 23:30, so it falls due on Sunday');
+    assert.equal(s.key, '2026-03-28T23:30');
+    assert.deepEqual([s.day.getFullYear(), s.day.getMonth(), s.day.getDate()], [2026, 2, 28]);
+    assert.deepEqual(resolveBuiltInPreset('today', s.day), ['2026-03-28', '2026-03-29']);
+    assert.deepEqual(resolveBuiltInPreset('last_7_days', s.day), ['2026-03-22', '2026-03-29']);
+    assert.equal(nextSlot(sat, new Date(2026, 2, 28, 22, 0)).day.getDate(), 28);
+  } finally {
+    process.env.TZ = 'Europe/Berlin';
+  }
+});
+
 test('a preset resolves against the reference date, not the run time', () => {
   const slot = latestDueSlot(weekly, new Date(2026, 9, 13, 10, 0)); // Tuesday catch-up
   const fail = msg => new Error(msg);

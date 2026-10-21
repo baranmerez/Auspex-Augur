@@ -134,13 +134,16 @@ export function loadSchedules(file) {
 const pad = n => String(n).padStart(2, '0');
 const isoDay = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
-// The slot of a cadence on the local calendar day of date: { key, at }.
+// The slot of a cadence on the local calendar day of date: { key, at, day }.
 // key is the local date and time ("2026-10-12T08:00"), stable across daylight
 // saving changes; at is the moment it falls due. A time inside a skipped
-// spring-forward hour falls due at the first valid moment after it.
+// spring-forward hour falls due at the first valid moment after it, which
+// can be on the next calendar day. day is noon of the slot's own calendar
+// day (noon is never skipped), the date its presets resolve against.
 function slotOn(cadence, date) {
   const at = new Date(date.getFullYear(), date.getMonth(), date.getDate(), cadence.hour, cadence.minute);
-  return { key: `${isoDay(date)}T${pad(cadence.hour)}:${pad(cadence.minute)}`, at };
+  const day = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12);
+  return { key: `${isoDay(date)}T${pad(cadence.hour)}:${pad(cadence.minute)}`, at, day };
 }
 
 const matchesDay = (cadence, date) => cadence.daily === true || date.getDay() === cadence.weekday;
