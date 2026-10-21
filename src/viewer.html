@@ -7585,13 +7585,17 @@ function renderThemeMenu() {
 }
 function openThemeMenu() {
   $('thsel').classList.add('open'); $('themeMenuBtn').setAttribute('aria-expanded', 'true'); renderThemeMenu();
-  // On a narrow screen the button sits left of the right edge: shift the menu so it stays inside the window.
-  // Measured from layout sizes, since the opening animation scales the menu.
+  placeThemeMenu();
+}
+// On a narrow screen the button sits left of the right edge: shift the menu so it stays inside the window.
+// Measured from layout sizes, since the opening animation scales the menu; again on every resize while open.
+function placeThemeMenu() {
   const menu = $('themeMenu');
   menu.style.right = '';
   const left = $('thsel').getBoundingClientRect().right - menu.offsetWidth;
   if (left < 12) menu.style.right = `${left - 12}px`;
 }
+addEventListener('resize', () => { if ($('thsel').classList.contains('open')) placeThemeMenu(); });
 // Returns true when the menu was open; focusButton moves focus back to its button.
 function closeThemeMenu(focusButton = false) {
   if (!$('thsel').classList.contains('open')) return false;
