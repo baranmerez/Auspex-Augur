@@ -14,7 +14,7 @@ function load() {
   for (const name of ['report-filter', 'rules-list', 'stage-change', 'note-archive']) assert.ok(blockOf(name), `${name} block found`);
   const context = vm.createContext({ JSON });
   vm.runInContext(`${tableKeyLines}\n${blockOf('report-filter')}\n${blockOf('rules-list')}\n${blockOf('stage-change')}\n${blockOf('note-archive')}
-this.filterRules = filterRules; this.groupRules = groupRules; this.ruleCounts = ruleCounts; this.ruleDay = ruleDay; this.archiveReasonProblem = archiveReasonProblem; this.archiveRequest = archiveRequest;
+this.filterRules = filterRules; this.groupRules = groupRules; this.ruleCounts = ruleCounts; this.ruleDay = ruleDay; this.ruleAsOf = ruleAsOf; this.archiveReasonProblem = archiveReasonProblem; this.archiveRequest = archiveRequest;
 this.postArchiveNote = postArchiveNote; this.invokeArchiveNote = invokeArchiveNote; this.archiveReasonMax = archiveReasonMax;`, context);
   return context;
 }
@@ -121,4 +121,11 @@ test('text filter ignores diacritics both ways (Rules tab)', () => {
   assert.deepEqual(ids({ q: 'isaretlenir' }), [1], 'işaretlenir matches without the dots');
   assert.deepEqual(ids({ q: 'İŞARETLENİR status_code' }), [1]);
   assert.deepEqual(ids({ q: 'isaretlenir STATUS_CODE' }), [1]);
+});
+
+test('a plain asOf day is shown like the other days; other text stays', () => {
+  const { ruleAsOf, ruleDay } = load();
+  assert.equal(ruleAsOf('2026-10-19', 'en-GB'), ruleDay('2026-10-19T12:00:00', 'en-GB'));
+  assert.match(ruleAsOf('2026-10-19', 'en-GB'), /19 Oct 2026/);
+  assert.equal(ruleAsOf('Q3 2026', 'en-GB'), 'Q3 2026');
 });
