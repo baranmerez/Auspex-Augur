@@ -199,7 +199,7 @@ test('relation_stats results enrich graph.json: edge linkedRows/estimated/statsA
     profile: 'example', relation: 'example.orders', schema: 'example', table: 'orders', kind: 'table', oid: 10, estimated_rows: 1000, comment: null,
     columns: [{ column: 'id', attnum: 1, type: 'integer' }, { column: 'status_id', attnum: 2, type: 'integer' }],
     constraints: [{ name: 'orders_status_fk', type: 'foreign key', definition: 'x', columns: ['status_id'], ref_schema: 'example', ref_table: 'status', ref_columns: ['id'] }],
-    indexes: [], referencedBy: [],
+    indexes: [], referencedBy: [{ name: 'lines_order_fk', from_schema: 'example', from_name: 'order_lines', columns: ['order_id'], ref_columns: ['id'] }],
   });
   const after = memory.graph('example');
   assert.equal(after.nodes.find(n => n.id === 'example.orders').estRows, 1000);

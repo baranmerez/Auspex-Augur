@@ -696,8 +696,25 @@ export class SchemaMemory {
       for (const r of t.referencedBy || []) add('fk', r, t, r.columns, r.refColumns);
     }
     // relation_stats: foreign keys with linked-row estimates; the latest
-    // measurement of an edge wins.
+    // measurement of an edge wins. A describe of the source or the target
+    // table after the measurement is newer evidence: a measured key that the
+    // source no longer declares, or that the target no longer lists as
+    // referencing it, is not published, and its figures are left out with it
+    // (they stay in the table file and come back if the key does).
+    const byKey = new Map(tables.map(t => [tableKey(t.schema, t.table), t]));
+    const newer = (rel, s) => {
+      const rec = byKey.get(tableKey(rel.schema, rel.table));
+      return rec?.describedAt && s.at && rec.describedAt > s.at ? rec : null;
+    };
+    const dropped = (s, from, to, e) => {
+      const columns = (e.columns || []).join(',');
+      const source = newer(from, s);
+      if (source && !source.constraints.some(c => c.references && sameTable(c.references, to) && c.columns.join(',') === columns)) return true;
+      const target = newer(to, s);
+      return !!target && !(target.referencedBy || []).some(r => sameTable(r, from) && (r.columns || []).join(',') === columns);
+    };
     const measured = (s, from, to, e) => {
+      if (dropped(s, from, to, e)) return;
       add('fk', from, to, e.columns, e.refColumns);
       const edge = edges.get(`fk|${tableKey(from.schema, from.table)}|${tableKey(to.schema, to.table)}|${e.columns.join(',')}`);
       if (!edge.statsAt || edge.statsAt < s.at) Object.assign(edge, { linkedRows: e.linkedRows ?? null, estimated: true, statsAt: s.at });
