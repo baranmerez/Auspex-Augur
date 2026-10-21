@@ -7,12 +7,13 @@ import vm from 'node:vm';
 // (rules-list, with foldText from report-filter) and the archive request
 // (note-archive, with stageError from stage-change).
 const page = fs.readFileSync(new URL('../src/viewer.html', import.meta.url), 'utf8');
+const tableKeyLines = page.match(/^const tableKey = .*\r?\n^const splitTableKey = .*$/m)[0];
 const blockOf = name => page.match(new RegExp(`// ${name}:start[\\s\\S]*?// ${name}:end`))?.[0];
 
 function load() {
   for (const name of ['report-filter', 'rules-list', 'stage-change', 'note-archive']) assert.ok(blockOf(name), `${name} block found`);
   const context = vm.createContext({ JSON });
-  vm.runInContext(`${blockOf('report-filter')}\n${blockOf('rules-list')}\n${blockOf('stage-change')}\n${blockOf('note-archive')}
+  vm.runInContext(`${tableKeyLines}\n${blockOf('report-filter')}\n${blockOf('rules-list')}\n${blockOf('stage-change')}\n${blockOf('note-archive')}
 this.filterRules = filterRules; this.groupRules = groupRules; this.ruleCounts = ruleCounts; this.ruleDay = ruleDay; this.archiveReasonProblem = archiveReasonProblem; this.archiveRequest = archiveRequest;
 this.postArchiveNote = postArchiveNote; this.invokeArchiveNote = invokeArchiveNote; this.archiveReasonMax = archiveReasonMax;`, context);
   return context;

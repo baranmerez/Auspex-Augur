@@ -10,6 +10,7 @@ import { seedExampleMemory } from './fixtures/exampleMemory.js';
 // grouping and order of the chips, the unused collapse, the disabled trigger
 // hook, the report mention match, escaping and the Rules tab links.
 const page = fs.readFileSync(new URL('../src/viewer.html', import.meta.url), 'utf8');
+const tableKeyLines = page.match(/^const tableKey = .*\r?\n^const splitTableKey = .*$/m)[0];
 const blockOf = name => page.match(new RegExp(`// ${name}:start[\\s\\S]*?// ${name}:end`))?.[0];
 const pageTr = vm.runInNewContext(`(${page.match(/const TR = (\{[\s\S]*?\n\});/)[1]})`);
 
@@ -38,7 +39,7 @@ function load(lang = 'en') {
     JSON, h, svg: h, locale: lang === 'tr' ? 'tr-TR' : 'en-GB', fmt: n => String(n), compact: n => `~${n}`,
     ruleDay: ts => (ts ? String(ts).slice(0, 10) : '?'), changeLabel: c => c.change,
   });
-  vm.runInContext(`${page.match(/const foldText = .*;/)[0]}
+  vm.runInContext(`${tableKeyLines}\n${page.match(/const foldText = .*;/)[0]}
 ${blockOf('table-page')}
 const TR = Object.assign({}, ${JSON.stringify(pageTr)});
 for (const [k, v] of Object.entries(tablePageTr)) if (!Object.hasOwn(TR, k)) TR[k] = v;

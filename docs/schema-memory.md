@@ -76,6 +76,13 @@ measured foreign key that the source no longer declares, or that the target
 no longer lists as referencing it, is not shown as an `fk` edge, and its
 figures are left out with it (they come back if the key does).
 
+`id`, `from` and `to` are `schema.table`. A schema or table name that contains
+a dot or a double quote is written quoted, as PostgreSQL's `quote_ident` does
+(`example."orders.history"`, `"example.orders".history`), so two such tables
+never share an id; every other name keeps the plain form. The viewer builds
+ids the same way. Approved-join pairs (`used` edges) cannot tell dotted names
+apart, because the plan text they come from has no quotes.
+
 ### Column importance
 
 Which columns of a table matter is decided by people and the agent, not

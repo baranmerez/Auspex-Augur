@@ -74,7 +74,24 @@ function legacySegment(name) {
   return reservedFileName.test(encoded) ? `~${encoded}` : encoded;
 }
 
-const tableKey = (schema, table) => `${schema}.${table}`;
+// Identity of a table in edges, graph ids and table_knowledge. Ordinary names
+// stay "schema.table"; a name with a dot or a double quote is quoted the way
+// quote_ident does it ("a.b", "x""y"), so example."orders.history" and
+// "example.orders".history never share a key.
+const keyPart = name => {
+  const value = String(name ?? '');
+  return /[."]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+};
+export const tableKey = (schema, table) => `${keyPart(schema)}.${keyPart(table)}`;
+
+// Schema and table of a tableKey; null when the key is not one.
+const tableKeyPattern = /^("(?:[^"]|"")*"|[^."]*)\.("(?:[^"]|"")*"|[^."]*)$/;
+const unquotePart = part => (part.startsWith('"') ? part.slice(1, -1).replace(/""/g, '"') : part);
+function splitTableKey(key) {
+  const m = tableKeyPattern.exec(String(key ?? ''));
+  return m ? { schema: unquotePart(m[1]), table: unquotePart(m[2]) } : null;
+}
+
 const sameTable = (a, b) => a.schema === b.schema && a.table === b.table;
 
 // The structural part of a describe_table result, in the form stored and diffed.
@@ -826,8 +843,8 @@ export class SchemaMemory {
     for (const e of edges) {
       for (const id of [e.from, e.to]) {
         if (nodes.has(id)) continue;
-        const dot = id.indexOf('.');
-        nodes.set(id, { id, schema: id.slice(0, dot), table: id.slice(dot + 1), state: 'unexplored', kind: null, estimatedRows: null, columnCount: 0, changes: 0, notes: 0 });
+        const { schema, table } = splitTableKey(id) ?? { schema: null, table: id };
+        nodes.set(id, { id, schema, table, state: 'unexplored', kind: null, estimatedRows: null, columnCount: 0, changes: 0, notes: 0 });
       }
     }
     return { profile, nodes: [...nodes.values()], edges };
