@@ -82,8 +82,12 @@ test('a re-list refreshes the trigger facts of listed-only overloads and never t
   const check = mem.readFunction('exampledb', 'example', 'orders_check').overloads[0];
   assert.equal(check.definition, definition, 'the described overload keeps its definition');
   assert.deepEqual(check.usedByTriggers.map(t => t.trigger), ['orders_check'], 'and its trigger facts');
+  const file = mem.functionPath('exampledb', 'example', 'orders_audit');
+  const before = { text: fs.readFileSync(file, 'utf8'), mtimeNs: fs.statSync(file, { bigint: true }).mtimeNs };
   assert.deepEqual(mem.recordListedFunctions('exampledb', [listed('orders_audit', { usedByTriggers: [decoded('orders', 'orders_audit', 1 | 16)] })]),
     { functionsAdded: 0, overloadsAdded: 0 }, 'unchanged facts are not rewritten');
+  assert.equal(fs.readFileSync(file, 'utf8'), before.text, 'same content, lastSeen included');
+  assert.equal(fs.statSync(file, { bigint: true }).mtimeNs, before.mtimeNs, 'the file was not written');
 });
 
 test('graph functions: role from catalog facts, timings and trigger tables', () => {
