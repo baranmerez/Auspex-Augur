@@ -295,7 +295,9 @@ export class SchemaMemory {
   // Windows, and a new ctime), so another process's write is seen even when it
   // has the same length and modification time. A filesystem that reports no
   // inode (ino 0, some network shares) gives no identity: read without cache.
-  readJson(file, fallback) {
+  // cache: false reads without keeping the value (function records with
+  // their bodies are not kept in memory).
+  readJson(file, fallback, { cache = true } = {}) {
     this.checkPath(file);
     let stat;
     try {
@@ -308,6 +310,10 @@ export class SchemaMemory {
     const hit = key && this.cache.get(file);
     if (hit && hit.key === key) return structuredClone(hit.value);
     const value = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (!cache) {
+      this.cache.delete(file);
+      return value;
+    }
     if (key) this.cache.set(file, { key, value });
     else this.cache.delete(file);
     return structuredClone(value);
@@ -538,9 +544,31 @@ export class SchemaMemory {
   }
 
   readFunction(profile, schema, name) {
-    return this.readJson(this.functionPath(profile, schema, name), null);
+    return this.readJson(this.functionPath(profile, schema, name), null, { cache: false });
   }
 
+  // A function record without its definitions, for the graph: every
+  // overload keeps its stored call list (calls); a record written before
+  // calls were stored gets them from its definition once per file version.
+  // Cached by file identity like readJson; the bodies are never cached.
+  // The result is shared: callers must not change it.
+  readFunctionSummary(file) {
+    this.checkPath(file);
+    const stat = fs.statSync(file, { bigint: true });
+    const key = stat.ino === 0n ? null : `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+    this.summaryCache ??= new Map();
+    const hit = key && this.summaryCache.get(file);
+    if (hit && hit.key === key) return hit.value;
+    const rec = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const value = {
+      ...rec,
+      overloads: (rec.overloads ?? []).map(({ definition, ...o }) => ({ ...o, calls: Array.isArray(o.calls) ? o.calls : functionCalls(definition) })),
+    };
+    if (key) this.summaryCache.set(file, { key, value });
+    return value;
+  }
+
+  // Every stored function record, without definitions (readFunctionSummary).
   listFunctions(profile) {
     const dir = this.checkPath(path.join(this.profileDir(profile), 'functions'));
     if (!fs.existsSync(dir)) return [];
@@ -548,7 +576,7 @@ export class SchemaMemory {
     for (const schemaDir of fs.readdirSync(dir, { withFileTypes: true }).filter(d => d.isDirectory())) {
       for (const f of fs.readdirSync(path.join(dir, schemaDir.name)).filter(f => f.endsWith('.json'))) {
         try {
-          out.push(this.readJson(path.join(dir, schemaDir.name, f), null));
+          out.push(this.readFunctionSummary(path.join(dir, schemaDir.name, f)));
         } catch (err) {
           if (!err.linkRefused) throw err;
           process.stderr.write(`auspex: schema memory function skipped: ${err.message}\n`);
@@ -664,18 +692,6 @@ export class SchemaMemory {
     });
   }
 
-  // Function calls found in a stored definition, cached by its hash.
-  callsOf(overload) {
-    if (!overload.definition) return [];
-    this.callCache ??= new Map();
-    const key = overload.definitionHash ?? definitionHash(overload.definition);
-    if (!this.callCache.has(key)) {
-      if (this.callCache.size > 5000) this.callCache.clear();
-      this.callCache.set(key, functionCalls(overload.definition));
-    }
-    return this.callCache.get(key);
-  }
-
   // graph.json functions: one light entry per stored function name (no
   // definitions), with the views and stored functions that call it.
   functionsView(profile, tables) {
@@ -692,7 +708,7 @@ export class SchemaMemory {
     for (const g of fns) {
       const caller = tableKey(g.schema, g.name);
       for (const o of g.overloads ?? []) {
-        for (const ref of this.callsOf(o)) {
+        for (const ref of o.calls ?? []) {
           const id = tableKey(ref.schema ?? g.schema, ref.name);
           if (id === caller) continue;
           if (!byFunctions.has(id)) byFunctions.set(id, new Set());
@@ -1167,6 +1183,9 @@ export function overloadFromDescribe(f) {
     truncated: definition !== null && length !== null && length > charCount(definition),
     definitionHash: definition === null ? null : definitionHash(definition),
     touches: functionTouches({ definition, schema: f.schema, language: f.language, arguments: f.arguments ?? '' }),
+    // Functions the body calls as written ({ schema | null, name }), for the
+    // graph's calledBy without reading the body again.
+    calls: functionCalls(definition),
   };
 }
 
@@ -1215,7 +1234,11 @@ export function diffFunction(prev, next, complete = true) {
     }
     // The stored text is cut at storedTextChars: a change after that point
     // only shows in the full length.
-    const hashChanged = old.definitionHash && o.definitionHash && old.definitionHash !== o.definitionHash;
+    // A record cut at a lower cap than today's: the new text continuing the
+    // old stored one with the same full length is the same definition.
+    const capRaised = old.truncated === true && typeof old.definition === 'string' && typeof o.definition === 'string'
+      && old.definitionLength === o.definitionLength && o.definition.length > old.definition.length && o.definition.startsWith(old.definition);
+    const hashChanged = old.definitionHash && o.definitionHash && old.definitionHash !== o.definitionHash && !capRaised;
     const lengthChanged = Number.isInteger(old.definitionLength) && Number.isInteger(o.definitionLength) && old.definitionLength !== o.definitionLength;
     if (hashChanged || lengthChanged) changes.push({ change: 'definition-changed', arguments: o.arguments });
     const fields = functionFlagFields.filter(k => JSON.stringify(old[k] ?? null) !== JSON.stringify(o[k] ?? null));
