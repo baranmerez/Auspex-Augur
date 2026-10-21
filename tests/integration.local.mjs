@@ -592,9 +592,25 @@ test('view dependencies ignore the targets of DO INSTEAD rules', { skip: !ruleVi
   assert.deepEqual(job.usedByViews, [{ schema: 'auspex_test', table: 'v_import_job', kind: 'view' }]);
 });
 
+// import_log_after_insert (scripts/local-test-ddl.sql): a row trigger on a
+// partitioned table, cloned to its partitions by PostgreSQL.
+const partitionTriggerApplied = (await raw("select to_regprocedure('auspex_test.import_log_after_insert()') is not null as ok")).rows[0].ok;
+test('usedByTriggers lists a partitioned table trigger once, not its partition clones', { skip: !partitionTriggerApplied && !process.env.CI ? 'run scripts/local-test-ddl.sql once to enable' : false }, async () => {
+  const expected = [{ table: 'auspex_test.import_log', schema: 'auspex_test', tableName: 'import_log', trigger: 'import_log_after_insert', timing: 'after', events: ['insert'], level: 'row' }];
+  const listed = await listFunctions(db, 'local', { schema: 'auspex_test', pattern: 'import_log_after_insert' });
+  assert.deepEqual(listed.functions[0].usedByTriggers, expected);
+  const described = await describeFunctions(db, 'local', { functions: ['auspex_test.import_log_after_insert'] });
+  assert.deepEqual(described.functions[0].usedByTriggers, expected);
+  const byPattern = await describeFunctions(db, 'local', { pattern: 'import_log_after_insert', schema: 'auspex_test' });
+  assert.deepEqual(byPattern.functions[0].usedByTriggers, expected);
+});
+
 test('list_functions runs as one statement and leaves out system schemas', async () => {
   const r = await listFunctions(db, 'local', { limit: 2000 });
   assert.equal(r.statements, 1);
+  // The describe_functions statements (with the trigger aggregate) parse and run too.
+  assert.equal((await describeFunctions(db, 'local', { functions: ['auspex_test.nope'] })).notFound, 1);
+  assert.equal((await describeFunctions(db, 'local', { pattern: 'auspex_no_such_function' })).found, 0);
   assert.ok(r.functions.every(f => !f.schema.startsWith('pg_') && f.schema !== 'information_schema'));
   const all = await listFunctions(db, 'local', { includeExtensions: true, pattern: 'auspex' });
   assert.equal(all.pattern, '%auspex%');

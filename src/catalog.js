@@ -618,14 +618,26 @@ export function cutChars(text, n) {
   return value.length <= n ? value : Array.from(value).slice(0, n).join('');
 }
 
-// The non-internal triggers that call function p, with schema, table name
-// and tgtype (decoded by functionTriggersFromRow), in one subquery.
-const usedByTriggersColumn = `
-       (select coalesce(jsonb_agg(jsonb_build_object('schema', tn.nspname, 'tableName', tc.relname, 'trigger', t.tgname, 'tgtype', t.tgtype::int)
-                                  order by tn.nspname, tc.relname, t.tgname), '[]'::jsonb)
-        from pg_trigger t join pg_class tc on tc.oid = t.tgrelid join pg_namespace tn on tn.oid = tc.relnamespace
-        where t.tgfoid = p.oid and not t.tgisinternal) as used_by_triggers,
-       p.prorettype = 'trigger'::regtype as returns_trigger`;
+// The triggers that call each function, aggregated once over pg_trigger
+// (pg_trigger has no index on tgfoid, so a subquery per function would scan
+// it again for every row) and joined on tgfoid as alias ut: schema, table
+// name, trigger name and tgtype (decoded by functionTriggerFromRow).
+// Internal triggers are left out, and so are the clones of a partitioned
+// table's trigger on its partitions (they depend on the parent trigger in
+// pg_depend; PostgreSQL 15+ no longer marks them internal).
+const triggersByFunction = `
+left join (select t.tgfoid,
+                  jsonb_agg(jsonb_build_object('schema', tn.nspname, 'tableName', tc.relname, 'trigger', t.tgname, 'tgtype', t.tgtype::int)
+                            order by tn.nspname, tc.relname, t.tgname) as used_by_triggers
+           from pg_trigger t
+           join pg_class tc on tc.oid = t.tgrelid
+           join pg_namespace tn on tn.oid = tc.relnamespace
+           where not t.tgisinternal
+             and not exists (select 1 from pg_depend dp
+                             where dp.classid = 'pg_trigger'::regclass and dp.objid = t.oid
+                               and dp.refclassid = 'pg_trigger'::regclass)
+           group by t.tgfoid) ut`;
+const usedByTriggersColumn = `coalesce(ut.used_by_triggers, '[]'::jsonb) as used_by_triggers`;
 
 // Identity of a table as the schema memory builds it (tableKey in
 // src/memory/store.js): "schema.table", a part with a dot or double quote
@@ -664,7 +676,7 @@ const functionColumns = `
        pg_get_userbyid(p.proowner) as owner,
        has_function_privilege(p.oid, 'EXECUTE') as can_execute,
        obj_description(p.oid, 'pg_proc') as comment,
-       ${usedByTriggersColumn},
+       p.prorettype = 'trigger'::regtype as returns_trigger,
        left(d.definition, greatest($1::int, ${storedDefinitionChars})) as definition, length(d.definition) as definition_length`;
 const functionFrom = `
 from pg_proc p
@@ -675,16 +687,18 @@ cross join lateral (select case when p.prokind <> 'a' then pg_get_functiondef(p.
 // Every overload of each requested schema.name; a name without a match gives
 // one row with schema null. $2 schemas, $3 names.
 const functionsByNameSql = `
-select r.ord::int as ord, f.*
+select r.ord::int as ord, f.*, ${usedByTriggersColumn}
 from unnest($2::text[], $3::text[]) with ordinality as r(schema, name, ord)
-left join lateral (select ${functionColumns} ${functionFrom}
+left join lateral (select p.oid as proc_oid, ${functionColumns} ${functionFrom}
                    where n.nspname = r.schema and p.proname = r.name) f on true
+${triggersByFunction} on ut.tgfoid = f.proc_oid
 order by r.ord, f.arguments`;
 
 // Functions whose name matches an ILIKE pattern ($2), in one schema ($3) or
 // all non-system schemas; $4 = row limit.
 const functionsByPatternSql = `
-select ${functionColumns} ${functionFrom}
+select ${functionColumns}, ${usedByTriggersColumn} ${functionFrom}
+${triggersByFunction} on ut.tgfoid = p.oid
 where p.proname ilike $2 and ($3::text is null or n.nspname = $3)
   and n.nspname not like 'pg\\_%' and n.nspname <> 'information_schema'
 order by n.nspname, p.proname, 3
@@ -781,10 +795,12 @@ select n.nspname as schema, p.proname as name, pg_get_function_identity_argument
        case p.prokind when 'f' then 'function' when 'p' then 'procedure' when 'a' then 'aggregate' when 'w' then 'window' end as kind,
        l.lanname as language,
        case p.provolatile when 'i' then 'immutable' when 's' then 'stable' when 'v' then 'volatile' end as volatility,
+       p.prorettype = 'trigger'::regtype as returns_trigger,
        ${usedByTriggersColumn}
 from pg_proc p
 join pg_namespace n on n.oid = p.pronamespace
 join pg_language l on l.oid = p.prolang
+${triggersByFunction} on ut.tgfoid = p.oid
 where n.nspname not like 'pg\\_%' and n.nspname <> 'information_schema'
   and ($1::text is null or n.nspname = $1)
   and ($2::text is null or p.proname ilike $2)
