@@ -88,6 +88,8 @@ test('describe_tables: views get definition, options, populated, sources and fun
   assert.deepEqual(view.usedByViews, []);
   assert.deepEqual([matview.kind, matview.populated, matview.viewOptions], ['matview', false, { securityBarrier: false, checkOption: null }]);
   assert.deepEqual(sent.find(s => s.text.includes('from pg_rewrite r')).params, [['11', '31', '32']]);
+  const deps = sent.find(s => s.text.includes('from pg_rewrite r')).text;
+  assert.equal(deps.match(/r\.ev_type = '1'/g)?.length, 2, 'both branches read the SELECT rule only, not DO INSTEAD rules');
 
   const s = summarizeDescribedTable(view);
   assert.equal(s.viewDefinitionOmitted, true);

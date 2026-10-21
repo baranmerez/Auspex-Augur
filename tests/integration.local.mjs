@@ -581,6 +581,17 @@ ddlTest('describe_tables shows triggers, checks, identity/serial/generated colum
   assert.deepEqual(summarizeDescribedTable(log).partitioning, { key: 'RANGE (logged_on)', partitions: 2 });
 });
 
+// v_import_job (scripts/local-test-ddl.sql) has a DO INSTEAD rule writing to
+// import_log: only its SELECT rule counts for sources and usedByViews.
+const ruleViewApplied = (await raw("select to_regclass('auspex_test.v_import_job') is not null as ok")).rows[0].ok;
+test('view dependencies ignore the targets of DO INSTEAD rules', { skip: !ruleViewApplied && !process.env.CI ? 'run scripts/local-test-ddl.sql once to enable' : false }, async () => {
+  const r = await describeTables(db, 'local', ['auspex_test.v_import_job', 'auspex_test.import_log', 'auspex_test.import_job']);
+  const [view, log, job] = r.tables;
+  assert.deepEqual(view.viewSources, [{ schema: 'auspex_test', table: 'import_job', kind: 'table', columns: ['id', 'status'] }]);
+  assert.deepEqual(log.usedByViews, []);
+  assert.deepEqual(job.usedByViews, [{ schema: 'auspex_test', table: 'v_import_job', kind: 'view' }]);
+});
+
 test('list_functions runs as one statement and leaves out system schemas', async () => {
   const r = await listFunctions(db, 'local', { limit: 2000 });
   assert.equal(r.statements, 1);
