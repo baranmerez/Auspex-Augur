@@ -43,6 +43,33 @@ function aliasColumns(alias, texts) {
   return found;
 }
 
+// Words that can stand alone in a plan expression without naming a column:
+// operators, literals, cast type words, aggregate stages and sub-plan labels.
+const expressionWords = new Set(('and or not is null true false in any all some array row case when then else end as asc desc nulls first last like ilike similar to escape between distinct filter within group over ' +
+  'partial finalize simple collate at time zone with without varying precision character interval subplan initplan alternative hashed unknown').split(' '));
+
+// Unqualified identifiers of plan expressions, for a plan with a single scan:
+// every bare name there can only belong to that relation. Skipped: names after
+// a cast (::), names used as function (followed by "("), qualifiers (followed
+// by "."), the part after a "." and the words above. When the caller knows the
+// relation's column names, only those count.
+function bareColumns(texts, known) {
+  const re = new RegExp(identifier, 'g'); // a quoted name is one token, so quotes inside it never start another
+  const found = new Set();
+  for (const raw of texts) {
+    const text = withoutStringLiterals(String(raw));
+    for (const m of text.matchAll(re)) {
+      const before = text[m.index - 1] ?? '';
+      const after = text.slice(m.index + m[0].length).match(/^\s*(.?)/)[1];
+      if (/[\w$.:À-￿]/.test(before) || after === '(' || after === '.') continue;
+      const name = unquote(m[1]);
+      const isWord = !m[1].startsWith('"') && expressionWords.has(name.toLowerCase());
+      if (!isWord && (!known || known.has(name))) found.add(name);
+    }
+  }
+  return found;
+}
+
 // Expression keys that name the columns a node really needs.
 const expressionKeys = ['Filter', 'Index Cond', 'Recheck Cond', 'TID Cond', 'Hash Cond', 'Merge Cond', 'Join Filter', 'Group Key', 'Sort Key', 'Presorted Key'];
 
@@ -50,7 +77,7 @@ const expressionKeys = ['Filter', 'Index Cond', 'Recheck Cond', 'TID Cond', 'Has
 // Columns come from the expressions of all nodes and from the Output of
 // non-scan nodes: a scan's own Output often lists every column of the table
 // (physical target list), so it is only used when the scan is the whole plan.
-export function relationsFromJsonPlan(explainJson, joins = []) {
+export function relationsFromJsonPlan(explainJson, joins = [], knownColumns = new Map()) {
   const root = Array.isArray(explainJson) ? explainJson[0]?.Plan : explainJson?.Plan;
   const relations = new Map();
   const aliases = new Map();
@@ -67,6 +94,12 @@ export function relationsFromJsonPlan(explainJson, joins = []) {
     for (const child of node.Plans || []) walk(child);
   };
   walk(root);
+  // One relation scan and no other scan kind (CTE, function, subquery...):
+  // unqualified names in the expressions belong to that relation.
+  const scans = nodes.filter(n => n['Relation Name']);
+  const otherScan = nodes.some(n => !n['Relation Name'] && / Scan$/.test(n['Node Type'] || '') && n['Node Type'] !== 'Bitmap Index Scan');
+  const single = scans.length === 1 && !otherScan && relations.size === 1 ? relations.get(`${scans[0].Schema}.${scans[0]['Relation Name']}`) : null;
+  const known = single && knownColumns.get(`${single.schema}.${single.table}`);
   for (const node of nodes) {
     const isScan = !!node['Relation Name'];
     const texts = expressionKeys.flatMap(k => [].concat(node[k] ?? []));
@@ -76,6 +109,7 @@ export function relationsFromJsonPlan(explainJson, joins = []) {
       const rel = relations.get([...keys][0]);
       for (const col of aliasColumns(alias, texts)) rel.columns.add(col);
     }
+    if (single) for (const col of bareColumns(texts, known ? new Set(known) : null)) single.columns.add(col);
   }
   // Join columns from the plan summary (schema.table.column on both sides).
   for (const join of joins) {
@@ -92,7 +126,7 @@ export function relationsFromJsonPlan(explainJson, joins = []) {
 // EXPLAIN (VERBOSE, FORMAT TEXT): scan lines read "Seq Scan on schema.table alias".
 // Only relation scans count; function, CTE and subquery scans are skipped.
 export function relationsFromTextPlan(text) {
-  const re = new RegExp(`(?:Seq Scan|Index Scan using \\S+|Index Only Scan using \\S+|Bitmap Heap Scan|Tid Scan|Tid Range Scan|Sample Scan|Foreign Scan) on ${identifier}\\.${identifier}`, 'g');
+  const re = new RegExp(`(?:Seq Scan|Index Scan(?: Backward)? using \\S+|Index Only Scan(?: Backward)? using \\S+|Bitmap Heap Scan|Tid Scan|Tid Range Scan|Sample Scan|Foreign Scan) on ${identifier}\\.${identifier}`, 'g');
   const relations = new Map();
   for (const m of String(text || '').matchAll(re)) {
     const schema = unquote(m[1]);

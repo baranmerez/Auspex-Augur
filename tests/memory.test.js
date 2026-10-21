@@ -262,3 +262,33 @@ test('a table recorded under the old file name of an astral-character name is st
   assert.ok(!fs.existsSync(legacy), 'the old file is removed after the write');
   assert.equal(mem.listTables('example').filter(t => t.table === '😀').length, 1, 'listed once');
 });
+
+test('unqualified columns of a single-table plan belong to that table', () => {
+  // EXPLAIN (VERBOSE, FORMAT JSON) of select total, sum(total) ... from example.orders where id > 50
+  const scan = { 'Node Type': 'Seq Scan', 'Relation Name': 'orders', Schema: 'example', Alias: 'orders', Output: ['id', 'total', 'status_code'], Filter: '(orders.id > 50)' };
+  const plain = [{ Plan: { ...scan, Output: ['total'] } }];
+  assert.deepEqual(relationsFromJsonPlan(plain)[0].columns, ['id', 'total']);
+
+  const aggregate = [{ Plan: {
+    'Node Type': 'Aggregate', Strategy: 'Plain', Output: ['sum(total)', "(max(created_at))::text", "'orders.ghost'::text", 'count(*)'],
+    Plans: [scan],
+  } }];
+  // scan Output (a physical target list) is still ignored when the scan is not the whole plan
+  assert.deepEqual(relationsFromJsonPlan(aggregate)[0].columns, ['created_at', 'id', 'total']);
+
+  // known column names narrow the choice
+  const known = new Map([['example.orders', ['id', 'total']]]);
+  assert.deepEqual(relationsFromJsonPlan(aggregate, [], known)[0].columns, ['id', 'total']);
+
+  // two scans: bare names are ambiguous and stay unattributed
+  const join = [{ Plan: { 'Node Type': 'Nested Loop', Output: ['o.total', 'amount'], Plans: [
+    { ...scan, Alias: 'o', Output: ['total'] },
+    { 'Node Type': 'Seq Scan', 'Relation Name': 'customers', Schema: 'example', Alias: 'c', Output: ['amount'] },
+  ] } }];
+  assert.deepEqual(relationsFromJsonPlan(join).map(r => [r.table, r.columns]), [['orders', ['total']], ['customers', []]]);
+});
+
+test('backward index scans are recognised in text plans', () => {
+  const plan = 'Limit\n  ->  Index Only Scan Backward using orders_pkey on example.orders\n  ->  Index Scan Backward using orders_created_idx on example.order_items oi';
+  assert.deepEqual(relationsFromTextPlan(plan).map(r => `${r.schema}.${r.table}`), ['example.orders', 'example.order_items']);
+});
