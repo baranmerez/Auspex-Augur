@@ -4336,12 +4336,18 @@ const rulesSideMin = 220, rulesSideMax = 560, rulesSideDefault = 320;
 // tables share one group with prefix null, listed last. A schema with fewer
 // than minTables tables stays one group.
 function groupRuleTables(tables, minTables = 10) {
+  // Insertion-ordered grouping (Map.groupBy needs Node 21+; tests run on Node 20).
+  const groupBy = (items, keyOf) => {
+    const m = new Map();
+    for (const it of items) { const k = keyOf(it); if (m.has(k)) m.get(k).push(it); else m.set(k, [it]); }
+    return m;
+  };
   const out = [];
-  for (const [schema, list] of Map.groupBy(tables, g => String(g.schema))) {
+  for (const [schema, list] of groupBy(tables, g => String(g.schema))) {
     if (list.length < minTables) { out.push({ schema, count: list.length, groups: [{ prefix: null, tables: list }] }); continue; }
     const groups = [];
     const rest = [];
-    for (const [prefix, gs] of Map.groupBy(list, g => String(g.table).split('_')[0])) {
+    for (const [prefix, gs] of groupBy(list, g => String(g.table).split('_')[0])) {
       if (gs.length > 1) groups.push({ prefix, tables: gs }); else rest.push(...gs);
     }
     groups.sort((a, b) => a.prefix.localeCompare(b.prefix));
