@@ -72,6 +72,31 @@ test('plan summary rejects non-plan input', () => {
   assert.throws(() => summarizePlan({}), /EXPLAIN/);
 });
 
+// A scalar subquery in WHERE becomes an InitPlan child placed before the
+// join's real inputs; the inputs are named by "Parent Relationship".
+test('join inputs follow Parent Relationship, not position, so an InitPlan is skipped', () => {
+  const rel = (relationship, node) => ({ ...node, 'Parent Relationship': relationship });
+  const exampleScan = (table, alias) => ({ 'Node Type': 'Seq Scan', 'Relation Name': table, Schema: 'example', Alias: alias, 'Startup Cost': 0, 'Total Cost': 10, 'Plan Rows': 100 });
+  const join = (children, nodeType = 'Hash Join', extra = { 'Hash Cond': '(o.customer_id = c.customer_id)' }) => [{ Plan: {
+    'Node Type': nodeType, 'Join Type': 'Inner', ...extra, 'Startup Cost': 1, 'Total Cost': 50, 'Plan Rows': 100, Plans: children,
+  } }];
+  const initPlan = rel('InitPlan', { 'Node Type': 'Aggregate', 'Subplan Name': 'InitPlan 1', 'Startup Cost': 0, 'Total Cost': 5, 'Plan Rows': 1,
+    Plans: [rel('Outer', exampleScan('limits', 'l'))] });
+  const outer = rel('Outer', exampleScan('orders', 'o'));
+  const inner = rel('Inner', { 'Node Type': 'Hash', 'Startup Cost': 1, 'Total Cost': 2, 'Plan Rows': 10, Plans: [rel('Outer', exampleScan('customers', 'c'))] });
+  const hashJoin = summarizePlan(join([initPlan, outer, inner])).joins[0];
+  assert.deepEqual([hashJoin.outer, hashJoin.inner], [['example.orders'], ['example.customers']]);
+  // Nested loop: the join key comes from the inner index scan, not the InitPlan.
+  const innerIndex = rel('Inner', { ...exampleScan('customers', 'c'), 'Node Type': 'Index Scan', 'Index Name': 'customers_pkey', 'Index Cond': '(customer_id = o.customer_id)' });
+  const initFilter = rel('InitPlan', { ...exampleScan('limits', 'l'), Filter: '(order_id = 1)' });
+  const loop = summarizePlan(join([initFilter, outer, innerIndex], 'Nested Loop', {})).joins[0];
+  assert.deepEqual([loop.outer, loop.inner, loop.condition], [['example.orders'], ['example.customers'], '(customer_id = o.customer_id)']);
+  // Plans without the field (older or hand-written ones) keep the positional reading.
+  const strip = node => { const { 'Parent Relationship': _drop, ...rest } = node; return { ...rest, ...(rest.Plans ? { Plans: rest.Plans.map(strip) } : {}) }; };
+  const plain = summarizePlan(join([outer, inner].map(strip))).joins[0];
+  assert.deepEqual([plain.outer, plain.inner], [['example.orders'], ['example.customers']]);
+});
+
 test('personal columns are detected in English, Turkish and compound names', () => {
   for (const c of ['email', 'phone', 'full_name', 'customerName', 'tc_kimlik_no', 'aliciadi', 'gonderenunvan', 'alicitelefon', 'iban', 'alicivdno', 'adres'])
     assert.equal(isPersonalColumn(c), true, c);

@@ -39,9 +39,23 @@ function relationsBelow(entries, id) {
   return [...out];
 }
 
+// A join's input children. InitPlan and SubPlan children can come before the
+// real inputs, so plans that carry "Parent Relationship" are read by it;
+// plans without it keep the positional reading (outer first, then inner).
+// innerSide: the children searched for the inner join key.
+function joinInputs(entries, id) {
+  const children = entries[id].children;
+  if (!children.some(c => entries[c].node['Parent Relationship'])) {
+    return { outer: children[0], inner: children[1], innerSide: children.slice(1) };
+  }
+  const byRelationship = name => children.find(c => entries[c].node['Parent Relationship'] === name);
+  const inner = byRelationship('Inner');
+  return { outer: byRelationship('Outer'), inner, innerSide: inner === undefined ? [] : [inner] };
+}
+
 // Nested loops often carry their join key on the inner index scan.
 function innerCondition(entries, id) {
-  const stack = [...entries[id].children.slice(1)];
+  const stack = [...joinInputs(entries, id).innerSide];
   while (stack.length) {
     const e = entries[stack.shift()];
     const cond = e.node['Index Cond'] || e.node['Recheck Cond'] || e.node.Filter;
@@ -133,13 +147,14 @@ export function summarizePlan(explainJson) {
   const joins = entries.filter(e => joinTypes.has(e.node['Node Type'])).map(e => {
     const n = e.node;
     const condition = n['Hash Cond'] || n['Merge Cond'] || n['Join Filter'] || (n['Node Type'] === 'Nested Loop' ? innerCondition(entries, e.id) : null);
+    const inputs = joinInputs(entries, e.id);
     return {
       nodeId: e.id,
       method: n['Node Type'],
       type: n['Join Type'] || 'Inner',
       condition,
-      outer: e.children[0] !== undefined ? relationsBelow(entries, e.children[0]) : [],
-      inner: e.children[1] !== undefined ? relationsBelow(entries, e.children[1]) : [],
+      outer: inputs.outer !== undefined ? relationsBelow(entries, inputs.outer) : [],
+      inner: inputs.inner !== undefined ? relationsBelow(entries, inputs.inner) : [],
       columnPairs: columnPairs(condition, aliasMap),
       rows: analyzed ? actualRows(n) : n['Plan Rows'],
       ms: analyzed ? totalTime(n) : null,
@@ -178,7 +193,7 @@ export function summarizePlan(explainJson) {
       warnings.push({ nodeId: n.id, kind: 'filter', data: { relation: n.relation, rows: n.rowsRemovedByFilter }, text: `Filter discarded ${n.rowsRemovedByFilter.toLocaleString('en-US')} rows${where}; an index on the filtered columns may help` });
     }
     if (n.type === 'Nested Loop' && (n.loops ?? 0) <= 1) {
-      const inner = entries[n.id].children[1];
+      const inner = joinInputs(entries, n.id).inner;
       if (inner !== undefined && (entries[inner].node['Actual Loops'] ?? 0) >= 10000 && entries[inner].node['Node Type'] === 'Seq Scan') {
         warnings.push({ nodeId: n.id, kind: 'nested-seq', data: { loops: entries[inner].node['Actual Loops'] }, text: `Nested loop runs a sequential scan ${entries[inner].node['Actual Loops'].toLocaleString('en-US')} times` });
       }
