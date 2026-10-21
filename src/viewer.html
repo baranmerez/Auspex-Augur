@@ -2096,7 +2096,10 @@ const reportEmbedCss = `<style id="auspex-viewer-embed">
   .tbl-wrap th, .tbl-wrap td { padding: 8px 14px; white-space: nowrap; }
   .tbl-wrap td.long { white-space: normal; min-width: 32ch; max-width: 70ch; overflow-wrap: anywhere; }
   #toast { display: none !important; }
-  .head h1, .head .crumbs .loc, #lang, #theme { display: none !important; }</style>`;
+  .head h1, .head .crumbs .loc, #lang, #theme { display: none !important; }
+  /* The viewer header already carries the app logo; the report's own mark would repeat it. */
+  header.top > .logo { display: none !important; }
+</style>`;
 const reportEmbedJs = `<script id="auspex-viewer-embed-js">(() => {
   const mark = () => {
     for (const c of document.querySelectorAll('.tbl-wrap td:not(.num):not([data-len])')) {
