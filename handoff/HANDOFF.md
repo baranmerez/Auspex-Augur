@@ -33,7 +33,7 @@ auspex/
 │   ├── index.js        MCP server (stdio): tools, server instructions
 │   ├── db.js           ReadOnlyDatabase: READ ONLY tx, cursor, timeouts, audit
 │   ├── sqlGuard.js     SQL guard (single statement, forbidden keywords/functions)
-│   ├── catalog.js      list_schemas / list_tables / describe_table(s) / describe_functions / profile_tables / relation_stats / search
+│   ├── catalog.js      list_schemas / list_tables / describe_table(s) / describe_functions / list_functions / profile_tables / relation_stats / search
 │   ├── errors.js       Stable error codes for the tool error envelope
 │   ├── skills.js       Loads skills/ as MCP prompts
 │   ├── config.js       ~/.auspex, profiles.json, environment variables
@@ -64,8 +64,9 @@ auspex/
 | `check_profile` | Runs the read-only role check now |
 | `search` | Search table/view/column names and comments, functions and triggers (optionally function source) across all schemas |
 | `list_schemas`, `list_tables`, `describe_table` | Browse: schemas, tables (estimated rows, size, privilege), columns, FKs, indexes, view definitions |
-| `describe_tables` | Up to 50 relations in 6 statements (7 with a view); `detail: "summary"` (default, compact) or `"full"`; includes triggers, checks, sequences, partitions, RLS |
-| `describe_functions` | Up to 50 functions: signature, properties, triggers using them, definition (1 statement) |
+| `describe_tables` | Up to 50 relations in 7 statements (8 with a view); `detail: "summary"` (default, compact) or `"full"`; includes triggers, checks, sequences, partitions, RLS |
+| `describe_functions` | Up to 50 functions: signature, properties, triggers using them, definition (1 statement); recorded in the schema memory with changesSinceLast |
+| `list_functions` | Function inventory of one schema or all (optional name filter, limit 500, max 2000): signature, kind, language, volatility, no definitions (1 statement); recorded in the schema memory as seen |
 | `profile_tables` | Up to 30 relations: fill rate, sample distinct counts, fan-out over a parent with `window` and `parentFilter` (at most 3 statements, no row values) |
 | `relation_stats` | Instance (referenced) and dependent (referencing) tables of a center, ranked by estimated linked rows from planner statistics (at most 2 statements); enriches graph.json |
 | `share_report` | Sanitized shareable copy; refused unless the last run matches the active SQL |
