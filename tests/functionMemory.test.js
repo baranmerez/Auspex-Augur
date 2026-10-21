@@ -181,3 +181,35 @@ test('a graph without function files has an empty functions array', () => {
   assert.deepEqual(graph.functions, []);
   assert.ok(graph.nodes.length > 0);
 });
+
+test('the graph rebuild needs no function bodies: calledBy comes from the stored calls', () => {
+  const dir = tempDir();
+  const mem = new SchemaMemory(dir, { now });
+  mem.recordFunctions(profile, exampleFunctions());
+  const graphOf = () => JSON.parse(fs.readFileSync(path.join(dir, profile, 'graph.json'), 'utf8')).functions;
+  const before = graphOf();
+  const file = mem.functionPath(profile, 'example', 'order_report');
+  const rec = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.deepEqual(rec.overloads[0].calls, [{ schema: 'example', name: 'order_total' }], 'stored at describe time');
+  // Without its bodies the record still gives the same calledBy.
+  fs.writeFileSync(file, JSON.stringify({ ...rec, overloads: rec.overloads.map(o => ({ ...o, definition: null })) }));
+  mem.rebuildView(profile);
+  assert.deepEqual(graphOf().map(f => f.calledBy), before.map(f => f.calledBy));
+  assert.deepEqual(graphOf().find(f => f.name === 'order_total').calledBy.functions, ['example.order_report']);
+  // A record from before calls were stored: computed from its definition.
+  const old = JSON.parse(fs.readFileSync(path.join(dir, profile, 'functions', 'example', 'order_report.json'), 'utf8'));
+  fs.writeFileSync(file, JSON.stringify({ ...old, overloads: rec.overloads.map(({ calls, ...o }) => o) }));
+  mem.rebuildView(profile);
+  assert.deepEqual(graphOf().find(f => f.name === 'order_total').calledBy.functions, ['example.order_report']);
+  const graph = fs.readFileSync(path.join(dir, profile, 'graph.json'), 'utf8');
+  assert.equal(graph.includes('CREATE OR REPLACE FUNCTION'), false);
+  assert.equal([...mem.cache.keys()].some(k => k.includes(`${path.sep}functions${path.sep}`)), false, 'no function record (with bodies) in the read cache');
+});
+
+test('a definition cut at a lower cap is not reported as changed when the new text continues it', () => {
+  const old = { arguments: '', definition: 'x'.repeat(20000), definitionHash: 'a', definitionLength: 25000, truncated: true, config: [] };
+  const same = { ...old, definition: 'x'.repeat(25000), definitionHash: 'b', truncated: false };
+  assert.deepEqual(diffFunction([old], [same]), []);
+  assert.deepEqual(diffFunction([old], [{ ...same, definition: `${'x'.repeat(19999)}y${'x'.repeat(5000)}` }]), [{ change: 'definition-changed', arguments: '' }]);
+  assert.deepEqual(diffFunction([old], [{ ...same, definitionLength: 25001 }]), [{ change: 'definition-changed', arguments: '' }]);
+});
