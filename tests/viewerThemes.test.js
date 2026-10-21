@@ -69,9 +69,9 @@ test('invalid input is refused, never thrown', () => {
   }
 });
 
-test('ready themes: light, dark and plain are built in, twenty-three in all with the five Auspex themes', () => {
+test('ready themes: light, dark and plain are built in, twenty-two in all with the five Auspex themes', () => {
   const { themePresets, themeSpecOf } = load();
-  assert.equal(themePresets.length, 23);
+  assert.equal(themePresets.length, 22);
   assert.deepEqual(plain(themePresets.filter(p => p.auspex).map(p => p.id)), ['auspex', 'forge', 'phosphor', 'verdigris', 'ivory']);
   assert.equal(themeSpecOf('plain', []), null);
   assert.deepEqual(plain(themePresets.filter(p => p.glass).map(p => p.id)), ['glass', 'glassDark']);
@@ -380,7 +380,7 @@ test('every preset passes the contrast check, including pairs of the studio pane
 test('light and dark presets: one light and one dark variant, both pass every contrast check', () => {
   const { themePresets, themeContrast, themeTokens, themeResolve, bgIsDark } = load();
   const pairs = themePresets.filter(p => p.pair);
-  assert.deepEqual(plain(pairs.map(p => p.id)), ['contrast', 'fjord', 'solar', 'nocturne', 'rosewood', 'ocean', 'amber', 'slate', 'moss', 'sunset']);
+  assert.deepEqual(plain(pairs.map(p => p.id)), ['contrast', 'fjord', 'nocturne', 'rosewood', 'ocean', 'amber', 'slate', 'moss', 'sunset']);
   for (const spec of pairs) {
     assert.notEqual(bgIsDark(spec.bg), bgIsDark(spec.pair.bg), spec.id);
     for (const dark of [true, false]) {
@@ -400,7 +400,7 @@ test('theme menu groups: Auspex, light and dark, ready and accessibility', () =>
   const of = g => plain(themePresets.filter(p => themePresetGroup(p) === g).map(p => p.id));
   assert.deepEqual(of('auspex'), ['auspex', 'forge', 'phosphor', 'verdigris', 'ivory']);
   assert.deepEqual(of('access'), ['contrast']);
-  assert.deepEqual(of('pair'), ['fjord', 'solar', 'nocturne', 'rosewood', 'ocean', 'amber', 'slate', 'moss', 'sunset']);
+  assert.deepEqual(of('pair'), ['fjord', 'nocturne', 'rosewood', 'ocean', 'amber', 'slate', 'moss', 'sunset']);
   assert.deepEqual(of('ready'), ['light', 'dark', 'midnight', 'sepia', 'forest', 'glass', 'glassDark', 'plain']);
 });
 
