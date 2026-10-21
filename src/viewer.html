@@ -305,8 +305,14 @@
   .th-pick { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; border: 0; background: none; padding: 5px 6px; border-radius: 8px; text-align: left; font-size: 13px; color: var(--text); }
   .th-pick span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .th-pick:hover { background: var(--surface-2); }
-  .th-sw { width: 26px; height: 18px; border-radius: 5px; border: 1px solid; display: inline-flex; align-items: center; justify-content: center; gap: 3px; flex: none; }
+  .th-sw { width: 30px; height: 18px; border-radius: 5px; border: 1px solid; display: inline-flex; align-items: center; justify-content: center; gap: 2px; flex: none; }
   .th-sw i { width: 6px; height: 6px; border-radius: 50%; }
+  /* Light and dark pair: two strips joined into one swatch. */
+  .th-sw2 { display: inline-flex; flex: none; }
+  .th-sw2 .th-sw { width: 24px; gap: 1px; }
+  .th-sw2 .th-sw i { width: 5px; height: 5px; }
+  .th-sw2 .th-sw:first-child { border-radius: 5px 0 0 5px; border-right: 0; }
+  .th-sw2 .th-sw:last-child { border-radius: 0 5px 5px 0; }
   .th-list.one { grid-template-columns: 1fr; }
   .th-act { border: 0; background: none; color: var(--text-3); width: 24px; height: 24px; border-radius: 6px; flex: none; padding: 0; line-height: 1; }
   .th-act:hover { background: var(--surface-2); color: var(--text); }
@@ -1333,6 +1339,8 @@ const TR = {
   'Give the theme a name.': 'Temaya bir ad verin.', 'Invalid color': 'Geçersiz renk', 'Could not save themes in this browser': 'Temalar bu tarayıcıda kaydedilemedi',
   'Export / import': 'Dışa / içe aktar', 'Export': 'Dışa aktar', 'Import': 'İçe aktar', 'Theme JSON': 'Tema JSON', 'Paste theme JSON here to import': 'İçe aktarmak için tema JSON metnini buraya yapıştırın',
   'Import failed: not valid JSON': 'İçe aktarılamadı: geçerli JSON değil', '{a} imported, {s} skipped': '{a} içe aktarıldı, {s} atlandı',
+  'Light and dark': 'Açık ve koyu', 'Accessibility': 'Erişilebilirlik', 'Fjord': 'Fiyort', 'Solar': 'Güneş', 'Nocturne': 'Gece', 'Rosewood': 'Gül ağacı',
+  'Ocean': 'Okyanus', 'Amber': 'Kehribar', 'Slate': 'Arduvaz', 'Moss': 'Yosun', 'Sunset': 'Gün batımı',
   'Auspex themes': 'Auspex temaları', 'Auspex': 'Auspex', 'Forge': 'Dökümhane', 'Phosphor': 'Fosfor', 'Verdigris': 'Bakır yeşili', 'Ivory': 'Fildişi',
   'Theme studio': 'Tema stüdyosu', 'New theme': 'Yeni tema', 'Duplicate and edit': 'Çoğalt ve düzenle', 'Edit': 'Düzenle', 'Delete': 'Sil', 'Close': 'Kapat', 'Duplicate from…': 'Şundan çoğalt…', 'Duplicate from': 'Şundan çoğalt',
   '{n} copy': '{n} kopyası', 'Surfaces': 'Yüzeyler', 'Text': 'Metin', 'Border': 'Kenarlık', 'Status': 'Durum', 'Surface': 'Yüzey', 'Raised surface': 'Yükseltilmiş yüzey', 'Secondary text': 'İkincil metin', 'Muted text': 'Soluk metin',
@@ -7305,10 +7313,30 @@ const themePresets = [
   { id: 'dark', name: 'Dark', builtin: true, bg: '#121211', accent: '#3987e5' },
   { id: 'midnight', name: 'Midnight blue', bg: '#0e1a2f', accent: '#4c8dff' },
   { id: 'sepia', name: 'Sepia paper', bg: '#f2e8d5', accent: '#9a5b1e' },
-  { id: 'contrast', name: 'High contrast', bg: '#000000', accent: '#ffd400', contrast: 'high' },
+  { id: 'contrast', name: 'High contrast', bg: '#000000', accent: '#ffd400', contrast: 'high',
+    pair: { bg: '#ffffff', accent: '#0039c6', contrast: 'high' } },
   { id: 'forest', name: 'Forest', bg: '#0f1d16', accent: '#3fb27f' },
   { id: 'glass', name: 'Glass', bg: '#e8ecf7', accent: '#4f5fe0', glass: { blur: 16, opacity: 68 } },
   { id: 'glassDark', name: 'Glass dark', bg: '#0d1122', accent: '#8a98ff', glass: { blur: 16, opacity: 60 } },
+  // Light and dark pairs: the variant follows the Auto, Light and Dark switch.
+  { id: 'fjord', name: 'Fjord', bg: '#2e3440', accent: '#88c0d0', colors: { accent2: '#b48ead' },
+    pair: { bg: '#eceff4', accent: '#5e81ac', colors: { accent2: '#8a5c86' } } },
+  { id: 'solar', name: 'Solar', bg: '#002b36', accent: '#2aa198', colors: { accent2: '#b58900' },
+    pair: { bg: '#fdf6e3', accent: '#268bd2', colors: { accent2: '#9a7400' } } },
+  { id: 'nocturne', name: 'Nocturne', bg: '#1e1f29', accent: '#bd93f9', colors: { accent2: '#ff79c6' },
+    pair: { bg: '#f7f5fb', accent: '#7c4dce', colors: { accent2: '#c0397a' } } },
+  { id: 'rosewood', name: 'Rosewood', bg: '#1f1418', accent: '#e0708f',
+    pair: { bg: '#fbf1f3', accent: '#b8325a' } },
+  { id: 'ocean', name: 'Ocean', bg: '#0b1d26', accent: '#2bb3c9',
+    pair: { bg: '#eef6f8', accent: '#0e7c91' } },
+  { id: 'amber', name: 'Amber', bg: '#1a140a', accent: '#f0a53a',
+    pair: { bg: '#fbf5e9', accent: '#a8620c' } },
+  { id: 'slate', name: 'Slate', bg: '#15181d', accent: '#7aa2f7',
+    pair: { bg: '#f3f4f6', accent: '#3b5bdb' } },
+  { id: 'moss', name: 'Moss', bg: '#151a10', accent: '#9cc25a',
+    pair: { bg: '#f3f5ea', accent: '#557a1f' } },
+  { id: 'sunset', name: 'Sunset', bg: '#1c1220', accent: '#ff8a5c',
+    pair: { bg: '#fff4ee', accent: '#c2410c' } },
   // Plain is the flat look of the default, kept as an explicit choice (follows the system like Auto).
   { id: 'plain', name: 'Plain', builtin: true, bg: '#f4f5f7', accent: '#2a78d6' },
   { id: 'auspex', name: 'Auspex', auspex: true, bg: '#14110e', accent: '#2fbf71',
@@ -7333,6 +7361,8 @@ const themePresets = [
     palette: { pk: '#9a7330', fk: '#6a50b0', score: '#1e8a55', trigger: '#b03a78', fn: '#1a8a6a', report: '#1a7f90', ref: '#2a6fb0', dep: '#b8561f', off: '#7a7060' } },
 ];
 const themeDefaultId = saved => (typeof saved === 'string' && saved ? saved : 'auspex');
+// Menu group of a ready theme: auspex, access (high contrast), pair (light and dark) or ready.
+const themePresetGroup = p => (p.auspex ? 'auspex' : p.contrast === 'high' ? 'access' : p.pair ? 'pair' : 'ready');
 // Custom themes are records { id, name, bg, accent, contrast, colors?, palette?, glass?, tints?, mono?, pair? };
 // the id derives from the name (case-insensitive), so a name is unique.
 function themeIdOf(name) {
@@ -7507,10 +7537,16 @@ function themeSwatch(spec) {
     return h('span', { class: 'th-sw', style: `background:linear-gradient(90deg, ${l['--surface']} 50%, ${d['--surface']} 50%);border-color:${l['--line-strong']}` },
       h('i', { style: `background:${l['--text']}` }), h('i', { style: `background:${d['--text']};outline:1px solid ${l['--line-strong']}` }));
   }
-  const res = themeTokens(spec);
-  const tk = res.ok ? res.tokens : {};
-  return h('span', { class: 'th-sw', style: `background:${tk['--surface']};border-color:${tk['--line-strong']}` },
-    h('i', { style: `background:${tk['--accent']}` }), h('i', { style: `background:${tk['--text']}` }));
+  // A strip: surface, then the accent, the second series color and the text color.
+  const strip = body => {
+    const res = themeTokens(body), tk = res.ok ? res.tokens : {};
+    return h('span', { class: 'th-sw', style: `background:${tk['--surface']};border-color:${tk['--line-strong']}` },
+      h('i', { style: `background:${tk['--accent']}` }), h('i', { style: `background:${tk['--s2']}` }), h('i', { style: `background:${tk['--text']}` }));
+  };
+  if (!spec.pair) return strip(spec);
+  const { pair, ...main } = spec;
+  const [light, dark] = bgIsDark(main.bg) ? [pair, main] : [main, pair];
+  return h('span', { class: 'th-sw2', title: t('This theme has a light and a dark variant') }, strip(light), strip(dark));
 }
 // ---------- theme menu: pick a theme, start the studio ----------
 function renderThemeMenu() {
@@ -7521,12 +7557,12 @@ function renderThemeMenu() {
     act('', t('Duplicate and edit'), () => openStudio({ from: spec }), '⧉'),
     custom ? act('', t('Edit'), () => openStudio({ edit: spec }), '✎') : null,
     custom ? act('del', t('Delete theme {n}', { n: spec.name }), () => askDeleteTheme(spec), '×') : null);
-  const mine = themePresets.filter(p => p.auspex), ready = themePresets.filter(p => !p.auspex);
+  const group = (label, list) => (list.length ? [h('div', { class: 'th-h' }, label), h('div', { class: 'th-list', role: 'listbox' }, list.map(p => item(p, p.id, false)))] : []);
   put(menu,
-    h('div', { class: 'th-h' }, t('Auspex themes')),
-    h('div', { class: 'th-list', role: 'listbox' }, mine.map(p => item(p, p.id, false))),
-    h('div', { class: 'th-h' }, t('Ready themes')),
-    h('div', { class: 'th-list', role: 'listbox' }, ready.map(p => item(p, p.id, false))),
+    ...group(t('Auspex themes'), themePresets.filter(p => themePresetGroup(p) === 'auspex')),
+    ...group(t('Light and dark'), themePresets.filter(p => themePresetGroup(p) === 'pair')),
+    ...group(t('Ready themes'), themePresets.filter(p => themePresetGroup(p) === 'ready')),
+    ...group(t('Accessibility'), themePresets.filter(p => themePresetGroup(p) === 'access')),
     h('div', { class: 'th-h' }, t('My themes')),
     customThemes.length ? h('div', { class: 'th-list one', role: 'listbox' }, customThemes.map(c => item(c, c.id, true))) : h('div', { class: 'th-empty' }, t('No saved themes yet.')),
     h('div', { class: 'th-row' }, h('button', { type: 'button', class: 'icon-btn primary', onclick: () => openStudio({}) }, t('New theme')),
