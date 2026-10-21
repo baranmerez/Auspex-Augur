@@ -34,7 +34,7 @@ with the work and never crawls the catalog on its own:
   written before triggers were stored report no trigger change the first
   time. The function source is never stored.
 - **Views:** for a view or materialized view, `describe_table` and
-  `describe_tables` also record its definition (cut at 20000 characters,
+  `describe_tables` also record its definition (cut at 200000 characters,
   with `viewDefinitionLength` and `viewDefinitionTruncated`; the change check
   `viewHash` covers the full text), `viewOptions`, `populated` (materialized
   views), `viewSources` (relations it reads, with the columns used) and
@@ -142,7 +142,7 @@ apart, because the plan text they come from has no quotes.
     "returnsTrigger": false,
     "usedByTriggers": [{ "table": "example.orders", "schema": "example", "tableName": "orders", "trigger": "orders_audit",
                          "timing": "after", "events": ["insert", "update"], "level": "row" }],
-    "definition": "CREATE OR REPLACE FUNCTION ...",   // cut at 20000 characters; null for aggregates
+    "definition": "CREATE OR REPLACE FUNCTION ...",   // cut at 200000 characters; null for aggregates
     "definitionLength": 2345, "truncated": false,
     "definitionHash": "16 hex characters (sha256 of the stored text)",
     "touches": { "inferred": true, "reads": ["example.order_items"], "writes": [] }   // null for other languages

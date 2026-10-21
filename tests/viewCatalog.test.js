@@ -109,7 +109,7 @@ test('describe_tables without views: one dependency statement, no view facts; no
   assert.equal(missing.sent.filter(s => s.text.includes('pg_rewrite')).length, 0);
 });
 
-test('describe_functions keeps 20000 characters for the memory whatever maxChars returns', async () => {
+test('describe_functions keeps 200000 characters for the memory whatever maxChars returns', async () => {
   const definition = `CREATE FUNCTION example.f()\n LANGUAGE sql\nAS $function$ SELECT 1 $function$${'x'.repeat(300)}`;
   const { db, sent } = fakeDb({ rows: { functions: [{ ord: 1, schema: 'example', name: 'f', arguments: '', kind: 'function', language: 'sql', config: null, used_by_triggers: [], definition, definition_length: String(definition.length) }] } });
   const r = await describeFunctions(db, 'example', { functions: ['example.f'], maxChars: 10 });
@@ -118,7 +118,7 @@ test('describe_functions keeps 20000 characters for the memory whatever maxChars
   assert.equal(f.truncated, true);
   assert.equal(f.memoryDefinition, definition, 'not enumerable');
   assert.equal(JSON.stringify(f).includes('memoryDefinition'), false);
-  assert.match(sent.find(s => s.text.includes('pg_get_functiondef')).text, /greatest\(\$1::int, 20000\)/);
+  assert.match(sent.find(s => s.text.includes('pg_get_functiondef')).text, /greatest\(\$1::int, 200000\)/);
 });
 
 test('list_functions: one statement, limit + 1 to detect truncation, input checked before connecting', async () => {
