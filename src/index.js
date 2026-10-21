@@ -16,7 +16,7 @@ import {
 import { ReportService } from './reports/service.js';
 import { sqlHash, sqlHashPattern } from './reports/library.js';
 import { builtInPresetKeys, maxPresetName, maxPresets } from './reports/presets.js';
-import { SchemaMemory, noteKinds, columnRoles, scoreHistoryLimit, maxScoreReason, maxScoredColumns, maxScannedFiles, maxTriggerSummary, scoreLayers, maxTriggerSummaries, maxEvidenceCode, maxCodeSymbol, maxCodeLine } from './memory/store.js';
+import { SchemaMemory, tableKey, noteKinds, columnRoles, scoreHistoryLimit, maxScoreReason, maxScoredColumns, maxScannedFiles, maxTriggerSummary, scoreLayers, maxTriggerSummaries, maxEvidenceCode, maxCodeSymbol, maxCodeLine } from './memory/store.js';
 import { relationsFromTextPlan } from './memory/planUsage.js';
 import { loadPromptSkills, promptText } from './skills.js';
 
@@ -299,7 +299,7 @@ tool('relation_stats', {
   const result = await relationStats(db, profile, tables, schema);
   const found = result.tables.filter(t => !t.error);
   const learned = learn(() => memory.recordRelationStats(result.profile, found));
-  const explored = (schemaName, table) => (learned.explored ? learned.explored.has(`${schemaName}.${table}`) : null);
+  const explored = (schemaName, table) => (learned.explored ? learned.explored.has(tableKey(schemaName, table)) : null);
   const item = ({ schema: s, table, ...rest }) => ({ ...rest, explored: explored(s, table) });
   return {
     ...result,

@@ -2896,6 +2896,11 @@ function bfs(g, root, limit, hops) {
   return { order, depth };
 }
 
+// Table id as src/memory/store.js tableKey writes it: "schema.table"; a part
+// with a dot or a double quote is quoted ("a.b", "x""y"). Tests load these
+// two lines with the blocks that use them.
+const tableKey = (schema, table) => [schema, table].map(p => { const v = String(p ?? ''); return /[."]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; }).join('.');
+const splitTableKey = id => { const m = /^("(?:[^"]|"")*"|[^."]*)\.("(?:[^"]|"")*"|[^."]*)$/.exec(String(id ?? '')); const un = v => (v.startsWith('"') ? v.slice(1, -1).replace(/""/g, '"') : v); return m ? { schema: un(m[1]), table: un(m[2]) } : null; };
 // roles:start (tests/viewerRoles.test.js runs this block in isolation)
 // Roles around a center table, from declared foreign keys only:
 //   ref  tables the center references (TR "Instance", EN "Reference")
@@ -2972,22 +2977,26 @@ function roleMigrated(expand) {
 // the picker always names what is drawn.
 const roleOptions = count => [...roleLimits.filter(n => n < count), Infinity];
 const roleActive = (limit, count) => (limit >= count ? Infinity : limit);
-// Table part of a "schema.table" id.
-const tableOf = id => { const s = String(id ?? ''), i = s.indexOf('.'); return i < 0 ? s : s.slice(i + 1); };
+// Table part of a table id: the node's table when the node is known.
+const tableOf = (id, node) => {
+  if (node?.table != null) return String(node.table);
+  const s = String(id ?? ''), parts = splitTableKey(s), i = s.indexOf('.');
+  return parts ? parts.table : i < 0 ? s : s.slice(i + 1);
+};
 // Join columns of one FK, written from the referencing side:
 //   dep  "order_id → orders.order_id"     (neighbor column → center.column)
 //   ref  "customer_code → customer_accounts.account_code" (center column → neighbor.column)
 // Composite keys are parenthesized: "(a, b) → t.(x, y)".
-function joinLabel(role, link, centerId, nbId) {
+function joinLabel(role, link, centerId, nbId, nbNode = null) {
   const cols = list => (list.length > 1 ? `(${list.join(', ')})` : list[0] ?? '?');
-  const [from, to, target] = role === 'ref' ? [link.centerCols, link.nbCols, nbId] : [link.nbCols, link.centerCols, centerId];
-  return `${cols(from || [])} → ${tableOf(target)}.${cols(to || [])}`;
+  const [from, to, target, node] = role === 'ref' ? [link.centerCols, link.nbCols, nbId, nbNode] : [link.nbCols, link.centerCols, centerId, null];
+  return `${cols(from || [])} → ${tableOf(target, node)}.${cols(to || [])}`;
 }
-const joinLabels = (g, centerId) => g.links.map(l => joinLabel(g.role, l, centerId, g.id));
+const joinLabels = (g, centerId) => g.links.map(l => joinLabel(g.role, l, centerId, g.id, g.node));
 // Columns of a center table and their tags (PK, FK, ← referenced, U used in a
 // plan, N noted), from its memory record and every relation it has.
 function centerColumns(data, centerId, rec) {
-  const notes = data.notes.filter(n => n.status === 'active' && `${n.schema}.${n.table}` === centerId);
+  const notes = data.notes.filter(n => n.status === 'active' && tableKey(n.schema, n.table) === centerId);
   const selfFk = new Set(), fkOut = new Set(), refIn = new Set();
   for (const e of data.edges) {
     if (e.from !== centerId && e.to !== centerId) continue;
@@ -3936,7 +3945,7 @@ const outsideScope = (data, id) => {
   const sc = state.memSchema;
   if (!sc || !data.nodes.some(n => n.schema === sc)) return false;
   const n = data.nodes.find(x => x.id === id);
-  return (n ? n.schema : String(id).split('.')[0]) !== sc;
+  return (n ? n.schema : splitTableKey(id)?.schema ?? String(id).split('.')[0]) !== sc;
 };
 async function buildEr(wrap, data, centerId, key) {
   const roles = roleGroups(data, centerId);
@@ -4060,7 +4069,7 @@ function flowLanes(data, centerId) {
   const open = state.memFlowOpen;
   if (open && lanes[2].items.some(x => x.id === open)) {
     const all = roleGroups(data, open).dep.filter(x => x.id !== centerId);
-    lanes.push({ key: 'dep2', role: 'dep', bg: 'dep', title: t('Dependents of {t}', { t: tableOf(open) }), tip: t('Dependents of {t}', { t: open }),
+    lanes.push({ key: 'dep2', role: 'dep', bg: 'dep', title: t('Dependents of {t}', { t: tableOf(open, data.nodes.find(n => n.id === open)) }), tip: t('Dependents of {t}', { t: open }),
       all, items: all.slice(0, roleLimit('flow', 'dep2')), parent: open });
   }
   return lanes;
@@ -4220,7 +4229,7 @@ async function buildFlow(wrap, data, centerId, key) {
 // and table match like the report filter (case-insensitive, Turkish İ/I/ı/i).
 const ruleKinds = ['rule', 'observation', 'inference'];
 const ruleStatuses = ['active', 'archived', 'all'];
-const ruleTarget = n => (n.table ? `${n.schema}.${n.table}` : '');
+const ruleTarget = n => (n.table ? tableKey(n.schema, n.table) : '');
 function ruleMatches(n, f = {}) {
   const status = ruleStatuses.includes(f.status) ? f.status : 'active';
   if (status !== 'all' && (status === 'active') !== (n.status === 'active')) return false;
@@ -4243,7 +4252,7 @@ function groupRules(list) {
   const groups = [];
   for (const n of list) {
     const key = ruleTarget(n);
-    if (!groups.length || groups[groups.length - 1].key !== key) groups.push({ key, notes: [] });
+    if (!groups.length || groups[groups.length - 1].key !== key) groups.push({ key, schema: n.table ? n.schema : null, table: n.table || null, notes: [] });
     groups[groups.length - 1].notes.push(n);
   }
   // Within a group: sub-groups per column ('' = table-level notes, first).
@@ -4427,10 +4436,9 @@ function renderRules() {
   const breakAtUnderscores = name => name.split('_').flatMap((part, i, all) => (i < all.length - 1 ? [part + '_', h('wbr')] : [part]));
   const tile = (g, wide) => {
     const on = sel === g.key;
-    const dot = g.key.indexOf('.');
     return h('button', { type: 'button', class: 'rn-tile' + (wide ? ' global' : '') + (on ? ' on' : ''), 'aria-pressed': String(on), 'data-key': g.key, title: wide ? t('Database-wide') : g.key, onclick: () => choose(g.key) },
-      h('span', { class: 'rn-schema' }, wide ? t('Database-wide') : g.key.slice(0, dot)),
-      h('span', { class: 'rn-name' }, wide ? state.db : breakAtUnderscores(g.key.slice(dot + 1))),
+      h('span', { class: 'rn-schema' }, wide ? t('Database-wide') : g.schema),
+      h('span', { class: 'rn-name' }, wide ? state.db : breakAtUnderscores(String(g.table))),
       h('span', { class: 'rn-cnt' }, ruleCountText(ruleCounts(g.notes)) || t('No notes')));
   };
   const current = sel === '' ? dbWide : tables.find(g => g.key === sel);
@@ -4587,9 +4595,9 @@ function tablePageModel(data, id, rec) {
   const nodes = Array.isArray(data?.nodes) ? data.nodes : [];
   const edges = Array.isArray(data?.edges) ? data.edges : [];
   const node = nodes.find(n => n.id === id) || null;
-  const dot = String(id).indexOf('.');
-  const schema = node?.schema ?? (dot < 0 ? '' : String(id).slice(0, dot));
-  const table = node?.table ?? (dot < 0 ? String(id) : String(id).slice(dot + 1));
+  const parts = splitTableKey(id);
+  const schema = node?.schema ?? parts?.schema ?? '';
+  const table = node?.table ?? parts?.table ?? String(id);
   const described = !!rec?.describedAt;
   const notes = (Array.isArray(data?.notes) ? data.notes : []).filter(n => n.status === 'active' && n.schema === schema && n.table === table);
   const scores = node?.columnScores && typeof node.columnScores === 'object' ? node.columnScores : (rec?.columnScores ?? null);
@@ -4598,7 +4606,7 @@ function tablePageModel(data, id, rec) {
   const uniq = new Set(constraints.filter(c => c.type === 'unique' && (c.columns || []).length === 1).flatMap(c => c.columns));
   const fkOf = new Map();
   for (const c of constraints.filter(c => c.references)) {
-    (c.columns || []).forEach((col, i) => { if (!fkOf.has(col)) fkOf.set(col, { id: `${c.references.schema}.${c.references.table}`, column: (c.references.columns || [])[i] ?? null }); });
+    (c.columns || []).forEach((col, i) => { if (!fkOf.has(col)) fkOf.set(col, { id: tableKey(c.references.schema, c.references.table), column: (c.references.columns || [])[i] ?? null }); });
   }
   const column = (c, inStructure) => {
     const entry = tpOwn(scores, c.name);
@@ -4645,8 +4653,8 @@ function tablePageModel(data, id, rec) {
     columns, scored,
     keys: {
       primary: byType('primary key'), unique: byType('unique'), check: byType('check'),
-      outgoing: constraints.filter(c => c.references).map(c => ({ name: c.name, columns: c.columns || [], id: `${c.references.schema}.${c.references.table}`, refColumns: c.references.columns || [] })),
-      incoming: (described && Array.isArray(rec.referencedBy) ? rec.referencedBy : []).map(r => ({ name: r.name, id: `${r.schema}.${r.table}`, columns: r.columns || [], refColumns: r.refColumns || [] })),
+      outgoing: constraints.filter(c => c.references).map(c => ({ name: c.name, columns: c.columns || [], id: tableKey(c.references.schema, c.references.table), refColumns: c.references.columns || [] })),
+      incoming: (described && Array.isArray(rec.referencedBy) ? rec.referencedBy : []).map(r => ({ name: r.name, id: tableKey(r.schema, r.table), columns: r.columns || [], refColumns: r.refColumns || [] })),
       indexes: (described && Array.isArray(rec.indexes) ? rec.indexes : []).map(i => ({ name: i.name, definition: i.definition ?? '' })),
     },
     triggers,
@@ -5465,7 +5473,7 @@ function timelinePanel(data, schema) {
   const items = data.changelog.filter(e => !schema || e.schema === schema).reverse().slice(0, 200);
   return h('div', { class: 'tl' }, items.length ? items.map(e => h('div', { class: 'tl-item' + (e.event === 'changed' && e.at > since ? ' new' : '') },
     h('div', { class: 'when' }, dateTimeOf(e.at)),
-    h('div', {}, h('b', { onclick: () => focusTable(`${e.schema}.${e.table}`) }, `${e.schema}.${e.table}`), ' ', h('span', { class: 'muted' }, eventLabel(e)),
+    h('div', {}, h('b', { onclick: () => focusTable(tableKey(e.schema, e.table)) }, tableKey(e.schema, e.table)), ' ', h('span', { class: 'muted' }, eventLabel(e)),
       e.changes ? h('ul', {}, e.changes.map(c => h('li', {}, changeLabel(c)))) : null))) : h('div', { class: 'muted', style: 'padding:10px 0' }, t('No events yet.')));
 }
 

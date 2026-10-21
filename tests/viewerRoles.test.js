@@ -7,12 +7,13 @@ import { roleGraph, roleTables } from './fixtures/roleGraph.js';
 // Runs the roles block of src/viewer.html (Reference / Dependent ranking used
 // by the Graph, ER diagram and Flow views) in isolation over the fixture graph.
 const page = fs.readFileSync(new URL('../src/viewer.html', import.meta.url), 'utf8');
+const tableKeyLines = page.match(/^const tableKey = .*\r?\n^const splitTableKey = .*$/m)[0];
 const block = page.match(/\/\/ roles:start[\s\S]*?\/\/ roles:end/)?.[0];
 
 function loadRoles() {
   assert.ok(block, 'roles block found in viewer.html');
   const context = vm.createContext({});
-  vm.runInContext(`${block}\nthis.roleGroups = roleGroups; this.roleColor = roleColor; this.flowWidth = flowWidth; this.roleTop = roleTop; this.roleShown = roleShown; this.roleLimitIn = roleLimitIn; this.roleLimitSet = roleLimitSet; this.roleMigrated = roleMigrated; this.roleOptions = roleOptions; this.roleActive = roleActive; this.tableOf = tableOf; this.joinLabel = joinLabel; this.joinLabels = joinLabels; this.centerColumns = centerColumns;`, context);
+  vm.runInContext(`${tableKeyLines}\n${block}\nthis.roleGroups = roleGroups; this.roleColor = roleColor; this.flowWidth = flowWidth; this.roleTop = roleTop; this.roleShown = roleShown; this.roleLimitIn = roleLimitIn; this.roleLimitSet = roleLimitSet; this.roleMigrated = roleMigrated; this.roleOptions = roleOptions; this.roleActive = roleActive; this.tableOf = tableOf; this.joinLabel = joinLabel; this.joinLabels = joinLabels; this.centerColumns = centerColumns;`, context);
   return context;
 }
 

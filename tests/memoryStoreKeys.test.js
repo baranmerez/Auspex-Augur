@@ -99,3 +99,37 @@ test('a describe of the target table newer than relation_stats wins too', () => 
   const fkEdges = mem.graph('exampledb').edges.filter(e => e.level === 'fk');
   assert.deepEqual(fkEdges.map(e => [e.from, e.to, e.linkedRows]), [['example.shipments', 'example.customers', 6]]);
 });
+
+test('dotted schema and table names stay distinct tables in the graph and in table_knowledge', () => {
+  const mem = new SchemaMemory(tempRoot(), { now });
+  mem.recordDescribe(describe('example', 'customers', [col('id', 1)], [pk('customers_pkey', ['id'])]));
+  mem.recordDescribe(describe('example', 'orders.history', [col('id', 1), col('customer_id', 2)], [pk('history_pkey', ['id']), fk('history_customer_fk', ['customer_id'], 'example', 'customers', ['id'])]));
+  mem.recordDescribe(describe('example.orders', 'history', [col('note', 1, 'text')]));
+
+  const graph = mem.graph('exampledb');
+  const ids = graph.nodes.map(n => n.id).sort();
+  assert.deepEqual(ids, ['"example.orders".history', 'example."orders.history"', 'example.customers']);
+  const node = id => graph.nodes.find(n => n.id === id);
+  assert.deepEqual([node('"example.orders".history').schema, node('"example.orders".history').table], ['example.orders', 'history']);
+  assert.deepEqual([node('example."orders.history"').schema, node('example."orders.history"').table], ['example', 'orders.history']);
+  assert.deepEqual(graph.edges.map(e => [e.from, e.to]), [['example."orders.history"', 'example.customers']]);
+
+  const other = mem.knowledge('exampledb', 'example.orders', 'history');
+  assert.equal(other.relation, '"example.orders".history');
+  assert.deepEqual(other.relations.fk, [], 'the FK belongs to the other table');
+  assert.deepEqual(mem.knowledge('exampledb', 'example', 'orders.history').relations.fk, ['customer_id -> example.customers(id)']);
+  assert.deepEqual(mem.knowledge('exampledb', 'example', 'customers').relations.referencedBy, ['example."orders.history"(customer_id) -> id']);
+
+  // An unexplored neighbour with a dotted name keeps its schema and table.
+  mem.recordDescribe(describe('example', 'notes', [col('id', 1), col('order_id', 2)], [fk('notes_order_fk', ['order_id'], 'example.archive', 'orders', ['id'])]));
+  const unexplored = mem.graph('exampledb').nodes.find(n => n.state === 'unexplored');
+  assert.deepEqual([unexplored.id, unexplored.schema, unexplored.table], ['"example.archive".orders', 'example.archive', 'orders']);
+});
+
+test('ordinary names keep the plain schema.table text', () => {
+  const mem = new SchemaMemory(tempRoot(), { now });
+  mem.recordDescribe(describe('Example', 'Orders', [col('id', 1), col('customer_id', 2)], [fk('orders_customer_fk', ['customer_id'], 'example', 'customers', ['id'])]));
+  const graph = mem.graph('exampledb');
+  assert.deepEqual(graph.nodes.map(n => n.id).sort(), ['Example.Orders', 'example.customers']);
+  assert.equal(mem.knowledge('exampledb', 'Example', 'Orders').relation, 'Example.Orders');
+});
