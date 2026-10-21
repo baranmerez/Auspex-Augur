@@ -32,7 +32,9 @@ with the work and never crawls the catalog on its own:
   `CREATE TRIGGER` definition, constraint trigger); added, dropped, changed
   and enabled/disabled triggers show up in `changesSinceLast`. Records
   written before triggers were stored report no trigger change the first
-  time. The function source is never stored.
+  time. The trigger records hold no function source; `describe_functions`
+  stores function bodies (up to 200000 characters) in the function records,
+  see *Function records*.
 - **Views:** for a view or materialized view, `describe_table` and
   `describe_tables` also record its definition (cut at 200000 characters,
   with `viewDefinitionLength` and `viewDefinitionTruncated`; the change check
@@ -145,7 +147,8 @@ apart, because the plan text they come from has no quotes.
     "definition": "CREATE OR REPLACE FUNCTION ...",   // cut at 200000 characters; null for aggregates
     "definitionLength": 2345, "truncated": false,
     "definitionHash": "16 hex characters (sha256 of the stored text)",
-    "touches": { "inferred": true, "reads": ["example.order_items"], "writes": [] }   // null for other languages
+    "touches": { "inferred": true, "reads": ["example.order_items"], "writes": [] },  // null for other languages
+    "calls": [{ "schema": "example", "name": "order_tax" }, { "schema": null, "name": "round" }]  // functions the body calls, as written
   }],
   "history": [{ "at": "...", "changes": [{ "change": "definition-changed", "arguments": "p_order_id bigint" }] }]
 }
@@ -168,6 +171,11 @@ apart, because the plan text they come from has no quotes.
   as before; the graph then takes `role` from the return type text
   (`trigger`), `triggerTables` from the stored `table` and leaves `timings`
   empty until the function is described or listed again.
+- `calls` lists the functions the body calls as written (comments and
+  literals skipped; `schema` null when unqualified). The graph's
+  `calledBy.functions` is built from it, so a rebuild of `graph.json` reads no
+  function bodies; a record written before `calls` existed gets them from its
+  stored definition once.
 - `touches` is a textual inference from the body, not a catalog fact
   (PostgreSQL records no dependencies for function bodies), and only for
   `sql` and `plpgsql`: comments, string literals and nested dollar-quoted
