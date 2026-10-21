@@ -26,11 +26,23 @@ for (const oid of [1182, 1115, 1185]) pg.types.setTypeParser(oid, pg.types.getTy
 // text (its spacing, scalars such as null or "x" as JSON text, exact digits).
 // json[] and jsonb[] keep each element's text. Auspex's own catalog queries
 // keep the default parsers, because they read jsonb_agg results as objects.
+// float4/float8 (and arrays) stay numbers when finite; NaN, Infinity and
+// -Infinity keep PostgreSQL's text, since JSON would turn them into null.
+// interval and interval[] keep PostgreSQL's text whatever IntervalStyle is
+// set: the driver's interval parser only understands the default style.
 const textArrayParser = pg.types.getTypeParser(1009, 'text');
+const floatValue = value => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : value;
+};
+const floatElements = value => (Array.isArray(value) ? value.map(floatElements) : value === null ? null : floatValue(value));
+const floatArrayParser = value => floatElements(textArrayParser(value));
 const resultTypes = {
   getTypeParser(oid, format) {
-    if (oid === 114 || oid === 3802) return value => value;
-    if (oid === 199 || oid === 3807) return textArrayParser;
+    if (oid === 114 || oid === 3802 || oid === 1186) return value => value;
+    if (oid === 199 || oid === 3807 || oid === 1187) return textArrayParser;
+    if (oid === 700 || oid === 701) return floatValue;
+    if (oid === 1021 || oid === 1022) return floatArrayParser;
     return pg.types.getTypeParser(oid, format);
   },
 };

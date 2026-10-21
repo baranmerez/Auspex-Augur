@@ -48,7 +48,11 @@ text, never as rounded JavaScript numbers or shifted dates. `json` and `jsonb`
 cells (and the elements of `json[]` / `jsonb[]`) are PostgreSQL's own JSON
 text, so `9007199254740993` and `1234567890.123456789` keep every digit; a
 JSON scalar such as `null` or `"x"` arrives as that JSON text, not as SQL NULL.
-This applies to `query`, report previews and `export_csv`.
+Finite `float4` / `float8` values (and arrays of them) stay numbers, but `NaN`,
+`Infinity` and `-Infinity` arrive as those texts instead of `null`, also inside
+arrays. `interval` and `interval[]` cells are PostgreSQL's own text whatever
+`IntervalStyle` the connection inherits. This applies to `query`, report
+previews and `export_csv`.
 
 ### CSV for spreadsheets
 
