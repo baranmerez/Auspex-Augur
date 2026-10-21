@@ -11,7 +11,7 @@ const block = page.match(/\/\/ ask-claude:start[\s\S]*?\/\/ ask-claude:end/)?.[0
 function load() {
   assert.ok(block, 'ask-claude block found in viewer.html');
   const context = vm.createContext({});
-  vm.runInContext(`${block}\nObject.assign(this, { buildAskPrompt, reportDataOf, presetLabel, lastRunInfo, paramText, offeredPresets });`, context);
+  vm.runInContext(`${block}\nObject.assign(this, { buildAskPrompt, reportDataOf, presetLabel, lastRunInfo, paramText, offeredPresets, buildPresetPrompt });`, context);
   return context;
 }
 
@@ -72,10 +72,22 @@ test('preset chips: built-in labels, custom values, and custom presets that no l
   const plain = x => JSON.parse(JSON.stringify(x));
   const chips = offeredPresets({ builtIn: ['last_month'], custom: [{ name: 'Q1', params: ['2026-01-01', '2026-04-01'] }, { name: 'Old', params: [1] }], mismatched: ['Old'] }, 'tr');
   assert.deepEqual(plain(chips), [
-    { label: 'Geçen ay', title: 'last_month', stale: false },
-    { label: 'Q1', title: '2026-01-01, 2026-04-01', stale: false },
-    { label: 'Old', title: '1', stale: true },
+    { key: 'last_month', label: 'Geçen ay', title: 'last_month', stale: false },
+    { key: 'Q1', label: 'Q1', title: '2026-01-01, 2026-04-01', stale: false },
+    { key: 'Old', label: 'Old', title: '1', stale: true },
   ]);
   assert.deepEqual(plain(offeredPresets(null, 'en')), []);
   assert.equal(offeredPresets({ custom: [{ name: 'A', params: [] }] }, 'en')[0].stale, false, 'older HTML without mismatched');
+});
+
+test('preset chip request: names the report path and the preset key run_report takes, in the UI language', () => {
+  const { offeredPresets, buildPresetPrompt } = load();
+  const r = { db: 'exampledb', schema: 'example', category: 'Orders/Delivery', name: 'late_orders', title: 'Late\norders' };
+  const [builtIn, custom] = offeredPresets({ builtIn: ['last_month'], custom: [{ name: 'Q1', params: ['2026-01-01'] }] }, 'en');
+  assert.equal(buildPresetPrompt(r, builtIn, 'en'),
+    'Run the Auspex report "Late orders" (exampledb/example/Orders/Delivery/late_orders) with run_report and the preset "Last month" (last_month), then show me the summary and the HTML file path.');
+  assert.match(buildPresetPrompt(r, custom, 'en'), /the preset "Q1", then/);
+  const tr = buildPresetPrompt(r, offeredPresets({ builtIn: ['last_month'] }, 'tr')[0], 'tr');
+  assert.match(tr, /"Geçen ay" \(last_month\) hazır ayarıyla çalıştır/);
+  assert.match(buildPresetPrompt(r, builtIn, 'de'), /^Run the Auspex report/, 'unknown language falls back to English');
 });
