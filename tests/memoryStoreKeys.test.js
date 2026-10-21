@@ -49,3 +49,53 @@ test('column names like __proto__ and constructor are ordinary keys in usedColum
   mem.recordDescribe(describe('example', 'orders', [col('id', 1), col('total', 5)], [pk('orders_pkey', ['id'])]));
   assert.deepEqual(mem.knowledge('exampledb', 'example', 'orders').keyColumns.sort(), ['__proto__ [used]', 'constructor [used]', 'id integer [pk]', 'toString [used]', 'total integer [used]']);
 });
+
+test('a describe newer than relation_stats wins: a dropped foreign key is not published from old figures', () => {
+  const mem = new SchemaMemory(tempRoot(), { now });
+  const customers = describe('example', 'customers', [col('id', 1)], [pk('customers_pkey', ['id'])]);
+  const orders = constraints => describe('example', 'orders', [col('id', 1), col('customer_id', 2), col('status_code', 3)], [pk('orders_pkey', ['id']), ...constraints]);
+  const customerFk = fk('orders_customer_fk', ['customer_id'], 'example', 'customers', ['id']);
+  const statusFk = fk('orders_status_fk', ['status_code'], 'example', 'status_codes', ['code']);
+  mem.recordDescribe(customers);
+  mem.recordDescribe(orders([customerFk, statusFk]));
+  const item = (table, constraint, columns, refColumns, linkedRows) => ({ schema: 'example', table, constraint, columns, refColumns, linkedRows, tableEstRows: 10 });
+  mem.recordRelationStats('exampledb', [{
+    schema: 'example', table: 'orders', estRows: 10,
+    instance: [item('customers', 'orders_customer_fk', ['customer_id'], ['id'], 9), item('status_codes', 'orders_status_fk', ['status_code'], ['code'], 8)],
+    dependent: [],
+  }]);
+  assert.deepEqual(mem.knowledge('exampledb', 'example', 'orders').relations.fk.sort(), ['customer_id -> example.customers(id)', 'status_code -> example.status_codes(code)']);
+
+  // The customer FK is dropped outside Auspex; both tables are described again.
+  const res = mem.recordDescribe(orders([statusFk]));
+  assert.deepEqual(res.changesSinceLast, ['constraint orders_customer_fk dropped']);
+  mem.recordDescribe(customers);
+
+  const k = mem.knowledge('exampledb', 'example', 'orders');
+  assert.deepEqual(k.relations.fk, ['status_code -> example.status_codes(code)']);
+  const edges = mem.graph('exampledb').edges.filter(e => e.level === 'fk');
+  assert.equal(edges.some(e => e.from === 'example.orders' && e.to === 'example.customers'), false, 'the dropped FK is gone from the graph');
+  const status = edges.find(e => e.from === 'example.orders' && e.to === 'example.status_codes');
+  assert.equal(status.linkedRows, 8, 'figures of a still declared FK are kept');
+  assert.ok(status.statsAt);
+
+  // A measurement newer than the describe is newer evidence: the FK came back.
+  mem.recordRelationStats('exampledb', [{ schema: 'example', table: 'orders', estRows: 10, instance: [item('customers', 'orders_customer_fk', ['customer_id'], ['id'], 7)], dependent: [] }]);
+  assert.deepEqual(mem.knowledge('exampledb', 'example', 'orders').relations.fk.sort(), ['customer_id -> example.customers(id)', 'status_code -> example.status_codes(code)']);
+});
+
+test('a describe of the target table newer than relation_stats wins too', () => {
+  const mem = new SchemaMemory(tempRoot(), { now });
+  const incoming = (table, columns) => ({ name: `${table}_customer_fk`, from_schema: 'example', from_name: table, columns, ref_columns: ['id'] });
+  const customers = referencedBy => describe('example', 'customers', [col('id', 1)], [pk('customers_pkey', ['id'])], { referencedBy });
+  mem.recordDescribe(customers([incoming('orders', ['customer_id']), incoming('shipments', ['customer_id'])]));
+  const item = (table, linkedRows) => ({ schema: 'example', table, constraint: `${table}_customer_fk`, columns: ['customer_id'], refColumns: ['id'], linkedRows, tableEstRows: 10 });
+  mem.recordRelationStats('exampledb', [{ schema: 'example', table: 'customers', estRows: 10, instance: [], dependent: [item('orders', 9), item('shipments', 6)] }]);
+  assert.deepEqual(mem.knowledge('exampledb', 'example', 'customers').relations.referencedBy.sort(), ['example.orders(customer_id) -> id', 'example.shipments(customer_id) -> id']);
+
+  // Only the target is described again; orders no longer references it.
+  mem.recordDescribe(customers([incoming('shipments', ['customer_id'])]));
+  assert.deepEqual(mem.knowledge('exampledb', 'example', 'customers').relations.referencedBy, ['example.shipments(customer_id) -> id']);
+  const fkEdges = mem.graph('exampledb').edges.filter(e => e.level === 'fk');
+  assert.deepEqual(fkEdges.map(e => [e.from, e.to, e.linkedRows]), [['example.shipments', 'example.customers', 6]]);
+});

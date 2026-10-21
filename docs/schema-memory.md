@@ -70,7 +70,11 @@ edge: { level: "fk" | "used" | "suggested", from: "schema.table", to: "schema.ta
 
 `file` is only set for tables with a record (`explored` or `seen`). The table
 records keep the measurement (`estRows`, `estRowsAt`, and for centers
-`relationStats`), so describing a table again does not drop it.
+`relationStats`), so describing a table again does not drop it. A describe of
+the source or target table that is newer than the measurement wins, though: a
+measured foreign key that the source no longer declares, or that the target
+no longer lists as referencing it, is not shown as an `fk` edge, and its
+figures are left out with it (they come back if the key does).
 
 ### Column importance
 
