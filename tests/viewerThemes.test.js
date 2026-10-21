@@ -31,6 +31,11 @@ test('every ready and sample theme reaches 4.5:1 for text on every surface', () 
       assert.ok(ratio >= 4.5, `${spec.bg}/${spec.accent} ${tk} on ${sf}: ${ratio.toFixed(2)}`);
     }
     assert.ok(contrastRatio(hexRgb(r.tokens['--accent-ink']), hexRgb(r.tokens['--accent-soft'])) >= 4.5);
+    // Selected rows and active buttons: body, secondary and muted text on the accent tint.
+    for (const tk of ['--text', '--text-2', '--text-3']) {
+      const ratio = contrastRatio(hexRgb(r.tokens[tk]), hexRgb(r.tokens['--accent-soft']));
+      assert.ok(ratio >= 4.5, `${spec.bg}/${spec.accent} ${tk} on --accent-soft: ${ratio.toFixed(2)}`);
+    }
     assert.ok(contrastRatio(hexRgb(r.tokens['--accent']), hexRgb(r.tokens['--surface'])) >= 3);
   }
 });
@@ -339,9 +344,9 @@ test('page: glass classes, fallback hook, region tints and generator controls ex
 
 // Themes overhaul: Auspex presets, studio (generator), save/load, import validation, default theme.
 const auspexPalettes = {
-  auspex: { bg: '#14110e', surface: '#1f1a15', text: '#ede6da', muted: '#a89c8a', accent: '#2fbf71', accent2: '#c9a04f', warning: '#e0a33a', danger: '#e05a4a' },
+  auspex: { bg: '#14110e', surface: '#1f1a15', text: '#ede6da', muted: '#aca190', accent: '#2fbf71', accent2: '#c9a04f', warning: '#e0a33a', danger: '#e05a4a' },
   forge: { bg: '#17110d', surface: '#22180f', text: '#f1e4d6', muted: '#b09a86', accent: '#d7783a', accent2: '#b8894a', success: '#7fbf6a', danger: '#d9534a' },
-  phosphor: { bg: '#060b07', surface: '#0b150e', text: '#b8f5c8', muted: '#6fa67f', accent: '#3ddc84', accent2: '#8fcb9b', warning: '#e8c547', danger: '#ff6b57' },
+  phosphor: { bg: '#060b07', surface: '#0b150e', text: '#b8f5c8', muted: '#7cae8a', accent: '#3ddc84', accent2: '#8fcb9b', warning: '#e8c547', danger: '#ff6b57' },
   verdigris: { bg: '#0e1716', surface: '#152221', text: '#e3efec', muted: '#93aba6', accent: '#3bb3a0', accent2: '#c2a15a', warning: '#e0a33a', danger: '#e06a5a' },
   ivory: { bg: '#f4eee2', surface: '#fffbf3', text: '#2a231b', muted: '#6e6252', accent: '#1e8a55', accent2: '#9a7330', warning: '#b7791f', danger: '#b83a2e' },
 };
