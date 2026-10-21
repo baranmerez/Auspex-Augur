@@ -1352,7 +1352,7 @@ const TR = {
   'Contrast': 'Kontrast', 'Pair': 'Çift', 'Ratio': 'Oran', 'Level': 'Seviye', 'Fail': 'Başarısız', 'Auto-fix': 'Otomatik düzelt', 'Nothing to fix': 'Düzeltilecek bir şey yok',
   '{n} of {m} pairs below target': '{m} çiftten {n} tanesi hedefin altında', 'All {m} pairs pass': '{m} çiftin hepsi geçiyor',
   'Text on background': 'Arka planda metin', 'Text on surface': 'Yüzeyde metin', 'Text on raised surface': 'Yükseltilmiş yüzeyde metin', 'Text on side panels': 'Yan panellerde metin',
-  'Secondary text on surface': 'Yüzeyde ikincil metin', 'Secondary text on side panels': 'Yan panellerde ikincil metin', 'Muted text on surface': 'Yüzeyde soluk metin', 'Muted text on raised surface': 'Yükseltilmiş yüzeyde soluk metin',
+  'Secondary text on surface': 'Yüzeyde ikincil metin', 'Secondary text on side panels': 'Yan panellerde ikincil metin', 'Muted text on surface': 'Yüzeyde soluk metin', 'Secondary text on a selected row': 'Seçili satırda ikincil metin', 'Muted text on a selected row': 'Seçili satırda soluk metin', 'Muted text on raised surface': 'Yükseltilmiş yüzeyde soluk metin',
   'Accent text on surface': 'Yüzeyde vurgu metni', 'Accent text on accent tint': 'Vurgu tonunda vurgu metni', 'Accent on surface (UI part)': 'Yüzeyde vurgu (arayüz öğesi)',
   'Success text on surface': 'Yüzeyde başarı metni', 'Warning text on surface': 'Yüzeyde uyarı metni', 'Danger text on surface': 'Yüzeyde tehlike metni', 'Info text on surface': 'Yüzeyde bilgi metni',
   'Revert': 'Geri al', 'Edits reverted': 'Düzenlemeler geri alındı', 'Saved': 'Kaydedildi', 'Discard changes?': 'Değişiklikler silinsin mi?', 'Your edits to this theme will be lost.': 'Bu temadaki düzenlemeler kaybolacak.', 'Discard': 'Değişiklikleri at',
@@ -7162,12 +7162,13 @@ function themeTokens(spec) {
   const glassBacks = glass ? stops.flatMap(st => { const e = mixRgb(st, surface, glass.opacity / 100); return [e, mixRgb(e, tintC.ref, 0.12), mixRgb(e, tintC.dep, 0.12)]; }) : [];
   const tintBacks = [0.07, 0.12].flatMap(p => [mixRgb(surface, tintC.ref, p), mixRgb(surface, tintC.dep, p)]);
   const panelBacks = [surface, surface2, ...tintBacks, ...glassBacks];
-  const backs = [bg, ...panelBacks];
+  // Selected rows and active buttons sit on the accent tint, so body text must reach the target there too.
+  const acc = fit('--accent', accent, [surface], themeMinUi);
+  const accentSoft = mixRgb(surface, acc, dark ? 0.22 : 0.12);
+  const backs = [bg, ...panelBacks, accentSoft];
   const text = place('text', '--text', ink, backs, minText);
   const text2 = place('text2', '--text-2', high ? ink : mixRgb(ink, surface, 0.3), backs, minText);
   const text3 = place('muted', '--text-3', mixRgb(ink, surface, high ? 0.2 : 0.45), backs, minText);
-  const acc = fit('--accent', accent, [surface], themeMinUi);
-  const accentSoft = mixRgb(surface, acc, dark ? 0.22 : 0.12);
   const accentInk = place('accentInk', '--accent-ink', dark ? mixRgb(acc, white, 0.35) : mixRgb(acc, black, 0.2), [surface, surface2, accentSoft], minText);
   const onAccent = pick('onAccent') || surface;
   keep('--on-accent', onAccent, [accentInk], minText);
@@ -7270,9 +7271,11 @@ function themeContrast(body) {
   add('text-raised', 'Text on raised surface', T['--text'], [T['--surface-2']], min, 'text');
   add('text-side', 'Text on side panels', T['--text'], sides, min, 'text');
   add('text2-surface', 'Secondary text on surface', T['--text-2'], [T['--surface'], T['--bg']], min, 'text2');
+  add('text2-soft', 'Secondary text on a selected row', T['--text-2'], [T['--accent-soft']], min, 'text2');
   add('text2-side', 'Secondary text on side panels', T['--text-2'], sides, min, 'text2');
   add('muted-surface', 'Muted text on surface', T['--text-3'], [T['--surface'], T['--bg']], min, 'muted');
   add('muted-raised', 'Muted text on raised surface', T['--text-3'], [T['--surface-2']], min, 'muted');
+  add('muted-soft', 'Muted text on a selected row', T['--text-3'], [T['--accent-soft']], min, 'muted');
   add('accentInk-surface', 'Accent text on surface', T['--accent-ink'], [T['--surface'], T['--surface-2']], min, 'accentInk');
   add('accentInk-soft', 'Accent text on accent tint', T['--accent-ink'], [T['--accent-soft']], min, 'accentInk');
   add('onAccent', 'Text on accent', T['--on-accent'], [T['--accent-ink']], min, 'onAccent');
@@ -7288,7 +7291,7 @@ function themeFixBacks(res, key) {
   const T = res.tokens;
   if (key === 'accentInk') return [T['--surface'], T['--surface-2'], T['--accent-soft']].map(hexRgb);
   if (key === 'onAccent') return [hexRgb(T['--accent-ink'])];
-  return [T['--bg'], T['--surface'], T['--surface-2'], ...res.tintBacks].map(hexRgb);
+  return [T['--bg'], T['--surface'], T['--surface-2'], T['--accent-soft'], ...res.tintBacks].map(hexRgb);
 }
 // Returns a new body with every text color that fails its target moved in
 // lightness until it passes (other colors stay); { body, changed: [keys] }.
@@ -7351,7 +7354,7 @@ const themePresets = [
   // Plain is the flat look of the default, kept as an explicit choice (follows the system like Auto).
   { id: 'plain', name: 'Plain', builtin: true, bg: '#f4f5f7', accent: '#2a78d6' },
   { id: 'auspex', name: 'Auspex', auspex: true, bg: '#14110e', accent: '#2fbf71',
-    colors: { surface: '#1f1a15', text: '#ede6da', muted: '#a89c8a', accent2: '#c9a04f', warning: '#e0a33a', danger: '#e05a4a' },
+    colors: { surface: '#1f1a15', text: '#ede6da', muted: '#aca190', accent2: '#c9a04f', warning: '#e0a33a', danger: '#e05a4a' },
     tints: { ref: '#c9a04f', dep: '#2fbf71' },
     palette: { pk: '#c9a04f', fk: '#9a7bd6', score: '#2fbf71', trigger: '#d0638f', fn: '#3bb3a0', report: '#4a9fb0', ref: '#5b9bd5', dep: '#e0a33a', off: '#8a8070' } },
   { id: 'forge', name: 'Forge', auspex: true, bg: '#17110d', accent: '#d7783a',
@@ -7359,7 +7362,7 @@ const themePresets = [
     tints: { ref: '#b8894a', dep: '#d7783a' },
     palette: { pk: '#b8894a', fk: '#a07acb', score: '#d7783a', trigger: '#d0638f', fn: '#7fbf6a', report: '#4a9fb0', ref: '#6aa6c9', dep: '#d9534a', off: '#8a7a6a' } },
   { id: 'phosphor', name: 'Phosphor', auspex: true, mono: true, bg: '#060b07', accent: '#3ddc84',
-    colors: { surface: '#0b150e', text: '#b8f5c8', muted: '#6fa67f', accent2: '#8fcb9b', warning: '#e8c547', danger: '#ff6b57' },
+    colors: { surface: '#0b150e', text: '#b8f5c8', muted: '#7cae8a', accent2: '#8fcb9b', warning: '#e8c547', danger: '#ff6b57' },
     tints: { ref: '#4f9a67', dep: '#e8c547' },
     palette: { pk: '#e8c547', fk: '#8fcb9b', score: '#3ddc84', trigger: '#ff6b57', fn: '#6fe0c8', report: '#59c2d9', ref: '#5fb0e0', dep: '#e8a247', off: '#6a8a74' } },
   { id: 'verdigris', name: 'Verdigris', auspex: true, bg: '#0e1716', accent: '#3bb3a0',
