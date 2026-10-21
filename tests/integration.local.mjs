@@ -548,9 +548,10 @@ test('relation_stats links region and worker from planner statistics in at most 
 const ddlApplied = (await raw("select to_regclass('auspex_test.import_job') is not null as ok")).rows[0].ok;
 const ddlTest = (name, fn) => test(name, { skip: !ddlApplied && !process.env.CI ? 'run scripts/local-test-ddl.sql once to enable' : false }, fn);
 
-ddlTest('describe_tables shows triggers, checks, identity/serial/generated columns, partitioning and RLS in 6 statements', async () => {
+ddlTest('describe_tables shows triggers, checks, identity/serial/generated columns, partitioning and RLS in 7 statements', async () => {
   const r = await describeTables(db, 'local', ['auspex_test.import_job', 'auspex_test.import_log', 'auspex_test.import_log_2026_01', 'auspex_test.import_secret']);
-  assert.equal(r.statements, 6);
+  // 7 with the view dependency statement; 8 when the batch holds a view.
+  assert.equal(r.statements, 7);
   const [job, log, part, secret] = r.tables;
   assert.equal(job.comment, 'Test import staging with a before-validate trigger');
   assert.deepEqual(job.triggers.map(({ definition, ...t }) => t), [{
