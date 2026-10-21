@@ -618,6 +618,38 @@ export function cutChars(text, n) {
   return value.length <= n ? value : Array.from(value).slice(0, n).join('');
 }
 
+// The non-internal triggers that call function p, with schema, table name
+// and tgtype (decoded by functionTriggersFromRow), in one subquery.
+const usedByTriggersColumn = `
+       (select coalesce(jsonb_agg(jsonb_build_object('schema', tn.nspname, 'tableName', tc.relname, 'trigger', t.tgname, 'tgtype', t.tgtype::int)
+                                  order by tn.nspname, tc.relname, t.tgname), '[]'::jsonb)
+        from pg_trigger t join pg_class tc on tc.oid = t.tgrelid join pg_namespace tn on tn.oid = tc.relnamespace
+        where t.tgfoid = p.oid and not t.tgisinternal) as used_by_triggers,
+       p.prorettype = 'trigger'::regtype as returns_trigger`;
+
+// Identity of a table as the schema memory builds it (tableKey in
+// src/memory/store.js): "schema.table", a part with a dot or double quote
+// quoted like quote_ident.
+const keyPart = name => (/[."]/.test(String(name)) ? `"${String(name).replace(/"/g, '""')}"` : String(name));
+export const relationKey = (schema, table) => `${keyPart(schema)}.${keyPart(table)}`;
+
+// One used_by_triggers entry: tgtype bits 1 row, 2 before, 4 insert,
+// 8 delete, 16 update, 32 truncate, 64 instead of. Entries without tgtype
+// (older shape) keep only what they have.
+export function functionTriggerFromRow(t) {
+  if (t.tgtype === undefined || t.tgtype === null) return { ...t };
+  const type = Number(t.tgtype);
+  return {
+    table: relationKey(t.schema, t.tableName),
+    schema: t.schema,
+    tableName: t.tableName,
+    trigger: t.trigger,
+    timing: type & 64 ? 'instead' : type & 2 ? 'before' : 'after',
+    events: [[4, 'insert'], [16, 'update'], [8, 'delete'], [32, 'truncate']].filter(([bit]) => type & bit).map(([, e]) => e),
+    level: type & 1 ? 'row' : 'statement',
+  };
+}
+
 // Shared select list over pg_proc p / pg_namespace n. pg_get_functiondef does
 // not accept aggregates; their definition is null. $1 = definition cap.
 const functionColumns = `
@@ -632,10 +664,7 @@ const functionColumns = `
        pg_get_userbyid(p.proowner) as owner,
        has_function_privilege(p.oid, 'EXECUTE') as can_execute,
        obj_description(p.oid, 'pg_proc') as comment,
-       (select coalesce(jsonb_agg(jsonb_build_object('table', tn.nspname || '.' || tc.relname, 'trigger', t.tgname)
-                                  order by tn.nspname, tc.relname, t.tgname), '[]'::jsonb)
-        from pg_trigger t join pg_class tc on tc.oid = t.tgrelid join pg_namespace tn on tn.oid = tc.relnamespace
-        where t.tgfoid = p.oid and not t.tgisinternal) as used_by_triggers,
+       ${usedByTriggersColumn},
        left(d.definition, greatest($1::int, ${storedDefinitionChars})) as definition, length(d.definition) as definition_length`;
 const functionFrom = `
 from pg_proc p
@@ -681,7 +710,8 @@ function functionFromRow(row, cap) {
     owner: row.owner,
     canExecute: !!row.can_execute,
     comment: row.comment ?? null,
-    usedByTriggers: row.used_by_triggers ?? [],
+    usedByTriggers: (row.used_by_triggers ?? []).map(functionTriggerFromRow),
+    returnsTrigger: !!row.returns_trigger,
     definition: cutChars(row.definition ?? null, cap),
     definitionLength: length,
     truncated: length !== null && length > cap,
@@ -750,7 +780,8 @@ select n.nspname as schema, p.proname as name, pg_get_function_identity_argument
        pg_get_function_result(p.oid) as returns,
        case p.prokind when 'f' then 'function' when 'p' then 'procedure' when 'a' then 'aggregate' when 'w' then 'window' end as kind,
        l.lanname as language,
-       case p.provolatile when 'i' then 'immutable' when 's' then 'stable' when 'v' then 'volatile' end as volatility
+       case p.provolatile when 'i' then 'immutable' when 's' then 'stable' when 'v' then 'volatile' end as volatility,
+       ${usedByTriggersColumn}
 from pg_proc p
 join pg_namespace n on n.oid = p.pronamespace
 join pg_language l on l.oid = p.prolang
@@ -763,7 +794,8 @@ order by 1, 2, 3
 limit $3`;
 
 // list_functions: an inventory of functions, procedures and aggregates
-// (signature, return type, kind, language, volatility), one statement.
+// (signature, return type, kind, language, volatility, returnsTrigger and
+// the triggers that call each overload), one statement.
 export async function listFunctions(db, profile, { schema, pattern, limit, includeExtensions = false } = {}) {
   const details = { profile: profile ?? null, schema: schema || undefined, pattern: pattern || undefined, limit: limit ?? undefined, includeExtensions: includeExtensions || undefined };
   return db.audited('list_functions', details, () => {
@@ -775,6 +807,7 @@ export async function listFunctions(db, profile, { schema, pattern, limit, inclu
       const truncated = res.rows.length > max;
       const rows = (truncated ? res.rows.slice(0, max) : res.rows).map(r => ({
         schema: r.schema, name: r.name, arguments: r.arguments ?? '', returns: r.returns, kind: r.kind, language: r.language, volatility: r.volatility,
+        returnsTrigger: !!r.returns_trigger, usedByTriggers: (r.used_by_triggers ?? []).map(functionTriggerFromRow),
       }));
       return { profile: name, ...(ilike ? { pattern: ilike } : {}), statements: 1, functions: rows, rowCount: rows.length, truncated };
     });
