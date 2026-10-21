@@ -122,7 +122,10 @@ test('rules navigator: database-wide box apart, one box per table, the chosen bo
   assert.match(page, /\.rules-nav \{ display: grid; grid-template-columns: minmax\(300px, 400px\) minmax\(0, 1fr\)/);
   assert.match(page, /@media \(max-width: 900px\) \{\s*\.rules-nav \{ grid-template-columns: minmax\(0, 1fr\); \}/);
   assert.match(page, /tile\(dbWide, true\)/);
-  assert.match(page, /tables\.map\(g => tile\(g, false\)\)/);
+  // Boxes sit under one heading per schema; a box does not repeat its schema.
+  assert.match(page, /Map\.groupBy\(tables, g => String\(g\.schema\)\)/);
+  assert.match(page, /gs\.map\(g => tile\(g, false\)\)/);
+  assert.match(page, /wide \? h\('span', \{ class: 'rn-schema' \}, t\('Database-wide'\)\) : null/);
   // The chosen box is part of the render key; without it a click would not redraw.
   assert.match(page, /const key = JSON\.stringify\(\[[^\]]*state\.rulesSel \?\? null\]\)/);
   assert.match(page, /'No notes': 'Not yok'/);

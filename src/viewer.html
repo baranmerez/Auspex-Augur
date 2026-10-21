@@ -579,7 +579,7 @@
   .badge.inference { background: var(--warn-soft); color: var(--warn-ink); }
   .badge.code { background: var(--surface-2); color: var(--text-2); border: 1px solid var(--line-strong); }
   .code-refs { list-style: none; margin: 4px 0 0; padding: 0; font: 11px/1.5 var(--mono); color: var(--text-2); overflow-wrap: anywhere; }
-  .rl-badges { display: flex; flex-direction: column; gap: 4px; align-items: stretch; }
+  .rl-badges { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
   .badge.explored { background: var(--accent-soft); color: var(--accent-ink); }
   .badge.seen, .badge.unexplored { background: var(--surface-2); color: var(--text-3); }
   .nlist { list-style: none; margin: 0; padding: 0; font-size: 13px; }
@@ -695,13 +695,16 @@
   .rl-table { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; margin: 18px 0 4px; padding: 8px 12px; background: var(--surface-2); border-radius: 8px; }
   .rl-table:first-child { margin-top: 0; }
   .rl-table h4 { margin: 0; font: 600 15px var(--mono); color: var(--text); word-break: break-all; }
+  .rl-table h4.plain { font-family: inherit; }
   .rl-table .cnt { font-size: 12px; color: var(--text-2); }
   .rl-col { margin: 12px 0 2px 12px; font: 600 13px var(--mono); color: var(--text-2); word-break: break-all; }
-  .rl-row { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 4px 12px; align-items: start; padding: 8px 12px; border-top: 1px solid var(--line); }
+  .rl-row { display: grid; grid-template-columns: 76px minmax(0, 1fr) auto; gap: 4px 12px; align-items: start; padding: 10px 12px; border-top: 1px solid var(--line); border-radius: 8px; transition: background .15s; }
+  .rl-row:hover { background: color-mix(in srgb, var(--surface-2) 55%, transparent); }
+  .rl-row:hover + .rl-row { border-top-color: transparent; }
   .rl-col + .rl-row, .rl-table + .rl-row { border-top: 0; }
-  .rl-row .badge { justify-content: center; margin-top: 3px; }
+  .rl-row .badge { justify-self: start; margin-top: 4px; }
   .rl-row .badge.inference { border: 1px dashed var(--warn-ink); }
-  .rl-text { font-size: 15px; line-height: 1.55; max-width: 70ch; overflow-wrap: anywhere; }
+  .rl-text { font-size: 15px; line-height: 1.55; max-width: 96ch; overflow-wrap: anywhere; }
   .rl-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; margin-top: 2px; font-size: 12px; color: var(--text-2); }
   .rl-meta > * + *::before { content: "·"; margin-right: 6px; }
   .rl-meta details { display: inline-block; }
@@ -710,22 +713,29 @@
   .rl-meta details[open]::before { content: none; }
   .rl-row.archived .rl-text { color: var(--text-2); }
   .rl-row.archived .badge { opacity: .7; }
-  .rl-act .icon-btn { padding: 4px; width: 28px; height: 28px; justify-content: center; color: var(--text-2); }
+  .rl-act .icon-btn { padding: 4px; width: 28px; height: 28px; justify-content: center; color: var(--text-2); opacity: .45; transition: opacity .15s; }
+  .rl-row:hover .rl-act .icon-btn, .rl-act .icon-btn:focus-visible, .rl-act .icon-btn[aria-busy=true] { opacity: 1; }
+  @media (hover: none) { .rl-act .icon-btn { opacity: 1; } }
   .rl-act .icon-btn:hover { color: var(--text); background: var(--surface-2); }
   .rl-act svg { width: 15px; height: 15px; }
   @media (max-width: 560px) { .rl-row { grid-template-columns: 80px minmax(0, 1fr) auto; gap: 4px 8px; padding: 8px 4px; } .rl-col { margin-left: 4px; } }
   /* Rules navigator: the database-wide box apart, one box per table, notes of the chosen box beside */
   .rules-nav { display: grid; grid-template-columns: minmax(300px, 400px) minmax(0, 1fr); gap: 14px; align-items: start; }
-  .rn-side { position: sticky; top: var(--sticky-top); max-height: calc(100vh - var(--sticky-top) - 20px); overflow: auto; display: grid; gap: 10px; padding: 12px; align-content: start; }
+  .rn-side { position: sticky; top: var(--sticky-top); max-height: calc(100vh - var(--sticky-top) - 20px); overflow: auto; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; display: grid; gap: 10px; padding: 12px; align-content: start; }
   .rn-head { display: flex; align-items: baseline; gap: 6px; margin-top: 4px; font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: .5px; }
   .rn-head b { color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .rn-group { display: grid; gap: 6px; }
+  .rn-sub { display: flex; align-items: baseline; gap: 6px; font-size: 11px; color: var(--text-3); }
+  .rn-sub code { font: 600 11px var(--mono); color: var(--text-2); }
+  .rn-sub b { font-weight: 400; font-variant-numeric: tabular-nums; }
   .rn-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
   .rn-tile { display: grid; gap: 3px; min-width: 0; text-align: left; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--text); font: inherit; cursor: pointer; transition: border-color .15s, background .15s; }
   .rn-tile:hover { border-color: var(--line-strong); background: var(--surface-2); }
   .rn-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .rn-tile.on { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+  .rn-tile.on { border-color: color-mix(in srgb, var(--accent) 65%, var(--line)); background: color-mix(in srgb, var(--accent) 9%, var(--surface)); box-shadow: inset 3px 0 0 var(--accent); }
   .rn-tile .rn-schema { font: 11px var(--mono); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .rn-tile .rn-name { font: 600 13px var(--mono); line-height: 1.3; overflow-wrap: break-word; }
+  .rn-tile .rn-name { font: 500 12.5px/1.35 var(--mono); overflow-wrap: break-word; }
+  .rn-tile.on .rn-name { font-weight: 600; }
   .rn-tile .rn-cnt { font-size: 11px; color: var(--text-2); }
   .rn-tile.global { padding: 11px 13px; border-style: dashed; border-color: var(--line-strong); }
   .rn-tile.global .rn-schema { font-family: inherit; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: var(--accent-ink); }
@@ -1044,7 +1054,7 @@ const put = (node, ...kids) => node.replaceChildren(...kids.flat(Infinity).filte
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 // ---------- i18n (English is the key; Turkish is the translation) ----------
 const TR = {
-  '(table)': '(tablo)', 'Observations': 'Gözlemler', '{n} rule': '{n} kural', '{n} rules': '{n} kural', '{n} observation': '{n} gözlem', '{n} observations': '{n} gözlem',
+  '(table)': '(tablo)', 'Observations': 'Gözlemler', 'Inferences': 'Çıkarımlar', '{n} rule': '{n} kural', '{n} rules': '{n} kural', '{n} observation': '{n} gözlem', '{n} observations': '{n} gözlem',
   '{n} inference': '{n} çıkarım', '{n} inferences': '{n} çıkarım', '{n} archived': '{n} arşivli', 'Counts follow the filters, except the status switch.': 'Sayılar durum seçimi dışındaki filtreleri izler.',
   'Rules': 'Kurallar', 'Kind': 'Tür', 'Table': 'Tablo', 'Active': 'Aktif', 'Archived': 'Arşivlenmiş',
   'Filter by table': 'Tabloya göre süz', 'Search note text': 'Not metninde ara', 'No notes match the filters.': 'Filtrelere uyan not yok.',
@@ -4285,6 +4295,8 @@ const ruleDay = (ts, loc) => {
   const d = ts ? new Date(ts) : null;
   return d && !Number.isNaN(d.getTime()) ? d.toLocaleDateString(loc, { day: 'numeric', month: 'short', year: 'numeric' }) : '?';
 };
+// A plain "2026-10-19" asOf reads like the other days; other text stays as written.
+const ruleAsOf = (v, loc) => /^\d{4}-\d{2}-\d{2}$/.test(String(v)) ? ruleDay(`${v}T12:00:00`, loc) : v;
 // rules-list:end
 
 // note-archive:start (tests/viewerRules.test.js runs this block with stage-change)
@@ -4347,7 +4359,7 @@ function ruleCard(n) {
         h('span', {}, day(n.createdAt)),
         n.kind === 'inference' ? h('span', {}, t('unconfirmed')) : null,
         n.confirmedAt ? h('span', {}, t('confirmed {d}', { d: day(n.confirmedAt) })) : null,
-        n.asOf ? h('span', {}, t('as of {d}', { d: n.asOf })) : null,
+        n.asOf ? h('span', {}, t('as of {d}', { d: ruleAsOf(n.asOf, locale) })) : null,
         active ? null : h('span', {}, t('archived {d}', { d: day(n.archivedAt) })),
         n.archivedReason ? h('span', {}, t('Archived: ') + n.archivedReason) : null,
         evidence)),
@@ -4360,7 +4372,7 @@ const ruleCountText = c => [['rule', '{n} rule', '{n} rules'], ['observation', '
   .filter(([k]) => c[k]).map(([k, one, many]) => t(c[k] === 1 ? one : many, { n: fmt(c[k]) })).join(' · ');
 function ruleGroup(g) {
   const open = column => () => openTablePage(state.db, g.key, column ? { column } : {});
-  return [h('div', { class: 'rl-table' }, h('h4', {}, g.key ? h('button', { type: 'button', class: 'tp-link rl-link', title: t('Open table page'), onclick: open() }, g.key) : t('Database-wide')), h('span', { class: 'cnt' }, ruleCountText(ruleCounts(g.notes)))),
+  return [h('div', { class: 'rl-table' }, h('h4', { class: g.key ? null : 'plain' }, g.key ? h('button', { type: 'button', class: 'tp-link rl-link', title: t('Open table page'), onclick: open() }, g.key) : t('Database-wide')), h('span', { class: 'cnt' }, ruleCountText(ruleCounts(g.notes)))),
     g.columns.map(c => [c.column || g.key ? h('div', { class: 'rl-col' }, c.column && g.key ? h('button', { type: 'button', class: 'tp-link rl-link', title: t('Open table page'), onclick: open(c.column) }, c.column) : c.column || t('(table)')) : null, c.notes.map(ruleCard)])];
 }
 
@@ -4409,7 +4421,7 @@ function renderRules() {
     h('span', { class: 'grow' }),
     h('div', { class: 'sums', title: t('Counts follow the filters, except the status switch.') },
       [['Rules', sums.rule], ['Observations', sums.observation], ['Archived', sums.archived]].map(([k, v]) => h('span', {}, t(k) + ' ', h('b', {}, fmt(v)))),
-      sums.inference ? h('span', {}, t('inference') + ' ', h('b', {}, fmt(sums.inference))) : null)));
+      sums.inference ? h('span', {}, t('Inferences') + ' ', h('b', {}, fmt(sums.inference))) : null)));
   if (!notes.length) {
     put(view, h('div', { class: 'stack' }, bar, h('div', { class: 'panel' }, h('div', { class: 'rep-empty' }, h('b', {}, t('No notes for {db} yet', { db: state.db })),
       h('p', {}, t('Notes are added by your agent (remember): rules you state, observations from data and its own inferences.'))))));
@@ -4434,10 +4446,12 @@ function renderRules() {
   const focusedKey = document.activeElement?.classList?.contains('rn-tile') ? document.activeElement.dataset.key : null;
   // Long snake_case names wrap after an underscore, not inside a word.
   const breakAtUnderscores = name => name.split('_').flatMap((part, i, all) => (i < all.length - 1 ? [part + '_', h('wbr')] : [part]));
+  // Boxes sit under one heading per schema instead of repeating it in each box.
+  const bySchema = [...Map.groupBy(tables, g => String(g.schema))];
   const tile = (g, wide) => {
     const on = sel === g.key;
     return h('button', { type: 'button', class: 'rn-tile' + (wide ? ' global' : '') + (on ? ' on' : ''), 'aria-pressed': String(on), 'data-key': g.key, title: wide ? t('Database-wide') : g.key, onclick: () => choose(g.key) },
-      h('span', { class: 'rn-schema' }, wide ? t('Database-wide') : g.schema),
+      wide ? h('span', { class: 'rn-schema' }, t('Database-wide')) : null,
       h('span', { class: 'rn-name' }, wide ? state.db : breakAtUnderscores(String(g.table))),
       h('span', { class: 'rn-cnt' }, ruleCountText(ruleCounts(g.notes)) || t('No notes')));
   };
@@ -4449,7 +4463,9 @@ function renderRules() {
   const side = h('nav', { class: 'panel rn-side', 'aria-label': t('Tables') },
     tile(dbWide, true),
     h('div', { class: 'rn-head' }, t('Tables'), h('b', {}, fmt(tables.length))),
-    tables.length ? h('div', { class: 'rn-tiles' }, tables.map(g => tile(g, false))) : h('div', { class: 'muted rn-none' }, t('No tables match.')));
+    tables.length ? bySchema.map(([schema, gs]) => h('section', { class: 'rn-group', 'aria-label': schema },
+      h('div', { class: 'rn-sub' }, h('code', {}, schema), h('b', {}, fmt(gs.length))),
+      h('div', { class: 'rn-tiles' }, gs.map(g => tile(g, false))))) : h('div', { class: 'muted rn-none' }, t('No tables match.')));
   put(view, h('div', { class: 'stack' }, bar, h('div', { class: 'rules-nav' }, side, detail)));
   for (const [id, saved] of focus) restoreFocus(document, id, saved);
   side.scrollTop = sideScroll;
