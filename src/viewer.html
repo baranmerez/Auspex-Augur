@@ -5728,7 +5728,11 @@ function functionPageModel(data, id, rec) {
   const flags = entry?.flags && typeof entry.flags === 'object' ? entry.flags : {};
   const risks = overloads.length ? [...new Set(overloads.flatMap(o => o.risks))]
     : [flags.definerWithoutSearchPath === true ? 'definer-no-search-path' : null, flags.volatile === true && views.length ? 'volatile-in-view' : null].filter(Boolean);
-  const triggers = overloads.flatMap(o => o.triggers.map(x => ({ ...x, signature: o.signature })));
+  // usedByTriggers[].table is the raw "schema.relname" text, not a table key:
+  // the graph node with that schema and name gives the key (a quoted one for
+  // names with dots or quotes); the raw text is the fallback.
+  const tableIdOf = raw => nodes.find(n => n.schema + '.' + n.table === raw)?.id ?? raw;
+  const triggers = overloads.flatMap(o => o.triggers.map(x => ({ ...x, table: tableIdOf(x.table), signature: o.signature })));
   const history = tpArr(rec?.history).filter(x => x && Array.isArray(x.changes)).slice().reverse()
     .map(x => ({ at: x.at ?? null, changes: x.changes.filter(c => c && c.change).map(c => ({ change: c.change, arguments: fnStr(c.arguments), fields: tpArr(c.fields).filter(f => typeof f === 'string') })) }));
   const described = !!rec?.describedAt || entry?.state === 'explored';

@@ -415,3 +415,18 @@ this.centerColumns = centerColumns; this.relColsText = relColsText;`, ctx);
   const tr = ['view source', 'reads: {c}', 'read by view: {c}', 'reads', 'read by view'].filter(k => pageTr[k] === undefined);
   assert.deepEqual(tr, []);
 });
+
+test('trigger tables: the raw schema.relname resolves to the graph node key (quoted names too), else stays raw', () => {
+  const ctx = load();
+  const g = graph();
+  g.nodes.push({ id: 'example."order.archive"', schema: 'example', table: 'order.archive', state: 'explored', kind: 'table' });
+  const rec = { schema: 'example', name: 'check_order', describedAt: 'x', overloads: [ov({ arguments: '', returns: 'trigger', config: ['search_path=example'],
+    usedByTriggers: [{ table: 'example.order.archive', trigger: 'archive_check' }, { table: 'example.orders', trigger: 'orders_check_status' }, { table: 'test.invoices', trigger: 'invoices_check' }] })] };
+  const m = ctx.functionPageModel(g, 'example.check_order', rec);
+  assert.deepEqual(plain(m.triggers.map(x => x.table)), ['example."order.archive"', 'example.orders', 'test.invoices']);
+  const view = ctx.functionPageView(m, ['x'], ctxOf({ reports: { items: [] } }));
+  const used = byClass(view, 'tp-deps')[0];
+  all(used, n => n.tag === 'button' && textOf(n).includes('archive_check'))[0].attrs.onclick();
+  assert.deepEqual(calls.at(-1), ['open', 'example."order.archive"']);
+});
+
