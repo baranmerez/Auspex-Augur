@@ -430,3 +430,28 @@ test('trigger tables: the raw schema.relname resolves to the graph node key (quo
   assert.deepEqual(calls.at(-1), ['open', 'example."order.archive"']);
 });
 
+test('XSS: the view and function page code builds text nodes only; hostile names and SQL stay text', () => {
+  const tablePage = blockOf('table-page');
+  for (const fn of ['tpCode', 'tpViewDefinition', 'tpRelPanel', 'tpViewFunctions', 'tpReportsPanel', 'tpViewHeader']) {
+    const src = tablePage.match(new RegExp(`function ${fn}\\([\\s\\S]*?\\n\\}\\n`))?.[0];
+    assert.ok(src, `${fn} found`);
+    assert.doesNotMatch(src, /innerHTML|outerHTML|insertAdjacentHTML|document\.write|srcdoc/, fn);
+  }
+  assert.doesNotMatch(blockOf('fn-page'), /innerHTML|outerHTML|insertAdjacentHTML|document\.write|srcdoc/);
+  const ctx = load();
+  const evil = '<img src=x onerror=alert(1)>';
+  const g = graph();
+  g.nodes.push({ id: `example.${evil}`, schema: 'example', table: evil, state: 'explored', kind: 'table' });
+  const rec = { ...viewRec(), comment: evil, viewDefinition: `select '${evil}'`,
+    viewSources: [{ schema: 'example', table: evil, kind: 'table', columns: [evil] }], viewFunctions: [{ schema: 'example', name: evil, arguments: evil, volatility: 'volatile' }] };
+  const view = ctx.tablePageView(ctx.tablePageModel(g, 'example.v_order_list', rec), ['example.v_order_list'], ctxOf({ reports: { items: [] } }));
+  // No element was created from the strings: every tag is one the code chose,
+  // and the hostile text only appears inside string children.
+  const tags = new Set(all(view, () => true).map(n => n.tag));
+  assert.ok(!tags.has('img'));
+  const strings = []; const walk = n => n.kids.forEach(k => (typeof k === 'string' ? strings.push(k) : k && typeof k === 'object' ? walk(k) : null)); walk(view);
+  assert.ok(strings.some(s => s.includes(evil)));
+  assert.ok(all(view, () => true).every(n => Object.entries(n.attrs).every(([k, v]) => typeof v === 'function' || !String(k).startsWith('onerror'))));
+  const out = html(view);
+  assert.doesNotMatch(out, /<img/);
+});
