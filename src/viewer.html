@@ -1618,6 +1618,8 @@ function knownDbs() {
   return [...names].sort();
 }
 function setDb(db, { render: doRender = true } = {}) {
+  // The Views and Functions list filters (search, schema, table chip) belong to one database.
+  if (state.db !== db) state.objFilter = {};
   state.db = db;
   state.reportSel = null; state.reportDoc = null;
   state.rulesSel = null; state.rulesJump = false;
@@ -4978,7 +4980,9 @@ function tpImportance(data, id, reportItems) {
   const notes = tpArr(data?.notes).filter(n => n.status === 'active' && n.schema === schema && n.table === table).length;
   const scores = node?.columnScores && typeof node.columnScores === 'object' ? Object.values(node.columnScores) : [];
   const top = scores.filter(e => (tpEffective(e).score ?? 0) >= 4).length;
-  const reports = tpArr(reportItems).filter(r => tpMentions(r.sql, schema, table)).length;
+  const items = tpArr(reportItems);
+  const re = items.length && table ? tpMentionRe(schema, table) : null;
+  const reports = re ? items.filter(r => { const text = tpStrippedOf(r); return text !== null && re.test(text); }).length : 0;
   return notes * 2 + top + reports * 3 + (node?.state === 'explored' ? 1 : 0);
 }
 // What the page shows for a view or matview: the definition and options from
@@ -5192,12 +5196,14 @@ function tpColumnRow(c, ctx) {
 // Draws the page again and gives the search box back its focus, caret and
 // selection (a background redraw must not send the next keys to page shortcuts).
 // pending: a typed value not yet applied (debounce), put back into the new box.
-function tpKeepSearchFocus(doc, redraw, pending) {
+// id: the search box of this page's tab (table and view pages live in two tabs
+// at once, so each tab has its own id).
+function tpKeepSearchFocus(doc, redraw, pending, id = 'tpSearch') {
   const el = doc.activeElement;
-  const keep = el && el.id === 'tpSearch' ? { start: el.selectionStart, end: el.selectionEnd, dir: el.selectionDirection } : null;
+  const keep = el && el.id === id ? { start: el.selectionStart, end: el.selectionEnd, dir: el.selectionDirection } : null;
   redraw();
   if (!keep) return;
-  const next = doc.getElementById('tpSearch');
+  const next = doc.getElementById(id);
   if (!next) return;
   if (typeof pending === 'string') next.value = pending;
   next.focus();
@@ -5212,7 +5218,7 @@ function tpColumnTools(model, ctx, shown) {
   const group = tpGroupChoice(ctx.group, undefined);
   return h('div', { class: 'tp-tools' },
     h('div', { class: 'tp-search-box' },
-      h('input', { type: 'text', id: 'tpSearch', class: 'tp-q', value: q, placeholder: t('Search columns'), 'aria-label': t('Search columns'), autocomplete: 'off', spellcheck: 'false',
+      h('input', { type: 'text', id: ctx.searchId || 'tpSearch', class: 'tp-q', value: q, placeholder: t('Search columns'), 'aria-label': t('Search columns'), autocomplete: 'off', spellcheck: 'false',
         'aria-keyshortcuts': '/', oninput: ev => { if (!ev.isComposing) ctx.onQuery(ev.target.value); }, oncompositionend: ev => ctx.onQuery(ev.target.value),
         onkeydown: ev => { if (ev.key === 'Escape' && ev.target.value) { ev.preventDefault(); ev.stopPropagation(); ctx.onQuery(''); } } }),
       searching ? h('button', { type: 'button', class: 'icon-btn sm tp-q-clear', 'aria-label': t('Clear search'), title: t('Clear search'), onclick: () => ctx.onQuery('') }, '×') : null,
@@ -5306,7 +5312,10 @@ function tpCode(text, o, ctx) {
   const long = n > tpCodeClip;
   const open = !long || !!o.open;
   const wrap = ctx.wrap !== false;
-  const body = ctx.highlight ? ctx.highlight(text) : text.split('\n').map(line => h('div', { class: 'sq-line' }, line));
+  // Clipped, only the visible lines are built (a stored body can be very long);
+  // the whole text is highlighted once it is opened.
+  const shown = open ? text : text.split('\n').slice(0, tpCodeClip).join('\n');
+  const body = ctx.highlight ? ctx.highlight(shown) : shown.split('\n').map(line => h('div', { class: 'sq-line' }, line));
   return h('div', { class: 'code-box' + (open ? '' : ' clipped') },
     h('div', { class: 'code-bar' },
       h('span', { class: 'hint' }, t(n === 1 ? '1 line' : '{n} lines', { n: fmt(n) })),
@@ -5451,13 +5460,25 @@ function tpLoadError(id, message, trail, ctx) {
 // longer name that shares the prefix or suffix ("orders_archive") never does.
 const tpNameChar = '[\\p{L}\\p{N}_$]';
 const tpEsc = v => String(v).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-function tpMentions(sql, schema, table) {
-  if (typeof sql !== 'string' || !table) return false;
-  const text = sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ').replace(/"/g, '');
+const tpStripSql = sql => sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ').replace(/"/g, '');
+function tpMentionRe(schema, table) {
   const name = tpEsc(table), tail = `(?!${tpNameChar})`;
   const qualified = schema ? `(?<!${tpNameChar})${tpEsc(schema)}\\s*\\.\\s*${name}${tail}` : null;
   const bare = `(?<!${tpNameChar})(?<!\\.\\s*)${name}${tail}`;
-  return new RegExp(qualified ? `${qualified}|${bare}` : bare, 'iu').test(text);
+  return new RegExp(qualified ? `${qualified}|${bare}` : bare, 'iu');
+}
+function tpMentions(sql, schema, table) {
+  if (typeof sql !== 'string' || !table) return false;
+  return tpMentionRe(schema, table).test(tpStripSql(sql));
+}
+// The stripped SQL of a report item, kept by its key (report, SQL hash and
+// update time) so ranking many tables strips each report once.
+const tpStripCache = new Map();
+function tpStrippedOf(r) {
+  if (typeof r?.sql !== 'string') return null;
+  if (!r.key) return tpStripSql(r.sql);
+  if (!tpStripCache.has(r.key)) { if (tpStripCache.size > 2000) tpStripCache.clear(); tpStripCache.set(r.key, tpStripSql(r.sql)); }
+  return tpStripCache.get(r.key);
 }
 // The SQL of a /api/report document: the content of a plain report, the active
 // version embedded in the data of an HTML report; null when neither is there.
@@ -5792,10 +5813,14 @@ function fnRelatedTables(data, x) {
 // The tables to offer as filter chips: every table some function relates to,
 // ranked by tpImportance (notes, columns scored 4–5, reports, explored), then
 // by how many functions relate to it.
+// Only the fnScoreCandidates tables with the most related functions are scored,
+// so a large database does not match every table against every report.
+const fnScoreCandidates = 30;
 function fnImportantTables(data, reportItems, limit = 10) {
   const counts = new Map();
   for (const x of tpArr(data?.functions)) if (x && x.name) for (const id of fnRelatedTables(data, x)) counts.set(id, (counts.get(id) || 0) + 1);
-  return [...counts].map(([id, count]) => ({ id, count, score: tpImportance(data, id, reportItems) }))
+  return [...counts].sort((a, b) => b[1] - a[1] || tpCmp(a[0], b[0])).slice(0, fnScoreCandidates)
+    .map(([id, count]) => ({ id, count, score: tpImportance(data, id, reportItems) }))
     .sort((a, b) => b.score - a.score || b.count - a.count || tpCmp(a.id, b.id)).slice(0, limit);
 }
 // The Functions tab: sections by role (trigger functions split by timing), each
@@ -5845,7 +5870,7 @@ function functionList(res, important, ctx) {
     left -= part.length;
     return h('ul', { class: 'obj-rows' }, part.map(x => fnRow(x, res, ctx, group)));
   };
-  const chips = important.length ? h('div', { class: 'fn-imp', role: 'group', 'aria-label': t('Important tables') },
+  const chips = important.length || res.table ? h('div', { class: 'fn-imp', role: 'group', 'aria-label': t('Important tables') },
     h('span', { class: 'fn-imp-l' }, t('Important tables')),
     important.map(x => h('button', { type: 'button', class: 'sum-chip c-ref fn-imp-c' + (res.table === x.id ? ' on' : ''), 'aria-pressed': String(res.table === x.id),
       title: t('Show the functions related to {t}', { t: x.id }), onclick: () => ctx.onTable(res.table === x.id ? '' : x.id) }, x.id, h('span', { class: 'fn-imp-n' }, fmt(x.count)))),
@@ -6246,7 +6271,7 @@ function tpReportIndex(db) {
     if (!byName.has(k) || r.stage === 'approved') byName.set(k, r);
   }
   const all = [...byName.values()], reps = all.slice(0, tpReportCap);
-  const items = reps.map(r => ({ id: repKey(r), title: r.title || r.name, sql: tpSqlCache.get(tpSqlKey(r)) ?? null }));
+  const items = reps.map(r => ({ id: repKey(r), key: tpSqlKey(r), title: r.title || r.name, sql: tpSqlCache.get(tpSqlKey(r)) ?? null }));
   return { reps, items, pending: reps.filter(r => !tpSqlCache.has(tpSqlKey(r)) && !tpSqlFailed.has(tpSqlKey(r))).length,
     failed: reps.filter(r => tpSqlFailed.has(tpSqlKey(r))).length, capped: all.length > tpReportCap ? tpReportCap : 0 };
 }
@@ -6273,6 +6298,14 @@ const tpGroupOf = tp => tpGroupChoice(tp.group, state.tpGroup);
 // pages in Views, function pages in Functions. One render path per page kind;
 // the tab only picks the container, the state slot and what Back returns to.
 const pageSlots = { schema: 'tablePage', views: 'viewPage', functions: 'fnPage' };
+// The column search box of a page, one id per tab.
+const searchIdOf = tab => (tab === 'schema' ? 'tpSearch' : `tpSearch-${tab}`);
+// The input "/" focuses in a tab: the open page's column search, else the
+// tab's own list search (Views, Functions); null leaves it to the toolbar.
+function slashTarget(tab, byId) {
+  if (!pageSlots[tab]) return null;
+  return byId(searchIdOf(tab)) || (tab === 'schema' ? null : byId(`${tab}Search`));
+}
 const pageOf = tab => state[pageSlots[tab]] ?? null;
 const setPage = (tab, v) => { state[pageSlots[tab]] = v; };
 const pageKey = tab => state[pageSlots[tab] + 'Key'] ?? null;
@@ -6427,8 +6460,8 @@ function renderTablePage(view, data, tab = 'schema') {
     onMore: (k, v) => set({ moreOpen: { ...tp.moreOpen, [k]: v } }),
     onRetryReports: () => { tpSqlFailed.clear(); setPageKey(tab, null); renderPageTab(tab); },
     onReport: id => { const r = index?.reps.find(x => repKey(x) === id); if (r) openReportFromPage(r); },
-    ...tpCodeCtx(tab, tp, id, set), onOpenFunction: fn => openFunctionPage(tp.db, fn),
-  })), tpQPending);
+    ...tpCodeCtx(tab, tp, id, set), onOpenFunction: fn => openFunctionPage(tp.db, fn), searchId: searchIdOf(tab),
+  })), tpQPending, searchIdOf(tab));
   if (index?.pending) tpLoadReportSql(index.reps);
   if (tp.reveal) {
     setPage(tab, { ...pageOf(tab), reveal: null });
@@ -7788,7 +7821,7 @@ $('refreshBtn').addEventListener('click', () => load());
 
 document.addEventListener('keydown', ev => {
   const typing = isTypingIn(document.activeElement);
-  if (ev.key === '/' && !typing) { ev.preventDefault(); (['schema', 'views', 'functions'].includes(state.tab) && $('tpSearch') || ['views', 'functions'].includes(state.tab) && $(`${state.tab}Search`) || F.text).focus(); }
+  if (ev.key === '/' && !typing) { ev.preventDefault(); (slashTarget(state.tab, $) || F.text).focus(); }
   else if (ev.key === 'Escape') { if (closeThemeMenu(true)) { ev.preventDefault(); return; } closeDbMenu(); if (typing) document.activeElement.blur(); else if (state.open) { state.open = null; render(); } else if (state.tab === 'schema' && graph3d) graph3d.showAll(); }
   else if (!typing && (ev.key === 'r' || ev.key === 'R') && !ev.ctrlKey && !ev.metaKey) load();
   else if (!typing && (ev.key === 'd' || ev.key === 'D') && !ev.ctrlKey && !ev.metaKey) { $('dbsel').classList.contains('open') ? closeDbMenu() : openDbMenu(); }

@@ -369,7 +369,7 @@ function loadTabs(stateInit = {}) {
     renderSchema: () => log.push(['render', 'schema']), renderObjectTab: tab => log.push(['render', tab]), scrollTo() {}, setMemSel: id => log.push(['sel', id]) });
   const tp = page.match(/^const tpIsView = .*$/m)[0];
   const fn = page.match(/^const fnTrailPrefix = [\s\S]*?^const fnFromTrail = .*$/m)[0];
-  vm.runInContext(`${tp}\n${fn}\n${src}\nObject.assign(this, { openTablePage, openFunctionPage, openPage, pageBack, closePage, pageTabOf, pageOf, fnTrailId });`, ctx);
+  vm.runInContext(`${tp}\n${fn}\n${src}\nObject.assign(this, { openTablePage, openFunctionPage, openPage, pageBack, closePage, pageTabOf, pageOf, fnTrailId, slashTarget });`, ctx);
   return ctx;
 }
 
@@ -761,4 +761,66 @@ test('view sources: the most important first; more than 12 sit behind a toggle',
   assert.equal(byClass(left, 'tp-nb').length, 12);
   byClass(left, 'tp-rel-more')[0].attrs.onclick();
   assert.deepEqual(opened, [['panel-refs', true]]);
+});
+
+test('a table page and a view page alive at once have their own search ids; "/" picks the active tab\'s box', () => {
+  const ctx = load();
+  const table = ctx.tablePageView(ctx.tablePageModel(graph(), 'example.orders', { describedAt: 'x', kind: 'table', columns: [{ name: 'order_id', type: 'bigint' }], constraints: [], history: [] }), ['x'], ctxOf());
+  const view = ctx.tablePageView(ctx.tablePageModel(graph(), 'example.v_order_list', viewRec()), ['x'], ctxOf({ searchId: 'tpSearch-views', reports: { items: [] } }));
+  const ids = [...all(table, n => n.tag === 'input'), ...all(view, n => n.tag === 'input')].map(n => n.attrs.id);
+  assert.deepEqual(ids, ['tpSearch', 'tpSearch-views']);
+  const tabs = loadTabs();
+  const present = new Set(['tpSearch', 'tpSearch-views']);
+  const byId = id => (present.has(id) ? id : null);
+  assert.equal(tabs.slashTarget('schema', byId), 'tpSearch');
+  assert.equal(tabs.slashTarget('views', byId), 'tpSearch-views');
+  present.delete('tpSearch-views'); present.add('viewsSearch'); present.add('functionsSearch');
+  assert.equal(tabs.slashTarget('views', byId), 'viewsSearch', 'the list search when no view page is open');
+  assert.equal(tabs.slashTarget('functions', byId), 'functionsSearch');
+  assert.equal(tabs.slashTarget('reports', byId), null);
+  assert.match(page, /searchId: searchIdOf\(tab\),\s*\}\)\), tpQPending, searchIdOf\(tab\)\);/, 'the redraw keeps focus in the same tab\'s box');
+  assert.match(page, /\(slashTarget\(state\.tab, \$\) \|\| F\.text\)\.focus\(\)/);
+});
+
+test('a clipped code box builds only its visible lines; opened, the whole text', () => {
+  const ctx = load();
+  const sql = Array.from({ length: 5000 }, (_, i) => `select ${i}`).join('\n');
+  const seen = [];
+  const highlight = text => { seen.push(text.split('\n').length); return text.split('\n').map(l => h('div', { class: 'sq-line' }, l)); };
+  const clipped = ctx.tpCode(sql, { id: 'x', label: 'L', open: false, onToggle() {} }, { highlight });
+  assert.equal(byClass(clipped, 'sq-line').length, 24);
+  assert.match(textOf(byClass(clipped, 'code-more')[0]), /Show all 5000 lines/);
+  const open = ctx.tpCode(sql, { id: 'x', label: 'L', open: true, onToggle() {} }, { highlight });
+  assert.equal(byClass(open, 'sq-line').length, 5000);
+  assert.deepEqual(seen, [24, 5000]);
+});
+
+test('important tables: only the 30 tables with the most related functions are scored; results stay ranked by score', () => {
+  const ctx = load();
+  const g = { profile: 'exampledb', notes: [], edges: [], nodes: [], functions: [] };
+  for (let i = 0; i < 40; i++) {
+    const id = `example.t${String(i).padStart(2, '0')}`;
+    g.nodes.push({ id, schema: 'example', table: `t${String(i).padStart(2, '0')}`, state: 'seen', kind: 'table' });
+    for (let k = 0; k <= i % 5; k++) g.functions.push({ id: `example.f${i}_${k}`, schema: 'example', name: `f${i}_${k}`, touches: { reads: [id], writes: [] } });
+  }
+  // A table with few functions but many notes falls outside the candidates.
+  g.notes = Array.from({ length: 5 }, (_, i) => ({ id: i, status: 'active', kind: 'rule', schema: 'example', table: 't00', column: null, text: 'x' }));
+  const reports = [{ id: 'r', key: 'k1', sql: 'select * from example.t04 -- example.t09' }];
+  const imp = ctx.fnImportantTables(g, reports);
+  assert.equal(imp.length, 10);
+  assert.ok(!imp.some(x => x.id === 'example.t00'), 't00 has one function: not a candidate');
+  assert.equal(imp[0].id, 'example.t04', 'the report mention (3) ranks first; the commented one does not count');
+  assert.ok(imp.every(x => x.count >= 4));
+});
+
+test('a table filter always offers Clear filter, even without chips; a database switch resets the list filters', () => {
+  const ctx = load();
+  const res = ctx.functionSections(graph(), { table: 'example.orders' });
+  const cleared = [];
+  const list = ctx.functionList(res, [], { onOpen() {}, onTable: id => cleared.push(id), onSection() {} });
+  const btn = all(list, n => n.tag === 'button' && textOf(n).includes('Clear filter'))[0];
+  assert.ok(btn, 'Clear filter without important-table chips');
+  btn.attrs.onclick();
+  assert.deepEqual(cleared, ['']);
+  assert.match(page, /function setDb\(db, \{ render: doRender = true \} = \{\}\) \{\s*\/\/[^\n]*\s*if \(state\.db !== db\) state\.objFilter = \{\};/);
 });
