@@ -453,7 +453,8 @@ test('summary: an empty chip group says "None known." (Used by views, Referenced
   const sum = { view: 'summary', reports: { items: [], pending: 0 }, onView() {}, onColumn() {}, onUnused() {} };
   const groupText = (view, title) => textOf(byClass(view, 'sum-group').find(g => g.attrs['aria-label'] === title));
   const rec = { ...viewRec(), usedByViews: [] };
-  const v = ctx.tablePageView(ctx.tablePageModel(graph(), 'example.v_order_list', rec), ['x'], ctxOf(sum));
+  const lone = graph(); lone.nodes.find(n => n.id === 'example.mv_daily_totals').viewSources = []; // no view reads v_order_list
+  const v = ctx.tablePageView(ctx.tablePageModel(lone, 'example.v_order_list', rec), ['x'], ctxOf(sum));
   const used = byClass(v, 'sum-group').find(g => g.attrs['aria-label'] === 'Used by views');
   assert.equal(byClass(used, 'sum-chips').length, 0);
   assert.match(groupText(v, 'Used by views'), /None known\./);
@@ -543,4 +544,23 @@ test('XSS: the view and function page code builds text nodes only; hostile names
   assert.ok(all(view, () => true).every(n => Object.entries(n.attrs).every(([k, v]) => typeof v === 'function' || !String(k).startsWith('onerror'))));
   const out = html(view);
   assert.doesNotMatch(out, /<img/);
+});
+
+test('used by views: a stale [] in the record is joined with the graph (view edges and viewSources), deduplicated and sorted', () => {
+  const ctx = load();
+  const g = graph();
+  // A view described after this one: only the graph knows it reads v_order_list.
+  g.nodes.push({ id: 'example.v_late', schema: 'example', table: 'v_late', state: 'explored', kind: 'view' });
+  g.edges.push({ from: 'example.v_late', to: 'example.v_order_list', level: 'view', columns: ['order_id'], refColumns: [] },
+    { from: 'example.mv_daily_totals', to: 'example.v_order_list', level: 'view', columns: ['order_id'], refColumns: [] });
+  const m = ctx.tablePageModel(g, 'example.v_order_list', { ...viewRec(), usedByViews: [] });
+  assert.deepEqual(plain(m.usedByViews.map(v => [v.id, v.kind])), [['example.mv_daily_totals', 'matview'], ['example.v_late', 'view']]);
+  // The record's own entries stay, the graph's are added once.
+  const both = ctx.tablePageModel(g, 'example.v_order_list', viewRec());
+  assert.deepEqual(plain(both.usedByViews.map(v => v.id)), ['example.mv_daily_totals', 'example.v_late']);
+  // A table: an edge into it is enough, also with an empty record list.
+  const t = ctx.tablePageModel(g, 'example.orders', { describedAt: 'x', kind: 'table', columns: [], constraints: [], history: [], usedByViews: [] });
+  assert.deepEqual(plain(t.usedByViews.map(v => v.id)), ['example.v_order_list']);
+  const view = ctx.tablePageView(t, ['example.orders'], ctxOf());
+  assert.match(textOf(all(view, n => n.attrs['aria-label'] === 'Used by views')[0]), /example\.v_order_list/);
 });

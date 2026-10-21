@@ -4947,14 +4947,18 @@ function tpViewFacts(data, node, rec, kind) {
     sources, functions, volatileCalls: functions.filter(f => f.volatile).length,
   };
 }
-// Views that read relation id: from the table file (usedByViews), else from
-// the graph nodes whose viewSources name it.
+// Views that read relation id. The table file's usedByViews is a snapshot
+// from its own describe and goes stale when other views are described later,
+// so it is joined with the graph: view edges into id and nodes whose
+// viewSources name it. Deduplicated by id, sorted.
 function tpUsedByViews(data, id, rec) {
   const nodes = tpArr(data?.nodes);
-  const list = Array.isArray(rec?.usedByViews)
-    ? rec.usedByViews.filter(v => v && v.table).map(v => tpRelRef(nodes, tableKey(v.schema, v.table), v.kind ?? null, []))
-    : nodes.filter(n => n.id !== id && tpArr(n.viewSources).includes(id)).map(n => tpRelRef(nodes, n.id, n.kind ?? null, []));
-  return list.sort((a, b) => tpCmp(a.id, b.id));
+  const byId = new Map();
+  const add = (vid, kind) => { if (typeof vid === 'string' && vid !== id && !byId.has(vid)) byId.set(vid, tpRelRef(nodes, vid, kind ?? null, [])); };
+  for (const v of tpArr(rec?.usedByViews)) if (v && v.table) add(tableKey(v.schema, v.table), v.kind);
+  for (const e of tpArr(data?.edges)) if (e && e.level === 'view' && e.to === id) add(e.from, null);
+  for (const n of nodes) if (tpArr(n.viewSources).includes(id)) add(n.id, n.kind);
+  return [...byId.values()].sort((a, b) => tpCmp(a.id, b.id));
 }
 // Everything the page shows for table id. rec: the table file (null when the
 // table is not described or not loaded).
