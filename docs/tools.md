@@ -12,10 +12,11 @@ Every MCP tool, plus the details of choosing a database, CSV export, batch explo
 | 🔐 `check_profile` | Checks that a profile's database role is read-only; a role that can write blocks the profile |
 | 🔎 `search` | Tables, views, columns, functions and triggers whose name or comment contains a text (always a case-insensitive contains-match), across all schemas, in one statement; with estimated rows and privileges; optionally function source text too (`searchSource`) |
 | 📁 `list_schemas` | Non-system schemas with owner, relation count, usage privilege, comment |
-| 📋 `list_tables` | Tables/views in a schema with estimated rows, size, SELECT privilege, comment; optional ILIKE filter |
-| 🧬 `describe_table` | Columns (with identity, generated and owned sequence), types, defaults, comments, constraints incl. checks, indexes, incoming FKs, triggers, row level security, partitioning, view definition; records the table in the schema memory and reports changes since the last time |
-| 🧬 `describe_tables` | The same structure for up to 50 tables in one call, with 6 catalog statements (7 with a view) however many tables; compact one-line-per-item summary by default, `detail: "full"` for every definition; unknown names are reported per table; each table is recorded in the schema memory |
-| 🧩 `describe_functions` | Up to 50 functions by `schema.name` (every overload) or by name pattern: signature, language, volatility, SECURITY DEFINER, owner, calling triggers and the `pg_get_functiondef` text (capped, `truncated` flag); 1 statement |
+| 📋 `list_tables` | Tables, views, materialized views and foreign tables in a schema (field `kind`) with estimated rows, size, SELECT privilege, comment; optional ILIKE filter |
+| 🧬 `describe_table` | Columns (with identity, generated and owned sequence), types, defaults, comments, constraints incl. checks, indexes, incoming FKs, triggers, row level security, partitioning, the views that read it (`usedByViews`) and for a view its definition, options, sources and called functions; records the table in the schema memory and reports changes since the last time |
+| 🧬 `describe_tables` | The same structure for up to 50 tables in one call, with 7 catalog statements (8 with a view) however many tables; compact one-line-per-item summary by default, `detail: "full"` for every definition; unknown names are reported per table; each table is recorded in the schema memory |
+| 🧩 `describe_functions` | Up to 50 functions by `schema.name` (every overload) or by name pattern: signature, language, volatility, SECURITY DEFINER, owner, calling triggers and the `pg_get_functiondef` text (capped, `truncated` flag); 1 statement; records each function in the schema memory and reports changes since the last time |
+| 🧾 `list_functions` | Inventory of functions, procedures and aggregates in one schema or all (optional name filter): signature, return type, kind, language, volatility, no definitions; 1 statement; extension functions only with `includeExtensions`; recorded in the schema memory as seen |
 | 📏 `profile_tables` | Up to 30 tables in one call: estimated rows, per-column fill rate and distinct count on a sample, and fan-out over a parent table (optionally in a window and with `parentFilter` conditions); at most 3 statements; counts and ratios only, never row values |
 | 🕸️ `relation_stats` | Up to 50 center tables in one call: their instance tables (referenced by foreign key) and dependent tables (referencing them), ranked by estimated linked rows from planner statistics; at most 2 statements; no table data is read |
 | ▶️ `query` | One read-only statement, max `AUSPEX_MAX_ROWS` rows, `$1..$n` params, optional `timeoutSeconds` |
@@ -97,7 +98,7 @@ Exploring N tables one by one costs N round trips (a `describe_table` and a
 measuring query per table), all of them in the audit log. `describe_tables`
 and `profile_tables` take a list instead and use a constant number of
 statements in one READ ONLY transaction with one audit entry, whether the list
-has 1 table or 30: `describe_tables` sends 6 catalog statements (7 when a view
+has 1 table or 30: `describe_tables` sends 7 catalog statements (8 when a view
 or materialized view is listed); `profile_tables` sends 1 catalog lookup, 1
 column-statistics statement for all tables (`UNION ALL`) and, with `parent`,
 1 fan-out statement, so at most 3 (field `statements`). Column statistics are
@@ -128,7 +129,9 @@ single-column foreign keys (`name definition`), per index (`name [unique]
 [method] (columns)`) and per trigger (`name TIMING EVENTS`), each line cut at
 120 characters, `referencedBy: { count, tables }` with the first 10 incoming
 foreign keys by table name, and `viewDefinitionOmitted` instead of a view's
-definition; `rowLevelSecurity`, `partitioning` and `partitionOf` only when
+definition, with its sources (`viewSources`, `schema.table(columns)`) and called
+functions (`viewFunctions`) as one line each, and for any relation the views
+that read it (`usedByViews`) as one line; `rowLevelSecurity`, `partitioning` and `partitionOf` only when
 set. The field `note` repeats this format. `detail: "full"` returns exactly
 the earlier answer (column comments, check, index and trigger definitions,
 view definitions). Both modes send the same statements and record the schema
@@ -152,9 +155,34 @@ the catalog tools return the structure needed to rebuild it:
   (`pg_get_triggerdef`). `rowLevelSecurity` is `{ enabled, forced }`; a
   partitioned table has `partitioning: { key, partitions }`, a partition
   `partitionOf: { parent, bound }`. The table comment is `comment`. All of it
-  comes from the same 6 statements (7 with a view), one of them for triggers.
+  comes from the same 7 statements (8 with a view), one of them for triggers.
   `describe_tables` returns these fields with `detail: "full"`; its default
   summary keeps only trigger names, timing and events.
+- Views and materialized views: one statement over all described relations
+  reads their dependencies from `pg_rewrite` and `pg_depend`, and one more
+  (only when a view or materialized view is listed) their definition and
+  options. Every described relation gets `usedByViews` (the views and
+  materialized views that read it: `{ schema, table, kind }`); a view or
+  materialized view also gets:
+
+  ```jsonc
+  {
+    "viewDefinition": "SELECT ...",             // pg_get_viewdef(oid, true)
+    "viewOptions": { "securityBarrier": false, "checkOption": null },  // null | "local" | "cascaded"
+    "populated": true,                           // materialized views only
+    "viewSources": [                             // sorted by schema, table
+      { "schema": "example", "table": "orders", "kind": "table", "columns": ["order_id", "status_code"] }
+    ],
+    "viewFunctions": [
+      { "schema": "example", "name": "order_total", "arguments": "p_order_id bigint", "volatility": "stable" }
+    ]
+  }
+  ```
+
+  Sources and functions are what PostgreSQL recorded for the view's rewrite
+  rule (the view itself is left out); built-in objects are not recorded
+  there. `changesSinceLast` reports `view definition changed` and
+  `view sources changed` (added or removed source relations).
 - `describe_functions` reads functions, procedures and aggregates by
   `schema.name` (all overloads) or by a name pattern (at most 50, `truncated`):
   `arguments`, `returns`, `kind`, `language`, `volatility`, `securityDefiner`,
@@ -162,6 +190,26 @@ the catalog tools return the structure needed to rebuild it:
   `owner`, `canExecute`, `comment`, `usedByTriggers` and `definition`
   (`pg_get_functiondef`, cut at `maxChars`, default 20000, with
   `definitionLength` and `truncated`; null for aggregates). One statement.
+  Each function name is recorded in the schema memory with all its overloads
+  (definition kept up to 20000 characters whatever `maxChars` was, see
+  docs/schema-memory.md); the answer's `memory.functions` has one entry per
+  name: `{ function: "example.order_total", recorded: "first time" | "updated",
+  lastDescribedAt?, changesSinceLast: [...] }`. `changesSinceLast` is empty
+  the first time; later it lists `overload (...) added` / `removed`,
+  `definition of (...) changed` and `properties of (...) changed: volatility,
+  securityDefiner, strict, parallel, config, owner`. When a pattern result is
+  cut at its limit, overloads missing from the last name are not reported as
+  removed.
+- `list_functions` is the inventory: `schema` (optional, default every
+  non-system schema), `pattern` (optional, a contains-match on the name like
+  `describe_functions`), `limit` (default 500, at most 2000; `truncated`) and
+  `includeExtensions` (default false: functions that belong to an installed
+  extension are left out). Per overload: `schema`, `name`, `arguments`,
+  `returns`, `kind`, `language`, `volatility`; no definitions. One statement.
+  The overloads are recorded in the schema memory as seen: a new function gets
+  a record without definitions, a known one only gains the overloads it did
+  not have (`listedOnly`); a described definition is never overwritten. The
+  answer's `memory` is `{ functionsAdded, overloadsAdded }`.
 - `search` also matches function names and comments and trigger names
   (`includeRoutines`, default true), and with `searchSource: true` the source
   text of functions (`matchedIn: "source"`; the text itself is not returned).

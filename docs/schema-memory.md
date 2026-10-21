@@ -33,6 +33,19 @@ with the work and never crawls the catalog on its own:
   and enabled/disabled triggers show up in `changesSinceLast`. Records
   written before triggers were stored report no trigger change the first
   time. The function source is never stored.
+- **Views:** for a view or materialized view, `describe_table` and
+  `describe_tables` also record its definition (cut at 20000 characters,
+  with `viewDefinitionLength` and `viewDefinitionTruncated`; the change check
+  `viewHash` covers the full text), `viewOptions`, `populated` (materialized
+  views), `viewSources` (relations it reads, with the columns used) and
+  `viewFunctions` (functions it calls). Every described relation records
+  `usedByViews`. A changed definition or a changed set of sources shows up in
+  `changesSinceLast`. Records written before these fields existed load as
+  before and report no sources change the first time.
+- **Functions:** `describe_functions` records every function name it read
+  under `functions/`, with all overloads, and reports `changesSinceLast` per
+  name; `list_functions` records an inventory of names and signatures as
+  seen. See *Function records* below.
 - **Exploring further:** after a report, `run_report` and `table_knowledge`
   list neighbors that were never described. The server instructions tell the
   model to ask you before looking at them, and then to read their structure
@@ -41,14 +54,15 @@ with the work and never crawls the catalog on its own:
 ```
 memory/<profile>/
 ├── tables/<schema>/<table>.json   structure, used columns, change history
+├── functions/<schema>/<name>.json every overload of one function name, change history
 ├── notes.json                     rules, observations, inferences
 ├── changelog.jsonl                explored tables, notes and schema changes
 ├── scanned-files.json             script files read for column scores (relative path, sha256, lastReadAt)
 └── graph.json                     derived view for the viewer (rebuilt on every change)
 ```
 
-`graph.json` is `{ profile, generatedAt, summary, nodes, edges, notes,
-changelog }`. Nodes and edges, with the optional fields `relation_stats` adds
+`graph.json` is `{ profile, generatedAt, summary, nodes, edges, functions,
+notes, changelog }`. Nodes and edges, with the optional fields `relation_stats` adds
 (absent until it has measured them, so older readers are unaffected):
 
 ```
@@ -60,13 +74,37 @@ node: { id: "schema.table", schema, table, file?, state: "explored" | "seen" | "
                                      agent?: { score, roles, reason, sources, at, history },
                                      user?: { score, roles?, at, history } | { cleared: true, at, history } } },
         triggers?: [{ name, timing, events, level, enabled, function, when, definition, constraintTrigger,
-                      summary?, summaryAt?, summaryStale? }] }
-edge: { level: "fk" | "used" | "suggested", from: "schema.table", to: "schema.table",
-        columns: [...], refColumns: [...], // from(columns) references to(refColumns)
+                      summary?, summaryAt?, summaryStale? }],
+        viewSources?: ["schema.table", ...],   // views and materialized views: relations they read
+        viewFunctions?: ["schema.name", ...] }  // views and materialized views: functions they call
+edge: { level: "fk" | "used" | "suggested" | "view", from: "schema.table", to: "schema.table",
+        columns: [...], refColumns: [...], // from(columns) references to(refColumns);
+                                           // view: from reads to, columns = the source columns used, refColumns = []
         linkedRows?: number | null,      // rows of `from` with the key set; null = stats missing
         estimated?: true,                // linkedRows comes from planner statistics
         statsAt?: "ISO time" }           // when relation_stats measured it (latest wins)
 ```
+
+A `view` edge goes from a view or materialized view to each of its sources
+that is a node; sources that are not in the memory get no node of their own.
+
+`functions` has one light entry per function record (no definitions):
+
+```
+function: { id: "schema.name", schema, name, file: "functions/<schema>/<name>.json",
+            state: "explored" | "seen",           // seen: only listed by list_functions
+            overloads: number, kinds: ["function", ...], language,
+            flags: { volatile, securityDefiner, definerWithoutSearchPath },  // true when any overload has it
+            usedByTriggers: number,               // distinct calling triggers over all overloads
+            calledBy: { views: ["schema.table", ...],    // views whose viewFunctions name it
+                        functions: ["schema.name", ...] }, // other stored functions whose body calls
+                                                           // schema.name( or, in the same schema, name(
+            touches: { reads: [...], writes: [...] },      // union over the overloads (inferred)
+            changes: number }                     // history entries
+```
+
+`definerWithoutSearchPath` is true for a `SECURITY DEFINER` overload without
+a `search_path=` entry in its `config`.
 
 `file` is only set for tables with a record (`explored` or `seen`). The table
 records keep the measurement (`estRows`, `estRowsAt`, and for centers
@@ -82,6 +120,50 @@ a dot or a double quote is written quoted, as PostgreSQL's `quote_ident` does
 never share an id; every other name keeps the plain form. The viewer builds
 ids the same way. Approved-join pairs (`used` edges) cannot tell dotted names
 apart, because the plan text they come from has no quotes.
+
+### Function records
+
+`functions/<schema>/<name>.json` holds every overload of one function name:
+
+```jsonc
+{
+  "schema": "example", "name": "order_total",
+  "firstSeen": "...", "lastSeen": "...", "describedAt": "...",   // describedAt null: only listed
+  "overloads": [{
+    "arguments": "p_order_id bigint", "returns": "numeric",
+    "kind": "function", "language": "plpgsql", "volatility": "stable",
+    "securityDefiner": false, "strict": false, "parallel": "unsafe",
+    "config": ["search_path=example"], "owner": "report_reader", "canExecute": true, "comment": null,
+    "usedByTriggers": [{ "table": "example.orders", "trigger": "orders_audit" }],
+    "definition": "CREATE OR REPLACE FUNCTION ...",   // cut at 20000 characters; null for aggregates
+    "definitionLength": 2345, "truncated": false,
+    "definitionHash": "16 hex characters (sha256 of the stored text)",
+    "touches": { "inferred": true, "reads": ["example.order_items"], "writes": [] }   // null for other languages
+  }],
+  "history": [{ "at": "...", "changes": [{ "change": "definition-changed", "arguments": "p_order_id bigint" }] }]
+}
+```
+
+- Change kinds: `overload-added`, `overload-removed`, `definition-changed`
+  and `flags-changed` (with `fields`: any of `volatility`, `securityDefiner`,
+  `strict`, `parallel`, `config`, `owner`). The history keeps the last 50
+  entries, like tables.
+- An overload only listed by `list_functions` has `listedOnly: true`,
+  `definition: null` and only the inventory fields (`arguments`, `returns`,
+  `kind`, `language`, `volatility`). `list_functions` never changes an
+  overload that is already recorded; a later `describe_functions` replaces
+  the listed overload with the full one (reported as `overload-added` when the
+  function was described before).
+- `touches` is a textual inference from the body, not a catalog fact
+  (PostgreSQL records no dependencies for function bodies), and only for
+  `sql` and `plpgsql`: comments, string literals and nested dollar-quoted
+  strings are skipped; `FROM` / `JOIN` targets (and `USING` in `MERGE` /
+  `DELETE`) are reads; `INSERT INTO`, `UPDATE`, `DELETE FROM`, `MERGE INTO`
+  and `TRUNCATE` targets are writes. An unqualified name gets the function's
+  schema (`pg_*` names `pg_catalog`). CTE names, parameters (also `OUT` and
+  `RETURNS TABLE` columns), declared and loop variables, temporary tables
+  created in the body and `NEW` / `OLD` are dropped. Dynamic SQL (`EXECUTE` of
+  a string) is not seen. Sorted, deduplicated, at most 50 each.
 
 ### Column importance
 

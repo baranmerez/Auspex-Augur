@@ -43,8 +43,10 @@ creates anything.
 ## Workflow
 
 1. **Find the family.** `search` with the stem (for example `example`) for
-   tables and columns. Functions and triggers: `describe_functions` when the
-   server offers it; otherwise one catalog query each, see
+   tables and columns. Functions and triggers: `list_functions` with the stem
+   for the inventory (one statement, no definitions), then
+   `describe_functions` on the ones that matter, when the server offers them;
+   otherwise one catalog query each, see
    [catalog-queries.md](references/catalog-queries.md).
 2. **Read the structure in one batch.** `describe_tables` with
    `detail: "full"` on every table of the family (columns, constraints,
