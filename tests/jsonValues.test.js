@@ -63,3 +63,20 @@ test('raw CSV export keeps the exact JSON numbers', async () => {
 test('the driver defaults stay JSON.parse for Auspex catalog queries', () => {
   assert.deepEqual(pg.types.getTypeParser(3802, 'text')('{"table": "example.orders"}'), { table: 'example.orders' });
 });
+
+test('non-finite floats and intervals keep PostgreSQL text, finite floats stay numbers', async () => {
+  const fetched = [];
+  const db = fakeDatabase(os.tmpdir(), fetched);
+  await db.query('exampledb', 'SELECT 1');
+  const types = fetched[0].types;
+  const parse = (oid, text) => types.getTypeParser(oid, 'text')(text);
+  assert.equal(parse(701, 'NaN'), 'NaN');
+  assert.equal(parse(701, '-Infinity'), '-Infinity');
+  assert.equal(parse(700, 'Infinity'), 'Infinity');
+  assert.equal(parse(701, '1.5'), 1.5);
+  assert.deepEqual(parse(1022, '{NaN,Infinity,-Infinity,NULL,2.5}'), ['NaN', 'Infinity', '-Infinity', null, 2.5]);
+  assert.deepEqual(parse(1021, '{{1,NaN}}'), [[1, 'NaN']]);
+  assert.equal(parse(1186, 'P1Y2M3DT4H5M6.789123S'), 'P1Y2M3DT4H5M6.789123S');
+  assert.deepEqual(parse(1187, '{P1Y2M,NULL}'), ['P1Y2M', null]);
+  assert.equal(parse(23, '42'), 42, 'other types keep the default parsers');
+});
