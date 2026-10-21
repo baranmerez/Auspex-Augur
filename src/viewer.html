@@ -1113,7 +1113,9 @@
     /* Compact header: the logo stands for the name, buttons show their icons and the live state its dot;
        the schema-change badge moves to the end. Two rows, three with the badge. */
     .brand { gap: 6px; }
-    .brand h1, .brand .spacer, #dbBtn .lbl, #liveText, #liveBtn > span, #themeMenuName { display: none; }
+    .brand h1, .brand .spacer, #dbBtn .lbl, #liveBtn > span, #themeMenuName { display: none; }
+    /* The live state text stays readable for screen readers; only the dot shows. */
+    #liveText { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .dbsel { min-width: 0; }
     #live { padding: 4px 8px; gap: 0; }
     #lang button, #theme button { padding: 4px 8px; }
@@ -7936,6 +7938,7 @@ function updateStudioButtons() { const d = $('studioDelete'); if (d) d.hidden = 
 let liveTimer = null;
 function applyLive() {
   $('live').classList.toggle('on', state.live);
+  $('liveBtn').setAttribute('aria-pressed', String(!!state.live));
   $('liveText').textContent = state.live ? t('Live · 5 s') : t('Live off');
   clearInterval(liveTimer);
   if (state.live) liveTimer = setInterval(() => { if (!document.hidden) load({ quiet: true }); }, 5000);
