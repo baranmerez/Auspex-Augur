@@ -1173,7 +1173,11 @@ export function diffFunction(prev, next, complete = true) {
       changes.push({ change: 'overload-added', arguments: o.arguments });
       continue;
     }
-    if (old.definitionHash && o.definitionHash && old.definitionHash !== o.definitionHash) changes.push({ change: 'definition-changed', arguments: o.arguments });
+    // The stored text is cut at storedTextChars: a change after that point
+    // only shows in the full length.
+    const hashChanged = old.definitionHash && o.definitionHash && old.definitionHash !== o.definitionHash;
+    const lengthChanged = Number.isInteger(old.definitionLength) && Number.isInteger(o.definitionLength) && old.definitionLength !== o.definitionLength;
+    if (hashChanged || lengthChanged) changes.push({ change: 'definition-changed', arguments: o.arguments });
     const fields = functionFlagFields.filter(k => JSON.stringify(old[k] ?? null) !== JSON.stringify(o[k] ?? null));
     if (fields.length) changes.push({ change: 'flags-changed', arguments: o.arguments, fields });
   }
