@@ -48,7 +48,26 @@ test('describe_functions and the extended search are listed with their input sch
   const searchTool = tools.find(t => t.name === 'search');
   assert.equal(searchTool.inputSchema.properties.searchSource.type, 'boolean');
   assert.equal(searchTool.inputSchema.properties.includeRoutines.type, 'boolean');
-  assert.match(tools.find(t => t.name === 'describe_tables').description, /6, or 7 when/);
+  assert.match(tools.find(t => t.name === 'describe_tables').description, /7, or 8 when/);
+});
+
+test('list_functions is listed with its input schema; a bad limit is refused, a real call is audited once', async () => {
+  const { tools } = await client.listTools();
+  const list = tools.find(t => t.name === 'list_functions');
+  assert.ok(list, 'list_functions is registered');
+  assert.deepEqual(list.inputSchema.required, ['profile']);
+  assert.equal(list.inputSchema.properties.limit.maximum, 2000);
+  assert.equal(list.inputSchema.properties.includeExtensions.type, 'boolean');
+  assert.match(list.description, /One statement/);
+  const before = auditEntries().length;
+  const bad = await call('list_functions', { profile: 'example', limit: 2001 });
+  assert.equal(bad.structuredContent.error.code, 'INVALID_INPUT');
+  assert.equal(auditEntries().length, before, 'schema validation happens before the handler');
+  const res = await call('list_functions', { profile: 'example', schema: 'example', pattern: 'order' });
+  assert.equal(res.structuredContent.error.code, 'CONNECTION_FAILED');
+  const logged = auditEntries().filter(e => e.correlationId === res._meta.correlationId);
+  assert.equal(logged.length, 1);
+  assert.deepEqual([logged[0].tool, logged[0].schema, logged[0].pattern], ['list_functions', 'example', 'order']);
 });
 
 test('save_report text fields and the server instructions point to notesLanguage', async () => {

@@ -12,7 +12,7 @@ import path from 'node:path';
 import { loadConfig } from '../src/config.js';
 import { ReadOnlyDatabase } from '../src/db.js';
 import { classifyError } from '../src/errors.js';
-import { listSchemas, listTables, describeTable, describeTables, describeFunctions, profileTables, relationStats, search, summarizeDescribedTable, estimatedRowsSql } from '../src/catalog.js';
+import { listSchemas, listTables, describeTable, describeTables, describeFunctions, listFunctions, profileTables, relationStats, search, summarizeDescribedTable, estimatedRowsSql } from '../src/catalog.js';
 import { ReportService } from '../src/reports/service.js';
 import { SchemaMemory } from '../src/memory/store.js';
 
@@ -396,7 +396,7 @@ test('report library refuses unknown databases and non-SELECT drafts', async () 
 
 test('describe_tables describes region, worker and a view with a constant number of statements and records them', async () => {
   const r = await describeTables(db, 'local', ['auspex_test.region', 'auspex_test.worker', 'auspex_test.nope']);
-  assert.equal(r.statements, 6);
+  assert.equal(r.statements, 7);
   assert.deepEqual([r.found, r.notFound], [2, 1]);
   const [region, worker, missing] = r.tables;
   assert.match(missing.error, /auspex_test\.nope not found/);
@@ -412,8 +412,19 @@ test('describe_tables describes region, worker and a view with a constant number
   assert.deepEqual(worker, single);
 
   const withView = await describeTables(db, 'local', ['auspex_test.worker', 'auspex_test.v_worker_region']);
-  assert.equal(withView.statements, 7);
+  assert.equal(withView.statements, 8);
   assert.match(withView.tables[1].viewDefinition, /join/i);
+  // View dependencies from pg_rewrite + pg_depend, both directions.
+  const view = withView.tables[1];
+  assert.deepEqual(view.viewSources, [
+    { schema: 'auspex_test', table: 'region', kind: 'table', columns: ['id', 'name'] },
+    { schema: 'auspex_test', table: 'worker', kind: 'table', columns: ['daily_wage', 'full_name', 'id', 'region_id'] },
+  ]);
+  assert.deepEqual(view.viewFunctions, []);
+  assert.deepEqual(view.viewOptions, { securityBarrier: false, checkOption: null });
+  assert.equal(view.populated, undefined);
+  assert.deepEqual(withView.tables[0].usedByViews, [{ schema: 'auspex_test', table: 'v_worker_region', kind: 'view' }]);
+  assert.deepEqual(region.usedByViews, [{ schema: 'auspex_test', table: 'v_worker_region', kind: 'view' }]);
 
   // detail "summary" is built from the same data, without more statements.
   const sWorker = summarizeDescribedTable(worker);
@@ -568,6 +579,20 @@ ddlTest('describe_tables shows triggers, checks, identity/serial/generated colum
   assert.ok(!JSON.stringify(sJob).includes('CREATE TRIGGER'), 'no trigger definitions in the summary');
   assert.deepEqual(summarizeDescribedTable(secret).rowLevelSecurity, { enabled: true, forced: false });
   assert.deepEqual(summarizeDescribedTable(log).partitioning, { key: 'RANGE (logged_on)', partitions: 2 });
+});
+
+test('list_functions runs as one statement and leaves out system schemas', async () => {
+  const r = await listFunctions(db, 'local', { limit: 2000 });
+  assert.equal(r.statements, 1);
+  assert.ok(r.functions.every(f => !f.schema.startsWith('pg_') && f.schema !== 'information_schema'));
+  const all = await listFunctions(db, 'local', { includeExtensions: true, pattern: 'auspex' });
+  assert.equal(all.pattern, '%auspex%');
+});
+
+ddlTest('list_functions lists the test functions with kind, language and volatility', async () => {
+  const r = await listFunctions(db, 'local', { schema: 'auspex_test', pattern: 'import_job' });
+  const count = r.functions.find(f => f.name === 'import_job_count');
+  assert.deepEqual(count, { schema: 'auspex_test', name: 'import_job_count', arguments: 'p_region integer', returns: 'bigint', kind: 'function', language: 'sql', volatility: 'stable' });
 });
 
 ddlTest('describe_functions returns signature, properties, calling triggers and the capped definition in 1 statement', async () => {

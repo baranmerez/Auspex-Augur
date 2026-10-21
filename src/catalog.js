@@ -167,10 +167,53 @@ join pg_namespace n on n.oid = c.relnamespace
 where con.contype = 'f' and con.confrelid = any($1::oid[])
 order by con.confrelid, 2, 3`;
 
-const viewDefinitionsSql = `
-select c.oid::bigint as relid, pg_get_viewdef(c.oid, true) as definition
+// Views and materialized views among $1: definition, options (reloptions
+// such as security_barrier=true, check_option=local) and, for a materialized
+// view, whether it is populated.
+const viewFactsSql = `
+select c.oid::bigint as relid, c.relkind, pg_get_viewdef(c.oid, true) as definition,
+       c.reloptions as options, c.relispopulated as populated
 from pg_class c
 where c.oid = any($1::oid[]) and c.relkind in ('v', 'm')`;
+
+// View dependencies of the relations in $1, from the rewrite rules of views
+// and materialized views (pg_rewrite) and their recorded dependencies
+// (pg_depend), in one statement:
+// - 'source': what a view or materialized view in $1 reads: relations (with
+//   the columns it uses, from refobjsubid) and functions it calls; the view
+//   itself is left out.
+// - 'used_by': the views and materialized views that read a relation in $1.
+const viewDependenciesSql = `
+select 'source' as dep, r.ev_class::bigint as relid,
+       case when d.refclassid = 'pg_class'::regclass then 'relation' else 'function' end as ref_type,
+       coalesce(rn.nspname, pn.nspname) as ref_schema,
+       coalesce(rc.relname, p.proname) as ref_name,
+       rc.relkind::text as ref_relkind,
+       case when d.refobjsubid > 0 then a.attname end as ref_column,
+       case when p.oid is not null then pg_get_function_identity_arguments(p.oid) end as ref_arguments,
+       case p.provolatile when 'i' then 'immutable' when 's' then 'stable' when 'v' then 'volatile' end as ref_volatility
+from pg_rewrite r
+join pg_class vc on vc.oid = r.ev_class and vc.relkind in ('v', 'm')
+join pg_depend d on d.classid = 'pg_rewrite'::regclass and d.objid = r.oid
+                and d.refclassid in ('pg_class'::regclass, 'pg_proc'::regclass)
+                and not (d.refclassid = 'pg_class'::regclass and d.refobjid = r.ev_class)
+left join pg_class rc on d.refclassid = 'pg_class'::regclass and rc.oid = d.refobjid
+left join pg_namespace rn on rn.oid = rc.relnamespace
+left join pg_attribute a on rc.oid is not null and a.attrelid = rc.oid and a.attnum = d.refobjsubid
+left join pg_proc p on d.refclassid = 'pg_proc'::regclass and p.oid = d.refobjid
+left join pg_namespace pn on pn.oid = p.pronamespace
+where r.ev_class = any($1::oid[])
+  and (rc.oid is null or rc.relkind in ('r', 'p', 'v', 'm', 'f'))
+  and (rc.oid is not null or p.oid is not null)
+union all
+select distinct 'used_by', d.refobjid::bigint, 'relation', vn.nspname, vc.relname, vc.relkind::text, null, null, null
+from pg_depend d
+join pg_rewrite r on r.oid = d.objid
+join pg_class vc on vc.oid = r.ev_class and vc.relkind in ('v', 'm')
+join pg_namespace vn on vn.oid = vc.relnamespace
+where d.classid = 'pg_rewrite'::regclass and d.refclassid = 'pg_class'::regclass
+  and d.refobjid = any($1::oid[]) and r.ev_class <> d.refobjid
+order by 1, 2, 4, 5, 7`;
 
 // Searches relation names (tables, views, ...), column names, function names
 // and trigger names, and their comments, across all non-system schemas (or
@@ -338,7 +381,59 @@ function columnFromRow(row) {
   return out;
 }
 
-// Describes refs ([{ schema, table }]) with 6 catalog statements, 7 when one
+const textOrder = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+const optionTrue = v => ['true', 'on', 'yes', '1'].includes(String(v ?? '').toLowerCase());
+
+// Rows of viewDependenciesSql grouped by the described oid: sources (one
+// entry per relation with its sorted, distinct columns), functions and
+// usedBy, each sorted by schema and name.
+export function viewDependenciesFromRows(rows) {
+  const sources = new Map();
+  const functions = new Map();
+  const usedBy = new Map();
+  const bucket = (map, key) => {
+    if (!map.has(key)) map.set(key, new Map());
+    return map.get(key);
+  };
+  for (const r of rows) {
+    const key = String(r.relid);
+    if (r.dep === 'used_by') {
+      bucket(usedBy, key).set(`${r.ref_schema}\n${r.ref_name}`, { schema: r.ref_schema, table: r.ref_name, kind: relationKinds[r.ref_relkind] ?? r.ref_relkind });
+    } else if (r.ref_type === 'function') {
+      bucket(functions, key).set(`${r.ref_schema}\n${r.ref_name}\n${r.ref_arguments ?? ''}`, {
+        schema: r.ref_schema, name: r.ref_name, arguments: r.ref_arguments ?? '', volatility: r.ref_volatility ?? null,
+      });
+    } else {
+      const map = bucket(sources, key);
+      const id = `${r.ref_schema}\n${r.ref_name}`;
+      if (!map.has(id)) map.set(id, { schema: r.ref_schema, table: r.ref_name, kind: relationKinds[r.ref_relkind] ?? r.ref_relkind, columns: new Set() });
+      if (r.ref_column !== null && r.ref_column !== undefined) map.get(id).columns.add(r.ref_column);
+    }
+  }
+  const sorted = (map, second) => new Map([...map].map(([key, items]) => [key, [...items.values()]
+    .sort((a, b) => textOrder(a.schema, b.schema) || textOrder(a[second], b[second]) || textOrder(a.arguments ?? '', b.arguments ?? ''))]));
+  const withColumns = new Map([...sorted(sources, 'table')].map(([key, list]) => [key, list.map(s => ({ ...s, columns: [...s.columns].sort(textOrder) }))]));
+  return { sources: withColumns, functions: sorted(functions, 'name'), usedBy: sorted(usedBy, 'table') };
+}
+
+// The view fields of a describe result: definition, options, populated
+// (materialized views only), sources and called functions.
+export function viewFieldsFromRow(row, dependencies, key) {
+  const options = new Map((row.options ?? []).map(o => {
+    const at = String(o).indexOf('=');
+    return at < 0 ? [String(o), 'true'] : [String(o).slice(0, at), String(o).slice(at + 1)];
+  }));
+  const checkOption = options.has('check_option') ? String(options.get('check_option')).toLowerCase() : null;
+  return {
+    viewDefinition: row.definition,
+    viewOptions: { securityBarrier: optionTrue(options.get('security_barrier')), checkOption },
+    ...(row.relkind === 'm' ? { populated: !!row.populated } : {}),
+    viewSources: dependencies.sources.get(key) ?? [],
+    viewFunctions: dependencies.functions.get(key) ?? [],
+  };
+}
+
+// Describes refs ([{ schema, table }]) with 7 catalog statements, 8 when one
 // of them is a view or materialized view, however many refs there are.
 // Returns one entry per ref, in order: the describe_table structure, or
 // { relation, schema, table, error } when the relation does not exist.
@@ -357,14 +452,16 @@ async function describeRelations(client, name, refs) {
   let referencedBy = new Map();
   let triggers = new Map();
   let views = new Map();
+  let dependencies = { sources: new Map(), functions: new Map(), usedBy: new Map() };
   if (oids.length) {
     columns = groupByRelid(await run(columnsSql, [oids]));
     constraints = groupByRelid(await run(constraintsSql, [oids]));
     indexes = groupByRelid(await run(indexesSql, [oids]));
     referencedBy = groupByRelid(await run(referencedBySql, [oids]));
     triggers = groupByRelid(await run(triggersSql, [oids]));
+    dependencies = viewDependenciesFromRows(await run(viewDependenciesSql, [oids]));
     if (rels.some(r => r.relkind === 'v' || r.relkind === 'm')) {
-      views = new Map((await run(viewDefinitionsSql, [oids])).map(r => [String(r.relid), r.definition]));
+      views = new Map((await run(viewFactsSql, [oids])).map(r => [String(r.relid), r]));
     }
   }
   const tables = refs.map((ref, i) => {
@@ -391,7 +488,8 @@ async function describeRelations(client, name, refs) {
     };
     if (rel.partition_key) result.partitioning = { key: rel.partition_key, partitions: toNumber(rel.partitions) ?? 0 };
     if (rel.partition_of) result.partitionOf = { parent: rel.partition_of, bound: rel.partition_bound ?? null };
-    if (views.has(key)) result.viewDefinition = views.get(key);
+    if (views.has(key)) Object.assign(result, viewFieldsFromRow(views.get(key), dependencies, key));
+    result.usedByViews = dependencies.usedBy.get(key) ?? [];
     return result;
   });
   return { tables, statements };
@@ -443,7 +541,9 @@ export const describeSummaryNote = 'detail "summary": each column as "name type 
   + '[default <value> | has default] [no SELECT]" (a default longer than 30 characters is only flagged); constraints other than single-column '
   + 'foreign keys as "name definition"; indexes as "name [unique] [method] (columns)"; triggers as "name TIMING EVENTS"; each line cut at '
   + `${summaryLineChars} characters; referencedBy as the count of incoming foreign keys and the first ${summaryReferencedBy} by table name `
-  + '(relation_stats ranks them). Column comments, full definitions and view definitions (viewDefinitionOmitted) are left out: '
+  + '(relation_stats ranks them); for a view or materialized view the relations it reads with their columns (viewSources) and the '
+  + 'functions it calls (viewFunctions), and for any relation the views that read it (usedByViews), one line each. '
+  + 'Column comments, full definitions and view definitions (viewDefinitionOmitted) are left out: '
   + 'use detail "full" for them. The schema memory is recorded from the full catalog data either way.';
 
 const clip = text => (text.length > summaryLineChars ? `${text.slice(0, summaryLineChars - 3)}...` : text);
@@ -490,7 +590,13 @@ export function summarizeDescribedTable(t) {
   if (t.rowLevelSecurity?.enabled || t.rowLevelSecurity?.forced) out.rowLevelSecurity = t.rowLevelSecurity;
   if (t.partitioning) out.partitioning = t.partitioning;
   if (t.partitionOf) out.partitionOf = t.partitionOf;
-  if (t.viewDefinition !== undefined) out.viewDefinitionOmitted = true;
+  if (t.viewDefinition !== undefined) {
+    out.viewDefinitionOmitted = true;
+    if (t.populated === false) out.populated = false;
+    if (t.viewSources?.length) out.viewSources = clip(t.viewSources.map(v => `${v.schema}.${v.table}${v.columns.length ? `(${v.columns.join(', ')})` : ''}`).join(', '));
+    if (t.viewFunctions?.length) out.viewFunctions = clip(t.viewFunctions.map(f => `${f.schema}.${f.name}(${f.arguments})`).join(', '));
+  }
+  if (t.usedByViews?.length) out.usedByViews = clip(t.usedByViews.map(v => `${v.schema}.${v.table}`).join(', '));
   return out;
 }
 
@@ -499,6 +605,16 @@ export function summarizeDescribedTable(t) {
 export const maxDescribeFunctions = 50;
 export const defaultDefinitionChars = 20000;
 export const maxDefinitionChars = 200000;
+// The schema memory keeps each definition up to this many characters,
+// whatever maxChars the call used (src/memory/store.js).
+export const storedDefinitionChars = 20000;
+
+// The first n characters (code points, like PostgreSQL's left()).
+export function cutChars(text, n) {
+  if (text === null || text === undefined) return text;
+  const value = String(text);
+  return value.length <= n ? value : Array.from(value).slice(0, n).join('');
+}
 
 // Shared select list over pg_proc p / pg_namespace n. pg_get_functiondef does
 // not accept aggregates; their definition is null. $1 = definition cap.
@@ -518,7 +634,7 @@ const functionColumns = `
                                   order by tn.nspname, tc.relname, t.tgname), '[]'::jsonb)
         from pg_trigger t join pg_class tc on tc.oid = t.tgrelid join pg_namespace tn on tn.oid = tc.relnamespace
         where t.tgfoid = p.oid and not t.tgisinternal) as used_by_triggers,
-       left(d.definition, $1) as definition, length(d.definition) as definition_length`;
+       left(d.definition, greatest($1::int, ${storedDefinitionChars})) as definition, length(d.definition) as definition_length`;
 const functionFrom = `
 from pg_proc p
 join pg_namespace n on n.oid = p.pronamespace
@@ -543,9 +659,11 @@ where p.proname ilike $2 and ($3::text is null or n.nspname = $3)
 order by n.nspname, p.proname, 3
 limit $4`;
 
+// memoryDefinition (not enumerable, so never in the tool output): the
+// definition cut at storedDefinitionChars for the schema memory.
 function functionFromRow(row, cap) {
   const length = toNumber(row.definition_length);
-  return {
+  const out = {
     function: `${row.schema}.${row.name}(${row.arguments ?? ''})`,
     schema: row.schema,
     name: row.name,
@@ -562,10 +680,12 @@ function functionFromRow(row, cap) {
     canExecute: !!row.can_execute,
     comment: row.comment ?? null,
     usedByTriggers: row.used_by_triggers ?? [],
-    definition: row.definition ?? null,
+    definition: cutChars(row.definition ?? null, cap),
     definitionLength: length,
     truncated: length !== null && length > cap,
   };
+  Object.defineProperty(out, 'memoryDefinition', { value: cutChars(row.definition ?? null, storedDefinitionChars), enumerable: false });
+  return out;
 }
 
 // describe_functions: functions, procedures and aggregates by schema.name
@@ -613,6 +733,50 @@ export async function describeFunctions(db, profile, { functions, pattern, schem
       return { profile: name, statements: valid.length ? 1 : 0, functions: out, found, notFound: out.length - found };
     });
   }, r => ({ statements: r.statements, found: r.found }));
+}
+
+// ---------- list_functions ----------
+
+export const defaultListFunctions = 500;
+export const maxListFunctions = 2000;
+
+// Every overload in one schema ($1) or all non-system schemas, optionally
+// whose name matches an ILIKE pattern ($2); without definitions. Functions
+// that belong to an extension are left out unless $4. $3 = row limit.
+const listFunctionsSql = `
+select n.nspname as schema, p.proname as name, pg_get_function_identity_arguments(p.oid) as arguments,
+       pg_get_function_result(p.oid) as returns,
+       case p.prokind when 'f' then 'function' when 'p' then 'procedure' when 'a' then 'aggregate' when 'w' then 'window' end as kind,
+       l.lanname as language,
+       case p.provolatile when 'i' then 'immutable' when 's' then 'stable' when 'v' then 'volatile' end as volatility
+from pg_proc p
+join pg_namespace n on n.oid = p.pronamespace
+join pg_language l on l.oid = p.prolang
+where n.nspname not like 'pg\\_%' and n.nspname <> 'information_schema'
+  and ($1::text is null or n.nspname = $1)
+  and ($2::text is null or p.proname ilike $2)
+  and ($4 or not exists (select 1 from pg_depend e
+                         where e.classid = 'pg_proc'::regclass and e.objid = p.oid and e.deptype = 'e'))
+order by 1, 2, 3
+limit $3`;
+
+// list_functions: an inventory of functions, procedures and aggregates
+// (signature, return type, kind, language, volatility), one statement.
+export async function listFunctions(db, profile, { schema, pattern, limit, includeExtensions = false } = {}) {
+  const details = { profile: profile ?? null, schema: schema || undefined, pattern: pattern || undefined, limit: limit ?? undefined, includeExtensions: includeExtensions || undefined };
+  return db.audited('list_functions', details, () => {
+    const max = limit ?? defaultListFunctions;
+    if (!Number.isInteger(max) || max < 1 || max > maxListFunctions) throw new ToolError('INVALID_INPUT', `limit must be an integer from 1 to ${maxListFunctions}.`);
+    const ilike = pattern ? toIlikePattern(pattern) : null;
+    return db.withReadOnly(profile, async (client, name) => {
+      const res = await client.query(listFunctionsSql, [schema || null, ilike, max + 1, !!includeExtensions]);
+      const truncated = res.rows.length > max;
+      const rows = (truncated ? res.rows.slice(0, max) : res.rows).map(r => ({
+        schema: r.schema, name: r.name, arguments: r.arguments ?? '', returns: r.returns, kind: r.kind, language: r.language, volatility: r.volatility,
+      }));
+      return { profile: name, ...(ilike ? { pattern: ilike } : {}), statements: 1, functions: rows, rowCount: rows.length, truncated };
+    });
+  }, r => ({ statements: r.statements, rowCount: r.rowCount }));
 }
 
 // Catalog facts profile_tables needs for every requested relation (and the

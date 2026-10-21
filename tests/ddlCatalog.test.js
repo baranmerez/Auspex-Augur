@@ -103,7 +103,7 @@ function fakeDb({ searchRows = [], summaryFixture = false } = {}) {
 test('describe_tables adds triggers, identity/sequence columns, RLS and partitioning with one more statement', async () => {
   const { db, sent } = fakeDb();
   const r = await describeTables(db, 'app', ['app.import_job', 'app.log']);
-  assert.equal(r.statements, 6);
+  assert.equal(r.statements, 7, 'one more for view dependencies (usedByViews)');
   const [job, log] = r.tables;
   assert.deepEqual(job.triggers, [{
     name: 'import_job_validate', timing: 'BEFORE', events: ['INSERT', 'UPDATE'], level: 'ROW', enabled: 'enabled', function: 'app.validate',
@@ -124,7 +124,7 @@ const fullShape = ({ profile, oid, columns, ...rest }) => ({ ...rest, columns: c
 test('describe_tables summary: one line per column, constraint, index and trigger, same statements, input unchanged', async (t) => {
   const { db, sent } = fakeDb({ summaryFixture: true });
   const r = await describeTables(db, 'app', ['app.import_job', 'app.v_job']);
-  assert.equal(r.statements, 7, 'the summary is built from the same statements');
+  assert.equal(r.statements, 8, 'the summary is built from the same statements');
   const [job, view] = r.tables;
   const before = structuredClone(job);
   const s = summarizeDescribedTable(job);
