@@ -603,7 +603,10 @@ test('list_functions runs as one statement and leaves out system schemas', async
 ddlTest('list_functions lists the test functions with kind, language and volatility', async () => {
   const r = await listFunctions(db, 'local', { schema: 'auspex_test', pattern: 'import_job' });
   const count = r.functions.find(f => f.name === 'import_job_count');
-  assert.deepEqual(count, { schema: 'auspex_test', name: 'import_job_count', arguments: 'p_region integer', returns: 'bigint', kind: 'function', language: 'sql', volatility: 'stable' });
+  assert.deepEqual(count, { schema: 'auspex_test', name: 'import_job_count', arguments: 'p_region integer', returns: 'bigint', kind: 'function', language: 'sql', volatility: 'stable', returnsTrigger: false, usedByTriggers: [] });
+  const validate = r.functions.find(f => f.name === 'import_job_before_validate');
+  assert.equal(validate.returnsTrigger, true);
+  assert.deepEqual(validate.usedByTriggers, [{ table: 'auspex_test.import_job', schema: 'auspex_test', tableName: 'import_job', trigger: 'import_job_validate', timing: 'before', events: ['insert', 'update'], level: 'row' }]);
 });
 
 ddlTest('describe_functions returns signature, properties, calling triggers and the capped definition in 1 statement', async () => {
@@ -613,7 +616,8 @@ ddlTest('describe_functions returns signature, properties, calling triggers and 
   const [validate, count, missing] = r.functions;
   assert.deepEqual([validate.returns, validate.language, validate.volatility, validate.kind, validate.securityDefiner, validate.truncated],
     ['trigger', 'plpgsql', 'volatile', 'function', false, false]);
-  assert.deepEqual(validate.usedByTriggers, [{ table: 'auspex_test.import_job', trigger: 'import_job_validate' }]);
+  assert.deepEqual(validate.usedByTriggers, [{ table: 'auspex_test.import_job', schema: 'auspex_test', tableName: 'import_job', trigger: 'import_job_validate', timing: 'before', events: ['insert', 'update'], level: 'row' }]);
+  assert.equal(validate.returnsTrigger, true);
   assert.equal(validate.comment, 'Validates the payload before insert or update');
   assert.match(validate.definition, /NEW\.status := 'error'/);
   assert.deepEqual([count.function, count.returns, count.language, count.volatility], ['auspex_test.import_job_count(p_region integer)', 'bigint', 'sql', 'stable']);

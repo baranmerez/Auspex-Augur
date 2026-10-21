@@ -126,7 +126,7 @@ test('list_functions: one statement, limit + 1 to detect truncation, input check
   const { db, sent } = fakeDb({ rows: { list: [row(1), row(2), row(3)] } });
   const r = await listFunctions(db, 'example', { schema: 'example', pattern: 'order', limit: 2 });
   assert.deepEqual([r.statements, r.rowCount, r.truncated, r.pattern], [1, 2, true, '%order%']);
-  assert.deepEqual(r.functions[0], { schema: 'example', name: 'order_fn_1', arguments: '', returns: 'void', kind: 'function', language: 'sql', volatility: 'volatile' });
+  assert.deepEqual(r.functions[0], { schema: 'example', name: 'order_fn_1', arguments: '', returns: 'void', kind: 'function', language: 'sql', volatility: 'volatile', returnsTrigger: false, usedByTriggers: [] });
   const statement = sent.find(s => s.text.includes('limit $3'));
   assert.deepEqual(statement.params, ['example', '%order%', 3, false]);
   assert.match(statement.text, /deptype = 'e'/);
