@@ -188,6 +188,29 @@ test('built-in presets need a dateRange report; reports with parameters need a p
   assert.match(r.out.results[2].message, /set "preset"/);
 });
 
+// America/Nuuk springs forward from Saturday 23:00 to Sunday 00:00 on
+// 2026-03-28, so a Saturday 23:30 slot falls due on Sunday's calendar day.
+test('a slot inside a daylight saving gap across midnight resolves its preset from the slot day', async () => {
+  // Deleting TZ does not reset Node's zone, so the original zone is set back
+  // by name before the variable is restored.
+  const old = process.env.TZ;
+  const oldZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  process.env.TZ = 'America/Nuuk';
+  try {
+    assert.equal(new Date(2026, 2, 28, 23, 30).getDate(), 29, 'precondition: the zone skips Saturday 23:30');
+    approveReport();
+    writeSchedules([schedule({ preset: 'today', cadence: { weekly: 'saturday', at: '23:30' } })]);
+    const r = await run(['run-due'], new Date(2026, 2, 29, 1, 0));
+    assert.equal(r.status, 0, JSON.stringify(r.out));
+    assert.deepEqual(r.out.results.map(x => [x.status, x.slot]), [['ok', '2026-03-28T23:30']]);
+    assert.deepEqual(sent.find(s => s.text.startsWith('EXPLAIN')).values, ['2026-03-28', '2026-03-29']);
+    assert.deepEqual(readTrend(trendFile(path.join(home, 'trends'), ref))[0].params, ['2026-03-28', '2026-03-29']);
+  } finally {
+    process.env.TZ = old ?? oldZone;
+    if (old === undefined) delete process.env.TZ;
+  }
+});
+
 test('a manual run resolves against now, adds no trend point and keeps the slot open', async () => {
   approveReport();
   writeSchedules([schedule()]);

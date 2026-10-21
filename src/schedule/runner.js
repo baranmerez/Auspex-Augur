@@ -86,8 +86,10 @@ export class ScheduleRunner {
       .filter(({ schedule, slot }) => slot && scheduleState(state, schedule.id)?.lastSuccessSlot !== slot.key);
   }
 
-  // Runs one schedule. slot: the due slot ({ key, at }) whose date the preset
-  // is resolved against, or null for a manual run (resolved against now).
+  // Runs one schedule. slot: the due slot ({ key, at, day }) whose own
+  // calendar day (day, else at) the preset is resolved against, or null for a
+  // manual run (resolved against now). at can be a day later inside a
+  // daylight saving gap across midnight; day never is.
   // Returns { id, slot, status, report, errorCode?, message?, trendError? };
   // never throws. The message goes to the caller and the audit log only, never
   // into a notification or the state file the viewer reads.
@@ -99,12 +101,13 @@ export class ScheduleRunner {
     const at = () => this.now().toISOString();
     let title = schedule.report.name;
     let status, errorCode = null, trendError = null, message = null, counts = null;
+    const presetDate = slot ? slot.day ?? slot.at : this.now();
     try {
-      const check = checkSchedule(this.reports.library, schedule, slot ? slot.at : this.now());
+      const check = checkSchedule(this.reports.library, schedule, presetDate);
       title = check.title;
       if (check.problem) throw new ToolError(check.code, check.problem);
       const result = await this.db.withCorrelation(correlationId, () => this.reports.run(schedule.report, {
-        stage: 'approved', includeLast: true, presetDate: slot ? slot.at : this.now(), ...(schedule.preset !== null ? { preset: schedule.preset } : {}),
+        stage: 'approved', includeLast: true, presetDate, ...(schedule.preset !== null ? { preset: schedule.preset } : {}),
       }));
       status = 'ok';
       counts = runRows(result.last ?? null);
