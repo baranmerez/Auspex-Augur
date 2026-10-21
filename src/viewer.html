@@ -5990,10 +5990,10 @@ function functionPageModel(data, id, rec) {
   const flags = entry?.flags && typeof entry.flags === 'object' ? entry.flags : {};
   const risks = overloads.length ? [...new Set(overloads.flatMap(o => o.risks))]
     : [flags.definerWithoutSearchPath === true ? 'definer-no-search-path' : null, flags.volatile === true && views.length ? 'volatile-in-view' : null].filter(Boolean);
-  // usedByTriggers[].table is the raw "schema.relname" text, not a table key:
-  // the graph node with that schema and name gives the key (a quoted one for
-  // names with dots or quotes); the raw text is the fallback.
-  // Newer memory names the schema and table apart, which gives the key directly.
+  // Newer memory names the schema and table apart, which gives the key
+  // directly. Older records hold only table: a table key in current records,
+  // the raw "schema.relname" text before that, so the graph node with that
+  // schema and name gives the key and the stored text is the fallback.
   const tableIdOf = x => (x.schema && x.tableName ? tableKey(x.schema, x.tableName) : nodes.find(n => n.schema + '.' + n.table === x.table)?.id ?? x.table);
   const triggers = overloads.flatMap(o => o.triggers.map(x => ({ table: tableIdOf(x), trigger: x.trigger, timing: x.timing, events: x.events, level: x.level, signature: o.signature })));
   const history = tpArr(rec?.history).filter(x => x && Array.isArray(x.changes)).slice().reverse()

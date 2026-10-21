@@ -66,7 +66,7 @@ auspex/
 | `list_schemas`, `list_tables`, `describe_table` | Browse: schemas, tables (estimated rows, size, privilege), columns, FKs, indexes, view definitions |
 | `describe_tables` | Up to 50 relations in 7 statements (8 with a view); `detail: "summary"` (default, compact) or `"full"`; includes triggers, checks, sequences, partitions, RLS |
 | `describe_functions` | Up to 50 functions: signature, properties, triggers using them, definition (1 statement); recorded in the schema memory with changesSinceLast |
-| `list_functions` | Function inventory of one schema or all (optional name filter, limit 500, max 2000): signature, kind, language, volatility, no definitions (1 statement); recorded in the schema memory as seen |
+| `list_functions` | Function inventory of one schema or all (optional name filter, limit 500, max 2000): signature, kind, language, volatility, returnsTrigger and usedByTriggers (table, timing, events, level), no definitions (1 statement); recorded in the schema memory as seen, re-lists refresh the trigger facts of listed-only overloads |
 | `profile_tables` | Up to 30 relations: fill rate, sample distinct counts, fan-out over a parent with `window` and `parentFilter` (at most 3 statements, no row values) |
 | `relation_stats` | Instance (referenced) and dependent (referencing) tables of a center, ranked by estimated linked rows from planner statistics (at most 2 statements); enriches graph.json |
 | `share_report` | Sanitized shareable copy; refused unless the last run matches the active SQL |
