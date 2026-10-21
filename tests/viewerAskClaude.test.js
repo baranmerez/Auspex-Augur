@@ -85,9 +85,20 @@ test('preset chip request: names the report path and the preset key run_report t
   const r = { db: 'exampledb', schema: 'example', category: 'Orders/Delivery', name: 'late_orders', title: 'Late\norders' };
   const [builtIn, custom] = offeredPresets({ builtIn: ['last_month'], custom: [{ name: 'Q1', params: ['2026-01-01'] }] }, 'en');
   assert.equal(buildPresetPrompt(r, builtIn, 'en'),
-    'Run the Auspex report "Late orders" (exampledb/example/Orders/Delivery/late_orders) with run_report and the preset "Last month" (last_month), then show me the summary and the HTML file path.');
+    'Run the Auspex report "Late orders" (exampledb/example/Orders/Delivery/late_orders) with run_report and the preset "Last month" ("last_month"), then show me the summary and the HTML file path.');
   assert.match(buildPresetPrompt(r, custom, 'en'), /the preset "Q1", then/);
   const tr = buildPresetPrompt(r, offeredPresets({ builtIn: ['last_month'] }, 'tr')[0], 'tr');
-  assert.match(tr, /"Geçen ay" \(last_month\) hazır ayarıyla çalıştır/);
+  assert.match(tr, /"Geçen ay" \("last_month"\) hazır ayarıyla çalıştır/);
   assert.match(buildPresetPrompt(r, builtIn, 'de'), /^Run the Auspex report/, 'unknown language falls back to English');
+});
+
+test('preset chip request: the key is copied exactly and title or name text is never read as a placeholder or $ pattern', () => {
+  const { offeredPresets, buildPresetPrompt } = load();
+  const r = { db: 'exampledb', schema: 'example', category: 'Orders', name: 'late', title: 'Orders {path} $&' };
+  const [spaced, dollar] = offeredPresets({ custom: [{ name: 'Q1  2026', params: [1] }, { name: 'FY26 $& {title}', params: [1] }] }, 'en');
+  const a = buildPresetPrompt(r, spaced, 'en'), b = buildPresetPrompt(r, dollar, 'en');
+  assert.ok(a.startsWith('Run the Auspex report "Orders {path} $&" (exampledb/example/Orders/late) '), a);
+  assert.ok(a.includes('the preset "Q1  2026", then'), 'two spaces kept');
+  assert.ok(b.includes('the preset "FY26 $& {title}", then'), b);
+  assert.equal(JSON.parse(a.match(/the preset (".*?"), then/)[1]), 'Q1  2026');
 });
