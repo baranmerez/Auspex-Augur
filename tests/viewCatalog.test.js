@@ -90,6 +90,9 @@ test('describe_tables: views get definition, options, populated, sources and fun
   assert.deepEqual(sent.find(s => s.text.includes('from pg_rewrite r')).params, [['11', '31', '32']]);
   const deps = sent.find(s => s.text.includes('from pg_rewrite r')).text;
   assert.equal(deps.match(/r\.ev_type = '1'/g)?.length, 2, 'both branches read the SELECT rule only, not DO INSTEAD rules');
+  // Sequences read by a view are sources too, so a later view description does not
+  // drop the sequence's own Used by views entry in the viewer.
+  assert.match(deps, /rc\.relkind in \('r', 'p', 'v', 'm', 'f', 'S'\)/);
 
   const s = summarizeDescribedTable(view);
   assert.equal(s.viewDefinitionOmitted, true);

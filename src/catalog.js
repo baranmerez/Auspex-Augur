@@ -205,7 +205,7 @@ left join pg_attribute a on rc.oid is not null and a.attrelid = rc.oid and a.att
 left join pg_proc p on d.refclassid = 'pg_proc'::regclass and p.oid = d.refobjid
 left join pg_namespace pn on pn.oid = p.pronamespace
 where r.ev_class = any($1::oid[]) and r.ev_type = '1'
-  and (rc.oid is null or rc.relkind in ('r', 'p', 'v', 'm', 'f'))
+  and (rc.oid is null or rc.relkind in ('r', 'p', 'v', 'm', 'f', 'S'))
   and (rc.oid is not null or p.oid is not null)
 union all
 select distinct 'used_by', d.refobjid::bigint, 'relation', vn.nspname, vc.relname, vc.relkind::text, null, null, null
