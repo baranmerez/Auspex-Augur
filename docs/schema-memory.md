@@ -69,6 +69,7 @@ notes, changelog }`. Nodes and edges, with the optional fields `relation_stats` 
 
 ```
 node: { id: "schema.table", schema, table, file?, state: "explored" | "seen" | "unexplored",
+        describedAt: "ISO time" | null,  // last describe of the table record; null when never described
         kind, estimatedRows, columnCount, changes, notes,
         estRows?: number | null,        // relation_stats row estimate; null = no estimate (see docs/tools.md, Row estimates)
         scoredAt?: "ISO time",          // score_columns, see Column importance

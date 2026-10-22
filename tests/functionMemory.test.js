@@ -262,3 +262,16 @@ test('calls stored by a newer scanner version are current and never rewritten by
   assert.equal(fs.readFileSync(file, 'utf8'), newer);
   assert.deepEqual(mem.graph(profile).functions.find(f => f.name === 'order_total').calledBy.functions, ['example.order_report']);
 });
+
+test('graph nodes carry describedAt: the time of the last describe, null when never described (#140)', () => {
+  const dir = tempDir();
+  seedExampleMemory(dir, profile, { now });
+  seedExampleViewsAndFunctions(dir, profile, { now });
+  const nodes = new Map(JSON.parse(fs.readFileSync(path.join(dir, profile, 'graph.json'), 'utf8')).nodes.map(n => [n.id, n]));
+  const view = nodes.get('example.v_order_list');
+  const record = JSON.parse(fs.readFileSync(path.join(dir, profile, 'tables', 'example', 'v_order_list.json'), 'utf8'));
+  assert.equal(view.describedAt, record.describedAt);
+  assert.ok(nodes.get('example.orders').describedAt < view.describedAt, 'the view was described after the table');
+  assert.equal(nodes.get('example.order_items').describedAt, null, 'seen only');
+  assert.equal(nodes.get('example.shipments').describedAt, null, 'unexplored');
+});
