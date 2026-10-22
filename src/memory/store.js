@@ -1129,7 +1129,7 @@ export class SchemaMemory {
     const nodes = new Map(tables.map(t => [tableKey(t.schema, t.table), {
       id: tableKey(t.schema, t.table), schema: t.schema, table: t.table,
       file: `tables/${fileSegment(t.schema)}/${fileSegment(t.table)}.json`,
-      state: t.describedAt ? 'explored' : 'seen', kind: t.kind, estimatedRows: t.estimatedRows,
+      state: t.describedAt ? 'explored' : 'seen', describedAt: t.describedAt ?? null, kind: t.kind, estimatedRows: t.estimatedRows,
       columnCount: t.columns.length, changes: (t.history || []).length,
       notes: notes.filter(n => n.schema === t.schema && n.table === t.table).length,
       ...(t.estRows !== undefined ? { estRows: t.estRows } : {}),
@@ -1142,7 +1142,7 @@ export class SchemaMemory {
       for (const id of [e.from, e.to]) {
         if (nodes.has(id)) continue;
         const { schema, table } = splitTableKey(id) ?? { schema: null, table: id };
-        nodes.set(id, { id, schema, table, state: 'unexplored', kind: null, estimatedRows: null, columnCount: 0, changes: 0, notes: 0 });
+        nodes.set(id, { id, schema, table, state: 'unexplored', describedAt: null, kind: null, estimatedRows: null, columnCount: 0, changes: 0, notes: 0 });
       }
     }
     // A view or materialized view reads its sources: one edge to each source
