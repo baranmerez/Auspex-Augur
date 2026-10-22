@@ -37,8 +37,9 @@ moved.
   `run_report` runs the draft unless `stage` says otherwise: `stage:
   "approved"` runs the approved copy (refused with `PRECONDITION_FAILED` when
   there is none), `stage: "draft"` the draft (`NOT_FOUND` when there is none).
-  A preset resolves against the chosen copy. `version` (optional, an integer)
-  pins the SQL version of that copy: another version is refused with
+  A preset resolves against the chosen copy. `version` (optional, an integer;
+  the `activeVersion` of that copy's `list_reports` entry) pins the SQL
+  version of that copy: another version is refused with
   `STALE_VERSION` before any database call. The audit entry records them as
   `requestedStage` and `requestedVersion`.
 - **The HTML is self-contained** (data embedded, no external files): stat tiles,

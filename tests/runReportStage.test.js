@@ -71,3 +71,15 @@ test('version pins the SQL version of the chosen copy', async () => {
   await assert.rejects(svc.run(ref, { version: approvedVersion, params: [1] }), err => err.errorCode === 'STALE_VERSION', 'the default copy is the draft');
   assert.equal(calls.length, 1);
 });
+
+test('list_reports gives each copy its activeVersion, the value run_report version must match', async () => {
+  const { svc, calls } = await approvedAndDraft();
+  const entries = svc.list().filter(e => e.name === ref.name);
+  const byStage = Object.fromEntries(entries.map(e => [e.stage, e]));
+  assert.deepEqual(Object.keys(byStage).sort(), ['approved', 'draft']);
+  assert.notEqual(byStage.approved.activeVersion, byStage.draft.activeVersion);
+  assert.equal(byStage.draft.approvedVersion, byStage.approved.activeVersion, 'the draft inherits approvedVersion, so it is not the draft version');
+  await svc.run(ref, { stage: 'approved', version: byStage.approved.activeVersion, params: [1] });
+  await svc.run(ref, { stage: 'draft', version: byStage.draft.activeVersion, params: [1] });
+  assert.deepEqual(calls.map(c => c.sql), [approvedSql, draftSql]);
+});
