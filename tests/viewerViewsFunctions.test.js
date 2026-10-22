@@ -824,3 +824,28 @@ test('a table filter always offers Clear filter, even without chips; a database 
   assert.deepEqual(cleared, ['']);
   assert.match(page, /function setDb\(db, \{ render: doRender = true \} = \{\}\) \{\s*\/\/[^\n]*\s*if \(state\.db !== db\) state\.objFilter = \{\};/);
 });
+
+test('#140: a view described again with another source leaves the old table\'s Used by views; undescribed views keep their entry', () => {
+  const ctx = load();
+  const g = { profile: 'exampledb', notes: [], functions: [],
+    nodes: [
+      { id: 'example.orders', schema: 'example', table: 'orders', state: 'explored', kind: 'table' },
+      { id: 'example.orders_archive', schema: 'example', table: 'orders_archive', state: 'explored', kind: 'table' },
+      // Described again: it now reads orders_archive only.
+      { id: 'example.order_view', schema: 'example', table: 'order_view', state: 'explored', kind: 'view', viewSources: ['example.orders_archive'] },
+      // Known only from the snapshot (old memory, no view facts): kept.
+      { id: 'example.v_old', schema: 'example', table: 'v_old', state: 'seen', kind: 'view' },
+    ],
+    edges: [{ from: 'example.order_view', to: 'example.orders_archive', level: 'view', columns: ['id'], refColumns: [] }] };
+  const rec = { describedAt: '2026-10-01T00:00:00Z', kind: 'table', columns: [], constraints: [], history: [],
+    usedByViews: [{ schema: 'example', table: 'order_view', kind: 'view' }, { schema: 'example', table: 'v_old', kind: 'view' }] };
+  const m = ctx.tablePageModel(g, 'example.orders', rec);
+  assert.deepEqual(plain(m.usedByViews.map(v => v.id)), ['example.v_old']);
+  assert.deepEqual(plain(ctx.tablePageModel(g, 'example.orders_archive', { ...rec, usedByViews: [] }).usedByViews.map(v => v.id)), ['example.order_view']);
+  // A view node described after this file, without view facts, also supersedes.
+  g.nodes[3].describedAt = '2026-10-05T00:00:00Z';
+  assert.deepEqual(plain(ctx.tablePageModel(g, 'example.orders', rec).usedByViews.map(v => v.id)), []);
+  // Still listing the table: kept.
+  g.nodes[2].viewSources = ['example.orders', 'example.orders_archive'];
+  assert.deepEqual(plain(ctx.tablePageModel(g, 'example.orders', { ...rec, usedByViews: [rec.usedByViews[0]] }).usedByViews.map(v => v.id)), ['example.order_view']);
+});
