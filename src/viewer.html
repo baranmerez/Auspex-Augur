@@ -5944,12 +5944,21 @@ function fnRow(x, res, ctx, group) {
 // The whole Functions list: important-table chips, sections, legend.
 function functionList(res, important, ctx) {
   const secOpen = ctx.secOpen || {};
+  // The list budget counts functions, not rows: a trigger function in two
+  // timing groups is drawn in both but counted once. A group cut short by the
+  // budget says how many of its entries are not shown.
   let left = schemaListLimit;
+  const drawn = new Set();
   const rows = (items, group) => {
-    if (left <= 0) return null;
-    const part = items.slice(0, left);
-    left -= part.length;
-    return h('ul', { class: 'obj-rows' }, part.map(x => fnRow(x, res, ctx, group)));
+    const part = [];
+    for (const x of items) {
+      if (drawn.has(x.id)) { part.push(x); continue; }
+      if (left <= 0) continue;
+      drawn.add(x.id); left--; part.push(x);
+    }
+    const hidden = items.length - part.length;
+    return [part.length ? h('ul', { class: 'obj-rows' }, part.map(x => fnRow(x, res, ctx, group))) : null,
+      hidden ? h('p', { class: 'tp-hint fn-cut' }, t('{n} more not shown; search to narrow the list.', { n: fmt(hidden) })) : null];
   };
   const chips = important.length || res.table ? h('div', { class: 'fn-imp', role: 'group', 'aria-label': t('Important tables') },
     h('span', { class: 'fn-imp-l' }, t('Important tables')),
@@ -6258,7 +6267,7 @@ const fnPageTr = {
   'owner of the function': 'fonksiyonun sahibi', 'the Auspex role may execute this function': 'Auspex rolü bu fonksiyonu çalıştırabilir',
   'the Auspex role may not execute this function': 'Auspex rolü bu fonksiyonu çalıştıramaz',
   'overload added': 'overload eklendi', 'overload removed': 'overload kaldırıldı', 'body changed': 'gövde değişti', 'flags changed': 'bayraklar değişti',
-  'returns': 'döndürür', 'Trigger functions': 'Trigger fonksiyonları', 'Procedures': 'Prosedürler', 'Aggregates': 'Aggregate\'ler', 'Window functions': 'Window fonksiyonları',
+  'returns': 'döndürür', '{n} more not shown; search to narrow the list.': '{n} tanesi daha gösterilmiyor; listeyi daraltmak için arayın.', 'Trigger functions': 'Trigger fonksiyonları', 'Procedures': 'Prosedürler', 'Aggregates': 'Aggregate\'ler', 'Window functions': 'Window fonksiyonları',
   'BEFORE': 'BEFORE', 'AFTER': 'AFTER', 'INSTEAD OF': 'INSTEAD OF', 'timing unknown': 'zamanlama bilinmiyor', 'Timing unknown': 'Zamanlama bilinmiyor',
   'Important tables': 'Önemli tablolar', 'Show the functions related to {t}': '{t} ile ilgili fonksiyonları göster', 'Clear filter': 'Filtreyi temizle',
   'Related to {t}: trigger functions on it, functions whose body reads or writes it, and functions its views call.': '{t} ile ilgili: üzerindeki trigger fonksiyonları, gövdesi onu okuyan ya da ona yazan fonksiyonlar ve onun view\'larının çağırdığı fonksiyonlar.',

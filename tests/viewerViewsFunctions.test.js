@@ -866,3 +866,26 @@ test('#141: quoted RETURNS TABLE names keep their commas, parentheses and "" esc
   assert.equal(items.length, 5);
   assert.equal(items[0], '"gross,total" numeric');
 });
+
+test('#142: trigger functions in two timing groups count once; nothing below the limit disappears, a cut group says so', () => {
+  const ctx = load();
+  const fns = Array.from({ length: 200 }, (_, i) => ({ id: `example.trg_${String(i).padStart(3, '0')}`, schema: 'example', name: `trg_${String(i).padStart(3, '0')}`,
+    state: 'seen', role: 'trigger', timings: ['after', 'before'], triggerTables: ['example.orders'], kinds: ['function'], language: 'plpgsql', flags: {} }));
+  fns.push({ id: 'example."orderTotal"', schema: 'example', name: 'orderTotal', state: 'seen', kinds: ['function'], language: 'sql', flags: {} });
+  const g = { profile: 'exampledb', nodes: [{ id: 'example.orders', schema: 'example', table: 'orders', state: 'explored', kind: 'table' }], edges: [], notes: [], functions: fns };
+  const res = ctx.functionSections(g);
+  assert.equal(res.shown, 201);
+  const list = ctx.functionList(res, [], { onOpen() {}, onTable() {}, onSection() {} });
+  assert.equal(byClass(list, 'fn-row').length, 401, '200 functions in two groups and orderTotal');
+  assert.ok(byClass(list, 'fn-row').some(r => textOf(r).includes('orderTotal()')), 'the ordinary function is not hidden');
+  assert.equal(byClass(list, 'fn-cut').length, 0);
+  // Over the limit: the cut group names what it leaves out, and the overall notice shows.
+  const many = { ...g, functions: [...fns, ...Array.from({ length: 300 }, (_, i) => ({ id: `example.calc_${i}`, schema: 'example', name: `calc_${String(i).padStart(3, '0')}`, state: 'seen', kinds: ['function'], language: 'sql', flags: {} }))] };
+  const res2 = ctx.functionSections(many);
+  const list2 = ctx.functionList(res2, [], { onOpen() {}, onTable() {}, onSection() {} });
+  const rowIds = new Set(byClass(list2, 'fn-row').map(r => textOf(byClass(r, 'obj-nm')[0])));
+  const cut = byClass(list2, 'fn-cut').map(textOf);
+  assert.equal(rowIds.size, 400, 'the budget counts unique functions');
+  assert.deepEqual(cut, ['101 more not shown; search to narrow the list.']);
+  assert.match(textOf(list2), /First 400 shown/);
+});
