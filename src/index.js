@@ -418,7 +418,7 @@ tool('save_report', {
 
 tool('run_report', {
   title: 'Run report',
-  description: 'Runs a library report read-only: EXPLAIN (FORMAT JSON, with ANALYZE unless skipped) plus a masked preview, appends the run to its history and regenerates its HTML. Returns a compact summary (timings, hotspots, joins, warnings, first preview rows) and the HTML path. Parameters come from params or from preset (not both); the run records the preset name and the resolved values.',
+  description: 'Runs a library report read-only: EXPLAIN (FORMAT JSON, with ANALYZE unless skipped) plus a masked preview, appends the run to its history and regenerates its HTML. Returns a compact summary (timings, hotspots, joins, warnings, first preview rows) and the HTML path. Parameters come from params or from preset (not both); the run records the preset name and the resolved values. stage picks the approved copy or the draft when both exist (default: the draft); version pins the SQL version of that copy.',
   inputSchema: {
     ...refArgs,
     analyze: z.enum(['auto', 'always', 'never']).optional().describe('auto (default): ANALYZE unless the previous run took more than 30 s. always: ask the user first for slow reports. never: estimated plan without EXPLAIN ANALYZE; the query itself still runs once for the preview unless previewRows is 0.'),
@@ -427,13 +427,15 @@ tool('run_report', {
     params: paramsArg,
     preset: z.string().min(1).optional().describe(`Instead of params: a built-in date-range preset (${builtInPresetKeys.join(', ')}; only for reports saved with dateRange: true, $1 start inclusive and $2 end exclusive; resolved at run time to ISO dates whose day boundaries follow the local time zone of the Auspex machine, while a timestamptz comparison uses the database session time zone; last_7_days includes today) or the name of one of the report's custom presets (list_reports).`),
     timeoutSeconds: timeoutArg,
+    stage: z.enum(['approved', 'draft']).optional().describe('Which copy to run when a report has both an approved copy and a newer draft: "approved" runs the approved copy (refused when there is none), "draft" the draft (refused when there is none). Default: the draft when there is one, else the approved copy. Presets resolve against the chosen copy.'),
+    version: z.number().int().min(1).optional().describe('SQL version the chosen copy must be at (list_reports, the report page); refused with STALE_VERSION before any database call when it is another.'),
   },
-}, async ({ analyze, previewRows, returnRows, params, preset, timeoutSeconds, ...ref }) =>
+}, async ({ analyze, previewRows, returnRows, params, preset, timeoutSeconds, stage, version, ...ref }) =>
   // One terminal entry for the whole run: refusals before the database, the
   // database phase (phases.database, see db.auditedPhase) and saving the run
   // and its HTML afterwards.
-  db.audited('run_report', reportDetails(ref),
-    () => reports.run(ref, { analyze: analyze === 'never' ? false : analyze === 'always' ? 'always' : 'auto', previewRows, returnRows, params, preset, timeoutSeconds }),
+  db.audited('run_report', { ...reportDetails(ref), ...(stage ? { requestedStage: stage } : {}), ...(version !== undefined ? { requestedVersion: version } : {}) },
+    () => reports.run(ref, { analyze: analyze === 'never' ? false : analyze === 'always' ? 'always' : 'auto', previewRows, returnRows, params, preset, timeoutSeconds, stage, version }),
     r => ({ stage: r.stage, version: r.version, sqlHash: r.sqlHash })));
 
 tool('approve_report', {

@@ -138,3 +138,13 @@ test('relation_stats: oversized input is refused by the schema, a real call is a
   assert.equal(logged.length, 1);
   assert.deepEqual([logged[0].tool, logged[0].tables, logged[0].schema, logged[0].errorCode], ['relation_stats', ['sales.orders'], 'sales', 'CONNECTION_FAILED']);
 });
+
+test('run_report offers stage (approved | draft) and version to pick the copy to run', async () => {
+  const { tools } = await client.listTools();
+  const run = tools.find(t => t.name === 'run_report').inputSchema.properties;
+  assert.deepEqual(run.stage.enum, ['approved', 'draft']);
+  assert.equal(run.version.type, 'integer');
+  assert.equal(run.version.minimum, 1);
+  const bad = await call('run_report', { db: 'example', schema: 'example', category: 'Orders', name: 'order-total', stage: 'execute' });
+  assert.equal(bad.structuredContent.error.code, 'INVALID_INPUT');
+});
