@@ -115,7 +115,7 @@ const keywords = new Set([
   'group', 'order', 'by', 'having', 'limit', 'offset', 'fetch', 'union', 'except', 'intersect', 'window', 'for',
   'returning', 'set', 'values', 'into', 'as', 'lateral', 'only', 'with', 'loop', 'then', 'when', 'else', 'end',
   'and', 'or', 'not', 'in', 'is', 'case', 'begin', 'if', 'return', 'do', 'default', 'table', 'insert', 'update',
-  'delete', 'merge', 'truncate', 'tablesample', 'strict', 'perform', 'execute', 'raise', 'exception', 'declare',
+  'delete', 'merge', 'truncate', 'tablesample', 'strict', 'perform', 'execute', 'raise', 'exception', 'declare', 'materialized',
 ]);
 
 // Functions whose argument list uses FROM as a word: EXTRACT(x FROM y), ...
@@ -341,6 +341,23 @@ export function functionTouches({ definition, schema, language, arguments: args 
   return { inferred: true, reads: sorted(reads), writes: sorted(writes) };
 }
 
+// Version of functionCalls' rules, stored next to the calls of each overload
+// (callsVersion): calls stored by an older version are computed again from
+// the stored definition. 2: CTE declarations with a column list
+// (WITH name(col) AS (...)) are not calls.
+export const callsVersion = 2;
+
+// tokens[i] ('(') opens the column list of a CTE declaration when the group
+// is followed by AS [NOT] [MATERIALIZED] (.
+function cteColumnList(tokens, i) {
+  let k = skipGroup(tokens, i);
+  if (!isId(tokens[k], 'as')) return false;
+  k++;
+  if (isId(tokens[k], 'not')) k++;
+  if (isId(tokens[k], 'materialized')) k++;
+  return isP(tokens[k], '(');
+}
+
 /**
  * Functions a definition's body calls, as written: [{ schema: string | null, name }].
  * Used to find which stored functions call which (graph calledBy). Comments
@@ -354,6 +371,11 @@ export function functionCalls(definition) {
     if (tokens[i].t !== 'id' || isP(tokens[i - 1], '.') || isId(tokens[i - 1], 'into')) continue;
     const name = nameAt(tokens, i);
     if (!name || !isP(tokens[name.next], '(')) continue;
+    // WITH [RECURSIVE] name (columns) AS (...), name (columns) AS (...): declarations.
+    if (name.parts.length === 1 && cteColumnList(tokens, name.next)) {
+      i = name.next - 1;
+      continue;
+    }
     const parts = name.parts.slice(-2);
     const ref = parts.length === 2 ? { schema: parts[0], name: parts[1] } : { schema: null, name: parts[0] };
     out.set(`${ref.schema ?? ''}\n${ref.name}`, ref);
