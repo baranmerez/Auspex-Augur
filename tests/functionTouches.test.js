@@ -137,3 +137,14 @@ test('CTE declarations with a column list are not calls; a real call with the sa
   RETURN (WITH order_total(total) AS (SELECT 7) SELECT order_total(total) FROM order_total);
 END`)), [{ schema: null, name: 'order_total' }]);
 });
+
+test('calls with a column definition list stay calls; only names in a WITH list are CTE declarations', () => {
+  const body = b => def(b, { lang: 'plpgsql' });
+  assert.deepEqual(functionCalls(body('BEGIN PERFORM * FROM order_rows(7) AS (order_id int, amount numeric); END')), [{ schema: null, name: 'order_rows' }]);
+  assert.deepEqual(functionCalls(body('DECLARE r record; BEGIN FOR r IN SELECT * FROM example.order_rows(7) AS (order_id int, amount numeric) LOOP NULL; END LOOP; END')),
+    [{ schema: 'example', name: 'order_rows' }]);
+  assert.deepEqual(functionCalls(body('BEGIN PERFORM * FROM ROWS FROM (order_rows(7) AS (order_id int, amount numeric)); END')), [{ schema: null, name: 'order_rows' }]);
+  assert.deepEqual(functionCalls(body(`BEGIN
+  PERFORM * FROM (WITH a(x) AS (SELECT 1), b (y) AS NOT MATERIALIZED (SELECT 2) SELECT * FROM a, b) q, order_rows(7) AS (order_id int);
+END`)), [{ schema: null, name: 'order_rows' }]);
+});

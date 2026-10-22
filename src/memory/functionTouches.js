@@ -347,15 +347,31 @@ export function functionTouches({ definition, schema, language, arguments: args 
 // (WITH name(col) AS (...)) are not calls.
 export const callsVersion = 2;
 
-// tokens[i] ('(') opens the column list of a CTE declaration when the group
-// is followed by AS [NOT] [MATERIALIZED] (.
-function cteColumnList(tokens, i) {
-  let k = skipGroup(tokens, i);
-  if (!isId(tokens[k], 'as')) return false;
-  k++;
-  if (isId(tokens[k], 'not')) k++;
-  if (isId(tokens[k], 'materialized')) k++;
-  return isP(tokens[k], '(');
+// Token indexes of CTE names: WITH [RECURSIVE] name [(columns)] AS [NOT]
+// [MATERIALIZED] (body) [, name ...]. Only names in such a list count, so a
+// call with a column definition list (f(7) AS (a int)) stays a call.
+function cteNameIndexes(tokens) {
+  const out = new Set();
+  for (let j = 0; j < tokens.length; j++) {
+    if (!isId(tokens[j], 'with')) continue;
+    let k = j + 1;
+    if (isId(tokens[k], 'recursive')) k++;
+    while (tokens[k]?.t === 'id') {
+      const nameAt = k;
+      k++;
+      if (isP(tokens[k], '(')) k = skipGroup(tokens, k);
+      if (!isId(tokens[k], 'as')) break;
+      k++;
+      if (isId(tokens[k], 'not')) k++;
+      if (isId(tokens[k], 'materialized')) k++;
+      if (!isP(tokens[k], '(')) break;
+      out.add(nameAt);
+      k = skipGroup(tokens, k);
+      if (!isP(tokens[k], ',')) break;
+      k++;
+    }
+  }
+  return out;
 }
 
 /**
@@ -367,12 +383,13 @@ export function functionCalls(definition) {
   if (!definition) return [];
   const tokens = bodyTokens(lexSql(definition));
   const out = new Map();
+  const cteNames = cteNameIndexes(tokens);
   for (let i = 0; i < tokens.length; i++) {
     if (tokens[i].t !== 'id' || isP(tokens[i - 1], '.') || isId(tokens[i - 1], 'into')) continue;
     const name = nameAt(tokens, i);
     if (!name || !isP(tokens[name.next], '(')) continue;
     // WITH [RECURSIVE] name (columns) AS (...), name (columns) AS (...): declarations.
-    if (name.parts.length === 1 && cteColumnList(tokens, name.next)) {
+    if (cteNames.has(i)) {
       i = name.next - 1;
       continue;
     }
