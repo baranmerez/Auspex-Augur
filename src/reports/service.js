@@ -220,11 +220,15 @@ export class ReportService {
   // presetDate (optional): the moment a built-in preset is resolved against
   // (default: now); the scheduler passes the due slot so a catch-up run gets
   // the period of its slot. stage (optional): run exactly this stage instead
-  // of the draft-first lookup; the scheduler runs only approved reports.
+  // of the draft-first lookup; the scheduler runs only approved reports, and
+  // run_report passes it when the caller picked a copy (a request copied
+  // from the approved report's page while a draft exists). version
+  // (optional): the SQL version the caller expects that copy to be; refused
+  // with STALE_VERSION before any database call when it is another.
   // includeLast: also return the stored result (last) of this run, so a
   // caller never re-reads it from disk, where a concurrent run may have
   // replaced it. Not used by run_report (it would bloat the tool result).
-  async run(input, { analyze = 'auto', previewRows = 50, returnRows = 20, timeoutSeconds, params, preset, presetDate, stage: onlyStage, includeLast = false } = {}) {
+  async run(input, { analyze = 'auto', previewRows = 50, returnRows = 20, timeoutSeconds, params, preset, presetDate, stage: onlyStage, version: expectedVersion, includeLast = false } = {}) {
     const ref = this.ref(input);
     if (preset !== undefined && params !== undefined) throw new ToolError('INVALID_INPUT', 'Pass either preset or params, not both.');
     // SQL and metadata are read together under the library lock, and only SQL
@@ -233,13 +237,20 @@ export class ReportService {
     // save_report is refused before any database call.
     const { stage, sql, meta } = this.library.locked(() => {
       if (onlyStage !== undefined && !this.library.exists(onlyStage, ref)) {
-        throw new ToolError(onlyStage === 'approved' ? 'PRECONDITION_FAILED' : 'NOT_FOUND', `Report ${refLabel(ref)} is not in stage ${onlyStage}.`);
+        throw new ToolError(onlyStage === 'approved' ? 'PRECONDITION_FAILED' : 'NOT_FOUND',
+          `Report ${refLabel(ref)} is not in stage ${onlyStage}${onlyStage === 'approved' ? ' (it has no approved copy; omit stage to run the draft)' : ''}.`);
       }
       const stage = onlyStage ?? this.library.locate(ref);
       const sql = this.library.readSql(stage, ref);
       const meta = this.library.readMeta(stage, ref);
       if (!meta) throw new ToolError('NOT_FOUND', `Report metadata missing for ${refLabel(ref)}; save the report first.`);
       assertSavedRevision(stage, ref, sql, meta);
+      if (expectedVersion !== undefined) {
+        const current = meta.sqlVersions.find(v => v.hash === sqlHash(sql))?.version ?? null;
+        if (current !== expectedVersion) {
+          throw new ToolError('STALE_VERSION', `Report ${refLabel(ref)} (${stage}) is at SQL version ${current ?? 'unknown'}, not ${expectedVersion}; nothing was run. Open the report again and use its current version.`);
+        }
+      }
       return { stage, sql, meta };
     });
     let usedPreset = null;
