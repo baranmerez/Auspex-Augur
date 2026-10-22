@@ -77,3 +77,6 @@ GROUP BY o.customer_id;
   estimated rows and reason, and use `timeoutSeconds` only after a yes.
 - `run_report` with `analyze="auto"` skips EXPLAIN ANALYZE after a slow
   run; ask before `analyze="always"`.
+- An approved report with a newer draft at the same location: `run_report`
+  runs the draft unless you pass `stage: "approved"` (and the `version` the
+  user saw, for example from a request copied in the viewer).

@@ -33,6 +33,14 @@ moved.
   It runs only the report's saved active revision (for an approved report the
   approved one): a `.sql` file edited outside `save_report` is refused before
   any database call; save it with `save_report` (and approve it again).
+  When a report has an approved copy and a newer draft at the same location,
+  `run_report` runs the draft unless `stage` says otherwise: `stage:
+  "approved"` runs the approved copy (refused with `PRECONDITION_FAILED` when
+  there is none), `stage: "draft"` the draft (`NOT_FOUND` when there is none).
+  A preset resolves against the chosen copy. `version` (optional, an integer)
+  pins the SQL version of that copy: another version is refused with
+  `STALE_VERSION` before any database call. The audit entry records them as
+  `requestedStage` and `requestedVersion`.
 - **The HTML is self-contained** (data embedded, no external files): stat tiles,
   plan warnings, a plan tree with time share and misestimates, joins read from
   the plan (with the column pairs they use), tables touched, the masked preview,
