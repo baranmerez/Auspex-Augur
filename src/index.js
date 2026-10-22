@@ -38,7 +38,7 @@ try {
   process.exit(1);
 }
 const db = new ReadOnlyDatabase(config, { source: 'mcp' });
-const memory = new SchemaMemory(config.memoryDir, { approvedJoins: profile => reports.approvedJoinPairs(profile) });
+const memory = new SchemaMemory(config.memoryDir, { approvedJoins: profile => reports.approvedJoinPairs(profile), storeUpgradedCalls: true });
 const reports = new ReportService(db, config.libraryDir, memory, { scriptRoots: config.scriptRoots });
 
 const defaultTimeoutS = config.statementTimeoutMs / 1000;

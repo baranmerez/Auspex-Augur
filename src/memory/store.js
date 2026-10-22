@@ -264,8 +264,13 @@ function noteLine(n) {
 export class SchemaMemory {
   // approvedJoins(profile) -> [{ left: 'schema.table.column', right: ... }] from
   // approved reports: the "used" relation level.
-  constructor(root, { now = () => new Date().toISOString(), approvedJoins = () => [], scannedFilesPerRoot = maxScannedFilesPerRoot } = {}) {
+  // storeUpgradedCalls: write recomputed function calls back into the
+  // function records (upgradeCalls). Only the MCP server sets it; the viewer,
+  // desktop CLI and scheduler compute them in memory and never write function
+  // records.
+  constructor(root, { now = () => new Date().toISOString(), approvedJoins = () => [], scannedFilesPerRoot = maxScannedFilesPerRoot, storeUpgradedCalls = false } = {}) {
     this.scannedFilesPerRoot = scannedFilesPerRoot;
+    this.storeUpgradedCalls = storeUpgradedCalls;
     this.root = path.resolve(root);
     this.now = now;
     this.approvedJoins = approvedJoins;
@@ -561,13 +566,13 @@ export class SchemaMemory {
     const hit = key && this.summaryCache.get(file);
     if (hit && hit.key === key) return hit.value;
     const rec = JSON.parse(fs.readFileSync(file, 'utf8'));
-    const current = o => Array.isArray(o.calls) && o.callsVersion === callsVersion;
+    const current = o => callsCurrent(o);
     const value = {
       ...rec,
       overloads: (rec.overloads ?? []).map(({ definition, ...o }) => (current(o) ? o : { ...o, calls: functionCalls(definition), callsVersion })),
     };
     // After an upgrade the file has a new identity: the next read caches it.
-    const upgraded = (rec.overloads ?? []).some(o => !current(o)) && this.upgradeCalls(profile, file, rec);
+    const upgraded = this.storeUpgradedCalls && (rec.overloads ?? []).some(o => !current(o)) && this.upgradeCalls(profile, file, rec);
     if (key && !upgraded) this.summaryCache.set(file, { key, value });
     return value;
   }
@@ -581,7 +586,7 @@ export class SchemaMemory {
       return this.locked(profile, () => {
         const latest = this.readJson(file, null, { cache: false });
         if (!latest || JSON.stringify(latest) !== JSON.stringify(rec)) return false;
-        const overloads = latest.overloads.map(o => (Array.isArray(o.calls) && o.callsVersion === callsVersion ? o : { ...o, calls: functionCalls(o.definition), callsVersion }));
+        const overloads = latest.overloads.map(o => (callsCurrent(o) ? o : { ...o, calls: functionCalls(o.definition), callsVersion }));
         this.writeJson(file, { ...latest, overloads });
         return true;
       });
@@ -1176,6 +1181,10 @@ export class SchemaMemory {
     this.writeJson(path.join(this.profileDir(profile), 'graph.json'), this.view(profile));
   }
 }
+
+// Stored calls are current when written by this scanner version or a newer
+// one (a newer build's records are never rewritten by an older one).
+const callsCurrent = o => Array.isArray(o.calls) && Number.isInteger(o.callsVersion) && o.callsVersion >= callsVersion;
 
 const functionFlagFields = ['volatility', 'securityDefiner', 'strict', 'parallel', 'config', 'owner'];
 

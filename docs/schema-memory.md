@@ -178,8 +178,11 @@ apart, because the plan text they come from has no quotes.
   scanner rules that produced it. The graph's `calledBy.functions` is built
   from it, so a rebuild of `graph.json` reads no function bodies; a record
   written before `calls` existed, or by an older scanner (`callsVersion`
-  missing or lower), gets them computed from its stored definition and
-  written back once, without a database call.
+  missing or lower), gets them computed from its stored definition, without
+  a database call. The MCP server writes them back once; the viewer, the
+  desktop app and the scheduler only compute them in memory and never write
+  function records. Calls stored by a newer scanner version are kept as they
+  are.
 - `touches` is a textual inference from the body, not a catalog fact
   (PostgreSQL records no dependencies for function bodies), and only for
   `sql` and `plpgsql`: comments, string literals and nested dollar-quoted
