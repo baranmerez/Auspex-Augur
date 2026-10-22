@@ -831,8 +831,8 @@ test('#140: a view described again with another source leaves the old table\'s U
     nodes: [
       { id: 'example.orders', schema: 'example', table: 'orders', state: 'explored', kind: 'table' },
       { id: 'example.orders_archive', schema: 'example', table: 'orders_archive', state: 'explored', kind: 'table' },
-      // Described again: it now reads orders_archive only.
-      { id: 'example.order_view', schema: 'example', table: 'order_view', state: 'explored', kind: 'view', viewSources: ['example.orders_archive'] },
+      // Described again after the orders file: it now reads orders_archive only.
+      { id: 'example.order_view', schema: 'example', table: 'order_view', state: 'explored', kind: 'view', viewSources: ['example.orders_archive'], describedAt: '2026-10-03T00:00:00Z' },
       // Known only from the snapshot (old memory, no view facts): kept.
       { id: 'example.v_old', schema: 'example', table: 'v_old', state: 'seen', kind: 'view' },
     ],
@@ -848,6 +848,25 @@ test('#140: a view described again with another source leaves the old table\'s U
   // Still listing the table: kept.
   g.nodes[2].viewSources = ['example.orders', 'example.orders_archive'];
   assert.deepEqual(plain(ctx.tablePageModel(g, 'example.orders', { ...rec, usedByViews: [rec.usedByViews[0]] }).usedByViews.map(v => v.id)), ['example.order_view']);
+});
+
+test('#140: a view recorded before the table keeps the table\'s newer snapshot entry; viewSources alone never drop it', () => {
+  const ctx = load();
+  // The view was described reading A, then redefined to read B; only B was
+  // described again, so B's snapshot is newer than the view's old record.
+  const g = { profile: 'exampledb', notes: [], functions: [], edges: [],
+    nodes: [
+      { id: 'example.orders', schema: 'example', table: 'orders', state: 'explored', kind: 'table' },
+      { id: 'example.orders_archive', schema: 'example', table: 'orders_archive', state: 'explored', kind: 'table' },
+      { id: 'example.order_view', schema: 'example', table: 'order_view', state: 'explored', kind: 'view', viewSources: ['example.orders'], describedAt: '2026-10-01T00:00:00Z' },
+    ] };
+  const rec = { describedAt: '2026-10-05T00:00:00Z', kind: 'table', columns: [], constraints: [], history: [], usedByViews: [{ schema: 'example', table: 'order_view', kind: 'view' }] };
+  assert.deepEqual(plain(ctx.tablePageModel(g, 'example.orders_archive', rec).usedByViews.map(v => v.id)), ['example.order_view'], 'view recorded before the table');
+  delete g.nodes[2].describedAt;
+  assert.deepEqual(plain(ctx.tablePageModel(g, 'example.orders_archive', rec).usedByViews.map(v => v.id)), ['example.order_view'], 'no view timestamp: kept');
+  g.nodes[2].describedAt = '2026-10-09T00:00:00Z';
+  assert.deepEqual(plain(ctx.tablePageModel(g, 'example.orders_archive', { ...rec, describedAt: undefined }).usedByViews.map(v => v.id)), ['example.order_view'], 'no table timestamp: kept');
+  assert.deepEqual(plain(ctx.tablePageModel(g, 'example.orders_archive', rec).usedByViews.map(v => v.id)), [], 'view described later without it: dropped');
 });
 
 test('#141: quoted RETURNS TABLE names keep their commas, parentheses and "" escapes; count and list agree', () => {
