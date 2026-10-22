@@ -128,8 +128,10 @@ test('#138: the version comes from the opened content (its SQL hash), not from t
   const listEntry = { db: 'exampledb', schema: 'example', category: 'Orders', name: 'order-total', title: 'Order total', stage: 'approved', approvedVersion: 2, activeHash: 'bbbbbbbbbbbb' };
   const [preset] = offeredPresets({ custom: [{ name: 'Example', params: [100] }] }, 'en');
   assert.match(buildPresetPrompt(listEntry, preset, 'en', openedVersion(report, 'aaaaaaaaaaaa')), /\(stage: "approved", version: 1\)/);
-  // The chips take the version from the opened content and leave it out once the list moved on.
-  assert.match(page, /const version = doc && stageBlocked\(r, doc\) !== changedText \? openedVersion\(data\?\.report, doc\.sqlHash\) : null;/);
+  // The chips always take the version from the opened content, also when the list moved on,
+  // so the server refuses a changed copy instead of running SQL the page does not show.
+  assert.match(page, /const version = doc \? openedVersion\(data\?\.report, doc\.sqlHash\) : null;/);
+  assert.doesNotMatch(page, /const version = doc && stageBlocked/, 'a moved-on list must not drop the version');
   assert.match(page, /onclick: \(\) => copyPresetPrompt\(r, o, version\)/);
   assert.match(page, /presetMeta\(data, r, doc\)/);
 });
