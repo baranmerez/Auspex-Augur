@@ -214,9 +214,9 @@ test('a definition cut at a lower cap is not reported as changed when the new te
   assert.deepEqual(diffFunction([old], [{ ...same, definitionLength: 25001 }]), [{ change: 'definition-changed', arguments: '' }]);
 });
 
-test('calls stored by an older scanner are recomputed once from the stored definition and written back (#139)', () => {
+test('calls stored by an older scanner are recomputed once from the stored definition and written back by the MCP server store (#139)', () => {
   const dir = tempDir();
-  const mem = new SchemaMemory(dir, { now });
+  const mem = new SchemaMemory(dir, { now, storeUpgradedCalls: true });
   const total = 'CREATE OR REPLACE FUNCTION example.order_total(integer)\n RETURNS integer\n LANGUAGE plpgsql\nAS $body$\nBEGIN\n  RAISE EXCEPTION \'example.order_total was called\';\nEND\n$body$\n';
   const report = 'CREATE OR REPLACE FUNCTION example.order_report()\n RETURNS integer\n LANGUAGE sql\nAS $body$\n  WITH order_total(total) AS (SELECT 7)\n  SELECT total FROM order_total;\n$body$\n';
   const fn = (name, args, definition, language) => ({ schema: 'example', name, arguments: args, returns: 'integer', kind: 'function', language, volatility: 'volatile', config: [], definition });
@@ -234,4 +234,31 @@ test('calls stored by an older scanner are recomputed once from the stored defin
   const mtime = fs.statSync(file, { bigint: true }).mtimeNs;
   calledBy();
   assert.equal(fs.statSync(file, { bigint: true }).mtimeNs, mtime, 'not written again');
+});
+
+test('a store without storeUpgradedCalls (viewer, desktop CLI, scheduler) computes calls in memory and never writes function records', () => {
+  const dir = tempDir();
+  const writer = new SchemaMemory(dir, { now, storeUpgradedCalls: true });
+  writer.recordFunctions(profile, exampleFunctions());
+  const file = writer.functionPath(profile, 'example', 'order_report');
+  const rec = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const old = JSON.stringify({ ...rec, overloads: rec.overloads.map(({ callsVersion, ...o }) => ({ ...o, calls: [] })) });
+  fs.writeFileSync(file, old);
+  const reader = new SchemaMemory(dir, { now });
+  assert.deepEqual(reader.graph(profile).functions.find(f => f.name === 'order_total').calledBy.functions, ['example.order_report'], 'recomputed in memory');
+  reader.rebuildView(profile);
+  assert.equal(fs.readFileSync(file, 'utf8'), old, 'the function record is not written');
+});
+
+test('calls stored by a newer scanner version are current and never rewritten by an older build', () => {
+  const dir = tempDir();
+  const mem = new SchemaMemory(dir, { now, storeUpgradedCalls: true });
+  mem.recordFunctions(profile, exampleFunctions());
+  const file = mem.functionPath(profile, 'example', 'order_report');
+  const rec = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const newer = JSON.stringify({ ...rec, overloads: rec.overloads.map(o => ({ ...o, calls: [{ schema: 'example', name: 'order_total' }, { schema: 'example', name: 'order_tax' }], callsVersion: 99 })) });
+  fs.writeFileSync(file, newer);
+  mem.rebuildView(profile);
+  assert.equal(fs.readFileSync(file, 'utf8'), newer);
+  assert.deepEqual(mem.graph(profile).functions.find(f => f.name === 'order_total').calledBy.functions, ['example.order_report']);
 });
