@@ -5102,10 +5102,11 @@ function tpViewFacts(data, node, rec, kind) {
 // Views that read relation id. The table file's usedByViews is a snapshot
 // from its own describe and goes stale when other views are described later,
 // so it is joined with the graph: view edges into id and nodes whose
-// viewSources name it. A snapshot entry for view V is dropped when the graph
-// holds a newer description of V that no longer lists id (V's node has
-// viewSources, or was described after this file); views not described since
-// keep their entry. Deduplicated by id, sorted.
+// viewSources name it. A snapshot entry for view V is dropped only when V's
+// node was described after this file (both describedAt known) and its
+// viewSources no longer list id; with either timestamp missing, or V recorded
+// before this file, the snapshot is the newer fact and stays. Deduplicated by
+// id, sorted.
 function tpUsedByViews(data, id, rec) {
   const nodes = tpArr(data?.nodes);
   const byId = new Map();
@@ -5113,7 +5114,7 @@ function tpUsedByViews(data, id, rec) {
   const superseded = vid => {
     const n = nodes.find(x => x.id === vid);
     if (!n) return false;
-    const newer = Array.isArray(n.viewSources) || (typeof n.describedAt === 'string' && typeof rec?.describedAt === 'string' && n.describedAt > rec.describedAt);
+    const newer = typeof n.describedAt === 'string' && typeof rec?.describedAt === 'string' && n.describedAt > rec.describedAt;
     return newer && !tpArr(n.viewSources).includes(id);
   };
   for (const v of tpArr(rec?.usedByViews)) if (v && v.table && !superseded(tableKey(v.schema, v.table))) add(tableKey(v.schema, v.table), v.kind);
