@@ -2767,10 +2767,10 @@ function lastRunInfo(data) {
 const askTexts = {
   en: { intro: 'I have a question about this Auspex report.', report: 'Report', title: 'Title', lastRun: 'Last run', notRun: 'not run yet', preset: 'Preset', params: 'Parameters', none: 'none', rows: 'Rows', columns: 'First columns', more: '(+{n} more)',
     ask: 'Use the Auspex tools (list_reports, run_report) on this report; do not ask me for row values. My question:',
-    runPreset: 'Run the Auspex report "{title}" ({path}) with run_report and the preset {preset}, then show me the summary and the HTML file path.' },
+    runPreset: 'Run the Auspex report "{title}" ({path}) with run_report{stage} and the preset {preset}, then show me the summary and the HTML file path.' },
   tr: { intro: 'Bu Auspex raporu hakkında bir sorum var.', report: 'Rapor', title: 'Başlık', lastRun: 'Son çalıştırma', notRun: 'henüz çalıştırılmadı', preset: 'Hazır ayar', params: 'Parametreler', none: 'yok', rows: 'Satır', columns: 'İlk kolonlar', more: '(+{n} kolon daha)',
     ask: 'Bu rapor için Auspex araçlarını (list_reports, run_report) kullan; benden satır değeri isteme. Sorum:',
-    runPreset: '"{title}" Auspex raporunu ({path}) run_report ile {preset} hazır ayarıyla çalıştır, sonra özeti ve HTML dosya yolunu göster.' },
+    runPreset: '"{title}" Auspex raporunu ({path}) run_report ile{stage} {preset} hazır ayarıyla çalıştır, sonra özeti ve HTML dosya yolunu göster.' },
 };
 // The prompt "Ask Claude" copies: report location, title, last run time,
 // preset and parameters, row count and the first column names. Built from
@@ -2805,8 +2805,11 @@ function buildPresetPrompt(r, preset, lng) {
     title: oneLine(r.title || r.name),
     path: [r.db, r.schema, r.category, r.name].join('/'),
     preset: preset.key === preset.label ? key : `"${oneLine(preset.label)}" (${key})`,
+    // The copy that is open (approved or draft): run_report takes it as stage,
+    // so an approved page never runs a newer draft at the same place.
+    stage: r.stage === 'approved' || r.stage === 'draft' ? ` (stage: "${r.stage}")` : '',
   };
-  return x.runPreset.replace(/\{(title|path|preset)\}/g, (_, k) => fields[k]);
+  return x.runPreset.replace(/\{(title|path|preset|stage)\}/g, (_, k) => fields[k]);
 }
 // The preset chips of a report from its embedded presets block: built-in
 // keys with their label, then custom presets; those that no longer fit the

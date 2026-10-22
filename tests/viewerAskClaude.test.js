@@ -102,3 +102,15 @@ test('preset chip request: the key is copied exactly and title or name text is n
   assert.ok(b.includes('the preset "FY26 $& {title}", then'), b);
   assert.equal(JSON.parse(a.match(/the preset (".*?"), then/)[1]), 'Q1  2026');
 });
+
+test('#138: the preset request names the stage of the opened copy, so an approved page never runs a newer draft', () => {
+  const { offeredPresets, buildPresetPrompt } = load();
+  const base = { db: 'exampledb', schema: 'example', category: 'Orders', name: 'order-total', title: 'Order total' };
+  const [preset] = offeredPresets({ custom: [{ name: 'Example', params: [100] }] }, 'en');
+  assert.equal(buildPresetPrompt({ ...base, stage: 'approved', approvedVersion: 1 }, preset, 'en'),
+    'Run the Auspex report "Order total" (exampledb/example/Orders/order-total) with run_report (stage: "approved") and the preset "Example", then show me the summary and the HTML file path.');
+  assert.match(buildPresetPrompt({ ...base, stage: 'draft' }, preset, 'en'), /with run_report \(stage: "draft"\) and the preset/);
+  assert.match(buildPresetPrompt({ ...base, stage: 'approved' }, preset, 'tr'), /run_report ile \(stage: "approved"\) "Example" hazır ayarıyla çalıştır/);
+  assert.match(buildPresetPrompt({ ...base, stage: 'execute' }, preset, 'en'), /with run_report and the preset/, 'no stage for anything else');
+  assert.match(buildPresetPrompt({ ...base, title: 'T {stage}', stage: 'approved' }, preset, 'en'), /"T \{stage\}"/, 'a title is never read as a placeholder');
+});
