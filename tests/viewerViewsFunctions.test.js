@@ -849,3 +849,20 @@ test('#140: a view described again with another source leaves the old table\'s U
   g.nodes[2].viewSources = ['example.orders', 'example.orders_archive'];
   assert.deepEqual(plain(ctx.tablePageModel(g, 'example.orders', { ...rec, usedByViews: [rec.usedByViews[0]] }).usedByViews.map(v => v.id)), ['example.order_view']);
 });
+
+test('#141: quoted RETURNS TABLE names keep their commas, parentheses and "" escapes; count and list agree', () => {
+  const ctx = load();
+  const returns = 'TABLE("gross,total" numeric, quantity integer, subtotal numeric, tax numeric, discount numeric)';
+  assert.deepEqual(plain(ctx.fnTableColumns(returns)), ['"gross,total" numeric', 'quantity integer', 'subtotal numeric', 'tax numeric', 'discount numeric']);
+  assert.deepEqual(plain(ctx.fnTableColumns('TABLE("a (x, y)" numeric(12,2), "say ""hi, there""" text, b integer)')),
+    ['"a (x, y)" numeric(12,2)', '"say ""hi, there""" text', 'b integer']);
+  const rec = { schema: 'example', name: 'orderSummary', describedAt: 'x', overloads: [ov({ arguments: '', returns: returns.replace('TABLE(', 'TABLE(') + '' })] };
+  rec.overloads[0].returns = `TABLE(${Array.from({ length: 5 }, (_, i) => (i ? `c${i} numeric` : '"gross,total" numeric')).join(', ')})`;
+  const m = ctx.functionPageModel(graph(), 'example."orderSummary"', rec);
+  const closed = ctx.functionPageView(m, ['x'], ctxOf({ reports: { items: [] } }));
+  assert.match(textOf(byClass(closed, 'fn-sig')[0]), /TABLE \(5 columns\)/);
+  const open = ctx.functionPageView(m, ['x'], ctxOf({ reports: { items: [] }, sigOpen: { 'example."orderSummary"#0': true } }));
+  const items = all(byClass(open, 'fn-cols')[0], n => n.tag === 'li').map(textOf);
+  assert.equal(items.length, 5);
+  assert.equal(items[0], '"gross,total" numeric');
+});

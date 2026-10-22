@@ -5983,12 +5983,15 @@ function functionList(res, important, ctx) {
 function fnTableColumns(returns) {
   const m = /^\s*TABLE\s*\(([\s\S]*)\)\s*$/i.exec(typeof returns === 'string' ? returns : '');
   if (!m) return null;
+  // A double-quoted identifier ("" is a quote inside it) keeps its commas and
+  // parentheses; outside quotes, parentheses nest (numeric(12,2)).
   const out = [];
-  let depth = 0, cur = '';
+  let depth = 0, quoted = false, cur = '';
   for (const ch of m[1]) {
-    if (ch === '(') depth++;
-    if (ch === ')') depth--;
-    if (ch === ',' && depth === 0) { out.push(cur.trim()); cur = ''; } else cur += ch;
+    if (ch === '"') quoted = !quoted;
+    else if (!quoted && ch === '(') depth++;
+    else if (!quoted && ch === ')') depth--;
+    if (ch === ',' && depth === 0 && !quoted) { out.push(cur.trim()); cur = ''; } else cur += ch;
   }
   if (cur.trim()) out.push(cur.trim());
   return out;
