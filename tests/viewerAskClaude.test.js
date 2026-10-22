@@ -11,7 +11,7 @@ const block = page.match(/\/\/ ask-claude:start[\s\S]*?\/\/ ask-claude:end/)?.[0
 function load() {
   assert.ok(block, 'ask-claude block found in viewer.html');
   const context = vm.createContext({});
-  vm.runInContext(`${block}\nObject.assign(this, { buildAskPrompt, reportDataOf, presetLabel, lastRunInfo, paramText, offeredPresets, buildPresetPrompt });`, context);
+  vm.runInContext(`${block}\nObject.assign(this, { buildAskPrompt, reportDataOf, presetLabel, lastRunInfo, paramText, offeredPresets, buildPresetPrompt, openedVersion });`, context);
   return context;
 }
 
@@ -107,12 +107,29 @@ test('#138: the preset request names the stage of the opened copy, so an approve
   const { offeredPresets, buildPresetPrompt } = load();
   const base = { db: 'exampledb', schema: 'example', category: 'Orders', name: 'order-total', title: 'Order total' };
   const [preset] = offeredPresets({ custom: [{ name: 'Example', params: [100] }] }, 'en');
-  assert.equal(buildPresetPrompt({ ...base, stage: 'approved', approvedVersion: 1, activeVersion: 2 }, preset, 'en'),
+  assert.equal(buildPresetPrompt({ ...base, stage: 'approved', approvedVersion: 1 }, preset, 'en', 1),
     'Run the Auspex report "Order total" (exampledb/example/Orders/order-total) with run_report (stage: "approved", version: 1) and the preset "Example", then show me the summary and the HTML file path.');
-  assert.match(buildPresetPrompt({ ...base, stage: 'draft', approvedVersion: 1, activeVersion: 2 }, preset, 'en'), /with run_report \(stage: "draft", version: 2\) and the preset/, 'a draft names its active version');
-  assert.match(buildPresetPrompt({ ...base, stage: 'draft' }, preset, 'en'), /with run_report \(stage: "draft"\) and the preset/, 'no version when it is not known');
-  assert.match(buildPresetPrompt({ ...base, stage: 'approved', approvedVersion: 0 }, preset, 'en'), /\(stage: "approved"\) and/, 'only versions from 1 up');
-  assert.match(buildPresetPrompt({ ...base, stage: 'approved', approvedVersion: 3 }, preset, 'tr'), /run_report ile \(stage: "approved", version: 3\) "Example" hazır ayarıyla çalıştır/);
+  assert.match(buildPresetPrompt({ ...base, stage: 'draft' }, preset, 'en', 2), /with run_report \(stage: "draft", version: 2\) and the preset/);
+  assert.match(buildPresetPrompt({ ...base, stage: 'draft', activeVersion: 5 }, preset, 'en'), /with run_report \(stage: "draft"\) and the preset/, 'no version unless the opened content gives one');
+  assert.match(buildPresetPrompt({ ...base, stage: 'approved' }, preset, 'en', 0), /\(stage: "approved"\) and/, 'only versions from 1 up');
+  assert.match(buildPresetPrompt({ ...base, stage: 'approved' }, preset, 'tr', 3), /run_report ile \(stage: "approved", version: 3\) "Example" hazır ayarıyla çalıştır/);
   assert.match(buildPresetPrompt({ ...base, stage: 'execute' }, preset, 'en'), /with run_report and the preset/, 'no stage for anything else');
   assert.match(buildPresetPrompt({ ...base, title: 'T {stage}', stage: 'approved' }, preset, 'en'), /"T \{stage\}"/, 'a title is never read as a placeholder');
+});
+
+test('#138: the version comes from the opened content (its SQL hash), not from the live list entry', () => {
+  const { openedVersion, buildPresetPrompt, offeredPresets } = load();
+  // The opened approved copy is version 1; a live refresh moved the list entry to version 2.
+  const report = { approvedVersion: 1, sqlVersions: [{ version: 1, hash: 'aaaaaaaaaaaa' }, { version: 2, hash: 'bbbbbbbbbbbb' }] };
+  assert.equal(openedVersion(report, 'aaaaaaaaaaaa'), 1);
+  assert.equal(openedVersion(report, 'cccccccccccc'), null, 'an unknown hash gives no version');
+  assert.equal(openedVersion({ approvedVersion: 4 }, 'aaaaaaaaaaaa'), null, 'never approvedVersion alone');
+  assert.equal(openedVersion(report, null), null);
+  const listEntry = { db: 'exampledb', schema: 'example', category: 'Orders', name: 'order-total', title: 'Order total', stage: 'approved', approvedVersion: 2, activeHash: 'bbbbbbbbbbbb' };
+  const [preset] = offeredPresets({ custom: [{ name: 'Example', params: [100] }] }, 'en');
+  assert.match(buildPresetPrompt(listEntry, preset, 'en', openedVersion(report, 'aaaaaaaaaaaa')), /\(stage: "approved", version: 1\)/);
+  // The chips take the version from the opened content and leave it out once the list moved on.
+  assert.match(page, /const version = doc && stageBlocked\(r, doc\) !== changedText \? openedVersion\(data\?\.report, doc\.sqlHash\) : null;/);
+  assert.match(page, /onclick: \(\) => copyPresetPrompt\(r, o, version\)/);
+  assert.match(page, /presetMeta\(data, r, doc\)/);
 });

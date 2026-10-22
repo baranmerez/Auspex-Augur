@@ -2406,7 +2406,7 @@ function reportView(r) {
   const heading = h('div', {},
     h('div', { class: 'crumbs' }, h('span', { class: 'crumb' }, r.db), '›', h('span', { class: 'crumb' }, r.schema), '›', h('span', { class: 'crumb' }, r.category)),
     h('div', { class: 'rep-title' }, h('span', { class: 't' }, r.title || r.name), h('span', { class: 'badge ' + r.stage }, r.stage === 'approved' ? t('approved v{v}', { v: r.approvedVersion ?? '?' }) : t(r.stage)), starButton(r, 'head'), stageButton(r, doc)),
-    presetMeta(data, r), scheduleMeta(r));
+    presetMeta(data, r, doc), scheduleMeta(r));
   // The list moved on (live refresh) while this content stayed open.
   const changed = doc && stageBlocked(r, doc) === changedText
     ? h('div', { class: 'error-box', role: 'status', style: 'margin:0 12px 8px;display:flex;gap:10px;align-items:center' }, t(changedText),
@@ -2419,7 +2419,10 @@ function reportView(r) {
 // The last run's preset and parameter values, and the presets the report
 // offers. The viewer never runs SQL: a preset button copies a request for
 // Claude to run the report with it; a stale preset stays a disabled button.
-function presetMeta(data, r) {
+// doc: the opened content. Its SQL version goes into the chips' run request,
+// unless the list (live refresh) already stands for another copy.
+function presetMeta(data, r, doc) {
+  const version = doc && stageBlocked(r, doc) !== changedText ? openedVersion(data?.report, doc.sqlHash) : null;
   if (!data) return null;
   const info = lastRunInfo(data);
   const p = data.presets;
@@ -2434,7 +2437,7 @@ function presetMeta(data, r) {
     ? h('div', { class: 'rep-meta' }, h('span', {}, t('Presets:')),
       offered.map(o => h('button', { type: 'button', class: 'chip' + (o.stale ? ' stale' : ''), disabled: o.stale ? true : null,
         title: o.stale ? o.title : t('Copy a request for Claude to run the report with {p} ({v})', { p: o.label, v: o.title }),
-        onclick: () => copyPresetPrompt(r, o) }, o.label)))
+        onclick: () => copyPresetPrompt(r, o, version) }, o.label)))
     : null;
   return [run, list];
 }
@@ -2800,13 +2803,17 @@ function buildAskPrompt(r, data, lng, maxColumns = 6) {
 // of offeredPresets. The key is written exactly (JSON string, whitespace kept)
 // since run_report looks it up as given; the placeholders are filled in one
 // pass, so text in a title or name is never read as a placeholder or a $ pattern.
-// The SQL version of the opened copy for a run request: the approved version
-// on an approved page, the active version on a draft; '' when unknown.
-function presetVersionText(r) {
-  const v = r.stage === 'approved' ? r.approvedVersion : r.activeVersion;
-  return Number.isInteger(v) && v >= 1 ? `, version: ${v}` : '';
+// The SQL version of the opened content: the entry of its embedded
+// sqlVersions whose hash is the content's SQL hash (not approvedVersion, which
+// a draft copied at approval carries from the previous approval); null when
+// it cannot be told.
+function openedVersion(report, sqlHash) {
+  if (!sqlHash || !Array.isArray(report?.sqlVersions)) return null;
+  const v = report.sqlVersions.find(x => x && x.hash === sqlHash)?.version;
+  return Number.isInteger(v) && v >= 1 ? v : null;
 }
-function buildPresetPrompt(r, preset, lng) {
+// version: the opened content's SQL version, or null to leave it out.
+function buildPresetPrompt(r, preset, lng, version = null) {
   const x = askTexts[lng] || askTexts.en;
   const key = JSON.stringify(String(preset.key));
   const fields = {
@@ -2816,7 +2823,7 @@ function buildPresetPrompt(r, preset, lng) {
     // The copy that is open (approved or draft) and its SQL version: run_report
     // takes them as stage and version, so an approved page never runs a newer
     // draft at the same place. The version is left out when it is not known.
-    stage: r.stage === 'approved' || r.stage === 'draft' ? ` (stage: "${r.stage}"${presetVersionText(r)})` : '',
+    stage: r.stage === 'approved' || r.stage === 'draft' ? ` (stage: "${r.stage}"${Number.isInteger(version) && version >= 1 ? `, version: ${version}` : ''})` : '',
   };
   return x.runPreset.replace(/\{(title|path|preset|stage)\}/g, (_, k) => fields[k]);
 }
@@ -2857,8 +2864,8 @@ async function askClaude(r, data) {
   catch { toast(t('Copy failed')); }
 }
 // Copies the run request of a preset chip (user activation: called from the click).
-async function copyPresetPrompt(r, preset) {
-  try { await navigator.clipboard.writeText(buildPresetPrompt(r, preset, lang)); toast(t('Copied to clipboard: paste it to Claude')); }
+async function copyPresetPrompt(r, preset, version) {
+  try { await navigator.clipboard.writeText(buildPresetPrompt(r, preset, lang, version)); toast(t('Copied to clipboard: paste it to Claude')); }
   catch { toast(t('Copy failed')); }
 }
 // focus-keep:start (tests/viewerFocusKeep.test.js runs this block in isolation)
