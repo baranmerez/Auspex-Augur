@@ -122,3 +122,18 @@ test('the lexer keeps positional parameters apart from dollar quotes', () => {
   const kinds = lexSql("SELECT $1, $q$x$q$, 'y'").map(t => t.t);
   assert.deepEqual(kinds, ['id', 'param', 'p', 'lit', 'p', 'lit']);
 });
+
+test('CTE declarations with a column list are not calls; a real call with the same name still is (#139)', () => {
+  const sqlBody = (body) => def(body, { lang: 'sql', name: 'example.order_report', returns: 'integer', tag: '$body$' });
+  assert.deepEqual(functionCalls(sqlBody('  WITH order_total(total) AS (SELECT 7)\n  SELECT total FROM order_total;')), []);
+  assert.deepEqual(functionCalls(sqlBody('  WITH order_total AS (SELECT 7 AS total)\n  SELECT total FROM order_total;')), [], 'control without a column list');
+  assert.deepEqual(functionCalls(sqlBody(`WITH RECURSIVE order_days(day, n) AS (SELECT 1, 1 UNION ALL SELECT day + 1, n FROM order_days WHERE day < 3),
+    order_sums (order_id, amount) AS MATERIALIZED (SELECT 1, 2),
+    order_rows(order_id) AS NOT MATERIALIZED (SELECT 1)
+  SELECT count(*) FROM order_days, order_sums, order_rows`)), [{ schema: null, name: 'count' }]);
+  assert.deepEqual(functionCalls(sqlBody('WITH order_total(total) AS (SELECT example.order_total(7))\n  SELECT order_total(total) FROM order_total;')),
+    [{ schema: 'example', name: 'order_total' }, { schema: null, name: 'order_total' }], 'calls next to a CTE of the same name');
+  assert.deepEqual(functionCalls(def(`BEGIN
+  RETURN (WITH order_total(total) AS (SELECT 7) SELECT order_total(total) FROM order_total);
+END`)), [{ schema: null, name: 'order_total' }]);
+});

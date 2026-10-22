@@ -21,7 +21,7 @@ import { withFileLock } from '../fileLock.js';
 import { writePrivateAtomic, appendPrivate, linkBelow } from '../privateFiles.js';
 import path from 'node:path';
 import { splitColumnRef } from './planUsage.js';
-import { functionTouches, functionCalls } from './functionTouches.js';
+import { functionTouches, functionCalls, callsVersion } from './functionTouches.js';
 
 export const noteKinds = ['rule', 'observation', 'inference'];
 const historyLimit = 50;
@@ -548,11 +548,12 @@ export class SchemaMemory {
   }
 
   // A function record without its definitions, for the graph: every
-  // overload keeps its stored call list (calls); a record written before
-  // calls were stored gets them from its definition once per file version.
+  // overload keeps its stored call list (calls). Calls missing or stored by an
+  // older scanner (callsVersion) are computed from the stored definition and
+  // written back once (upgradeCalls), so later rebuilds read no bodies.
   // Cached by file identity like readJson; the bodies are never cached.
   // The result is shared: callers must not change it.
-  readFunctionSummary(file) {
+  readFunctionSummary(profile, file) {
     this.checkPath(file);
     const stat = fs.statSync(file, { bigint: true });
     const key = stat.ino === 0n ? null : `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
@@ -560,12 +561,34 @@ export class SchemaMemory {
     const hit = key && this.summaryCache.get(file);
     if (hit && hit.key === key) return hit.value;
     const rec = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const current = o => Array.isArray(o.calls) && o.callsVersion === callsVersion;
     const value = {
       ...rec,
-      overloads: (rec.overloads ?? []).map(({ definition, ...o }) => ({ ...o, calls: Array.isArray(o.calls) ? o.calls : functionCalls(definition) })),
+      overloads: (rec.overloads ?? []).map(({ definition, ...o }) => (current(o) ? o : { ...o, calls: functionCalls(definition), callsVersion })),
     };
-    if (key) this.summaryCache.set(file, { key, value });
+    // After an upgrade the file has a new identity: the next read caches it.
+    const upgraded = (rec.overloads ?? []).some(o => !current(o)) && this.upgradeCalls(profile, file, rec);
+    if (key && !upgraded) this.summaryCache.set(file, { key, value });
     return value;
+  }
+
+  // Stores the calls of a record written before calls existed or by an older
+  // scanner (callsVersion), computed from its stored definitions, so later
+  // graph rebuilds read no bodies. Best effort: a failed write only means the
+  // calls are computed again next time. True when the file was written.
+  upgradeCalls(profile, file, rec) {
+    try {
+      return this.locked(profile, () => {
+        const latest = this.readJson(file, null, { cache: false });
+        if (!latest || JSON.stringify(latest) !== JSON.stringify(rec)) return false;
+        const overloads = latest.overloads.map(o => (Array.isArray(o.calls) && o.callsVersion === callsVersion ? o : { ...o, calls: functionCalls(o.definition), callsVersion }));
+        this.writeJson(file, { ...latest, overloads });
+        return true;
+      });
+    } catch (err) {
+      process.stderr.write(`auspex: schema memory function calls not stored: ${err.message}\n`);
+      return false;
+    }
   }
 
   // Every stored function record, without definitions (readFunctionSummary).
@@ -576,7 +599,7 @@ export class SchemaMemory {
     for (const schemaDir of fs.readdirSync(dir, { withFileTypes: true }).filter(d => d.isDirectory())) {
       for (const f of fs.readdirSync(path.join(dir, schemaDir.name)).filter(f => f.endsWith('.json'))) {
         try {
-          out.push(this.readFunctionSummary(path.join(dir, schemaDir.name, f)));
+          out.push(this.readFunctionSummary(profile, path.join(dir, schemaDir.name, f)));
         } catch (err) {
           if (!err.linkRefused) throw err;
           process.stderr.write(`auspex: schema memory function skipped: ${err.message}\n`);
@@ -1186,6 +1209,7 @@ export function overloadFromDescribe(f) {
     // Functions the body calls as written ({ schema | null, name }), for the
     // graph's calledBy without reading the body again.
     calls: functionCalls(definition),
+    callsVersion,
   };
 }
 
@@ -1214,7 +1238,7 @@ function seenOverload(r) {
   return {
     arguments: r.arguments ?? '', returns: r.returns ?? null, kind: r.kind ?? null, language: r.language ?? null, volatility: r.volatility ?? null,
     ...triggerFacts(r),
-    definition: null, definitionLength: null, truncated: false, definitionHash: null, touches: null, listedOnly: true,
+    definition: null, definitionLength: null, truncated: false, definitionHash: null, touches: null, calls: [], callsVersion, listedOnly: true,
   };
 }
 

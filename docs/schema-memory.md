@@ -148,7 +148,8 @@ apart, because the plan text they come from has no quotes.
     "definitionLength": 2345, "truncated": false,
     "definitionHash": "16 hex characters (sha256 of the stored text)",
     "touches": { "inferred": true, "reads": ["example.order_items"], "writes": [] },  // null for other languages
-    "calls": [{ "schema": "example", "name": "order_tax" }, { "schema": null, "name": "round" }]  // functions the body calls, as written
+    "calls": [{ "schema": "example", "name": "order_tax" }, { "schema": null, "name": "round" }],  // functions the body calls, as written
+    "callsVersion": 2
   }],
   "history": [{ "at": "...", "changes": [{ "change": "definition-changed", "arguments": "p_order_id bigint" }] }]
 }
@@ -172,10 +173,13 @@ apart, because the plan text they come from has no quotes.
   (`trigger`), `triggerTables` from the stored `table` and leaves `timings`
   empty until the function is described or listed again.
 - `calls` lists the functions the body calls as written (comments and
-  literals skipped; `schema` null when unqualified). The graph's
-  `calledBy.functions` is built from it, so a rebuild of `graph.json` reads no
-  function bodies; a record written before `calls` existed gets them from its
-  stored definition once.
+  literals skipped; `schema` null when unqualified; CTE declarations such as
+  `WITH order_total(total) AS (...)` are not calls). `callsVersion` names the
+  scanner rules that produced it. The graph's `calledBy.functions` is built
+  from it, so a rebuild of `graph.json` reads no function bodies; a record
+  written before `calls` existed, or by an older scanner (`callsVersion`
+  missing or lower), gets them computed from its stored definition and
+  written back once, without a database call.
 - `touches` is a textual inference from the body, not a catalog fact
   (PostgreSQL records no dependencies for function bodies), and only for
   `sql` and `plpgsql`: comments, string literals and nested dollar-quoted

@@ -77,7 +77,7 @@ test('list_functions records seen overloads and never overwrites a described def
   assert.equal(after.describedAt, before.describedAt);
   assert.deepEqual(after.overloads[1], {
     arguments: 'p_order_id integer', returns: 'numeric', kind: 'function', language: 'plpgsql', volatility: 'stable',
-    returnsTrigger: false, usedByTriggers: [], definition: null, definitionLength: null, truncated: false, definitionHash: null, touches: null, listedOnly: true,
+    returnsTrigger: false, usedByTriggers: [], definition: null, definitionLength: null, truncated: false, definitionHash: null, touches: null, calls: [], callsVersion: 2, listedOnly: true,
   });
   const seen = mem.readFunction(profile, 'example', 'order_count');
   assert.equal(seen.describedAt, null);
@@ -212,4 +212,26 @@ test('a definition cut at a lower cap is not reported as changed when the new te
   assert.deepEqual(diffFunction([old], [same]), []);
   assert.deepEqual(diffFunction([old], [{ ...same, definition: `${'x'.repeat(19999)}y${'x'.repeat(5000)}` }]), [{ change: 'definition-changed', arguments: '' }]);
   assert.deepEqual(diffFunction([old], [{ ...same, definitionLength: 25001 }]), [{ change: 'definition-changed', arguments: '' }]);
+});
+
+test('calls stored by an older scanner are recomputed once from the stored definition and written back (#139)', () => {
+  const dir = tempDir();
+  const mem = new SchemaMemory(dir, { now });
+  const total = 'CREATE OR REPLACE FUNCTION example.order_total(integer)\n RETURNS integer\n LANGUAGE plpgsql\nAS $body$\nBEGIN\n  RAISE EXCEPTION \'example.order_total was called\';\nEND\n$body$\n';
+  const report = 'CREATE OR REPLACE FUNCTION example.order_report()\n RETURNS integer\n LANGUAGE sql\nAS $body$\n  WITH order_total(total) AS (SELECT 7)\n  SELECT total FROM order_total;\n$body$\n';
+  const fn = (name, args, definition, language) => ({ schema: 'example', name, arguments: args, returns: 'integer', kind: 'function', language, volatility: 'volatile', config: [], definition });
+  mem.recordFunctions(profile, [fn('order_total', 'integer', total, 'plpgsql'), fn('order_report', '', report, 'sql')]);
+  const calledBy = () => mem.graph(profile).functions.find(f => f.name === 'order_total').calledBy.functions;
+  assert.deepEqual(calledBy(), [], 'the CTE is no caller');
+  // A record written by the old scanner: the CTE stored as a call, no callsVersion.
+  const file = mem.functionPath(profile, 'example', 'order_report');
+  const rec = JSON.parse(fs.readFileSync(file, 'utf8'));
+  fs.writeFileSync(file, JSON.stringify({ ...rec, overloads: rec.overloads.map(({ callsVersion, ...o }) => ({ ...o, calls: [{ schema: null, name: 'order_total' }] })) }));
+  assert.deepEqual(calledBy(), []);
+  const upgraded = JSON.parse(fs.readFileSync(file, 'utf8')).overloads[0];
+  assert.deepEqual([upgraded.calls, upgraded.callsVersion], [[], 2], 'written back once');
+  assert.equal(upgraded.definition, report, 'the definition is kept');
+  const mtime = fs.statSync(file, { bigint: true }).mtimeNs;
+  calledBy();
+  assert.equal(fs.statSync(file, { bigint: true }).mtimeNs, mtime, 'not written again');
 });
