@@ -2419,10 +2419,11 @@ function reportView(r) {
 // The last run's preset and parameter values, and the presets the report
 // offers. The viewer never runs SQL: a preset button copies a request for
 // Claude to run the report with it; a stale preset stays a disabled button.
-// doc: the opened content. Its SQL version goes into the chips' run request,
-// unless the list (live refresh) already stands for another copy.
+// doc: the opened content. Its SQL version always goes into the chips' run
+// request, also once live refresh moved the list on: the server then refuses a
+// changed copy (STALE_VERSION) instead of running SQL the page does not show.
 function presetMeta(data, r, doc) {
-  const version = doc && stageBlocked(r, doc) !== changedText ? openedVersion(data?.report, doc.sqlHash) : null;
+  const version = doc ? openedVersion(data?.report, doc.sqlHash) : null;
   if (!data) return null;
   const info = lastRunInfo(data);
   const p = data.presets;
