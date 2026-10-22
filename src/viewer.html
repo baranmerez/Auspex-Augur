@@ -991,9 +991,11 @@
   .fn-sig-wrap { display: grid; gap: 4px; min-width: 0; }
   .fn-sig.clamp { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .fn-sig-more { justify-self: start; font-size: 12px; }
-  .fn-cols { margin: 2px 0 0; padding: 6px 10px 6px 34px; max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2);
-    font: 12px/1.6 var(--mono); color: var(--text-2); columns: 2 260px; column-gap: 24px; }
-  .fn-cols li { break-inside: avoid; overflow-wrap: anywhere; }
+  /* A grid, not CSS columns: with a height limit, columns overflow sideways;
+     grid rows only scroll down. */
+  .fn-cols { margin: 2px 0 0; padding: 6px 10px; max-height: 260px; overflow-x: hidden; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2);
+    font: 12px/1.6 var(--mono); color: var(--text-2); display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); column-gap: 24px; list-style-position: inside; }
+  .fn-cols li { min-width: 0; overflow-wrap: anywhere; }
   .fn-flags { justify-content: flex-start; }
   .fn-ov-b > * { min-width: 0; }
   .fn-trg-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 13px; }

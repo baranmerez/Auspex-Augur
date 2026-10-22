@@ -889,3 +889,12 @@ test('#142: trigger functions in two timing groups count once; nothing below the
   assert.deepEqual(cut, ['101 more not shown; search to narrow the list.']);
   assert.match(textOf(list2), /First 400 shown/);
 });
+
+test('layout: the returned-columns list scrolls down only, never sideways', () => {
+  const rule = page.match(/\.fn-cols \{[^}]*\}/)?.[0];
+  assert.ok(rule, '.fn-cols rule found');
+  assert.match(rule, /overflow-x: hidden/);
+  assert.match(rule, /overflow-y: auto/);
+  assert.match(rule, /display: grid/);
+  assert.doesNotMatch(rule, /[\s;{]columns:/, 'no CSS columns with a height limit');
+});
