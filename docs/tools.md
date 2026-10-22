@@ -25,7 +25,7 @@ Every MCP tool, plus the details of choosing a database, CSV export, batch explo
 | 📝 `save_report` | Saves a read-only query as a versioned report draft in the library; with `root`, `folder` and `fileName` also as a new `.sql` file in a configured script root; optional `presets` (named parameter sets, see *Parameter presets*) |
 | 🏁 `run_report` | Runs a report: plan + timings + masked preview, history, regenerated HTML; returns a compact summary; parameters from `params` or from a `preset` (not both); optional `stage` (`approved` / `draft`) picks the copy when both exist and `version` pins its SQL version |
 | ✅ `approve_report` | Moves a draft into `SELECT/` after the user approved it; optional `expectedHash` (the `sqlHash` from `save_report` / `run_report` of the version the user approved) refuses a draft that changed since then with `STALE_VERSION` |
-| 📚 `list_reports` / 🎨 `render_reports` | Lists the library; re-renders every report HTML from stored JSON |
+| 📚 `list_reports` / 🎨 `render_reports` | Lists the library, one entry per stage copy with its `activeVersion` (the SQL version that copy runs, for `run_report` `version`); re-renders every report HTML from stored JSON |
 | 📨 `share_report` | Writes a copy of a report to send to someone: masked preview and figures only, no SQL, plan, parameters or history |
 | 🧾 `save_execute_script` | Writes a change script into `EXECUTE/` for a human to run — never executed by Auspex; with `root`, `folder` and `fileName` also as a new file in a configured script root (for example a folder of saved SQL scripts) |
 | 🧠 `table_knowledge` | What the schema memory knows about a table — key and used columns, relations, table notes, database-wide notes, recent changes, column importance scores, triggers with their summaries, unexplored neighbors — without touching the database |
@@ -320,7 +320,7 @@ holds no message text, SQL, parameters, row values or connection details;
 | `PROFILE_INVALID` | Missing or unknown profile | no |
 | `NOT_FOUND` | Report, note, relation or column not found | no |
 | `PRECONDITION_FAILED` | An earlier step is missing (for example run the current SQL version before approving or sharing) | no |
-| `STALE_VERSION` | Approve or revoke named the SQL hash of a version the report no longer stands for (a new version was saved after it was reviewed); reload and review again | no |
+| `STALE_VERSION` | Approve or revoke named the SQL hash of a version the report no longer stands for (a new version was saved after it was reviewed), or `run_report` was given a `version` the chosen copy is not at; reload and review again | no |
 | `PERMISSION_DENIED` | No privilege on the object (42501) | no |
 | `CONNECTION_FAILED` | Could not connect or authenticate (08xxx, 28xxx, 57P01-57P03, 53300, network errors, a connection dropped mid-query); authentication failures are not retryable | network/server only |
 | `DISK_ERROR` | A local file could not be written or read (ENOSPC, EEXIST, EACCES, ...) | no |

@@ -428,7 +428,7 @@ tool('run_report', {
     preset: z.string().min(1).optional().describe(`Instead of params: a built-in date-range preset (${builtInPresetKeys.join(', ')}; only for reports saved with dateRange: true, $1 start inclusive and $2 end exclusive; resolved at run time to ISO dates whose day boundaries follow the local time zone of the Auspex machine, while a timestamptz comparison uses the database session time zone; last_7_days includes today) or the name of one of the report's custom presets (list_reports).`),
     timeoutSeconds: timeoutArg,
     stage: z.enum(['approved', 'draft']).optional().describe('Which copy to run when a report has both an approved copy and a newer draft: "approved" runs the approved copy (refused when there is none), "draft" the draft (refused when there is none). Default: the draft when there is one, else the approved copy. Presets resolve against the chosen copy.'),
-    version: z.number().int().min(1).optional().describe('SQL version the chosen copy must be at (list_reports, the report page); refused with STALE_VERSION before any database call when it is another.'),
+    version: z.number().int().min(1).optional().describe('SQL version the chosen copy must be at: activeVersion in the list_reports entry of that copy (one entry per stage), or the version shown on the report page; refused with STALE_VERSION before any database call when it is another.'),
   },
 }, async ({ analyze, previewRows, returnRows, params, preset, timeoutSeconds, stage, version, ...ref }) =>
   // One terminal entry for the whole run: refusals before the database, the

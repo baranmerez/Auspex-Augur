@@ -483,6 +483,9 @@ export class Library {
     return {
       stage, ...ref, categoryPath: segments, ...(externalFile ? { externalFile } : {}), title: meta?.title ?? ref.name, description: meta?.description || null,
       versions: meta?.sqlVersions?.length ?? null, approvedVersion: meta?.approvedVersion ?? null,
+      // The SQL version this copy (this stage) runs: what run_report's
+      // version must match.
+      activeVersion: meta ? (meta.activeVersion ?? meta.sqlVersions?.find(v => v.hash === meta.activeHash)?.version ?? null) : null,
       updatedAt: meta?.updatedAt ?? fs.statSync(file).mtime.toISOString(),
       runs: meta?.runs?.length ?? 0,
       lastRun: lastRun ? { at: lastRun.at, durationMs: lastRun.durationMs, rows: lastRun.rows, analyzed: lastRun.analyzed, warnings: lastRun.warnings?.length ?? 0, ...(lastRun.preset ? { preset: lastRun.preset } : {}) } : null,
