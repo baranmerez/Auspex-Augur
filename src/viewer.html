@@ -2800,6 +2800,12 @@ function buildAskPrompt(r, data, lng, maxColumns = 6) {
 // of offeredPresets. The key is written exactly (JSON string, whitespace kept)
 // since run_report looks it up as given; the placeholders are filled in one
 // pass, so text in a title or name is never read as a placeholder or a $ pattern.
+// The SQL version of the opened copy for a run request: the approved version
+// on an approved page, the active version on a draft; '' when unknown.
+function presetVersionText(r) {
+  const v = r.stage === 'approved' ? r.approvedVersion : r.activeVersion;
+  return Number.isInteger(v) && v >= 1 ? `, version: ${v}` : '';
+}
 function buildPresetPrompt(r, preset, lng) {
   const x = askTexts[lng] || askTexts.en;
   const key = JSON.stringify(String(preset.key));
@@ -2807,9 +2813,10 @@ function buildPresetPrompt(r, preset, lng) {
     title: oneLine(r.title || r.name),
     path: [r.db, r.schema, r.category, r.name].join('/'),
     preset: preset.key === preset.label ? key : `"${oneLine(preset.label)}" (${key})`,
-    // The copy that is open (approved or draft): run_report takes it as stage,
-    // so an approved page never runs a newer draft at the same place.
-    stage: r.stage === 'approved' || r.stage === 'draft' ? ` (stage: "${r.stage}")` : '',
+    // The copy that is open (approved or draft) and its SQL version: run_report
+    // takes them as stage and version, so an approved page never runs a newer
+    // draft at the same place. The version is left out when it is not known.
+    stage: r.stage === 'approved' || r.stage === 'draft' ? ` (stage: "${r.stage}"${presetVersionText(r)})` : '',
   };
   return x.runPreset.replace(/\{(title|path|preset|stage)\}/g, (_, k) => fields[k]);
 }

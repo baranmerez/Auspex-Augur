@@ -107,10 +107,12 @@ test('#138: the preset request names the stage of the opened copy, so an approve
   const { offeredPresets, buildPresetPrompt } = load();
   const base = { db: 'exampledb', schema: 'example', category: 'Orders', name: 'order-total', title: 'Order total' };
   const [preset] = offeredPresets({ custom: [{ name: 'Example', params: [100] }] }, 'en');
-  assert.equal(buildPresetPrompt({ ...base, stage: 'approved', approvedVersion: 1 }, preset, 'en'),
-    'Run the Auspex report "Order total" (exampledb/example/Orders/order-total) with run_report (stage: "approved") and the preset "Example", then show me the summary and the HTML file path.');
-  assert.match(buildPresetPrompt({ ...base, stage: 'draft' }, preset, 'en'), /with run_report \(stage: "draft"\) and the preset/);
-  assert.match(buildPresetPrompt({ ...base, stage: 'approved' }, preset, 'tr'), /run_report ile \(stage: "approved"\) "Example" hazır ayarıyla çalıştır/);
+  assert.equal(buildPresetPrompt({ ...base, stage: 'approved', approvedVersion: 1, activeVersion: 2 }, preset, 'en'),
+    'Run the Auspex report "Order total" (exampledb/example/Orders/order-total) with run_report (stage: "approved", version: 1) and the preset "Example", then show me the summary and the HTML file path.');
+  assert.match(buildPresetPrompt({ ...base, stage: 'draft', approvedVersion: 1, activeVersion: 2 }, preset, 'en'), /with run_report \(stage: "draft", version: 2\) and the preset/, 'a draft names its active version');
+  assert.match(buildPresetPrompt({ ...base, stage: 'draft' }, preset, 'en'), /with run_report \(stage: "draft"\) and the preset/, 'no version when it is not known');
+  assert.match(buildPresetPrompt({ ...base, stage: 'approved', approvedVersion: 0 }, preset, 'en'), /\(stage: "approved"\) and/, 'only versions from 1 up');
+  assert.match(buildPresetPrompt({ ...base, stage: 'approved', approvedVersion: 3 }, preset, 'tr'), /run_report ile \(stage: "approved", version: 3\) "Example" hazır ayarıyla çalıştır/);
   assert.match(buildPresetPrompt({ ...base, stage: 'execute' }, preset, 'en'), /with run_report and the preset/, 'no stage for anything else');
   assert.match(buildPresetPrompt({ ...base, title: 'T {stage}', stage: 'approved' }, preset, 'en'), /"T \{stage\}"/, 'a title is never read as a placeholder');
 });
