@@ -21,7 +21,7 @@ import { loadConfig, auspexHome, readNotesLanguage, defaultProfilesFile } from '
 import { Library, refLabel } from './reports/library.js';
 import { loadSchedules, schedulesFile, nextSlot, cadenceText, taskTimeOf, parseTime } from './schedule/config.js';
 import { stateFile, trendsDir, readState, scheduleState } from './schedule/store.js';
-import { ScheduleRunner, checkSchedule } from './schedule/runner.js';
+import { ScheduleRunner, checkSchedule, persistenceFailed } from './schedule/runner.js';
 import { notify, notificationLanguages } from './schedule/notify.js';
 import { acquireFileLock, LockBusyError } from './fileLock.js';
 
@@ -131,10 +131,21 @@ async function runSchedules(pick, loaded, config, env, deps) {
   }
   const runner = new ScheduleRunner(config, { stateFile: h.stateFile, trendsDir: h.trendsDir, notifyMode: loaded.notify, notifyLanguage: notificationLanguage(loaded, env), ...deps });
   try {
+    // A state file that cannot be read stops the run before any SQL; it is
+    // never replaced (a missing file is a fresh installation).
+    try {
+      readState(h.stateFile, { strict: true });
+    } catch (err) {
+      return { status: 1, out: { ok: false, code: 'STATE_UNREADABLE', file: h.stateFile, message: err.message } };
+    }
     const results = [];
-    for (const { schedule, slot } of pick(runner)) results.push(await runner.run(schedule, slot));
-    const bad = results.some(r => r.status !== 'ok');
-    return { status: bad ? 1 : 0, out: { ok: !bad, ran: results.length, results } };
+    const picked = pick(runner);
+    for (const { schedule, slot } of picked) results.push(await runner.run(schedule, slot));
+    const repairs = runner.repairs ?? [];
+    // Failed when a report run failed or a local write (trend, state) after
+    // it failed; the report result itself stays as it was.
+    const bad = results.some(r => r.status !== 'ok' || persistenceFailed(r)) || repairs.some(persistenceFailed);
+    return { status: bad ? 1 : 0, out: { ok: !bad, ran: results.length, results, ...(repairs.length ? { repairs } : {}) } };
   } finally {
     await runner.close();
     release();
@@ -151,10 +162,12 @@ export function lateScheduleWarnings(loaded) {
 
 function statusOut(loaded, config, env, now) {
   const state = readState(home(env).stateFile);
+  let stateError = null;
+  try { readState(home(env).stateFile, { strict: true }); } catch (err) { stateError = err.message; }
   const lib = new Library(config.libraryDir);
   return {
     ok: true, file: loaded.file, missing: loaded.missing, notify: loaded.notify, language: notificationLanguage(loaded, env), taskTime: taskTimeOf(loaded),
-    warnings: lateScheduleWarnings(loaded),
+    warnings: lateScheduleWarnings(loaded), ...(stateError ? { stateError } : {}),
     schedules: loaded.schedules.map(s => {
       const own = scheduleState(state, s.id);
       const check = checkSchedule(lib, s, now);

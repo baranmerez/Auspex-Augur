@@ -38,6 +38,8 @@ const texts = {
     empty: 'Finished, but the result is empty (0 rows). Check the period or the data.',
     rows: (n, count) => `Finished: ${n} ${count === 1 ? 'row' : 'rows'}.`,
     estimated: n => `Finished: about ${n} rows (estimated).`,
+    persistence: 'The report ran, but saving its trend point or the scheduler state failed',
+    repairedNext: 'It is repaired on the next run without running the report again.',
   },
   tr: {
     locale: 'tr-TR',
@@ -49,6 +51,8 @@ const texts = {
     empty: 'Tamamland\u0131, ancak sonu\u00e7 bo\u015f (0 sat\u0131r). D\u00f6nemi ya da veriyi kontrol et.',
     rows: n => `Tamamland\u0131: ${n} sat\u0131r.`,
     estimated: n => `Tamamland\u0131: yakla\u015f\u0131k ${n} sat\u0131r (tahmini).`,
+    persistence: 'Rapor \u00e7al\u0131\u015ft\u0131, ancak trend noktas\u0131 ya da zamanlay\u0131c\u0131 durumu kaydedilemedi',
+    repairedNext: 'Bir sonraki \u00e7al\u0131\u015ft\u0131rmada rapor yeniden \u00e7al\u0131\u015ft\u0131r\u0131lmadan onar\u0131l\u0131r.',
   },
 };
 
@@ -71,9 +75,14 @@ function okText(t, rows, estimatedRows) {
 // { title, text } of a notification. errorCode is one of the fixed codes of
 // src/errors.js (never a message); rows and estimatedRows are counts of the
 // result (see runRows in store.js); language one of notificationLanguages.
-export function notificationText({ reportTitle, status, errorCode, rows, estimatedRows }, language = 'en') {
+export function notificationText({ reportTitle, status, errorCode, rows, estimatedRows, persistenceError }, language = 'en') {
   const t = texts[language] ?? texts.en;
   const title = clean(`Auspex: ${clean(reportTitle, 120) || t.report}`, 140);
+  // A successful run whose local writes failed: the code only, never a message.
+  if (status === 'ok' && persistenceError) {
+    const code = /^[A-Z_]{1,40}$/.test(String(persistenceError)) ? ` (${persistenceError})` : '';
+    return { title, text: `${t.persistence}${code}. ${t.repairedNext}` };
+  }
   if (status === 'ok') return { title, text: okText(t, count(rows), count(Number.isFinite(estimatedRows) ? Math.round(estimatedRows) : null)) };
   const base = status === 'skipped-unreachable' || status === 'failed' ? t[status] : t.unknown;
   const code = status === 'failed' && /^[A-Z_]{1,40}$/.test(String(errorCode ?? '')) ? ` (${errorCode}).` : status === 'failed' ? '.' : '';
