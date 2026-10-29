@@ -298,6 +298,33 @@ with their error code. Both send a notification and end with exit code 1.
 The task retries 30 minutes later, and the next daily `run-due` catches up a
 slot that is still open.
 
+**Execution and persistence are separate outcomes:** each result has
+`status` (the report execution: `ok`, `skipped-unreachable`, `failed`) and
+`persistence: { trend, state, error? }` for the local writes after it
+(`trend`: `ok`, `failed` or `skipped` for a manual or unsuccessful run;
+`state`: `ok` or `failed`; `error`: `{ code, message }`, the message an errno
+only). A successful run whose trend or state write failed keeps `status: "ok"`
+but ends the command with exit code 1 and is notified in `failures` mode too
+(error code only; no SQL, parameters or row values). `trendError` (the first
+persistence error code) is kept for older callers. Recovery never runs the
+report again:
+
+- trend write failed, state written: the point is kept in the state as
+  `pendingTrend` and the next `run-due` appends it (`repairs` in the output,
+  `repaired: "trend"`);
+- state write failed: the next `run-due` finds the slot's trend point, or the
+  approved report's saved run, which names its schedule and slot
+  (`run.schedule = { id, slot }`), and records the slot as successful
+  (`repaired: "state"`; a missing point is rebuilt from the saved result
+  while it is still the report's last result, otherwise the slot is marked
+  `trendLost`).
+
+Each repair writes a `schedule_repair` audit entry. A state file that cannot
+be read or is not valid scheduler state stops `run-due` and `run` before any
+SQL with `code: "STATE_UNREADABLE"`, the file name and exit code 1; the file
+is never replaced (repair or move it away; a missing file is a fresh start).
+`status` shows the problem as `stateError`.
+
 **Registering the task (Windows):**
 
 ```bash
@@ -347,7 +374,9 @@ nodes, never as script. Elsewhere, or when the toast fails, one line on
 stderr. A notification never fails a run.
 
 **Trend history:** after each successful scheduled run Auspex appends one
-point to `<home>/trends/<profile>/<schema>/<category>/<name>.jsonl`: slot,
+point to `<home>/trends/<profile>/<schema>/<category>/<name>.jsonl`, at most
+one per schedule id and slot (a repeated append for the same slot is ignored;
+points written before these keys existed stay readable): schedule id, slot,
 run time, preset, resolved parameters, SQL version, the row count (exact
 from `EXPLAIN ANALYZE` or a complete preview, otherwise `estimatedRows`) and
 the column totals the report page shows under its preview (identifier, code
@@ -361,6 +390,7 @@ series, totals keyed by column, each a number or, for a total over 15
 significant digits, decimal text.
 
 **State:** the last result per schedule is in
-`<home>/schedule-state.json` (status, slot, time, error code; no messages),
-which the viewer reads. The full error message is in the command output and
+`<home>/schedule-state.json` (status, slot, time, error code; no messages;
+`pendingTrend` while a trend point waits to be appended), which the viewer
+reads. The full error message is in the command output and
 the audit log.
