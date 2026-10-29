@@ -101,8 +101,12 @@ change rebuilds it. A failure before the commit point (invalid input, a
 record or the notes file cannot be read or written) still fails the call and
 changes nothing; a change that writes several table records (`explain`,
 `run_report` plans, `relation_stats`) reads them all first, and if a write
-fails after others were written, the call fails with `DISK_ERROR` naming how
-many were written and the graph is marked stale. Removing an older copy of a
+fails after others were written, the graph is marked stale and the memory
+step fails: the tool itself still succeeds (its database work stands) and
+returns `memoryError` with `memoryErrorCode: "DISK_ERROR"` and
+`partialCommit: { written, total }`; the audit log gets a `memory_repair`
+entry with the same code and counts. Repeating the call counts the used
+columns of the written tables again. Removing an older copy of a
 table file after its record was written never fails a change. Every step
 runs under the profile lock.
 

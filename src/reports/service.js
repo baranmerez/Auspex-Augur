@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { Library, normalizeRef, refLabel, sqlHash, sqlHashPattern } from './library.js';
 import { summarizePlan, planDigest } from './planSummary.js';
 import { maskRows } from './mask.js';
-import { ToolError } from '../errors.js';
+import { ToolError, classifyError } from '../errors.js';
 import { ensurePrivateDir } from '../privateFiles.js';
 import { relationsFromJsonPlan } from '../memory/planUsage.js';
 import { sqlParamCount, resolvePreset, builtInPresetsFor, mismatchedPresets } from './presets.js';
@@ -183,7 +183,7 @@ export class ReportService {
       const { repair, ...seen } = this.memory.recordSeen(profile, relationsFromJsonPlan(plan, summary.joins, known));
       return { ...seen, ...(repair ? { memoryRepair: repair } : {}) };
     } catch (err) {
-      return { memoryError: err.message };
+      return { memoryError: err.message, memoryErrorCode: classifyError(err).code, ...(err?.partialCommit ? { partialCommit: err.partialCommit } : {}) };
     }
   }
 
