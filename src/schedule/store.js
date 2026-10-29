@@ -118,14 +118,18 @@ export function clearPendingTrend(file, id, slot, at) {
 // the report's saved run says so): record it as successful without running
 // it again. trend: 'ok' | 'lost' (the saved result was replaced meanwhile).
 // pendingTrend: the point rebuilt from the saved run, kept pending until it
-// is appended, so a failing append never makes the slot run again.
+// is appended, so a failing append never makes the slot run again. Returns
+// the entry; lostPendingSlots (not stored) names pending points dropped by
+// the bound, as recordResult does.
 export function reconcileSlot(file, id, slot, at, { trend = 'ok', pendingTrend = null } = {}) {
-  return updateEntry(file, id, at, own => {
-    const entry = withHistory(own, { status: 'ok', slot, at, reconciled: true, ...(trend === 'lost' ? { trendLost: true } : {}) });
-    entry.lastSuccessSlot = slot;
-    if (pendingTrend) addPending(entry, pendingTrend);
-    return entry;
+  let lost = [];
+  const entry = updateEntry(file, id, at, own => {
+    const next = withHistory(own, { status: 'ok', slot, at, reconciled: true, ...(trend === 'lost' ? { trendLost: true } : {}) });
+    next.lastSuccessSlot = slot;
+    if (pendingTrend) lost = addPending(next, pendingTrend);
+    return next;
   });
+  return { ...entry, lostPendingSlots: lost };
 }
 
 export const scheduleState = (state, id) => (Object.hasOwn(state.schedules, id) ? state.schedules[id] : null);

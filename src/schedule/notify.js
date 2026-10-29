@@ -40,6 +40,7 @@ const texts = {
     estimated: n => `Finished: about ${n} rows (estimated).`,
     persistence: 'The report ran, but saving its trend point or the scheduler state failed',
     repairedNext: 'It is repaired on the next run without running the report again.',
+    lost: 'The report ran, but a trend point was lost and cannot be restored',
   },
   tr: {
     locale: 'tr-TR',
@@ -53,6 +54,7 @@ const texts = {
     estimated: n => `Tamamland\u0131: yakla\u015f\u0131k ${n} sat\u0131r (tahmini).`,
     persistence: 'Rapor \u00e7al\u0131\u015ft\u0131, ancak trend noktas\u0131 ya da zamanlay\u0131c\u0131 durumu kaydedilemedi',
     repairedNext: 'Bir sonraki \u00e7al\u0131\u015ft\u0131rmada rapor yeniden \u00e7al\u0131\u015ft\u0131r\u0131lmadan onar\u0131l\u0131r.',
+    lost: 'Rapor \u00e7al\u0131\u015ft\u0131, ancak bir trend noktas\u0131 kayboldu ve geri getirilemez',
   },
 };
 
@@ -75,10 +77,12 @@ function okText(t, rows, estimatedRows) {
 // { title, text } of a notification. errorCode is one of the fixed codes of
 // src/errors.js (never a message); rows and estimatedRows are counts of the
 // result (see runRows in store.js); language one of notificationLanguages.
-export function notificationText({ reportTitle, status, errorCode, rows, estimatedRows, persistenceError }, language = 'en') {
+export function notificationText({ reportTitle, status, errorCode, rows, estimatedRows, persistenceError, trendLost }, language = 'en') {
   const t = texts[language] ?? texts.en;
   const title = clean(`Auspex: ${clean(reportTitle, 120) || t.report}`, 140);
   // A successful run whose local writes failed: the code only, never a message.
+  // A lost trend point cannot be repaired: no "repaired next run" promise.
+  if (status === 'ok' && (persistenceError === 'TREND_LOST' || trendLost === true)) return { title, text: `${t.lost}.` };
   if (status === 'ok' && persistenceError) {
     const code = /^[A-Z_]{1,40}$/.test(String(persistenceError)) ? ` (${persistenceError})` : '';
     return { title, text: `${t.persistence}${code}. ${t.repairedNext}` };

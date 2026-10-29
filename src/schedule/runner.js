@@ -129,8 +129,10 @@ export class ScheduleRunner {
       const own = scheduleState(state, schedule.id);
       const label = refLabel(schedule.report);
       const pending = pendingTrends(own);
+      // Every pending slot finished its run: none of them runs again, also
+      // those after a failing repair below.
+      for (const p of pending) finished.add(`${schedule.id}\n${p.slot}`);
       for (const p of pending) {
-        finished.add(`${schedule.id}\n${p.slot}`);
         const step = this.repairStep(schedule, label, p.slot, 'trend', () => this.appendPending(schedule, p));
         repairs.push(step);
         if (step.persistence.trend === 'failed') break; // keep the slot order; the rest waits
@@ -195,14 +197,18 @@ export class ScheduleRunner {
           last, sqlHash: run.sqlHash, version: run.version, totals,
         });
       }
+      let lost = [];
       try {
-        this.persist.reconcileSlot(this.stateFile, schedule.id, slot.key, this.now().toISOString(),
+        const saved = this.persist.reconcileSlot(this.stateFile, schedule.id, slot.key, this.now().toISOString(),
           { trend: point ? 'ok' : 'lost', ...(point ? { pendingTrend: { slot: slot.key, point } } : {}) });
+        lost = saved?.lostPendingSlots ?? [];
       } catch (err) {
         return { trend: 'not-attempted', state: 'failed', error: persistenceError(err) };
       }
-      if (!point) return { trend: 'lost', state: 'ok' };
-      return this.appendPending(schedule, { slot: slot.key, point });
+      // Pending points of older slots dropped by the bound, like run().
+      const withLost = r => (lost.length ? { ...r, trendLost: lost } : r);
+      if (!point) return withLost({ trend: 'lost', state: 'ok' });
+      return withLost(this.appendPending(schedule, { slot: slot.key, point }));
     });
   }
 
@@ -217,11 +223,16 @@ export class ScheduleRunner {
     }
     this.audit({
       source: actor, actor, tool: 'schedule_repair', scheduleId: schedule.id, slot: slotKey, profile: schedule.profile, report: label,
-      repaired, trend: persistence.trend, state: persistence.state, ...(persistence.error ? { errorCode: persistence.error.code } : {}),
+      repaired, trend: persistence.trend, state: persistence.state, ...(persistence.trendLost ? { trendLost: persistence.trendLost } : {}),
+      ...(persistence.error ? { errorCode: persistence.error.code } : {}),
     });
     const result = { id: schedule.id, slot: slotKey, status: 'ok', repaired, persistence, report: label };
     if (persistenceFailed(result) && this.notifyMode !== 'off') {
-      this.repairNotes.push({ reportTitle: schedule.report.name, status: 'ok', errorCode: null, persistenceError: persistence.error?.code ?? 'TREND_LOST' });
+      const lostPoint = persistence.trend === 'lost' || (persistence.trendLost?.length ?? 0) > 0;
+      this.repairNotes.push({
+        reportTitle: schedule.report.name, status: 'ok', errorCode: null, persistenceError: persistence.error?.code ?? 'TREND_LOST',
+        ...(lostPoint ? { trendLost: true } : {}),
+      });
     }
     return result;
   }
@@ -320,6 +331,7 @@ export class ScheduleRunner {
     const note = {
       reportTitle: title, status, errorCode, ...(counts ? { rows: counts.rows, estimatedRows: counts.estimatedRows } : {}),
       ...(persistenceFailed ? { persistenceError: trendError } : {}),
+      ...(persistence.trendLost ? { trendLost: true } : {}),
     };
     if (this.notifyMode === 'all' || (this.notifyMode === 'failures' && (status !== 'ok' || isEmptyResult(note) || persistenceFailed))) {
       try { await this.notifyFn(note, { language: this.notifyLanguage }); } catch { /* never fatal */ }
