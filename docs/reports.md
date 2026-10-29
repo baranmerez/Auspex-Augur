@@ -329,9 +329,14 @@ report again:
   stored by an earlier build without `report` is appended only when the
   schedule's report has that point's SQL version, otherwise it is reported
   lost.
-- evidence that cannot be read (the trend file and the report metadata):
-  the slot is neither run nor recorded; the repair reports `state: "unknown"`
-  (exit 1) and is retried by the next `run-due`.
+- report metadata that cannot be read (every scheduled run is saved there
+  before its trend point): a slot without a readable trend point is neither
+  run nor recorded; the repair reports `state: "unknown"` (exit 1) and is
+  retried by the next `run-due`. A trend file that cannot be read while the
+  metadata can holds nothing back: a slot without a saved run did not finish
+  and runs (its point goes pending if the trend file still cannot be
+  written). A legacy pending point whose report history cannot be read is
+  kept (`trend: "unknown"`) and retried, not dropped.
 
 A slot with such evidence (a pending point, a trend point, a saved run) is
 never run again, even when its repair fails; the repair is retried by every
@@ -339,7 +344,8 @@ never run again, even when its repair fails; the repair is retried by every
 (`trend`: `ok`, `failed`, `lost` or `not-attempted`; `state`: `ok`,
 `failed` or `not-attempted`), writes a `schedule_repair` audit entry, makes
 the command exit 1 when it failed or lost a point, and is notified in
-`failures` mode (code only). A state file that cannot
+`failures` mode (code only; one notification per schedule, with the number
+of slots and their range when several slots of it failed). A state file that cannot
 be read or is not valid scheduler state (also a schedule entry that is not
 an object) stops `run-due` and `run` before any
 SQL with `code: "STATE_UNREADABLE"`, the file name and exit code 1; the file

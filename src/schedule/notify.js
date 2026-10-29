@@ -41,6 +41,7 @@ const texts = {
     persistence: 'The report ran, but saving its trend point or the scheduler state failed',
     repairedNext: 'It is repaired on the next run without running the report again.',
     lost: 'The report ran, but a trend point was lost and cannot be restored',
+    slots: (n, from, to) => `(${n} slots, ${from} to ${to})`,
   },
   tr: {
     locale: 'tr-TR',
@@ -55,6 +56,7 @@ const texts = {
     persistence: 'Rapor \u00e7al\u0131\u015ft\u0131, ancak trend noktas\u0131 ya da zamanlay\u0131c\u0131 durumu kaydedilemedi',
     repairedNext: 'Bir sonraki \u00e7al\u0131\u015ft\u0131rmada rapor yeniden \u00e7al\u0131\u015ft\u0131r\u0131lmadan onar\u0131l\u0131r.',
     lost: 'Rapor \u00e7al\u0131\u015ft\u0131, ancak bir trend noktas\u0131 kayboldu ve geri getirilemez',
+    slots: (n, from, to) => `(${n} zaman dilimi, ${from} - ${to})`,
   },
 };
 
@@ -77,15 +79,19 @@ function okText(t, rows, estimatedRows) {
 // { title, text } of a notification. errorCode is one of the fixed codes of
 // src/errors.js (never a message); rows and estimatedRows are counts of the
 // result (see runRows in store.js); language one of notificationLanguages.
-export function notificationText({ reportTitle, status, errorCode, rows, estimatedRows, persistenceError, trendLost }, language = 'en') {
+export function notificationText({ reportTitle, status, errorCode, rows, estimatedRows, persistenceError, trendLost, repairSlots }, language = 'en') {
   const t = texts[language] ?? texts.en;
   const title = clean(`Auspex: ${clean(reportTitle, 120) || t.report}`, 140);
   // A successful run whose local writes failed: the code only, never a message.
+  // Several slots of one schedule: their number and range (slot keys only).
+  const slotKey = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+  const range = Number.isInteger(repairSlots?.count) && slotKey.test(String(repairSlots.from)) && slotKey.test(String(repairSlots.to))
+    ? ` ${t.slots(repairSlots.count, repairSlots.from, repairSlots.to)}` : '';
   // A lost trend point cannot be repaired: no "repaired next run" promise.
-  if (status === 'ok' && (persistenceError === 'TREND_LOST' || trendLost === true)) return { title, text: `${t.lost}.` };
+  if (status === 'ok' && (persistenceError === 'TREND_LOST' || trendLost === true)) return { title, text: `${t.lost}.${range}` };
   if (status === 'ok' && persistenceError) {
     const code = /^[A-Z_]{1,40}$/.test(String(persistenceError)) ? ` (${persistenceError})` : '';
-    return { title, text: `${t.persistence}${code}. ${t.repairedNext}` };
+    return { title, text: `${t.persistence}${code}. ${t.repairedNext}${range}` };
   }
   if (status === 'ok') return { title, text: okText(t, count(rows), count(Number.isFinite(estimatedRows) ? Math.round(estimatedRows) : null)) };
   const base = status === 'skipped-unreachable' || status === 'failed' ? t[status] : t.unknown;
