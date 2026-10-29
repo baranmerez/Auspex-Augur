@@ -93,8 +93,16 @@ function learn(fn, profile = null) {
     if (repair) auditRepair(profile, repair);
     return result;
   } catch (err) {
-    return { memoryError: err.message };
+    // The database work stands; the memory failure comes with its code and,
+    // for a change that wrote only some table records, partialCommit.
+    const failure = memoryFailure(err);
+    db.auditFn({ source: db.source, tool: 'memory_repair', ...db.correlationField(), profile: profile ?? null, memoryErrorCode: failure.memoryErrorCode, ...(failure.partialCommit ? { partialCommit: failure.partialCommit } : {}) });
+    return failure;
   }
+}
+
+function memoryFailure(err) {
+  return { memoryError: err.message, memoryErrorCode: classifyError(err).code, ...(err?.partialCommit ? { partialCommit: err.partialCommit } : {}) };
 }
 
 // The first repair field in a memory result (an object, a list of entries,
@@ -365,7 +373,7 @@ tool('relation_stats', {
     tables: result.tables.map(t => (t.error ? t : {
       ...t, explored: explored(t.schema, t.table), instance: t.instance.map(item), dependent: t.dependent.map(item),
     })),
-    ...(learned.memoryError ? { memoryError: learned.memoryError } : {}),
+    ...(learned.memoryError ? { memoryError: learned.memoryError, memoryErrorCode: learned.memoryErrorCode, ...(learned.partialCommit ? { partialCommit: learned.partialCommit } : {}) } : {}),
     ...(learned.repair ? { memoryRepair: learned.repair } : {}),
   };
 });

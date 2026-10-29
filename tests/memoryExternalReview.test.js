@@ -88,3 +88,17 @@ test('F8: an unreadable older table file after the canonical write never fails t
   m.scoreColumns(P, { schema: 'example', table, columns: [{ name: 'order_id', score: 5, roles: ['key'], reason: 'Main key', sources: 1 }] });
   assert.equal(m.readTable(P, 'example', table).columnScores.order_id.agent.score, 5);
 });
+
+test('a partial multi-record change reaches the report run as memoryError with its code and partialCommit', async () => {
+  const { ReportService } = await import('../src/reports/service.js');
+  const { MemoryError } = await import('../src/memory/store.js');
+  const memory = {
+    readTable: () => null,
+    recordSeen: () => { throw Object.assign(new MemoryError('Only 1 of 2 table records were written (ENOSPC (write)); the graph is marked stale.', 'DISK_ERROR'), { partialCommit: { written: 1, total: 2 } }); },
+  };
+  const svc = new ReportService({ resolveProfile: n => n }, fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-mem-review-lib-')), memory);
+  const res = svc.learn(P, [{ Plan: { 'Node Type': 'Result' } }], { joins: [] });
+  assert.equal(res.memoryErrorCode, 'DISK_ERROR');
+  assert.deepEqual(res.partialCommit, { written: 1, total: 2 });
+  assert.match(res.memoryError, /Only 1 of 2/);
+});
