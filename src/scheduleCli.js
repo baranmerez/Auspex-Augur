@@ -140,6 +140,7 @@ async function runSchedules(pick, loaded, config, env, deps) {
     }
     const results = [];
     const picked = pick(runner);
+    await runner.notifyRepairs?.();
     for (const { schedule, slot } of picked) results.push(await runner.run(schedule, slot));
     const repairs = runner.repairs ?? [];
     // Failed when a report run failed or a local write (trend, state) after
