@@ -96,7 +96,7 @@ test('trend write fails: exit 1 and a notification; the next run-due appends the
   assert.equal(points().length, 0);
   const entry = readState(stateFile()).schedules['weekly-example'];
   assert.equal(entry.lastSuccessSlot, slotKey);
-  assert.equal(entry.pendingTrend.slot, slotKey);
+  assert.deepEqual(entry.pendingTrends.map(p => p.slot), [slotKey]);
   assert.equal(notes.length, 1);
   assert.equal(notes[0].persistenceError, 'DISK_ERROR');
   const text = notificationText(notes[0]).text;
@@ -110,7 +110,7 @@ test('trend write fails: exit 1 and a notification; the next run-due appends the
   assert.deepEqual(repair.out.repairs.map(x => [x.repaired, x.slot, x.persistence]), [['trend', slotKey, { trend: 'ok', state: 'ok' }]]);
   assert.equal(points().length, 1);
   assert.equal(points()[0].rows, 2);
-  assert.equal(readState(stateFile()).schedules['weekly-example'].pendingTrend, undefined);
+  assert.equal(readState(stateFile()).schedules['weekly-example'].pendingTrends, undefined);
   assert.equal(explains, 1, 'the report SQL ran once');
   const third = await runDue();
   assert.equal(third.out.repairs, undefined);
@@ -178,4 +178,98 @@ test('trend points are idempotent per schedule and slot; older points without ke
   assert.deepEqual(appendTrend(root, ref, { ...point, rows: 9 }), { file, points: 2, duplicate: true });
   assert.equal(appendTrend(root, ref, { ...point, slot: '2026-10-19T08:00' }).points, 3);
   assert.deepEqual(readTrend(file).map(p => p.rows), [5, 2, 2]);
+});
+
+const runDueAt = (now, persist = {}) => main(['run-due'], env, { db: makeDb(), notifyFn: async m => { notes.push(m); return 'log'; }, now: () => now, persist });
+
+test('a trend repair that fails again never reruns the SQL and stays visible; it is notified in failures mode', async () => {
+  const fail = () => true;
+  await runDue({ appendTrend: faulty(appendTrend, fail) });
+  notes.length = 0;
+  const again = await runDue({ appendTrend: faulty(appendTrend, fail) });
+  assert.equal(again.status, 1);
+  assert.equal(again.out.ran, 0, 'the slot is not run again');
+  assert.deepEqual(again.out.repairs.map(x => [x.repaired, x.persistence.trend, x.persistence.state]), [['trend', 'failed', 'not-attempted']]);
+  assert.deepEqual(notes.map(n => [n.status, n.persistenceError]), [['ok', 'DISK_ERROR']]);
+  assert.match(notificationText(notes[0]).text, /\(DISK_ERROR\)/);
+  assert.equal(explains, 1);
+  assert.equal(points().length, 0);
+});
+
+test('a state repair that fails again never reruns the SQL', async () => {
+  const fail = () => true;
+  await runDue({ recordResult: faulty(recordResult, fail) });
+  const again = await runDue({ recordResult: faulty(recordResult, fail), reconcileSlot: faulty(() => { throw new Error('unreachable'); }, fail) });
+  assert.equal(again.status, 1);
+  assert.equal(again.out.ran, 0);
+  assert.deepEqual(again.out.repairs.map(x => [x.repaired, x.persistence.trend, x.persistence.state]), [['state', 'ok', 'failed']]);
+  assert.equal(explains, 1);
+  assert.equal(points().length, 1);
+});
+
+test('trend and state both failed, then the repair append fails too: the slot is recorded with its point pending, no rerun', async () => {
+  let fail = true;
+  const persist = { appendTrend: faulty(appendTrend, () => fail), recordResult: faulty(recordResult, () => fail) };
+  await runDue(persist);
+  const second = await runDue({ appendTrend: faulty(appendTrend, () => fail) });
+  assert.equal(second.status, 1);
+  assert.equal(second.out.ran, 0);
+  assert.deepEqual(second.out.repairs.map(x => [x.repaired, x.persistence.trend, x.persistence.state]), [['state', 'failed', 'not-attempted']]);
+  const entry = readState(stateFile()).schedules['weekly-example'];
+  assert.deepEqual([entry.lastSuccessSlot, entry.pendingTrends.map(p => p.slot)], [slotKey, [slotKey]], 'state first, point pending');
+  fail = false;
+  const third = await runDue({ appendTrend: faulty(appendTrend, () => fail) });
+  assert.equal(third.status, 0);
+  assert.deepEqual(third.out.repairs.map(x => [x.repaired, x.persistence.trend]), [['trend', 'ok']]);
+  assert.equal(points().length, 1);
+  assert.equal(explains, 1);
+});
+
+test('two weeks of unwritable trends keep both pending points; the repair appends them in slot order', async () => {
+  let fail = true;
+  const persist = { appendTrend: faulty(appendTrend, () => fail) };
+  await runDueAt(tuesday, persist);
+  const nextTuesday = new Date(2026, 9, 20, 10, 0);
+  const week2 = await runDueAt(nextTuesday, persist);
+  assert.equal(week2.out.ran, 1, 'the new slot runs; the old one is only repaired');
+  const entry = readState(stateFile()).schedules['weekly-example'];
+  assert.deepEqual(entry.pendingTrends.map(p => p.slot), [slotKey, '2026-10-19T08:00']);
+  fail = false;
+  const repaired = await runDueAt(nextTuesday, persist);
+  assert.equal(repaired.status, 0);
+  assert.deepEqual(repaired.out.repairs.map(x => x.slot), [slotKey, '2026-10-19T08:00']);
+  assert.deepEqual(points().map(p => p.slot), [slotKey, '2026-10-19T08:00']);
+  assert.equal(explains, 2);
+});
+
+test('pending points beyond the bound are dropped oldest first and reported as lost', () => {
+  const file = stateFile();
+  let saved;
+  for (let i = 0; i < 52; i++) {
+    const slot = `2026-${String(1 + Math.floor(i / 28)).padStart(2, '0')}-${String(1 + (i % 28)).padStart(2, '0')}T08:00`;
+    saved = recordResult(file, 'weekly-example', { status: 'ok', slot, at: `${slot}:00.000Z` }, { pendingTrend: { slot, point: { scheduleId: 'weekly-example', slot } } });
+  }
+  assert.deepEqual(saved.lostPendingSlots, ['2026-01-02T08:00']);
+  const entry = readState(file).schedules['weekly-example'];
+  assert.equal(entry.pendingTrends.length, 50);
+  assert.deepEqual(entry.trendLostSlots, ['2026-01-01T08:00', '2026-01-02T08:00']);
+  assert.equal(entry.lostPendingSlots, undefined, 'not stored');
+});
+
+test('a saved result replaced before the state repair: the slot is reconciled with trend lost, exit 1, no rerun', async () => {
+  const fail = () => true;
+  await runDue({ appendTrend: faulty(appendTrend, fail), recordResult: faulty(recordResult, fail) });
+  // A later manual run replaces the report's last result.
+  const lib = new Library(path.join(home, 'library'));
+  const meta = lib.readMeta('approved', ref);
+  lib.appendRun('approved', ref, { at: '2026-10-13T11:00:00.000Z', sqlHash: meta.runs.at(-1).sqlHash, version: meta.runs.at(-1).version }, { ...meta.last, at: '2026-10-13T11:00:00.000Z' });
+  const next = await runDue();
+  assert.equal(next.status, 1, 'a lost point is reported');
+  assert.equal(next.out.ran, 0);
+  assert.deepEqual(next.out.repairs.map(x => [x.repaired, x.persistence]), [['state', { trend: 'lost', state: 'ok' }]]);
+  const entry = readState(stateFile()).schedules['weekly-example'];
+  assert.deepEqual([entry.lastSuccessSlot, entry.last.trendLost], [slotKey, true]);
+  assert.equal(points().length, 0);
+  assert.equal(explains, 1);
+  assert.equal((await runDue()).status, 0, 'reported once');
 });

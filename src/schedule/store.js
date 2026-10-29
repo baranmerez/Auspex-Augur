@@ -1,7 +1,8 @@
 // Local files of the scheduler under <AUSPEX_HOME or ~/.auspex>:
 //   schedule-state.json   last result per schedule id (the viewer shows it),
-//                         and pendingTrend: a trend point whose write failed,
-//                         appended by the next run-due without running SQL
+//                         and pendingTrends: trend points whose write failed
+//                         (one per slot, at most maxPendingTrends), appended
+//                         by the next run-due without running SQL
 //   trends/<profile>/<schema>/<category...>/<name>.jsonl
 //                         one aggregate point per successful scheduled run;
 //                         at most one point per schedule id and slot
@@ -24,7 +25,7 @@ export const trendFormat = 1;
 export const stateFile = (env = process.env) => path.join(auspexHome(env), 'schedule-state.json');
 export const trendsDir = (env = process.env) => path.join(auspexHome(env), 'trends');
 
-// { schedules: { [id]: { last, lastSuccessSlot, history, pendingTrend? } } }.
+// { schedules: { [id]: { last, lastSuccessSlot, history, pendingTrends?, trendLostSlots? } } }.
 // A missing file is a fresh installation and reads as empty. strict: an
 // unreadable or malformed file throws (the scheduler refuses to run rather
 // than replace it); without strict (viewer, status) it reads as empty.
@@ -63,23 +64,52 @@ function updateEntry(file, id, at, fn) {
 
 const withHistory = (entry, result) => ({ ...entry, last: result, history: [...(Array.isArray(entry.history) ? entry.history : []), result].slice(-maxHistory) });
 
+export const maxPendingTrends = 50;
+const bySlot = (a, b) => (a.slot < b.slot ? -1 : a.slot > b.slot ? 1 : 0); // slot keys sort by time
+
+// Pending trend points of a state entry ({ slot, point }), oldest slot first,
+// one per slot; the single pendingTrend of earlier builds is included.
+export function pendingTrends(entry) {
+  const list = Array.isArray(entry?.pendingTrends) ? entry.pendingTrends.filter(p => p?.slot && p.point) : [];
+  const old = entry?.pendingTrend?.slot && entry.pendingTrend.point && !list.some(p => p.slot === entry.pendingTrend.slot) ? [entry.pendingTrend] : [];
+  return [...list, ...old].sort(bySlot);
+}
+
+// Adds a pending point (replacing one of the same slot). Beyond
+// maxPendingTrends the oldest are dropped and named in trendLostSlots;
+// returns the slots dropped now.
+function addPending(entry, pending) {
+  const list = [...pendingTrends(entry).filter(p => p.slot !== pending.slot), pending].sort(bySlot);
+  const dropped = list.length > maxPendingTrends ? list.slice(0, list.length - maxPendingTrends).map(p => p.slot) : [];
+  entry.pendingTrends = list.slice(-maxPendingTrends);
+  delete entry.pendingTrend;
+  if (dropped.length) entry.trendLostSlots = [...(Array.isArray(entry.trendLostSlots) ? entry.trendLostSlots : []), ...dropped].slice(-maxPendingTrends);
+  return dropped;
+}
+
 // Records one result: { status, slot (null for a manual run), at, errorCode?,
 // manual?, persistenceError? }. A successful slot run sets lastSuccessSlot,
 // which makes run-due skip that slot. pendingTrend ({ slot, point }): the
 // trend point of this run whose write failed; run-due appends it later.
+// Returns the entry; lostPendingSlots (not stored) names pending points
+// dropped by the bound.
 export function recordResult(file, id, result, { pendingTrend = null } = {}) {
-  return updateEntry(file, id, result.at, own => {
-    const entry = withHistory(own, result);
-    if (result.status === 'ok' && result.slot) entry.lastSuccessSlot = result.slot;
-    if (pendingTrend) entry.pendingTrend = pendingTrend;
-    return entry;
+  let lost = [];
+  const entry = updateEntry(file, id, result.at, own => {
+    const next = withHistory(own, result);
+    if (result.status === 'ok' && result.slot) next.lastSuccessSlot = result.slot;
+    if (pendingTrend) lost = addPending(next, pendingTrend);
+    return next;
   });
+  return { ...entry, lostPendingSlots: lost };
 }
 
-// The pending trend point of a slot was appended: drop the marker.
+// The pending trend point of a slot was appended: drop it.
 export function clearPendingTrend(file, id, slot, at) {
   return updateEntry(file, id, at, own => {
-    if (own.pendingTrend?.slot === slot) delete own.pendingTrend;
+    own.pendingTrends = pendingTrends(own).filter(p => p.slot !== slot);
+    delete own.pendingTrend;
+    if (!own.pendingTrends.length) delete own.pendingTrends;
     return own;
   });
 }
@@ -87,10 +117,13 @@ export function clearPendingTrend(file, id, slot, at) {
 // A slot that completed although its state write failed (its trend point or
 // the report's saved run says so): record it as successful without running
 // it again. trend: 'ok' | 'lost' (the saved result was replaced meanwhile).
-export function reconcileSlot(file, id, slot, at, { trend = 'ok' } = {}) {
+// pendingTrend: the point rebuilt from the saved run, kept pending until it
+// is appended, so a failing append never makes the slot run again.
+export function reconcileSlot(file, id, slot, at, { trend = 'ok', pendingTrend = null } = {}) {
   return updateEntry(file, id, at, own => {
     const entry = withHistory(own, { status: 'ok', slot, at, reconciled: true, ...(trend === 'lost' ? { trendLost: true } : {}) });
     entry.lastSuccessSlot = slot;
+    if (pendingTrend) addPending(entry, pendingTrend);
     return entry;
   });
 }
