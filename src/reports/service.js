@@ -178,7 +178,10 @@ export class ReportService {
         const record = this.memory.readTable(profile, rel.schema, rel.table);
         if (record?.describedAt) known.set(`${rel.schema}.${rel.table}`, (record.columns || []).map(c => c.name));
       }
-      return this.memory.recordSeen(profile, relationsFromJsonPlan(plan, summary.joins, known));
+      // repair (the plan's tables are stored, a derived step failed) is
+      // returned as memoryRepair, apart from the report's own fields.
+      const { repair, ...seen } = this.memory.recordSeen(profile, relationsFromJsonPlan(plan, summary.joins, known));
+      return { ...seen, ...(repair ? { memoryRepair: repair } : {}) };
     } catch (err) {
       return { memoryError: err.message };
     }

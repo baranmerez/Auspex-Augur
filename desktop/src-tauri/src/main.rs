@@ -115,6 +115,19 @@ fn memory_summary() -> Value {
     json!({ "memoryDir": root.to_string_lossy(), "profiles": profiles })
 }
 
+// graph.json of a profile; with stale: true when graph.stale says a stored
+// change has not reached it yet (the desktop app never writes memory files;
+// the next memory change or the browser viewer rebuilds it).
+fn memory_graph(dir: &std::path::Path) -> Result<Value, String> {
+    let mut graph = read_json(&dir.join("graph.json"))?;
+    if dir.join("graph.stale").exists() {
+        if let Value::Object(map) = &mut graph {
+            map.insert("stale".into(), json!(true));
+        }
+    }
+    Ok(graph)
+}
+
 fn memory_profile(query: &HashMap<String, String>) -> Result<PathBuf, String> {
     let name = query.get("profile").cloned().unwrap_or_default();
     if !valid_profile(&name) {
@@ -575,7 +588,7 @@ fn api_route(path: &str, query: &HashMap<String, String>) -> Result<Value, Strin
         "/api/reports/trend" => report_trend(query),
         "/api/report" => report_content(query),
         "/api/memory" => Ok(memory_summary()),
-        "/api/memory/graph" => read_json(&memory_profile(&query)?.join("graph.json")),
+        "/api/memory/graph" => memory_graph(&memory_profile(&query)?),
         "/api/memory/table" => {
             let file = query.get("file").cloned().unwrap_or_default();
             if !valid_memory_file(&file) {
@@ -1249,6 +1262,18 @@ mod tests {
             assert!(!valid_memory_file(bad), "{bad}");
         }
         assert!(!valid_memory_file("functions/example/order_total.json"));
+    }
+
+    #[test]
+    fn a_stale_graph_is_served_with_stale_true() {
+        let dir = std::env::temp_dir().join(format!("auspex-stale-graph-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("graph.json"), r#"{"profile":"exampledb","nodes":[]}"#).unwrap();
+        assert_eq!(memory_graph(&dir).unwrap().get("stale"), None);
+        fs::write(dir.join("graph.stale"), "{}").unwrap();
+        assert_eq!(memory_graph(&dir).unwrap().get("stale"), Some(&json!(true)));
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
