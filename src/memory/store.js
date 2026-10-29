@@ -15,6 +15,20 @@
 //                                  lastReadAt (never the file contents)
 //   graph.json                     derived view for the viewer and desktop app;
 //                                  rebuilt after every change, safe to delete
+//   graph.stale                    marker: a change was stored but graph.json
+//                                  could not be rebuilt; the next rebuild
+//                                  (graph(), a later change, the viewer's
+//                                  graph route) repairs it and removes it
+//
+// Commit point: a mutation is committed once its canonical file (a table or
+// function record, notes.json; for score_columns the table record) is
+// written. Everything after that (changelog, graph.json, scanned-files.json,
+// the notes and neighbours added to a result) is derived: a failure there
+// never throws; the call returns its committed result with an additive
+// repair field ({ graph?: 'stale', changelog?: 'failed', sections?:
+// 'omitted', scannedFiles?: 'failed', marker?: 'failed', error: { code,
+// message } }) and the graph is marked stale. Failures before the commit
+// point throw and change nothing.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { withFileLock } from '../fileLock.js';
@@ -22,6 +36,7 @@ import { writePrivateAtomic, appendPrivate, linkBelow } from '../privateFiles.js
 import path from 'node:path';
 import { splitColumnRef } from './planUsage.js';
 import { functionTouches, functionCalls, callsVersion } from './functionTouches.js';
+import { classifyError } from '../errors.js';
 
 export const noteKinds = ['rule', 'observation', 'inference'];
 const historyLimit = 50;
@@ -395,12 +410,81 @@ export class SchemaMemory {
   // Best effort like the audit log: the table or note is already stored, so a
   // refused or failed append (for example a linked changelog.jsonl) is
   // reported on stderr and does not fail the call.
-  appendChangelog(profile, entry) {
+  appendChangelog(profile, entry, repair = null) {
     const file = path.join(this.profileDir(profile), 'changelog.jsonl');
     try {
       appendPrivate(file, `${JSON.stringify(entry)}\n`);
+      return true;
     } catch (err) {
       process.stderr.write(`auspex: schema memory changelog write failed: ${err.message}\n`);
+      if (repair) {
+        repair.changelog = 'failed';
+        repair.error ??= repairError(err);
+      }
+      return false;
+    }
+  }
+
+  // ---------- derived steps after a commit ----------
+  graphStalePath(profile) {
+    return path.join(this.profileDir(profile), 'graph.stale');
+  }
+
+  // True when a stored change has not reached graph.json yet.
+  isGraphStale(profile) {
+    try {
+      return fs.existsSync(this.checkPath(this.graphStalePath(profile)));
+    } catch {
+      return false;
+    }
+  }
+
+  // Durable stale mark. When even the marker cannot be written, graph.json is
+  // removed so an outdated graph never looks current. False when neither
+  // worked.
+  markGraphStale(profile, error) {
+    try {
+      writePrivateAtomic(this.checkPath(this.graphStalePath(profile)), `${JSON.stringify({ at: this.now(), error })}\n`);
+      return true;
+    } catch {
+      try {
+        fs.rmSync(this.checkPath(path.join(this.profileDir(profile), 'graph.json')), { force: true });
+      } catch { /* reported through repair.marker */ }
+      return false;
+    }
+  }
+
+  // Rebuilds graph.json after a commit; never throws (see the header).
+  rebuildAfterCommit(profile, repair) {
+    try {
+      this.rebuildViewUnlocked(profile);
+    } catch (err) {
+      repair.graph = 'stale';
+      repair.error ??= repairError(err);
+      if (!this.markGraphStale(profile, repair.error)) repair.marker = 'failed';
+    }
+  }
+
+  // A derived part of a committed result (notes, neighbours): the fallback
+  // when it cannot be computed.
+  derivedSection(repair, fn, fallback = {}) {
+    try {
+      return fn();
+    } catch (err) {
+      repair.sections = 'omitted';
+      repair.error ??= repairError(err);
+      return fallback;
+    }
+  }
+
+  // Rebuilds a stale graph.json (best effort; the next call tries again).
+  healGraph(profile) {
+    try {
+      this.rebuildView(profile);
+      return true;
+    } catch (err) {
+      process.stderr.write(`auspex: schema memory graph still stale: ${repairError(err).message}\n`);
+      return false;
     }
   }
 
@@ -438,8 +522,9 @@ export class SchemaMemory {
           return { memoryError: err.message };
         }
       });
-      this.rebuildViewUnlocked(profile);
-      return out;
+      const repair = {};
+      this.rebuildAfterCommit(profile, repair);
+      return withRepair(out, repair);
     });
   }
 
@@ -462,15 +547,17 @@ export class SchemaMemory {
       ...(prev?.columnScores ? { columnScores: prev.columnScores, scoredAt: prev.scoredAt } : {}), // score_columns
       ...(prev?.triggerSummaries ? { triggerSummaries: prev.triggerSummaries } : {}),
     };
-    this.writeTable(profile, record);
-    if (firstTime) this.appendChangelog(profile, { at, schema: next.schema, table: next.table, event: 'explored' });
-    else if (changes.length) this.appendChangelog(profile, { at, schema: next.schema, table: next.table, event: 'changed', changes });
-    if (rebuild) this.rebuildView(profile);
+    this.writeTable(profile, record); // commit point
+    const repair = {};
+    if (firstTime) this.appendChangelog(profile, { at, schema: next.schema, table: next.table, event: 'explored' }, repair);
+    else if (changes.length) this.appendChangelog(profile, { at, schema: next.schema, table: next.table, event: 'changed', changes }, repair);
+    if (rebuild) this.rebuildAfterCommit(profile, repair);
     return {
       recorded: firstTime ? 'first time' : 'updated',
       ...(firstTime ? {} : { lastDescribedAt: prev.describedAt }),
       ...(changes.length ? { changesSinceLast: changes.map(changeText) } : {}),
-      ...this.notesSection(profile, [next]),
+      ...this.derivedSection(repair, () => this.notesSection(profile, [next])),
+      ...repairField(repair),
     };
   }
 
@@ -481,11 +568,13 @@ export class SchemaMemory {
   }
 
   recordSeenUnlocked(profile, relations) {
-    this.touchSeenUnlocked(profile, relations);
-    if (relations.length) this.rebuildView(profile);
+    this.touchSeenUnlocked(profile, relations); // commit point
+    const repair = {};
+    if (relations.length) this.rebuildAfterCommit(profile, repair);
     return {
-      ...this.notesSection(profile, relations),
-      ...this.neighborsSection(profile, relations),
+      ...this.derivedSection(repair, () => this.notesSection(profile, relations)),
+      ...this.derivedSection(repair, () => this.neighborsSection(profile, relations)),
+      ...repairField(repair),
     };
   }
 
@@ -536,9 +625,12 @@ export class SchemaMemory {
         record.estRows = rel.estRows ?? null;
         record.estRowsAt = at;
         if (rel.relationStats) record.relationStats = { at, ...rel.relationStats };
-      });
-      this.rebuildViewUnlocked(profile);
-      return { explored: new Set([...rels.keys()].filter(key => this.readTable(profile, rels.get(key).schema, rels.get(key).table)?.describedAt)) };
+      }); // commit point
+      const repair = {};
+      this.rebuildAfterCommit(profile, repair);
+      // explored null (unknown) when the records cannot be read back.
+      const explored = this.derivedSection(repair, () => new Set([...rels.keys()].filter(key => this.readTable(profile, rels.get(key).schema, rels.get(key).table)?.describedAt)), null);
+      return { explored, ...repairField(repair) };
     });
   }
 
@@ -635,8 +727,9 @@ export class SchemaMemory {
           return { function: key, memoryError: err.message };
         }
       });
-      this.rebuildViewUnlocked(profile);
-      return out;
+      const repair = {};
+      this.rebuildAfterCommit(profile, repair);
+      return withRepair(out, repair);
     });
   }
 
@@ -715,8 +808,9 @@ export class SchemaMemory {
           process.stderr.write(`auspex: schema memory function not recorded: ${err.message}\n`);
         }
       }
-      if (added || overloadsAdded || overloadsRefreshed) this.rebuildViewUnlocked(profile);
-      return { functionsAdded: added, overloadsAdded, ...(overloadsRefreshed ? { overloadsRefreshed } : {}), ...(failed ? { failed } : {}) };
+      const repair = {};
+      if (added || overloadsAdded || overloadsRefreshed) this.rebuildAfterCommit(profile, repair);
+      return { functionsAdded: added, overloadsAdded, ...(overloadsRefreshed ? { overloadsRefreshed } : {}), ...(failed ? { failed } : {}), ...repairField(repair) };
     });
   }
 
@@ -817,10 +911,11 @@ export class SchemaMemory {
     };
     data.notes.push(note);
     data.nextId += 1;
-    this.writeNotes(profile, data);
-    if (note.table) this.appendChangelog(profile, { at, schema: note.schema, table: note.table, event: 'note', noteId: note.id, kind });
-    this.rebuildView(profile);
-    return note;
+    this.writeNotes(profile, data); // commit point
+    const repair = {};
+    if (note.table) this.appendChangelog(profile, { at, schema: note.schema, table: note.table, event: 'note', noteId: note.id, kind }, repair);
+    this.rebuildAfterCommit(profile, repair);
+    return { ...note, ...repairField(repair) };
   }
 
   // An inference the user agreed with becomes a rule or an observation.
@@ -836,9 +931,10 @@ export class SchemaMemory {
     if (note.status !== 'active') throw new MemoryError(`Note #${id} is archived.`, 'PRECONDITION_FAILED');
     const at = this.now();
     Object.assign(note, { kind, confirmedAt: at, ...(kind === 'observation' && !note.asOf ? { asOf: at.slice(0, 10) } : {}) });
-    this.writeNotes(profile, data);
-    this.rebuildView(profile);
-    return note;
+    this.writeNotes(profile, data); // commit point
+    const repair = {};
+    this.rebuildAfterCommit(profile, repair);
+    return { ...note, ...repairField(repair) };
   }
 
   // Notes are never deleted; a wrong or outdated note is archived with a reason.
@@ -853,9 +949,10 @@ export class SchemaMemory {
     const note = data.notes.find(n => n.id === id);
     if (!note) throw new MemoryError(`Note #${id} not found.`, 'NOT_FOUND');
     Object.assign(note, { status: 'archived', archivedAt: this.now(), archivedReason: why });
-    this.writeNotes(profile, data);
-    this.rebuildView(profile);
-    return note;
+    this.writeNotes(profile, data); // commit point
+    const repair = {};
+    this.rebuildAfterCommit(profile, repair);
+    return { ...note, ...repairField(repair) };
   }
 
   activeNotes(profile, tables) {
@@ -952,9 +1049,20 @@ export class SchemaMemory {
         for (const t of triggers) setOwn(summaries, t.name, { summary: t.summary, at, definitionHash: definitionHash(recorded.get(t.name).definition) });
         rec.triggerSummaries = summaries;
       }
-      this.writeTable(profile, rec);
-      const scanned = scannedFiles.length ? this.recordScannedUnlocked(profile, scannedFiles, at) : null;
-      this.rebuildViewUnlocked(profile);
+      this.writeTable(profile, rec); // commit point: the scores and summaries
+      const repair = {};
+      // scanned-files.json is bookkeeping (files to skip next time): a failed
+      // write only means they are read again.
+      let scanned = null;
+      if (scannedFiles.length) {
+        try {
+          scanned = this.recordScannedUnlocked(profile, scannedFiles, at);
+        } catch (err) {
+          repair.scannedFiles = 'failed';
+          repair.error ??= repairError(err);
+        }
+      }
+      this.rebuildAfterCommit(profile, repair);
       return {
         relation: tableKey(schema, table),
         scoredAt: at,
@@ -962,6 +1070,7 @@ export class SchemaMemory {
         ...(triggers.length ? { triggersSummarized: triggers.length } : {}),
         unscoredColumns: rec.columns.filter(c => !effectiveScore(Object.hasOwn(scores, c.name) ? scores[c.name] : null)).map(c => c.name),
         ...(scanned ? { scannedFiles: scanned } : {}),
+        ...repairField(repair),
       };
     });
   }
@@ -1123,6 +1232,9 @@ export class SchemaMemory {
   // Nodes and edges for the viewer: explored and seen tables plus unexplored
   // neighbors (known only by name, from foreign keys).
   graph(profile) {
+    // A change stored while graph.json could not be rebuilt: rebuild it now
+    // (this call computes the graph from the canonical files either way).
+    if (!this.rebuilding && this.isGraphStale(profile)) this.healGraph(profile);
     const tables = this.listTables(profile);
     const edges = this.edges(profile, tables);
     const notes = this.activeNotes(profile);
@@ -1178,9 +1290,34 @@ export class SchemaMemory {
   }
 
   rebuildViewUnlocked(profile) {
-    this.writeJson(path.join(this.profileDir(profile), 'graph.json'), this.view(profile));
+    this.rebuilding = true;
+    try {
+      this.writeJson(path.join(this.profileDir(profile), 'graph.json'), this.view(profile));
+    } finally {
+      this.rebuilding = false;
+    }
+    // graph.json is current again.
+    try {
+      fs.rmSync(this.checkPath(this.graphStalePath(profile)), { force: true });
+    } catch { /* stays marked: the next read rebuilds once more */ }
   }
 }
+
+// Safe description of a post-commit failure: the error code and the errno
+// or class, never file content (a JSON parse error message can quote it).
+function repairError(err) {
+  const { code } = classifyError(err);
+  const message = err instanceof MemoryError ? err.message
+    : err?.code ? `${err.code}${err.syscall ? ` (${err.syscall})` : ''}`
+      : err instanceof SyntaxError ? 'a memory file is not valid JSON' : 'derived view could not be written';
+  return { code, message };
+}
+
+const repairField = repair => (Object.keys(repair).length ? { repair } : {});
+
+// A list result (one entry per table or function) with the repair of the
+// shared rebuild on every entry that was committed.
+const withRepair = (list, repair) => (Object.keys(repair).length ? list.map(e => (e.memoryError ? e : { ...e, repair: { ...e.repair, ...repair, error: e.repair?.error ?? repair.error } })) : list);
 
 // Stored calls are current when written by this scanner version or a newer
 // one (a newer build's records are never rewritten by an older one).
