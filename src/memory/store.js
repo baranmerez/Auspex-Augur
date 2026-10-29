@@ -277,6 +277,9 @@ function noteLine(n) {
   return `#${n.id} ${n.kind}${target}: ${n.text}${suffix}`;
 }
 
+// Memory folder -> profiles known stale in this process (see markGraphStale).
+const staleByRoot = new Map();
+
 export class SchemaMemory {
   // approvedJoins(profile) -> [{ left: 'schema.table.column', right: ... }] from
   // approved reports: the "used" relation level.
@@ -288,8 +291,10 @@ export class SchemaMemory {
     this.scannedFilesPerRoot = scannedFilesPerRoot;
     this.storeUpgradedCalls = storeUpgradedCalls;
     // Profiles whose graph is stale although neither graph.stale nor the
-    // removal of graph.json could be written (markGraphStale).
-    this.staleProfiles = new Set();
+    // removal of graph.json could be written (markGraphStale); shared by all
+    // instances on this memory folder in this process.
+    if (!staleByRoot.has(this.root)) staleByRoot.set(this.root, new Set());
+    this.staleProfiles = staleByRoot.get(this.root);
     this.root = path.resolve(root);
     this.now = now;
     this.approvedJoins = approvedJoins;
@@ -386,22 +391,34 @@ export class SchemaMemory {
     }
   }
 
+  // Every table record once. An older copy of a table under its earlier file
+  // name (legacySegment) that could not be removed yet is left out when the
+  // record under the current name exists, as readTable does.
   listTables(profile) {
     const dir = this.checkPath(path.join(this.profileDir(profile), 'tables'));
     if (!fs.existsSync(dir)) return [];
-    const out = [];
+    const byKey = new Map();
     for (const schemaDir of fs.readdirSync(dir, { withFileTypes: true }).filter(d => d.isDirectory())) {
       for (const f of fs.readdirSync(path.join(dir, schemaDir.name)).filter(f => f.endsWith('.json'))) {
+        const file = path.join(dir, schemaDir.name, f);
+        let record;
         try {
-          out.push(this.readJson(path.join(dir, schemaDir.name, f), null));
+          record = this.readJson(file, null);
         } catch (err) {
           if (!err.linkRefused) throw err;
           // One linked table file must not fail the view and every later write.
           process.stderr.write(`auspex: schema memory table skipped: ${err.message}\n`);
+          continue;
         }
+        if (!record) continue;
+        const key = tableKey(record.schema, record.table);
+        let canonical = false;
+        try { canonical = this.tablePath(profile, record.schema, record.table) === file; } catch { /* odd names: not canonical */ }
+        const seen = byKey.get(key);
+        if (!seen || (canonical && !seen.canonical)) byKey.set(key, { record, canonical });
       }
     }
-    return out.filter(Boolean).sort((a, b) => tableKey(a.schema, a.table).localeCompare(tableKey(b.schema, b.table)));
+    return [...byKey.values()].map(v => v.record).sort((a, b) => tableKey(a.schema, a.table).localeCompare(tableKey(b.schema, b.table)));
   }
 
   // Read-modify-write of one profile's memory (tables, notes, view) runs under

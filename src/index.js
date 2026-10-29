@@ -18,6 +18,7 @@ import { sqlHash, sqlHashPattern } from './reports/library.js';
 import { builtInPresetKeys, maxPresetName, maxPresets } from './reports/presets.js';
 import { SchemaMemory, tableKey, noteKinds, columnRoles, scoreHistoryLimit, maxScoreReason, maxScoredColumns, maxScannedFiles, maxTriggerSummary, scoreLayers, maxTriggerSummaries, maxEvidenceCode, maxCodeSymbol, maxCodeLine } from './memory/store.js';
 import { relationsFromTextPlan } from './memory/planUsage.js';
+import { repairAudit, memoryAudit } from './memory/repairAudit.js';
 import { loadPromptSkills, promptText } from './skills.js';
 
 let config;
@@ -125,12 +126,6 @@ function findRepair(value, depth = 0) {
   }
   return null;
 }
-
-// Audit fields of a repair: what failed and the error code, never content.
-const repairAudit = repair => ({
-  repair: Object.fromEntries(Object.entries(repair).filter(([k]) => k !== 'error')),
-  ...(repair.error?.code ? { repairErrorCode: repair.error.code } : {}),
-});
 
 function auditRepair(profile, repair) {
   db.auditFn({ source: db.source, tool: 'memory_repair', ...db.correlationField(), profile: profile ?? null, ...repairAudit(repair) });
@@ -482,7 +477,7 @@ tool('run_report', {
   // and its HTML afterwards.
   db.audited('run_report', { ...reportDetails(ref), ...(stage ? { requestedStage: stage } : {}), ...(version !== undefined ? { requestedVersion: version } : {}) },
     () => reports.run(ref, { analyze: analyze === 'never' ? false : analyze === 'always' ? 'always' : 'auto', previewRows, returnRows, params, preset, timeoutSeconds, stage, version }),
-    r => ({ stage: r.stage, version: r.version, sqlHash: r.sqlHash, ...(r.memoryRepair ? repairAudit(r.memoryRepair) : {}) })));
+    r => ({ stage: r.stage, version: r.version, sqlHash: r.sqlHash, ...memoryAudit(r) })));
 
 tool('approve_report', {
   title: 'Approve report',
