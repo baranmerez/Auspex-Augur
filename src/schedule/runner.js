@@ -99,8 +99,10 @@ export class ScheduleRunner {
   // (reconcile; the repairs are in this.repairs). A slot with evidence of a
   // finished run (a pending trend point, a trend point, a saved run) is never
   // returned, even when its repair failed: the repair is retried next time,
-  // the SQL never runs again. A state file that cannot be read throws (it is
-  // never replaced).
+  // the SQL never runs again. A slot is also held back while the report
+  // metadata (where every scheduled run is saved before its trend point)
+  // cannot be read. A state file that cannot be read throws (it is never
+  // replaced).
   due(schedules) {
     const now = this.now();
     const enabled = schedules.filter(s => s.enabled).map(s => ({ schedule: s, slot: latestDueSlot(s.cadence, now) }));
@@ -139,7 +141,7 @@ export class ScheduleRunner {
       for (const p of pending) {
         const step = this.repairStep(schedule, label, p.slot, 'trend', () => this.appendPending(schedule, p));
         repairs.push(step);
-        if (step.persistence.trend === 'failed') break; // keep the slot order; the rest waits
+        if (step.persistence.trend === 'failed' || step.persistence.trend === 'unknown') break; // keep the slot order; the rest waits
       }
       const pendingSlots = new Set(pending.map(p => p.slot));
       for (const step of this.reconcileFromSaved(schedule, label, own, slot, pendingSlots)) {
@@ -150,25 +152,28 @@ export class ScheduleRunner {
     return { repairs, finished };
   }
 
-  // The report a pending point goes to: the one stored with it, or for an
-  // entry of an earlier build (no report) the schedule's report when that is
-  // verifiably the report the point was taken from (its SQL version is in the
-  // report's history); null otherwise.
+  // The report a pending point goes to: { target } with the one stored with
+  // it, or for an entry of an earlier build (no report) the schedule's report
+  // when that is verifiably the report the point was taken from (its SQL
+  // version is in the report's history), else target null (lost).
+  // { error } when that history cannot be read now: the entry is kept.
   pendingTarget(schedule, p) {
-    if (p.report) return p.report;
+    if (p.report) return { target: p.report };
+    let meta;
     try {
-      const meta = this.reports.library.readMeta('approved', schedule.report);
-      return p.point?.sqlHash && (meta?.sqlVersions ?? []).some(v => v.hash === p.point.sqlHash) ? schedule.report : null;
-    } catch {
-      return null;
+      meta = this.reports.library.readMeta('approved', schedule.report);
+    } catch (err) {
+      return { error: err };
     }
+    return { target: p.point?.sqlHash && (meta?.sqlVersions ?? []).some(v => v.hash === p.point.sqlHash) ? schedule.report : null };
   }
 
   // Appends one pending point, then drops it from the state. Each boundary
   // reports its own outcome; a point without a verifiable report is dropped
   // as lost (never written into another report's trend).
   appendPending(schedule, p) {
-    const target = this.pendingTarget(schedule, p);
+    const { target, error } = this.pendingTarget(schedule, p);
+    if (error) return { trend: 'unknown', state: 'not-attempted', error: persistenceError(error) };
     if (target) {
       try {
         this.persist.appendTrend(this.trendsDir, target, p.point);
@@ -215,9 +220,13 @@ export class ScheduleRunner {
           const point = this.pointFromSaved(schedule, meta, run, slotKey);
           return this.recordReconciled(schedule, slotKey, point ? 'pending' : 'lost', point);
         }));
-      } else if (trendError || metaError) {
-        // Not known whether this slot ran: neither run it nor record it.
-        out.push(this.repairStep(schedule, label, slotKey, 'state', () => ({ trend: 'unknown', state: 'unknown', error: persistenceError(trendError ?? metaError) })));
+      } else if (metaError || (trendError && !meta)) {
+        // Not known whether this slot ran (its saved run cannot be read):
+        // neither run it nor record it. A readable metadata without a run
+        // for the slot proves it did not finish (run() saves the run before
+        // the trend point): the slot is due, even when the trend file
+        // cannot be read.
+        out.push(this.repairStep(schedule, label, slotKey, 'state', () => ({ trend: 'unknown', state: 'unknown', error: persistenceError(metaError ?? trendError) })));
       }
     }
     return out;
@@ -274,19 +283,26 @@ export class ScheduleRunner {
     const result = { id: schedule.id, slot: slotKey, status: 'ok', repaired, persistence, report: label };
     if (persistenceFailed(result) && this.notifyMode !== 'off') {
       const lostPoint = persistence.trend === 'lost' || (persistence.trendLost?.length ?? 0) > 0;
-      this.repairNotes.push({
-        reportTitle: schedule.report.name, status: 'ok', errorCode: null, persistenceError: persistence.error?.code ?? 'TREND_LOST',
-        ...(lostPoint ? { trendLost: true } : {}),
-      });
+      this.repairNotes.push({ scheduleId: schedule.id, title: schedule.report.name, slot: slotKey, code: persistence.error?.code ?? 'TREND_LOST', lostPoint });
     }
     return result;
   }
 
-  // Sends the notifications of failed repairs (after due()); never throws.
+  // Sends the notifications of failed repairs (after due()): one per
+  // schedule with the number of slots and their range (the per-slot details
+  // are in the command output and the audit log); never throws.
   async notifyRepairs() {
-    const notes = this.repairNotes.splice(0);
+    const items = this.repairNotes.splice(0);
     if (this.notifyMode !== 'all' && this.notifyMode !== 'failures') return;
-    for (const note of notes) {
+    const bySchedule = new Map();
+    for (const item of items) bySchedule.set(item.scheduleId, [...(bySchedule.get(item.scheduleId) ?? []), item]);
+    for (const list of bySchedule.values()) {
+      const slots = list.map(i => i.slot).sort();
+      const note = {
+        reportTitle: list[0].title, status: 'ok', errorCode: null, persistenceError: list.find(i => i.code !== 'TREND_LOST')?.code ?? 'TREND_LOST',
+        ...(list.some(i => i.lostPoint) ? { trendLost: true } : {}),
+        ...(list.length > 1 ? { repairSlots: { count: list.length, from: slots[0], to: slots.at(-1) } } : {}),
+      };
       try { await this.notifyFn(note, { language: this.notifyLanguage }); } catch { /* never fatal */ }
     }
   }

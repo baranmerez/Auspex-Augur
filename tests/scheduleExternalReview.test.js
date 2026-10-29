@@ -183,3 +183,57 @@ test('F7: a saved result shared by two runs with the same time is not borrowed; 
   assert.equal(readState(stateFile()).schedules['example-daily'].last.trendLost, true);
   assert.equal(explains, 1);
 });
+
+test('F1 follow-up: an unreadable trend file with readable metadata and no saved run lets the slot run; its point goes pending', async () => {
+  const r = await runDue(d1, { hasTrendPoint: () => { throw eacces(); }, appendTrend: () => { throw eacces(); } });
+  assert.equal(r.out.ran, 1, 'the slot is due and runs');
+  assert.deepEqual(r.out.results.map(x => [x.status, x.persistence.trend, x.persistence.state]), [['ok', 'failed', 'ok']]);
+  assert.equal(r.out.repairs, undefined, 'no "unknown" repair for a slot that never ran');
+  assert.deepEqual(readState(stateFile()).schedules['example-daily'].pendingTrends.map(p => p.slot), [slot1]);
+  assert.equal(explains, 1);
+});
+
+test('lasting state-write failures send one summary notification per schedule with the slot count and range', async () => {
+  fs.writeFileSync(path.join(home, 'schedules.json'), JSON.stringify({ notify: 'failures', schedules: daily() }));
+  const sent = [];
+  const run = now => main(['run-due'], env, { db: makeDb(), notifyFn: async m => { sent.push(m); return 'log'; }, now: () => now, persist: { recordResult: () => { throw eacces(); }, reconcileSlot: () => { throw eacces(); } } });
+  await run(d1);
+  await run(d2);
+  sent.length = 0;
+  const r = await run(new Date(2026, 9, 14, 9, 0));
+  assert.deepEqual(r.out.repairs.map(x => [x.slot, x.persistence.state]), [[slot1, 'failed'], [slot2, 'failed']], 'per-slot details stay in the output');
+  const summaries = sent.filter(n => n.repairSlots);
+  assert.equal(summaries.length, 1);
+  assert.deepEqual(summaries[0].repairSlots, { count: 2, from: slot1, to: slot2 });
+  const { notificationText } = await import('../src/schedule/notify.js');
+  assert.match(notificationText(summaries[0]).text, /\(2 slots, 2026-10-12T08:00 to 2026-10-13T08:00\)$/);
+  assert.equal(sent.length, 2, 'the summary and the new slot\'s own run');
+});
+
+test('a legacy pending point whose report history cannot be read now is kept and replayed later, not lost', async () => {
+  await runDue(d1, { appendTrend: () => { throw eacces(); } });
+  const state = JSON.parse(fs.readFileSync(stateFile(), 'utf8'));
+  const entry = state.schedules['example-daily'];
+  entry.pendingTrend = { slot: entry.pendingTrends[0].slot, point: entry.pendingTrends[0].point };
+  delete entry.pendingTrends;
+  fs.writeFileSync(stateFile(), JSON.stringify(state));
+  const original = Library.prototype.readMeta;
+  let metaFail = 1;
+  Library.prototype.readMeta = function readMeta(...args) {
+    if (metaFail-- > 0) throw eacces();
+    return original.apply(this, args);
+  };
+  let r;
+  try {
+    r = await runDue(d1b);
+  } finally {
+    Library.prototype.readMeta = original;
+  }
+  assert.equal(r.status, 1);
+  assert.deepEqual(r.out.repairs.map(x => [x.persistence.trend, x.persistence.state]), [['unknown', 'not-attempted']]);
+  assert.ok(readState(stateFile()).schedules['example-daily'].pendingTrend, 'kept');
+  const next = await runDue(d1b);
+  assert.equal(next.status, 0);
+  assert.equal(points(refA).length, 1);
+  assert.equal(explains, 1);
+});
