@@ -12,6 +12,7 @@ import { refLabel, normalizeRef } from '../reports/library.js';
 import { sqlParamCount, resolvePreset } from '../reports/presets.js';
 import { columnTotals } from '../reports/totals.js';
 import { SchemaMemory } from '../memory/store.js';
+import { memoryAudit } from '../memory/repairAudit.js';
 import { createAuditLog } from '../auditLog.js';
 import { ToolError, classifyError } from '../errors.js';
 import { latestDueSlot } from './config.js';
@@ -62,9 +63,13 @@ export function checkSchedule(library, schedule, now = new Date()) {
 }
 
 // Code and a short message of a local write failure (errno or class only).
+// Never the error's own message: a parse error can quote the file it read.
 function persistenceError(err) {
   const { code } = classifyError(err);
-  return { code, message: err?.code ? `${err.code}${err.syscall ? ` (${err.syscall})` : ''}` : String(err?.message ?? err).slice(0, 300) };
+  const errno = typeof err?.code === 'string' && /^E[A-Z0-9]+$/.test(err.code) ? err.code : null;
+  const message = errno ? `${errno}${err.syscall ? ` (${err.syscall})` : ''}`
+    : err instanceof SyntaxError ? 'a local file is not valid JSON' : 'a local file could not be read or written';
+  return { code, message };
 }
 
 // A run or repair result that left a local write failed.
@@ -109,7 +114,9 @@ export class ScheduleRunner {
     const { repairs, finished } = this.reconcile(enabled);
     this.repairs = repairs;
     const state = this.persist.readState(this.stateFile, { strict: true });
-    return enabled.filter(({ schedule, slot }) => slot && scheduleState(state, schedule.id)?.lastSuccessSlot !== slot.key
+    // Slot keys (YYYY-MM-DDTHH:MM) compare in time order: a slot at or before
+    // the last success (e.g. after the schedule time was moved earlier) is done.
+    return enabled.filter(({ schedule, slot }) => slot && slot.key > (scheduleState(state, schedule.id)?.lastSuccessSlot ?? '')
       && !finished.has(`${schedule.id}\n${slot.key}`));
   }
 
@@ -147,6 +154,9 @@ export class ScheduleRunner {
       for (const step of this.reconcileFromSaved(schedule, label, own, slot, pendingSlots)) {
         finished.add(`${schedule.id}\n${step.slot}`);
         repairs.push(step);
+        // An older slot whose state is not recorded yet: the newer due slot
+        // waits until that repair succeeds (keeps the slots in order).
+        if (slot && step.slot < slot.key && ['failed', 'unknown'].includes(step.persistence.state)) finished.add(`${schedule.id}\n${slot.key}`);
       }
     }
     return { repairs, finished };
@@ -326,7 +336,7 @@ export class ScheduleRunner {
     const label = refLabel(schedule.report);
     const at = () => this.now().toISOString();
     let title = schedule.report.name;
-    let status, errorCode = null, message = null, counts = null, pendingTrend = null;
+    let status, errorCode = null, message = null, counts = null, pendingTrend = null, runResult = null;
     const persistence = { trend: 'skipped', state: 'ok' };
     const presetDate = slot ? slot.day ?? slot.at : this.now();
     try {
@@ -340,6 +350,7 @@ export class ScheduleRunner {
         ...(manual ? {} : { schedule: { id: schedule.id, slot: slot.key } }),
       }));
       status = 'ok';
+      runResult = result;
       counts = runRows(result.last ?? null);
       if (!manual) {
         let point = null;
@@ -386,6 +397,7 @@ export class ScheduleRunner {
       source: actor, actor, tool: 'schedule_run', correlationId, scheduleId: schedule.id, slot: record.slot, ...(manual ? { manual: true } : {}),
       profile: schedule.profile, report: label, status, ms: Date.now() - started, ...(errorCode ? { errorCode, error: message } : {}),
       persistence: { trend: persistence.trend, state: persistence.state }, ...(trendError ? { trendError } : {}),
+      ...memoryAudit(runResult),
     });
     // A successful run carries its row count; an empty result and a failed
     // local write are notified in "failures" mode too.
