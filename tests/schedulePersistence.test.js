@@ -273,3 +273,35 @@ test('a saved result replaced before the state repair: the slot is reconciled wi
   assert.equal(explains, 1);
   assert.equal((await runDue()).status, 0, 'reported once');
 });
+
+test('a lost trend point is notified as lost, without the "repaired on the next run" promise (en, tr)', () => {
+  const en = notificationText({ reportTitle: 'Example report', status: 'ok', persistenceError: 'TREND_LOST' }).text;
+  assert.equal(en, 'The report ran, but a trend point was lost and cannot be restored.');
+  const tr = notificationText({ reportTitle: 'Example report', status: 'ok', persistenceError: 'DISK_ERROR', trendLost: true }, 'tr').text;
+  assert.match(tr, /kayboldu ve geri getirilemez\.$/);
+  assert.ok(!/onar/.test(tr));
+  assert.match(notificationText({ reportTitle: 'Example report', status: 'ok', persistenceError: 'DISK_ERROR' }).text, /repaired on the next run/);
+});
+
+test('a state repair that drops pending points at the bound reports them as trendLost, exit 1 and a lost notification', async () => {
+  const file = stateFile();
+  for (let i = 0; i < 50; i++) {
+    const slot = `2025-${String(1 + Math.floor(i / 28)).padStart(2, '0')}-${String(1 + (i % 28)).padStart(2, '0')}T08:00`;
+    recordResult(file, 'weekly-example', { status: 'ok', slot, at: `${slot}:00.000Z` }, { pendingTrend: { slot, point: { scheduleId: 'weekly-example', slot } } });
+  }
+  const fail = () => true;
+  // The run of the due slot: trend and state writes fail, the saved run names the slot.
+  await runDue({ appendTrend: faulty(appendTrend, fail), recordResult: faulty(recordResult, fail) });
+  notes.length = 0;
+  const next = await runDue({ appendTrend: faulty(appendTrend, fail) });
+  assert.equal(next.status, 1);
+  assert.equal(next.out.ran, 0, 'no rerun');
+  const state = next.out.repairs.find(x => x.repaired === 'state');
+  assert.deepEqual([state.persistence.trend, state.persistence.state, state.persistence.trendLost], ['failed', 'not-attempted', ['2025-01-01T08:00']]);
+  const entry = readState(file).schedules['weekly-example'];
+  assert.equal(entry.pendingTrends.length, 50);
+  assert.ok(entry.pendingTrends.some(p => p.slot === slotKey));
+  assert.deepEqual(entry.trendLostSlots, ['2025-01-01T08:00']);
+  assert.ok(notes.some(n => n.trendLost === true && /cannot be restored/.test(notificationText(n).text)));
+  assert.equal(explains, 1);
+});
