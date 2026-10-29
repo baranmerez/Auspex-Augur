@@ -318,8 +318,20 @@ report again:
   approved report's saved run, which names its schedule and slot
   (`run.schedule = { id, slot }`), records the slot as successful with the
   point rebuilt from the saved result pending, then appends it
-  (`repaired: "state"`); when the saved result was replaced meanwhile the
-  slot is recorded with `trendLost` and the repair reports `trend: "lost"`.
+  (`repaired: "state"`). This covers every saved slot after the last
+  recorded success, also older ones the schedule has moved past, and never
+  moves `lastSuccessSlot` back. The saved result is used only when exactly
+  one saved run has its time and that run is the slot's; otherwise (replaced
+  meanwhile, or ambiguous) the slot is recorded with `trendLost` and the
+  repair reports `trend: "lost"`.
+- a pending point is appended to the report it was taken from (stored with
+  it as `report`), even if the schedule now names another report; a point
+  stored by an earlier build without `report` is appended only when the
+  schedule's report has that point's SQL version, otherwise it is reported
+  lost.
+- evidence that cannot be read (the trend file and the report metadata):
+  the slot is neither run nor recorded; the repair reports `state: "unknown"`
+  (exit 1) and is retried by the next `run-due`.
 
 A slot with such evidence (a pending point, a trend point, a saved run) is
 never run again, even when its repair fails; the repair is retried by every
@@ -328,7 +340,8 @@ never run again, even when its repair fails; the repair is retried by every
 `failed` or `not-attempted`), writes a `schedule_repair` audit entry, makes
 the command exit 1 when it failed or lost a point, and is notified in
 `failures` mode (code only). A state file that cannot
-be read or is not valid scheduler state stops `run-due` and `run` before any
+be read or is not valid scheduler state (also a schedule entry that is not
+an object) stops `run-due` and `run` before any
 SQL with `code: "STATE_UNREADABLE"`, the file name and exit code 1; the file
 is never replaced (repair or move it away; a missing file is a fresh start).
 `status` shows the problem as `stateError`.
