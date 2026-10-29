@@ -324,6 +324,16 @@ holds no message text, SQL, parameters, row values or connection details;
 | `PERMISSION_DENIED` | No privilege on the object (42501) | no |
 | `CONNECTION_FAILED` | Could not connect or authenticate (08xxx, 28xxx, 57P01-57P03, 53300, network errors, a connection dropped mid-query); authentication failures are not retryable | network/server only |
 | `DISK_ERROR` | A local file could not be written or read (ENOSPC, EEXIST, EACCES, ...) | no |
+
+**Stored, with repair:** a schema-memory change whose own file was written
+does not fail when a step after it fails (graph rebuild, changelog,
+scanned-files bookkeeping). The result is the normal one plus a `repair` field
+(`remember`, `score_columns`, the `memory` field of `describe_table(s)`,
+`describe_functions`, `list_functions`, `explain`; `memoryRepair` in
+`run_report` and `relation_stats`), and the audit log gets the repair codes
+(in the tool's entry, or a `memory_repair` entry with the same correlation
+ID). `remember` adds `repairNote`: the note is stored, do not add it again.
+See docs/schema-memory.md, *Committed changes and repair*.
 | `DATABASE_ERROR` | Any other PostgreSQL error; see `sqlState` (serialization failure and deadlock are retryable) | 40001/40P01 only |
 | `INTERNAL` | Anything else | no |
 
