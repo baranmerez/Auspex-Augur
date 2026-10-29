@@ -83,12 +83,49 @@ const timeoutArg = z.number().min(1).optional()
   .describe(`Statement timeout in seconds for this call. Default ${defaultTimeoutS}; maximum ${maxTimeoutS} unless the profile has a lower limit (see list_profiles). Tell the user before using more than the default.`);
 
 // Memory is a side effect of database work: it must never fail the tool.
-function learn(fn) {
+// A change that was stored but whose derived steps failed comes back with a
+// repair field (src/memory/store.js); it is passed through in the result and
+// recorded in the audit log as a memory_repair entry (codes only).
+function learn(fn, profile = null) {
   try {
-    return fn() ?? {};
+    const result = fn() ?? {};
+    const repair = findRepair(result);
+    if (repair) auditRepair(profile, repair);
+    return result;
   } catch (err) {
     return { memoryError: err.message };
   }
+}
+
+// The first repair field in a memory result (an object, a list of entries,
+// or { list } / { functions } holding one).
+function findRepair(value, depth = 0) {
+  if (!value || typeof value !== 'object' || depth > 2) return null;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findRepair(item, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (value.repair && typeof value.repair === 'object') return value.repair;
+  for (const item of Object.values(value)) {
+    if (item && typeof item === 'object') {
+      const found = findRepair(item, depth + 1);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+// Audit fields of a repair: what failed and the error code, never content.
+const repairAudit = repair => ({
+  repair: Object.fromEntries(Object.entries(repair).filter(([k]) => k !== 'error')),
+  ...(repair.error?.code ? { repairErrorCode: repair.error.code } : {}),
+});
+
+function auditRepair(profile, repair) {
+  db.auditFn({ source: db.source, tool: 'memory_repair', ...db.correlationField(), profile: profile ?? null, ...repairAudit(repair) });
 }
 
 // Error result: the readable text first (unchanged), then the machine-readable
@@ -215,7 +252,7 @@ tool('describe_table', {
   return {
     ...result,
     columns: columns.map(({ attnum, ...c }) => c),
-    memory: learn(() => memory.recordDescribe({ ...result, oid, columns })),
+    memory: learn(() => memory.recordDescribe({ ...result, oid, columns }), result.profile),
   };
 });
 
@@ -233,7 +270,7 @@ tool('describe_tables', {
 }, async ({ profile, tables, detail }) => {
   const result = await describeTables(db, profile, tables);
   const found = result.tables.filter(t => !t.error);
-  const learned = learn(() => ({ list: memory.recordDescribeMany(result.profile, found) }));
+  const learned = learn(() => ({ list: memory.recordDescribeMany(result.profile, found) }), result.profile);
   const full = detail === 'full';
   return {
     ...result,
@@ -265,7 +302,7 @@ tool('describe_functions', {
   // A pattern result cut at its limit may miss overloads of its last name.
   const last = found.at(-1);
   const partial = new Set(result.truncated && last ? [tableKey(last.schema, last.name)] : []);
-  return { ...result, memory: found.length ? learn(() => ({ functions: memory.recordFunctions(result.profile, found, { partial }) })) : {} };
+  return { ...result, memory: found.length ? learn(() => ({ functions: memory.recordFunctions(result.profile, found, { partial }) }), result.profile) : {} };
 });
 
 tool('list_functions', {
@@ -280,7 +317,7 @@ tool('list_functions', {
   },
 }, async ({ profile, ...options }) => {
   const result = await listFunctions(db, profile, options);
-  return { ...result, memory: result.functions.length ? learn(() => memory.recordListedFunctions(result.profile, result.functions)) : {} };
+  return { ...result, memory: result.functions.length ? learn(() => memory.recordListedFunctions(result.profile, result.functions), result.profile) : {} };
 });
 
 tool('profile_tables', {
@@ -320,7 +357,7 @@ tool('relation_stats', {
 }, async ({ profile, tables, schema }) => {
   const result = await relationStats(db, profile, tables, schema);
   const found = result.tables.filter(t => !t.error);
-  const learned = learn(() => memory.recordRelationStats(result.profile, found));
+  const learned = learn(() => memory.recordRelationStats(result.profile, found), result.profile);
   const explored = (schemaName, table) => (learned.explored ? learned.explored.has(tableKey(schemaName, table)) : null);
   const item = ({ schema: s, table, ...rest }) => ({ ...rest, explored: explored(s, table) });
   return {
@@ -329,6 +366,7 @@ tool('relation_stats', {
       ...t, explored: explored(t.schema, t.table), instance: t.instance.map(item), dependent: t.dependent.map(item),
     })),
     ...(learned.memoryError ? { memoryError: learned.memoryError } : {}),
+    ...(learned.repair ? { memoryRepair: learned.repair } : {}),
   };
 });
 
@@ -359,7 +397,7 @@ tool('explain', {
   },
 }, async ({ profile, sql, params, analyze, timeoutSeconds }) => {
   const result = await db.explain(profile, sql, params, analyze === true, timeoutSeconds);
-  return { ...result, ...learn(() => memory.recordSeen(result.profile, relationsFromTextPlan(result.plan))) };
+  return { ...result, ...learn(() => memory.recordSeen(result.profile, relationsFromTextPlan(result.plan)), result.profile) };
 });
 
 tool('export_csv', {
@@ -436,7 +474,7 @@ tool('run_report', {
   // and its HTML afterwards.
   db.audited('run_report', { ...reportDetails(ref), ...(stage ? { requestedStage: stage } : {}), ...(version !== undefined ? { requestedVersion: version } : {}) },
     () => reports.run(ref, { analyze: analyze === 'never' ? false : analyze === 'always' ? 'always' : 'auto', previewRows, returnRows, params, preset, timeoutSeconds, stage, version }),
-    r => ({ stage: r.stage, version: r.version, sqlHash: r.sqlHash })));
+    r => ({ stage: r.stage, version: r.version, sqlHash: r.sqlHash, ...(r.memoryRepair ? repairAudit(r.memoryRepair) : {}) })));
 
 tool('approve_report', {
   title: 'Approve report',
@@ -526,13 +564,17 @@ tool('remember', {
     const name = db.resolveProfile(profile);
     if (action === 'add') {
       const evidence = evidenceSql || evidenceFigures ? { sql: evidenceSql, figures: evidenceFigures } : undefined;
-      return { note: memory.addNote(name, { kind, schema, table, column, text, evidence, evidenceCode }, { codeRoots: [...config.codeRoots.keys()] }) };
+      return noteResult(memory.addNote(name, { kind, schema, table, column, text, evidence, evidenceCode }, { codeRoots: [...config.codeRoots.keys()] }));
     }
     if (evidenceCode !== undefined) throw new ToolError('INVALID_INPUT', 'evidenceCode is only accepted with action=add; confirm keeps the references of the note.');
     if (id === undefined) throw new ToolError('INVALID_INPUT', `action=${action} needs id.`);
-    if (action === 'confirm') return { note: memory.confirmNote(name, id, kind) };
-    return { note: memory.archiveNote(name, id, reason) };
-  }, r => ({ noteId: r.note.id, noteKind: r.note.kind, noteStatus: r.note.status })));
+    if (action === 'confirm') return noteResult(memory.confirmNote(name, id, kind));
+    return noteResult(memory.archiveNote(name, id, reason));
+  }, r => ({ noteId: r.note.id, noteKind: r.note.kind, noteStatus: r.note.status, ...(r.repair ? repairAudit(r.repair) : {}) })));
+
+// The note is stored; repair (when present) says which derived step failed.
+// Retrying the same remember would add the note a second time.
+const noteResult = ({ repair, ...note }) => ({ note, ...(repair ? { repair, repairNote: 'The note is stored (see note.id); do not add it again. The viewer graph is rebuilt on the next memory change or read.' } : {}) });
 
 tool('score_columns', {
   title: 'Save column importance scores',
@@ -565,7 +607,7 @@ tool('score_columns', {
   db.audited('score_columns', { profile: profile ?? null, schema, table, columns: columns?.length ?? 0, triggers: triggers?.length ?? 0, scannedFiles: scannedFiles?.length ?? 0 }, async () => {
     const name = db.resolveProfile(profile);
     return memory.scoreColumns(name, { schema, table, ...(columns ? { columns } : {}), ...(triggers ? { triggers } : {}), ...(scannedFiles ? { scannedFiles } : {}) }, { scriptRoots: [...config.scriptRoots.keys()] });
-  }, r => ({ scored: r.scored, ...(r.triggersSummarized ? { triggersSummarized: r.triggersSummarized } : {}) })));
+  }, r => ({ scored: r.scored, ...(r.triggersSummarized ? { triggersSummarized: r.triggersSummarized } : {}), ...(r.repair ? repairAudit(r.repair) : {}) })));
 
 tool('scanned_files', {
   title: 'Script files read for column scores',

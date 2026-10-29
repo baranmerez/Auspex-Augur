@@ -135,6 +135,23 @@ function schemaMemory(lib) {
   return new SchemaMemory(memoryDir(), { approvedJoins: profile => approvedJoinPairs(lib, profile) });
 }
 
+// graph.json of a profile. A change stored while graph.json could not be
+// rebuilt leaves graph.stale (src/memory/store.js): the graph is rebuilt
+// first, as every viewer change already does (rebuildView; function records
+// are never written here). If that fails too, the old graph is served with
+// stale: true, or the error when there is none.
+function memoryGraph(params) {
+  const dir = memoryProfile(params);
+  const file = path.join(dir, 'graph.json');
+  const marker = path.join(dir, 'graph.stale');
+  if (!linkBelow(path.resolve(memoryDir()), path.resolve(marker)) && fs.existsSync(marker)) {
+    const memory = schemaMemory(library());
+    if (memory.healGraph(path.basename(dir))) return readJsonFile(file);
+    if (fs.existsSync(file)) return { ...readJsonFile(file), stale: true };
+  }
+  return readJsonFile(file);
+}
+
 function memoryProfile(params) {
   const name = params.get('profile') || '';
   if (!profilePattern.test(name)) throw new LibraryError('Invalid profile name');
@@ -416,7 +433,7 @@ function handle(req, res) {
     }
     if (url.pathname === '/api/report') return send(res, 200, reportContent(url.searchParams));
     if (url.pathname === '/api/memory') return send(res, 200, memorySummary());
-    if (url.pathname === '/api/memory/graph') return send(res, 200, readJsonFile(path.join(memoryProfile(url.searchParams), 'graph.json')));
+    if (url.pathname === '/api/memory/graph') return send(res, 200, memoryGraph(url.searchParams));
     if (url.pathname === '/api/memory/table') return send(res, 200, memoryFile(url.searchParams));
     if (url.pathname === '/api/memory/function') return send(res, 200, memoryFile(url.searchParams, memoryFunctionPattern));
     if (url.pathname === '/api/health') {
