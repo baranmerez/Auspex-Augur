@@ -228,10 +228,13 @@ export class ReportService {
   // from the approved report's page while a draft exists). version
   // (optional): the SQL version the caller expects that copy to be; refused
   // with STALE_VERSION before any database call when it is another.
+  // schedule (optional, scheduler only): { id, slot } stored on the run
+  // record, so a slot whose scheduler state write failed is reconciled from
+  // the saved run instead of being run again.
   // includeLast: also return the stored result (last) of this run, so a
   // caller never re-reads it from disk, where a concurrent run may have
   // replaced it. Not used by run_report (it would bloat the tool result).
-  async run(input, { analyze = 'auto', previewRows = 50, returnRows = 20, timeoutSeconds, params, preset, presetDate, stage: onlyStage, version: expectedVersion, includeLast = false } = {}) {
+  async run(input, { analyze = 'auto', previewRows = 50, returnRows = 20, timeoutSeconds, params, preset, presetDate, stage: onlyStage, version: expectedVersion, schedule: scheduleTag = null, includeLast = false } = {}) {
     const ref = this.ref(input);
     if (preset !== undefined && params !== undefined) throw new ToolError('INVALID_INPUT', 'Pass either preset or params, not both.');
     // SQL and metadata are read together under the library lock, and only SQL
@@ -288,6 +291,8 @@ export class ReportService {
       explainMs: Math.round(result.explainMs), previewMs: Math.round(result.previewMs), previewExecuted: result.previewExecuted,
       totalCost: summary.totalCost, rows: summary.rows, buffers: summary.buffers,
       warnings: summary.warnings.map(w => w.text), params: params || null, preset: usedPreset,
+      // scheduler only: { id, slot } of the scheduled slot this run belongs to
+      ...(scheduleTag ? { schedule: { id: scheduleTag.id, slot: scheduleTag.slot } } : {}),
     };
     const last = {
       at, profile: result.profile, serverVersion: result.serverVersion, sqlHash: hash, version,
