@@ -40,7 +40,12 @@ export function readState(file, { strict = false } = {}) {
   }
   let data = null;
   try { data = JSON.parse(text); } catch { /* malformed */ }
-  if (data && typeof data === 'object' && data.schedules && typeof data.schedules === 'object' && !Array.isArray(data.schedules)) return data;
+  const plain = v => v !== null && typeof v === 'object' && !Array.isArray(v);
+  if (plain(data) && plain(data.schedules)) {
+    // strict: every schedule entry must be an object too, or a write would
+    // replace what it cannot read.
+    if (!strict || Object.values(data.schedules).every(plain)) return data;
+  }
   if (strict) throw stateError(file, 'not valid scheduler state JSON');
   return { schedules: {} };
 }
@@ -89,7 +94,8 @@ function addPending(entry, pending) {
 
 // Records one result: { status, slot (null for a manual run), at, errorCode?,
 // manual?, persistenceError? }. A successful slot run sets lastSuccessSlot,
-// which makes run-due skip that slot. pendingTrend ({ slot, point }): the
+// which makes run-due skip that slot. pendingTrend ({ slot, point, report }:
+// report is the normalized report reference the point belongs to): the
 // trend point of this run whose write failed; run-due appends it later.
 // Returns the entry; lostPendingSlots (not stored) names pending points
 // dropped by the bound.
@@ -125,7 +131,8 @@ export function reconcileSlot(file, id, slot, at, { trend = 'ok', pendingTrend =
   let lost = [];
   const entry = updateEntry(file, id, at, own => {
     const next = withHistory(own, { status: 'ok', slot, at, reconciled: true, ...(trend === 'lost' ? { trendLost: true } : {}) });
-    next.lastSuccessSlot = slot;
+    // Never moves back: an older slot reconciled later keeps the newer one.
+    if (!own.lastSuccessSlot || slot > own.lastSuccessSlot) next.lastSuccessSlot = slot;
     if (pendingTrend) lost = addPending(next, pendingTrend);
     return next;
   });

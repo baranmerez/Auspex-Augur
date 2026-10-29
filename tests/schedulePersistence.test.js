@@ -287,7 +287,7 @@ test('a state repair that drops pending points at the bound reports them as tren
   const file = stateFile();
   for (let i = 0; i < 50; i++) {
     const slot = `2025-${String(1 + Math.floor(i / 28)).padStart(2, '0')}-${String(1 + (i % 28)).padStart(2, '0')}T08:00`;
-    recordResult(file, 'weekly-example', { status: 'ok', slot, at: `${slot}:00.000Z` }, { pendingTrend: { slot, point: { scheduleId: 'weekly-example', slot } } });
+    recordResult(file, 'weekly-example', { status: 'ok', slot, at: `${slot}:00.000Z` }, { pendingTrend: { slot, point: { scheduleId: 'weekly-example', slot }, report: ref } });
   }
   const fail = () => true;
   // The run of the due slot: trend and state writes fail, the saved run names the slot.

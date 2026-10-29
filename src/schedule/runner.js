@@ -8,7 +8,7 @@
 import crypto from 'node:crypto';
 import { ReadOnlyDatabase } from '../db.js';
 import { ReportService, approvedJoinPairs } from '../reports/service.js';
-import { refLabel } from '../reports/library.js';
+import { refLabel, normalizeRef } from '../reports/library.js';
 import { sqlParamCount, resolvePreset } from '../reports/presets.js';
 import { columnTotals } from '../reports/totals.js';
 import { SchemaMemory } from '../memory/store.js';
@@ -113,13 +113,17 @@ export class ScheduleRunner {
 
   // Repairs, per schedule, without running the report again:
   // - pendingTrends: the trend points of finished runs whose write failed are
-  //   appended in slot order (appendTrend ignores a slot that has a point).
-  // - a due slot without a recorded success whose trend point exists, or
-  //   whose run the approved report saved (run.schedule = { id, slot }): the
-  //   state write of a finished run failed. The slot is recorded as
-  //   successful first, with the point rebuilt from the saved result pending
-  //   (trend 'lost' when the saved result was replaced meanwhile), then the
-  //   point is appended.
+  //   appended in slot order to the report they were taken from.
+  // - slots after lastSuccessSlot that finished although their state write
+  //   failed: the latest due slot, and every slot the approved report's saved
+  //   runs name (run.schedule = { id, slot }), also older ones the scheduler
+  //   moved past. Evidence is the slot's trend point or the saved run. The
+  //   slot is recorded as successful (lastSuccessSlot never moves back), with
+  //   the point rebuilt from the saved result pending when the result is
+  //   still that run's (trend 'lost' otherwise), then the point is appended.
+  // - evidence that cannot be read (trend file, report metadata): the slot is
+  //   neither run nor recorded; the repair reports state 'unknown' and is
+  //   retried next time.
   // Returns { repairs: [run()-shaped results], finished: Set of "id\nslot" }.
   reconcile(enabled) {
     const state = this.persist.readState(this.stateFile, { strict: true });
@@ -137,79 +141,120 @@ export class ScheduleRunner {
         repairs.push(step);
         if (step.persistence.trend === 'failed') break; // keep the slot order; the rest waits
       }
-      if (!slot || own?.lastSuccessSlot === slot.key || pending.some(p => p.slot === slot.key)) continue;
-      const repaired = this.reconcileSlotFromSaved(schedule, label, slot);
-      if (repaired) {
-        finished.add(`${schedule.id}\n${slot.key}`);
-        repairs.push(repaired);
+      const pendingSlots = new Set(pending.map(p => p.slot));
+      for (const step of this.reconcileFromSaved(schedule, label, own, slot, pendingSlots)) {
+        finished.add(`${schedule.id}\n${step.slot}`);
+        repairs.push(step);
       }
     }
     return { repairs, finished };
   }
 
-  // Appends one pending point, then drops it from the state. Each boundary
-  // reports its own outcome.
-  appendPending(schedule, p) {
+  // The report a pending point goes to: the one stored with it, or for an
+  // entry of an earlier build (no report) the schedule's report when that is
+  // verifiably the report the point was taken from (its SQL version is in the
+  // report's history); null otherwise.
+  pendingTarget(schedule, p) {
+    if (p.report) return p.report;
     try {
-      this.persist.appendTrend(this.trendsDir, schedule.report, p.point);
-    } catch (err) {
-      return { trend: 'failed', state: 'not-attempted', error: persistenceError(err) };
+      const meta = this.reports.library.readMeta('approved', schedule.report);
+      return p.point?.sqlHash && (meta?.sqlVersions ?? []).some(v => v.hash === p.point.sqlHash) ? schedule.report : null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Appends one pending point, then drops it from the state. Each boundary
+  // reports its own outcome; a point without a verifiable report is dropped
+  // as lost (never written into another report's trend).
+  appendPending(schedule, p) {
+    const target = this.pendingTarget(schedule, p);
+    if (target) {
+      try {
+        this.persist.appendTrend(this.trendsDir, target, p.point);
+      } catch (err) {
+        return { trend: 'failed', state: 'not-attempted', error: persistenceError(err) };
+      }
     }
     try {
       this.persist.clearPendingTrend(this.stateFile, schedule.id, p.slot, this.now().toISOString());
     } catch (err) {
-      return { trend: 'ok', state: 'failed', error: persistenceError(err) };
+      return { trend: target ? 'ok' : 'lost', state: 'failed', error: persistenceError(err) };
     }
-    return { trend: 'ok', state: 'ok' };
+    return target ? { trend: 'ok', state: 'ok' } : { trend: 'lost', state: 'ok', trendLost: [p.slot] };
   }
 
-  reconcileSlotFromSaved(schedule, label, slot) {
-    let pointExists;
-    try {
-      pointExists = this.persist.hasTrendPoint(this.trendsDir, schedule.report, schedule.id, slot.key);
-    } catch {
-      pointExists = false;
-    }
-    if (pointExists) {
-      return this.repairStep(schedule, label, slot.key, 'state', () => {
-        try {
-          this.persist.reconcileSlot(this.stateFile, schedule.id, slot.key, this.now().toISOString());
-        } catch (err) {
-          return { trend: 'ok', state: 'failed', error: persistenceError(err) };
-        }
-        return { trend: 'ok', state: 'ok' };
-      });
-    }
+  // Repairs of finished slots after lastSuccessSlot (see reconcile).
+  reconcileFromSaved(schedule, label, own, dueSlot, pendingSlots) {
+    const after = own?.lastSuccessSlot ?? '';
     let meta = null;
+    let metaError = null;
     try {
       meta = this.reports.library.exists('approved', schedule.report) ? this.reports.library.readMeta('approved', schedule.report) : null;
-    } catch { /* no saved run to go by: the slot runs */ }
-    const run = (meta?.runs ?? []).findLast(r => r?.schedule?.id === schedule.id && r.schedule.slot === slot.key);
-    if (!run) return null;
-    return this.repairStep(schedule, label, slot.key, 'state', () => {
-      const last = meta.last?.at === run.at ? meta.last : null;
-      let point = null;
-      if (last) {
-        const complete = last.previewExecuted === true && last.previewTruncated === false;
-        const totals = complete ? columnTotals(last.columns || [], last.preview || [], last.maskedColumns || []) : null;
-        point = trendPoint({
-          scheduleId: schedule.id, slot: slot.key, ranAt: run.at, preset: run.preset ?? null, params: run.params ?? null,
-          last, sqlHash: run.sqlHash, version: run.version, totals,
-        });
-      }
-      let lost = [];
+    } catch (err) {
+      metaError = err;
+    }
+    const tagged = (meta?.runs ?? []).filter(r => r?.schedule?.id === schedule.id && typeof r.schedule.slot === 'string');
+    const slots = new Set(tagged.map(r => r.schedule.slot).filter(k => k > after));
+    if (dueSlot && dueSlot.key > after) slots.add(dueSlot.key);
+    const out = [];
+    for (const slotKey of [...slots].sort()) {
+      if (pendingSlots.has(slotKey) || slotKey === own?.lastSuccessSlot) continue;
+      let pointExists = false;
+      let trendError = null;
       try {
-        const saved = this.persist.reconcileSlot(this.stateFile, schedule.id, slot.key, this.now().toISOString(),
-          { trend: point ? 'ok' : 'lost', ...(point ? { pendingTrend: { slot: slot.key, point } } : {}) });
-        lost = saved?.lostPendingSlots ?? [];
+        pointExists = this.persist.hasTrendPoint(this.trendsDir, schedule.report, schedule.id, slotKey);
       } catch (err) {
-        return { trend: 'not-attempted', state: 'failed', error: persistenceError(err) };
+        trendError = err;
       }
-      // Pending points of older slots dropped by the bound, like run().
-      const withLost = r => (lost.length ? { ...r, trendLost: lost } : r);
-      if (!point) return withLost({ trend: 'lost', state: 'ok' });
-      return withLost(this.appendPending(schedule, { slot: slot.key, point }));
+      const run = tagged.findLast(r => r.schedule.slot === slotKey);
+      if (pointExists) {
+        out.push(this.repairStep(schedule, label, slotKey, 'state', () => this.recordReconciled(schedule, slotKey, 'ok')));
+      } else if (run) {
+        out.push(this.repairStep(schedule, label, slotKey, 'state', () => {
+          const point = this.pointFromSaved(schedule, meta, run, slotKey);
+          return this.recordReconciled(schedule, slotKey, point ? 'pending' : 'lost', point);
+        }));
+      } else if (trendError || metaError) {
+        // Not known whether this slot ran: neither run it nor record it.
+        out.push(this.repairStep(schedule, label, slotKey, 'state', () => ({ trend: 'unknown', state: 'unknown', error: persistenceError(trendError ?? metaError) })));
+      }
+    }
+    return out;
+  }
+
+  // The trend point of a saved scheduled run, rebuilt from meta.last only
+  // when that result is unambiguously this run's (exactly one saved run has
+  // its time, and it is the tagged one); null when it is not.
+  pointFromSaved(schedule, meta, run, slotKey) {
+    const last = meta.last;
+    const sameTime = (meta.runs ?? []).filter(r => r?.at === last?.at);
+    if (!last || sameTime.length !== 1 || sameTime[0] !== run) return null;
+    const complete = last.previewExecuted === true && last.previewTruncated === false;
+    const totals = complete ? columnTotals(last.columns || [], last.preview || [], last.maskedColumns || []) : null;
+    return trendPoint({
+      scheduleId: schedule.id, slot: slotKey, ranAt: run.at, preset: run.preset ?? null, params: run.params ?? null,
+      last, sqlHash: run.sqlHash, version: run.version, totals,
     });
+  }
+
+  // Records a finished slot as successful. trend: 'ok' (its point exists),
+  // 'pending' (point given: kept pending first, then appended) or 'lost'.
+  recordReconciled(schedule, slotKey, trend, point = null) {
+    const report = normalizeRef(schedule.report);
+    let lost = [];
+    try {
+      const saved = this.persist.reconcileSlot(this.stateFile, schedule.id, slotKey, this.now().toISOString(),
+        { trend: trend === 'lost' ? 'lost' : 'ok', ...(point ? { pendingTrend: { slot: slotKey, point, report } } : {}) });
+      lost = saved?.lostPendingSlots ?? [];
+    } catch (err) {
+      return { trend: trend === 'ok' ? 'ok' : 'not-attempted', state: 'failed', error: persistenceError(err) };
+    }
+    // Pending points of older slots dropped by the bound, like run().
+    const withLost = r => (lost.length ? { ...r, trendLost: [...(r.trendLost ?? []), ...lost] } : r);
+    if (trend === 'ok') return withLost({ trend: 'ok', state: 'ok' });
+    if (trend === 'lost') return withLost({ trend: 'lost', state: 'ok' });
+    return withLost(this.appendPending(schedule, { slot: slotKey, point, report }));
   }
 
   // One repair; never throws. A failed repair is retried by the next run-due;
@@ -298,7 +343,7 @@ export class ScheduleRunner {
           persistence.trend = 'failed';
           persistence.error ??= persistenceError(err);
           // Kept in the state, so the next run-due appends it without SQL.
-          if (point) pendingTrend = { slot: slot.key, point };
+          if (point) pendingTrend = { slot: slot.key, point, report: normalizeRef(schedule.report) };
         }
       }
     } catch (err) {
