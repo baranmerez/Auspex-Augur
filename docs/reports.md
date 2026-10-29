@@ -309,17 +309,25 @@ but ends the command with exit code 1 and is notified in `failures` mode too
 persistence error code) is kept for older callers. Recovery never runs the
 report again:
 
-- trend write failed, state written: the point is kept in the state as
-  `pendingTrend` and the next `run-due` appends it (`repairs` in the output,
+- trend write failed, state written: the point is kept in the state under
+  `pendingTrends` (one per slot, at most 50; beyond that the oldest are
+  dropped, named in `trendLostSlots` and reported once as `trendLost`) and the
+  next `run-due` appends them in slot order (`repairs` in the output,
   `repaired: "trend"`);
 - state write failed: the next `run-due` finds the slot's trend point, or the
   approved report's saved run, which names its schedule and slot
-  (`run.schedule = { id, slot }`), and records the slot as successful
-  (`repaired: "state"`; a missing point is rebuilt from the saved result
-  while it is still the report's last result, otherwise the slot is marked
-  `trendLost`).
+  (`run.schedule = { id, slot }`), records the slot as successful with the
+  point rebuilt from the saved result pending, then appends it
+  (`repaired: "state"`); when the saved result was replaced meanwhile the
+  slot is recorded with `trendLost` and the repair reports `trend: "lost"`.
 
-Each repair writes a `schedule_repair` audit entry. A state file that cannot
+A slot with such evidence (a pending point, a trend point, a saved run) is
+never run again, even when its repair fails; the repair is retried by every
+`run-due` until it succeeds. Each repair reports the boundary that failed
+(`trend`: `ok`, `failed`, `lost` or `not-attempted`; `state`: `ok`,
+`failed` or `not-attempted`), writes a `schedule_repair` audit entry, makes
+the command exit 1 when it failed or lost a point, and is notified in
+`failures` mode (code only). A state file that cannot
 be read or is not valid scheduler state stops `run-due` and `run` before any
 SQL with `code: "STATE_UNREADABLE"`, the file name and exit code 1; the file
 is never replaced (repair or move it away; a missing file is a fresh start).
@@ -391,6 +399,6 @@ significant digits, decimal text.
 
 **State:** the last result per schedule is in
 `<home>/schedule-state.json` (status, slot, time, error code; no messages;
-`pendingTrend` while a trend point waits to be appended), which the viewer
+`pendingTrends` while trend points wait to be appended), which the viewer
 reads. The full error message is in the command output and
 the audit log.

@@ -84,12 +84,16 @@ normal result (for `remember add` the stored note with its `id`) plus
 
 with only the keys that apply. Do not repeat the call: the change is stored,
 and repeating `remember add` would add a second note. A stale graph is
-rebuilt by the next memory change, by the next graph computation on the
-server, and by the viewer's graph route before it answers (the viewer may
-rebuild `graph.json`, as it does after its own changes; it still never
-writes function records). If that rebuild fails too, the viewer serves the
-old graph with `stale: true`; the desktop app, which never writes memory
-files, adds `stale: true` while `graph.stale` exists. A failure before the
+rebuilt, under the profile lock, by the next memory change, by
+`table_knowledge`, by the notes the `query` tool looks up, and by the
+viewer's memory routes before they answer (the viewer may rebuild
+`graph.json`, as it does after its own changes; it still never writes
+function records). A profile with records but no `graph.json` (removed
+because even `graph.stale` could not be written) counts as stale too and is
+still listed. If the rebuild fails again, the viewer serves the old graph
+with `stale: true` (and lists the profile with `stale: true`); the desktop
+app, which never writes memory files, adds `stale: true` while `graph.stale`
+exists or `graph.json` is missing. A failure before the
 commit point (invalid input, the record or notes file cannot be read or
 written) still fails the call and changes nothing. Every step runs under the
 profile lock.
