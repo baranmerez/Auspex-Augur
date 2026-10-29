@@ -68,3 +68,28 @@ test('the graph route rebuilds a stale graph once and serves the stored note', a
   const notes = JSON.parse(fs.readFileSync(path.join(path.dirname(staleFile), 'notes.json'), 'utf8')).notes;
   assert.equal(notes.filter(n => n.text === 'Example rule').length, 1, 'no second note');
 });
+
+test('records without graph.json are listed and rebuilt by the viewer', async () => {
+  const dir = path.dirname(staleFile);
+  fs.rmSync(path.join(dir, 'graph.json'));
+  const summary = JSON.parse((await get('/api/memory', { 'x-auspex-token': token })).text);
+  assert.ok(summary.profiles.some(p => p.name === 'exampledb' && p.stale === undefined), 'listed after the rebuild');
+  assert.ok(fs.existsSync(path.join(dir, 'graph.json')));
+});
+
+test('a graph that cannot be rebuilt is served with stale: true', async () => {
+  const dir = path.dirname(staleFile);
+  const notesFile = path.join(dir, 'notes.json');
+  const notes = fs.readFileSync(notesFile, 'utf8');
+  fs.writeFileSync(staleFile, '{}');
+  fs.writeFileSync(notesFile, '{ broken');
+  try {
+    const res = await get('/api/memory/graph?profile=exampledb', { 'x-auspex-token': token });
+    assert.equal(res.status, 200);
+    assert.equal(JSON.parse(res.text).stale, true);
+    const summary = JSON.parse((await get('/api/memory', { 'x-auspex-token': token })).text);
+    assert.equal(summary.profiles.find(p => p.name === 'exampledb').stale, true);
+  } finally {
+    fs.writeFileSync(notesFile, notes);
+  }
+});

@@ -45,8 +45,9 @@ test('remember add: a failed graph rebuild returns the stored note with repair; 
   assert.deepEqual(graphNotes(graphFile), [], 'graph.json still has the old state');
   assert.ok(!JSON.stringify(added.repair).includes('Example observation'), 'no note text in repair');
 
-  // Self-heal on the next graph read, without repeating the add.
-  mem.graph(profile);
+  // Healed by the next server-side read (table_knowledge), without repeating the add.
+  const knowledge = mem.knowledge(profile, 'example', 'orders');
+  assert.deepEqual(knowledge.notes.map(n => n.id), [1]);
   assert.ok(!fs.existsSync(staleFile));
   assert.deepEqual(graphNotes(graphFile).map(n => n.id), [1]);
   assert.deepEqual(mem.readNotes(profile).notes.map(n => n.id), [1]);
@@ -121,9 +122,10 @@ test('describe: the record is stored and changesSinceLast returned; changelog an
   assert.equal(third.repair.graph, 'stale', 'the unreadable changelog also stops the rebuild');
   assert.match(third.repair.error.message, /^E[A-Z]+/, JSON.stringify(third.repair.error));
   assert.ok(mem.readTable(profile, 'example', 'shipments').describedAt, 'the record is stored');
-  // Once the changelog is readable again, the next graph read repairs the graph.
+  // Once the changelog is readable again, the notes of the next query
+  // (query tool -> notesForSql) repair the graph.
   fs.rmSync(changelog, { recursive: true });
-  mem.graph(profile);
+  mem.notesForSql(profile, 'select order_id from example.orders');
   assert.ok(!fs.existsSync(staleFile));
   assert.ok(JSON.parse(fs.readFileSync(path.join(mem.root, profile, 'graph.json'), 'utf8')).nodes.some(n => n.id === 'example.shipments'));
 });
@@ -136,14 +138,18 @@ test('derived result sections that cannot be computed are omitted, not thrown', 
   assert.equal(mem.readTable(profile, 'example', 'orders').usedColumns.order_id.count, 1);
 });
 
-test('when even the stale mark cannot be written, graph.json is removed so it never looks current', () => {
-  const { mem, graphFile } = setup();
+test('when even the stale mark cannot be written, graph.json is removed; a missing graph with records counts as stale', () => {
+  const { mem, graphFile, staleFile } = setup();
   failNextRebuild(mem);
-  mem.markGraphStale = function markFails(p, error) {
-    fs.rmSync(graphFile, { force: true });
-    return false;
-  };
+  fs.mkdirSync(staleFile); // the real markGraphStale cannot write its file here
   const added = mem.addNote(profile, note);
   assert.deepEqual([added.repair.graph, added.repair.marker], ['stale', 'failed']);
-  assert.ok(!fs.existsSync(graphFile));
+  assert.ok(!fs.existsSync(graphFile), 'removed so an old graph never looks current');
+  fs.rmSync(staleFile, { recursive: true });
+  assert.equal(mem.isGraphStale(profile), true, 'records without graph.json are stale');
+  // The next mutation rebuilds it.
+  mem.addNote(profile, { ...note, text: 'Second example observation' });
+  assert.ok(fs.existsSync(graphFile));
+  assert.equal(mem.isGraphStale(profile), false);
+  assert.deepEqual(graphNotes(graphFile).map(n => n.id), [1, 2]);
 });

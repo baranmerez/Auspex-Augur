@@ -574,7 +574,7 @@ tool('remember', {
 
 // The note is stored; repair (when present) says which derived step failed.
 // Retrying the same remember would add the note a second time.
-const noteResult = ({ repair, ...note }) => ({ note, ...(repair ? { repair, repairNote: 'The note is stored (see note.id); do not add it again. The viewer graph is rebuilt on the next memory change or read.' } : {}) });
+const noteResult = ({ repair, ...note }) => ({ note, ...(repair ? { repair, repairNote: 'The note is stored (see note.id); do not add it again. The derived graph is rebuilt by the next memory change, table_knowledge, or the viewer.' } : {}) });
 
 tool('score_columns', {
   title: 'Save column importance scores',
