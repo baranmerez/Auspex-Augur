@@ -99,17 +99,29 @@ fn read_json(path: &std::path::Path) -> Result<Value, String> {
 
 // graph.json is the derived view written by the memory module after every change.
 fn memory_summary() -> Value {
-    let root = memory_dir();
+    memory_summary_in(&memory_dir())
+}
+
+fn memory_summary_in(root: &std::path::Path) -> Value {
+    let root = root.to_path_buf();
     let mut profiles = Vec::new();
     for name in sub_dirs(&root).into_iter().filter(|n| valid_profile(n)) {
-        if let Ok(view) = read_json(&root.join(&name).join("graph.json")) {
+        let dir = root.join(&name);
+        if let Ok(view) = read_json(&dir.join("graph.json")) {
             let mut item = Map::new();
             item.insert("name".into(), json!(name));
             item.insert("generatedAt".into(), view.get("generatedAt").cloned().unwrap_or(Value::Null));
             if let Some(Value::Object(summary)) = view.get("summary") {
                 item.extend(summary.clone());
             }
+            if dir.join("graph.stale").exists() {
+                item.insert("stale".into(), json!(true));
+            }
             profiles.push(Value::Object(item));
+        } else if ["tables", "functions", "notes.json"].iter().any(|f| dir.join(f).exists()) {
+            // Records exist but graph.json is missing (removed after a failed
+            // rebuild): listed as stale until the memory rebuilds it.
+            profiles.push(json!({ "name": name, "generatedAt": Value::Null, "stale": true }));
         }
     }
     json!({ "memoryDir": root.to_string_lossy(), "profiles": profiles })
@@ -1262,6 +1274,17 @@ mod tests {
             assert!(!valid_memory_file(bad), "{bad}");
         }
         assert!(!valid_memory_file("functions/example/order_total.json"));
+    }
+
+    #[test]
+    fn profiles_with_records_but_no_graph_are_listed_as_stale() {
+        let root = std::env::temp_dir().join(format!("auspex-summary-stale-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("exampledb").join("tables")).unwrap();
+        fs::create_dir_all(root.join("emptyprofile")).unwrap();
+        let summary = memory_summary_in(&root);
+        assert_eq!(summary["profiles"], json!([{ "name": "exampledb", "generatedAt": null, "stale": true }]));
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

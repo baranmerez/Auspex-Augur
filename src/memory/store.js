@@ -16,9 +16,10 @@
 //   graph.json                     derived view for the viewer and desktop app;
 //                                  rebuilt after every change, safe to delete
 //   graph.stale                    marker: a change was stored but graph.json
-//                                  could not be rebuilt; the next rebuild
-//                                  (graph(), a later change, the viewer's
-//                                  graph route) repairs it and removes it
+//                                  could not be rebuilt; the next memory
+//                                  change, table_knowledge, the notes of a
+//                                  query, or the viewer's memory routes
+//                                  rebuild it and remove the marker
 //
 // Commit point: a mutation is committed once its canonical file (a table or
 // function record, notes.json; for score_columns the table record) is
@@ -430,13 +431,24 @@ export class SchemaMemory {
     return path.join(this.profileDir(profile), 'graph.stale');
   }
 
-  // True when a stored change has not reached graph.json yet.
+  // True when a stored change has not reached graph.json yet: graph.stale
+  // exists, or graph.json is missing although the profile has stored records
+  // (the marker could not be written and graph.json was removed instead).
   isGraphStale(profile) {
     try {
-      return fs.existsSync(this.checkPath(this.graphStalePath(profile)));
+      if (fs.existsSync(this.checkPath(this.graphStalePath(profile)))) return true;
+      const dir = this.profileDir(profile);
+      if (fs.existsSync(this.checkPath(path.join(dir, 'graph.json')))) return false;
+      return ['tables', 'functions', 'notes.json'].some(f => fs.existsSync(path.join(dir, f)));
     } catch {
       return false;
     }
+  }
+
+  // Server-side reads of the memory (table_knowledge, notes for a query)
+  // first rebuild a stale graph.json, under the profile lock.
+  healIfStale(profile) {
+    if (!this.rebuilding && this.isGraphStale(profile)) this.healGraph(profile);
   }
 
   // Durable stale mark. When even the marker cannot be written, graph.json is
@@ -993,6 +1005,7 @@ export class SchemaMemory {
 
   // Notes on tables named schema.table in free SQL (only tables already in memory).
   notesForSql(profile, sql) {
+    this.healIfStale(profile);
     const text = String(sql || '').toLowerCase();
     const notes = this.activeNotes(profile).filter(n => n.table);
     const touched = [];
@@ -1180,6 +1193,7 @@ export class SchemaMemory {
 
   // Everything memory knows about one table, without touching the database.
   knowledge(profile, schema, table) {
+    this.healIfStale(profile);
     const rec = this.readTable(profile, schema, table);
     if (!rec) {
       const notes = this.activeNotes(profile, [{ schema, table }]).map(n => ({ id: n.id, kind: n.kind, column: n.column, text: n.text, ...(n.evidenceCode?.length ? { evidenceCode: n.evidenceCode } : {}) }));
@@ -1232,9 +1246,6 @@ export class SchemaMemory {
   // Nodes and edges for the viewer: explored and seen tables plus unexplored
   // neighbors (known only by name, from foreign keys).
   graph(profile) {
-    // A change stored while graph.json could not be rebuilt: rebuild it now
-    // (this call computes the graph from the canonical files either way).
-    if (!this.rebuilding && this.isGraphStale(profile)) this.healGraph(profile);
     const tables = this.listTables(profile);
     const edges = this.edges(profile, tables);
     const notes = this.activeNotes(profile);

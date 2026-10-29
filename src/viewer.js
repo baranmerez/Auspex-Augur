@@ -142,14 +142,19 @@ function schemaMemory(lib) {
 // stale: true, or the error when there is none.
 function memoryGraph(params) {
   const dir = memoryProfile(params);
-  const file = path.join(dir, 'graph.json');
-  const marker = path.join(dir, 'graph.stale');
-  if (!linkBelow(path.resolve(memoryDir()), path.resolve(marker)) && fs.existsSync(marker)) {
-    const memory = schemaMemory(library());
-    if (memory.healGraph(path.basename(dir))) return readJsonFile(file);
-    if (fs.existsSync(file)) return { ...readJsonFile(file), stale: true };
-  }
-  return readJsonFile(file);
+  return healedGraph(path.basename(dir)) ?? readJsonFile(path.join(dir, 'graph.json'));
+}
+
+// graph.json of a stale profile (graph.stale, or graph.json missing while
+// records exist), rebuilt first; null when the profile is not stale. When
+// the rebuild fails: the old graph with stale: true, or the error.
+function healedGraph(name) {
+  const file = path.join(memoryDir(), name, 'graph.json');
+  const memory = schemaMemory(library());
+  if (!memory.isGraphStale(name)) return null;
+  if (memory.healGraph(name)) return readJsonFile(file);
+  if (fs.existsSync(file)) return { ...readJsonFile(file), stale: true };
+  throw new LibraryError('The schema memory graph is stale and could not be rebuilt; see the viewer output.');
 }
 
 function memoryProfile(params) {
@@ -171,9 +176,17 @@ function memorySummary() {
   const profiles = [];
   for (const name of names) {
     const file = path.join(dir, name, 'graph.json');
-    if (!fs.existsSync(file)) continue;
-    const view = readJsonFile(file);
-    profiles.push({ name, generatedAt: view.generatedAt, ...view.summary });
+    let view;
+    try {
+      view = healedGraph(name);
+    } catch {
+      // Stale and not rebuildable, without an old graph: still listed.
+      profiles.push({ name, generatedAt: null, stale: true });
+      continue;
+    }
+    if (!view && !fs.existsSync(file)) continue;
+    view ??= readJsonFile(file);
+    profiles.push({ name, generatedAt: view.generatedAt, ...view.summary, ...(view.stale ? { stale: true } : {}) });
   }
   return { memoryDir: dir, profiles };
 }
