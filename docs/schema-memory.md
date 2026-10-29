@@ -93,10 +93,18 @@ because even `graph.stale` could not be written) counts as stale too and is
 still listed. If the rebuild fails again, the viewer serves the old graph
 with `stale: true` (and lists the profile with `stale: true`); the desktop
 app, which never writes memory files, adds `stale: true` while `graph.stale`
-exists or `graph.json` is missing. A failure before the
-commit point (invalid input, the record or notes file cannot be read or
-written) still fails the call and changes nothing. Every step runs under the
-profile lock.
+exists or `graph.json` is missing. If neither `graph.stale` nor the removal
+of `graph.json` can be written, only the process that made the change knows
+the graph is stale (it rebuilds on its next read); another process (the
+viewer, the desktop app) keeps showing the old graph until any later memory
+change rebuilds it. A failure before the commit point (invalid input, a
+record or the notes file cannot be read or written) still fails the call and
+changes nothing; a change that writes several table records (`explain`,
+`run_report` plans, `relation_stats`) reads them all first, and if a write
+fails after others were written, the call fails with `DISK_ERROR` naming how
+many were written and the graph is marked stale. Removing an older copy of a
+table file after its record was written never fails a change. Every step
+runs under the profile lock.
 
 `graph.json` is `{ profile, generatedAt, summary, nodes, edges, functions,
 notes, changelog }`. Nodes and edges, with the optional fields `relation_stats` adds

@@ -287,6 +287,9 @@ export class SchemaMemory {
   constructor(root, { now = () => new Date().toISOString(), approvedJoins = () => [], scannedFilesPerRoot = maxScannedFilesPerRoot, storeUpgradedCalls = false } = {}) {
     this.scannedFilesPerRoot = scannedFilesPerRoot;
     this.storeUpgradedCalls = storeUpgradedCalls;
+    // Profiles whose graph is stale although neither graph.stale nor the
+    // removal of graph.json could be written (markGraphStale).
+    this.staleProfiles = new Set();
     this.root = path.resolve(root);
     this.now = now;
     this.approvedJoins = approvedJoins;
@@ -365,14 +368,21 @@ export class SchemaMemory {
 
   // Writing under the current file name also removes this table's record
   // under the old one, so it is not listed twice.
+  // The record is committed once written; removing the older copy is
+  // cleanup after the commit and never fails the call (stderr only; the old
+  // copy is ignored by readTable while the new one exists).
   writeTable(profile, record) {
     this.writeJson(this.tablePath(profile, record.schema, record.table), record);
-    const legacy = this.legacyTablePath(profile, record.schema, record.table);
-    if (!legacy) return;
-    const old = this.readJson(legacy, null);
-    if (old && old.schema === record.schema && old.table === record.table) {
-      fs.rmSync(legacy, { force: true });
-      this.cache.delete(legacy);
+    try {
+      const legacy = this.legacyTablePath(profile, record.schema, record.table);
+      if (!legacy) return;
+      const old = this.readJson(legacy, null, { cache: false });
+      if (old && old.schema === record.schema && old.table === record.table) {
+        fs.rmSync(legacy, { force: true });
+        this.cache.delete(legacy);
+      }
+    } catch (err) {
+      process.stderr.write(`auspex: schema memory older table file not removed: ${repairError(err).message}\n`);
     }
   }
 
@@ -435,6 +445,7 @@ export class SchemaMemory {
   // exists, or graph.json is missing although the profile has stored records
   // (the marker could not be written and graph.json was removed instead).
   isGraphStale(profile) {
+    if (this.staleProfiles.has(profile)) return true;
     try {
       if (fs.existsSync(this.checkPath(this.graphStalePath(profile)))) return true;
       const dir = this.profileDir(profile);
@@ -454,11 +465,14 @@ export class SchemaMemory {
   // Durable stale mark. When even the marker cannot be written, graph.json is
   // removed so an outdated graph never looks current. False when neither
   // worked.
+  // When neither works, this process still knows (staleProfiles) and
+  // rebuilds on its next read; another process cannot see it.
   markGraphStale(profile, error) {
     try {
       writePrivateAtomic(this.checkPath(this.graphStalePath(profile)), `${JSON.stringify({ at: this.now(), error })}\n`);
       return true;
     } catch {
+      this.staleProfiles.add(profile);
       try {
         fs.rmSync(this.checkPath(path.join(this.profileDir(profile), 'graph.json')), { force: true });
       } catch { /* reported through repair.marker */ }
@@ -593,10 +607,16 @@ export class SchemaMemory {
   // Writes each relation's record (a "seen" stub when it is new) with
   // lastSeen and used columns; update(record, rel, at) may add more before
   // the write. Does not rebuild the view.
+  // All records are read before the first write, so an unreadable record
+  // fails the call with nothing changed. A write that fails after others were
+  // written leaves a partial change: the graph is marked stale (it must not
+  // look current) and the call fails naming how many records were written.
   touchSeenUnlocked(profile, relations, update = null) {
     const at = this.now();
-    for (const rel of relations) {
-      const prev = this.readTable(profile, rel.schema, rel.table);
+    const prior = relations.map(rel => this.readTable(profile, rel.schema, rel.table));
+    let written = 0;
+    for (const [i, rel] of relations.entries()) {
+      const prev = prior[i];
       const record = prev ?? {
         schema: rel.schema, table: rel.table, kind: null, oid: null, comment: null, estimatedRows: null,
         columns: [], constraints: [], indexes: [], referencedBy: [], viewHash: null,
@@ -608,7 +628,15 @@ export class SchemaMemory {
         setOwn(record.usedColumns, col, { count: (used?.count ?? 0) + 1, lastUsed: at });
       }
       update?.(record, rel, at);
-      this.writeTable(profile, record);
+      try {
+        this.writeTable(profile, record);
+      } catch (err) {
+        if (!written) throw err;
+        const error = repairError(err);
+        if (!this.markGraphStale(profile, error)) process.stderr.write('auspex: schema memory graph could not be marked stale\n');
+        throw Object.assign(new MemoryError(`Only ${written} of ${relations.length} table records were written (${error.message}); the graph is marked stale. Repeating the call counts the used columns of the written tables again.`, 'DISK_ERROR'), { partialCommit: { written, total: relations.length } });
+      }
+      written += 1;
     }
     return at;
   }
@@ -1308,6 +1336,7 @@ export class SchemaMemory {
       this.rebuilding = false;
     }
     // graph.json is current again.
+    this.staleProfiles.delete(profile);
     try {
       fs.rmSync(this.checkPath(this.graphStalePath(profile)), { force: true });
     } catch { /* stays marked: the next read rebuilds once more */ }
