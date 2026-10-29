@@ -102,3 +102,47 @@ test('a partial multi-record change reaches the report run as memoryError with i
   assert.deepEqual(res.partialCommit, { written: 1, total: 2 });
   assert.match(res.memoryError, /Only 1 of 2/);
 });
+
+test('N4: an older copy of a table that could not be removed is not listed next to the current record', () => {
+  const m = mk();
+  const table = 'orders\u{1F600}';
+  m.recordSeen(P, [{ schema: 'example', table, columns: ['order_id'] }]);
+  const legacy = m.legacyTablePath(P, 'example', table);
+  fs.mkdirSync(path.dirname(legacy), { recursive: true });
+  const rec = m.readTable(P, 'example', table);
+  fs.writeFileSync(legacy, JSON.stringify({ ...rec, constraints: [{ name: 'fk_old', type: 'foreign key', columns: ['customer_id'], references: { schema: 'example', table: 'customers', columns: ['customer_id'] } }] }));
+  const { rmSync } = fs;
+  fs.rmSync = (f, ...a) => {
+    if (String(f) === legacy) throw Object.assign(new Error('EBUSY'), { code: 'EBUSY', syscall: 'unlink' });
+    return rmSync(f, ...a);
+  };
+  try {
+    m.recordSeen(P, [{ schema: 'example', table, columns: ['order_id'] }]);
+  } finally {
+    fs.rmSync = rmSync;
+  }
+  assert.ok(fs.existsSync(legacy), 'the older copy is still there');
+  assert.deepEqual(m.listTables(P).map(t => t.table), [table]);
+  const graph = JSON.parse(fs.readFileSync(graphFile(m), 'utf8'));
+  assert.deepEqual(graph.edges, [], 'no edge from the older copy\'s foreign key');
+});
+
+test('N5: the in-process stale fallback is shared by every instance on the same memory folder', () => {
+  const m = mk();
+  m.addNote(P, { kind: 'rule', schema: 'example', table: 'orders', text: 'note' });
+  const other = new SchemaMemory(m.root);
+  m.staleProfiles.add(P);
+  assert.equal(other.isGraphStale(P), true);
+  other.knowledge(P, 'example', 'orders');
+  assert.equal(m.isGraphStale(P), false, 'cleared for all instances by the rebuild');
+  assert.equal(new SchemaMemory(fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-mem-review-other-'))).staleProfiles.has(P), false, 'per memory folder');
+});
+
+test('N6: run_report audit fields carry the memory error code and partial-commit counts, never text', async () => {
+  const { memoryAudit } = await import('../src/memory/repairAudit.js');
+  const fields = memoryAudit({ memoryError: 'Only 1 of 2 table records were written', memoryErrorCode: 'DISK_ERROR', partialCommit: { written: 1, total: 2 }, memoryRepair: { graph: 'stale', error: { code: 'DISK_ERROR', message: 'EACCES (open)' } } });
+  assert.deepEqual(fields, { repair: { graph: 'stale' }, repairErrorCode: 'DISK_ERROR', memoryErrorCode: 'DISK_ERROR', partialCommit: { written: 1, total: 2 } });
+  assert.deepEqual(memoryAudit({ stage: 'approved' }), {});
+  const index = fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
+  assert.match(index, /sqlHash: r\.sqlHash, \.\.\.memoryAudit\(r\)/, 'the run_report audit projection uses it');
+});

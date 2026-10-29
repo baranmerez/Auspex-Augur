@@ -95,7 +95,8 @@ with `stale: true` (and lists the profile with `stale: true`); the desktop
 app, which never writes memory files, adds `stale: true` while `graph.stale`
 exists or `graph.json` is missing. If neither `graph.stale` nor the removal
 of `graph.json` can be written, only the process that made the change knows
-the graph is stale (it rebuilds on its next read); another process (the
+the graph is stale (every memory instance on that folder in the process
+rebuilds on its next read); another process (the
 viewer, the desktop app) keeps showing the old graph until any later memory
 change rebuilds it. A failure before the commit point (invalid input, a
 record or the notes file cannot be read or written) still fails the call and
@@ -107,7 +108,10 @@ returns `memoryError` with `memoryErrorCode: "DISK_ERROR"` and
 `partialCommit: { written, total }`; the audit log gets a `memory_repair`
 entry with the same code and counts. Repeating the call counts the used
 columns of the written tables again. Removing an older copy of a
-table file after its record was written never fails a change. Every step
+table file after its record was written never fails a change; an older copy
+that is still there is ignored while the current record exists (also in the
+graph). The `run_report` audit entry carries `memoryErrorCode` and
+`partialCommit` like the tools. Every step
 runs under the profile lock.
 
 `graph.json` is `{ profile, generatedAt, summary, nodes, edges, functions,
