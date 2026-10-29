@@ -338,6 +338,15 @@ report again:
   written). A legacy pending point whose report history cannot be read is
   kept (`trend: "unknown"`) and retried, not dropped.
 
+`lastSuccessSlot` only moves forward, and a slot at or before it never
+runs (for example after the schedule time was moved earlier the same day).
+While an older slot's state cannot be recorded, the newer due slot waits
+until that repair succeeds. Repair errors carry the error code and the
+errno, or a fixed text such as "a local file is not valid JSON"; never the
+error message, which could quote a file. The `schedule_run` audit entry
+also carries `memoryErrorCode` and `partialCommit` (counts only) when the
+run's schema-memory step failed.
+
 A slot with such evidence (a pending point, a trend point, a saved run) is
 never run again, even when its repair fails; the repair is retried by every
 `run-due` until it succeeds. Each repair reports the boundary that failed

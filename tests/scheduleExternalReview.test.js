@@ -193,21 +193,22 @@ test('F1 follow-up: an unreadable trend file with readable metadata and no saved
   assert.equal(explains, 1);
 });
 
-test('lasting state-write failures send one summary notification per schedule with the slot count and range', async () => {
+test('several failing repairs of one schedule send one summary notification with the slot count and range', async () => {
   fs.writeFileSync(path.join(home, 'schedules.json'), JSON.stringify({ notify: 'failures', schedules: daily() }));
   const sent = [];
-  const run = now => main(['run-due'], env, { db: makeDb(), notifyFn: async m => { sent.push(m); return 'log'; }, now: () => now, persist: { recordResult: () => { throw eacces(); }, reconcileSlot: () => { throw eacces(); } } });
-  await run(d1);
-  await run(d2);
+  const run = (now, persist) => main(['run-due'], env, { db: makeDb(), notifyFn: async m => { sent.push(m); return 'log'; }, now: () => now, persist });
+  const fail = () => { throw eacces(); };
+  await run(d1, { appendTrend: fail }); // slot 1: point pending, state written
+  await run(d2, { appendTrend: fail, recordResult: fail }); // slot 2: point and state both fail
   sent.length = 0;
-  const r = await run(new Date(2026, 9, 14, 9, 0));
-  assert.deepEqual(r.out.repairs.map(x => [x.slot, x.persistence.state]), [[slot1, 'failed'], [slot2, 'failed']], 'per-slot details stay in the output');
-  const summaries = sent.filter(n => n.repairSlots);
-  assert.equal(summaries.length, 1);
-  assert.deepEqual(summaries[0].repairSlots, { count: 2, from: slot1, to: slot2 });
+  const r = await run(new Date(2026, 9, 14, 9, 0), { appendTrend: fail, reconcileSlot: fail });
+  assert.deepEqual(r.out.repairs.map(x => [x.slot, x.repaired]), [[slot1, 'trend'], [slot2, 'state']], 'per-slot details stay in the output');
+  assert.equal(r.out.ran, 0, 'the newest slot waits for the unrecorded older one');
+  assert.equal(sent.length, 1, 'one notification for the schedule');
+  assert.deepEqual(sent[0].repairSlots, { count: 2, from: slot1, to: slot2 });
   const { notificationText } = await import('../src/schedule/notify.js');
-  assert.match(notificationText(summaries[0]).text, /\(2 slots, 2026-10-12T08:00 to 2026-10-13T08:00\)$/);
-  assert.equal(sent.length, 2, 'the summary and the new slot\'s own run');
+  assert.match(notificationText(sent[0]).text, /\(2 slots, 2026-10-12T08:00 to 2026-10-13T08:00\)$/);
+  assert.equal(explains, 2);
 });
 
 test('a legacy pending point whose report history cannot be read now is kept and replayed later, not lost', async () => {
@@ -236,4 +237,66 @@ test('a legacy pending point whose report history cannot be read now is kept and
   assert.equal(next.status, 0);
   assert.equal(points(refA).length, 1);
   assert.equal(explains, 1);
+});
+
+const at = (day, hour, minute = 0) => new Date(2026, 9, day, hour, minute);
+const lastSuccess = () => readState(stateFile()).schedules['example-daily']?.lastSuccessSlot;
+
+test('N1: a slot at or before the last success never runs again, and lastSuccessSlot only moves forward', async () => {
+  writeSchedules(daily(refA).map(s => ({ ...s, cadence: { daily: true, at: '08:00' } })));
+  await runDue(at(12, 8, 30));
+  writeSchedules(daily(refA).map(s => ({ ...s, cadence: { daily: true, at: '09:00' } })));
+  await runDue(at(12, 9, 30));
+  assert.equal(lastSuccess(), '2026-10-12T09:00');
+  writeSchedules(daily(refA).map(s => ({ ...s, cadence: { daily: true, at: '08:00' } })));
+  const r = await runDue(at(12, 9, 45));
+  assert.equal(r.out.ran, 0, 'the 08:00 slot is before the last success');
+  assert.equal(lastSuccess(), '2026-10-12T09:00');
+  assert.equal(explains, 2);
+  const { recordResult } = await import('../src/schedule/store.js');
+  recordResult(stateFile(), 'example-daily', { status: 'ok', slot: '2026-10-11T08:00', at: 'x' });
+  assert.equal(lastSuccess(), '2026-10-12T09:00', 'an older result does not move it back');
+});
+
+test('N2: while an older slot cannot be recorded, the newer due slot waits; no SQL for it until the repair succeeds', async () => {
+  const store = await import('../src/schedule/store.js');
+  await runDue(at(12, 9), { appendTrend: () => { throw eacces(); }, recordResult: () => { throw eacces(); } });
+  let fail = 1;
+  const r = await runDue(at(13, 9), { reconcileSlot: (...a) => { if (fail-- > 0) throw eacces(); return store.reconcileSlot(...a); } });
+  assert.deepEqual(r.out.repairs.map(x => [x.slot, x.persistence.state]), [[slot1, 'failed']]);
+  assert.equal(r.out.ran, 0, 'the 13th waits');
+  assert.equal(explains, 1);
+  const next = await runDue(at(13, 10));
+  assert.equal(next.out.ran, 1);
+  assert.deepEqual(points(refA).map(p => p.slot), [slot1, slot2]);
+  assert.equal(lastSuccess(), slot2);
+  assert.equal(explains, 2);
+});
+
+test('N3: repair errors never copy file content into the result', async () => {
+  const lib = library();
+  fs.writeFileSync(lib.paths('approved', refA).meta, 'PRIVATE_RECORD customer_id=42 secret');
+  const r = await runDue(at(12, 9));
+  const text = JSON.stringify(r.out);
+  assert.ok(!text.includes('PRIVATE_RECORD') && !text.includes('customer_id=42'), text);
+  assert.deepEqual(r.out.repairs.map(x => x.persistence.error), [{ code: 'INTERNAL', message: 'a local file is not valid JSON' }]);
+});
+
+test('N3: a legacy pending point with unreadable report metadata reports a fixed text', async () => {
+  fs.writeFileSync(stateFile(), JSON.stringify({ schedules: { 'example-daily': { lastSuccessSlot: slot1, pendingTrend: { slot: slot1, point: { v: 1, scheduleId: 'example-daily', slot: slot1, sqlHash: 'x' } } } } }));
+  fs.writeFileSync(library().paths('approved', refA).meta, '"PRIVATE_RECORD customer_id=42" trailing');
+  const r = await runDue(at(12, 9));
+  assert.ok(!JSON.stringify(r.out).includes('PRIVATE_RECORD'));
+  assert.deepEqual(r.out.repairs.map(x => [x.repaired, x.persistence.error.message]), [['trend', 'a local file is not valid JSON']]);
+});
+
+test('N6: a failed schema-memory step of a scheduled run is in its schedule_run audit entry (code only)', async () => {
+  fs.mkdirSync(path.join(home, 'memory'), { recursive: true });
+  fs.writeFileSync(path.join(home, 'memory', 'local'), 'not a folder'); // the memory step of the run fails
+  const entries = [];
+  const r = await main(['run-due'], env, { db: makeDb(), notifyFn: async () => 'log', now: () => d1, audit: e => entries.push(e) });
+  assert.equal(r.out.results[0].status, 'ok', 'the report run itself stands');
+  const run = entries.find(e => e.tool === 'schedule_run');
+  assert.match(String(run.memoryErrorCode), /^[A-Z_]+$/);
+  assert.equal(run.partialCommit, undefined);
 });

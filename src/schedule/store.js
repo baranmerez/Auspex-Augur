@@ -103,7 +103,8 @@ export function recordResult(file, id, result, { pendingTrend = null } = {}) {
   let lost = [];
   const entry = updateEntry(file, id, result.at, own => {
     const next = withHistory(own, result);
-    if (result.status === 'ok' && result.slot) next.lastSuccessSlot = result.slot;
+    // Only forward: slot keys compare in time order.
+    if (result.status === 'ok' && result.slot && (!own.lastSuccessSlot || result.slot > own.lastSuccessSlot)) next.lastSuccessSlot = result.slot;
     if (pendingTrend) lost = addPending(next, pendingTrend);
     return next;
   });
