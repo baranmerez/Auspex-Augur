@@ -228,3 +228,37 @@ test('center columns: PK, FK, referenced, used and noted columns are tagged', ()
   assert.ok(bare.cols.some(x => x.name === 'customer_id') && bare.cols.every(x => x.type === ''));
   assert.ok(bare.cols.some(x => x.name === 'id'), 'referenced by its dependents');
 });
+
+// ----- Profiles: the read-only role check evidence (role-check block) -----
+const roleCheckBlock = page.match(/\/\/ role-check:start[\s\S]*?\/\/ role-check:end/)?.[0];
+function loadRoleCheck() {
+  assert.ok(roleCheckBlock, 'role-check block found in viewer.html');
+  const context = vm.createContext({ t: (en, vars = {}) => en.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? '') });
+  vm.runInContext(`${roleCheckBlock}\nthis.latestRoleChecks = latestRoleChecks; this.roleCheckText = roleCheckText;`, context);
+  return context;
+}
+
+test('role checks: the newest check per profile wins, so a later failure is not hidden by an older success', () => {
+  const { latestRoleChecks, roleCheckText } = loadRoleCheck();
+  const rows = [
+    { tool: 'role_check', profile: 'exampledb', ts: '2026-10-30T08:00:00Z', roleStatus: 'ok' },
+    { tool: 'check_profile', profile: 'exampledb', ts: '2026-10-30T09:00:00Z', error: 'no connection', errorCode: 'CONNECTION_FAILED' },
+    { tool: 'check_profile', profile: 'exampledb', ts: '2026-10-30T10:00:00Z' },
+    { tool: 'query', profile: 'exampledb', ts: '2026-10-30T11:00:00Z', error: 'x' },
+    { tool: 'role_check', profile: 'test', ts: '2026-10-29T08:00:00Z', roleStatus: 'blocked', blocking: ['INSERT on example.orders'] },
+    { tool: 'role_check', profile: 'test', ts: '2026-10-28T08:00:00Z', roleStatus: 'ok' },
+  ];
+  const m = latestRoleChecks(rows);
+  assert.equal(m.get('exampledb').ts, '2026-10-30T09:00:00Z', 'the failed check after the success; a passing check_profile and other tools do not count');
+  assert.equal(roleCheckText(m.get('exampledb')), 'unable to assess (CONNECTION_FAILED)');
+  assert.equal(roleCheckText(m.get('test')), 'BLOCKED: INSERT on example.orders');
+  assert.equal(roleCheckText(undefined), 'no check in this range');
+  assert.equal(latestRoleChecks('junk').size, 0);
+});
+
+test('profiles page: role evidence comes from the time range only and shows the check time', () => {
+  assert.match(page, /const roleChecks = latestRoleChecks\(state\.all\);/, 'not the Operations-filtered rows');
+  assert.doesNotMatch(page, /for \(const e of rows\) if \(\(e\.tool === 'role_check'/);
+  assert.match(page, /t\('last check in this range: \{d\}', \{ d: rc\.ts \? dateTimeOf\(rc\.ts\) : '\?' \}\)/);
+  assert.match(page, /'last check in this range: \{d\}': 'bu aralıktaki son kontrol: \{d\}'/);
+});
