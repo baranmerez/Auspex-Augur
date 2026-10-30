@@ -341,7 +341,9 @@ report again:
 `lastSuccessSlot` only moves forward, and a slot at or before it never
 runs (for example after the schedule time was moved earlier the same day).
 While an older slot's state cannot be recorded, the newer due slot waits
-until that repair succeeds. Repair errors carry the error code and the
+until that repair succeeds, and so do later saved slots: the repairs stop at
+the first slot whose state cannot be recorded and continue in slot order on
+the next `run-due`. Repair errors carry the error code and the
 errno, or a fixed text such as "a local file is not valid JSON"; never the
 error message, which could quote a file. The `schedule_run` audit entry
 also carries `memoryErrorCode` and `partialCommit` (counts only) when the
