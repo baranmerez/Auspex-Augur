@@ -41,15 +41,23 @@ Opens a local page at http://127.0.0.1:4719 (port: `AUSPEX_VIEWER_PORT`):
   - **Summary** (right): for a table, its estimated rows and column count, its important columns (score 4–5, or the first columns when the table is not scored) with PK/FK marks and their score, and its linked tables. Every name opens the table page. For *Database-wide*, the latest notes and the tables with the most notes, each opening that table's notes.
 
   Under 1280px the summary moves below the notes; under 900px everything stacks. Each note shows rules, observations and inferences with table and column, text, status, confirmed or unconfirmed, created/confirmed/archived dates, and the evidence (figures, SQL and code references) behind a collapsed *Evidence* toggle; a note with code references carries a *from code* badge (TR *koddan*) under its kind. Filters: status (active by default, archived, all), kind, table (part of `schema.table`) and text (case-insensitive, Turkish İ/I/ı/i match each other). An active note can be archived with a required reason (see below); adding or confirming notes stays an agent action (`remember`). The table header and the column sub-header of each group are links: a table opens its table page, a column opens its row in the Detailed view.
-- **Profiles** — configured databases with connection details (never passwords) and the latest role check; a `check_profile` that failed shows "unable to assess" with its code, never as a passed check
+- **Profiles** — configured databases with connection details (never passwords) and the latest role check in the chosen time range with the time it ran (*last check in this range*); a `check_profile` that failed shows "unable to assess" with its code, never as a passed check, and the newest check wins whatever its outcome, so a later failure is not hidden by an older success. The Operations filters (source, tool, status, text) are hidden on Profiles and never apply to the role check
+- **Stale schema memory** — when a change was stored but the memory graph could not be rebuilt (`graph.stale`), Schema, Views, Functions and Rules show a banner above the tab: the graph may be out of date; the browser viewer rebuilds it when you refresh (*Refresh*), the desktop app only shows the state (the next memory change or agent read rebuilds it). A graph that could not be read is shown as an error with *Retry*, which reads that database's graph again (the Refresh button does too; the 5 s live refresh does not repeat a failed read); a stale graph that could not be rebuilt and has no earlier version is explained instead of showing the raw message
 
 Scheduled reports (see Scheduled runs): an approved report with a schedule
-carries a badge in the Reports list with its last scheduled result
-(*scheduled: ok*, *unreachable* or *failed*; the worst one when it has several
-schedules). Its header lists each schedule (cadence, preset, last result with
-its error code, next slot), and above the report a small trend chart shows the
+carries a badge in the Reports list with its last scheduled result, the worst
+one when it has several schedules: *failed* (red); then, in amber, *state
+unreadable* (the scheduler state file cannot be read, so the last result is
+unknown), *ran, saving failed* (the run finished but its trend point or the
+state could not be saved), *ran, trend point lost*, *unreachable* and *ran,
+repair pending* (a trend point waits to be saved by the next scheduled run);
+*ok* (green). Its header lists each schedule (cadence, preset, last result with
+its error or saving code, next slot, and how many trend points wait or were
+lost, with their slots), and above the report a small trend chart shows the
 row count and up to four column totals per scheduled run (one line each with
-its own scale; hover a point for its slot and value). The viewer reads
+its own scale; hover a point for its slot and value). When points were lost or
+wait to be saved the chart says so instead of "no trend points yet". Only
+codes, counts and slot keys come from the state file, never messages. The viewer reads
 `schedules.json`, `schedule-state.json` and the trend files through GET routes
 only (`/api/reports` and `/api/reports/trend`, which leaves out parameter
 values); a broken schedule file is shown above the list. The desktop app does
@@ -146,6 +154,11 @@ page itself and the vendored scripts need no token.
 On the *Reports* tab a draft has an **Approve** (TR *Onayla*) button and an
 approved report a **Revoke approval** (TR *Onayı geri al*) button. Each opens a
 confirm dialog with the report name, SQL version, last run, rows and warnings.
+The dialog stays open while the change runs; a refusal stays in it as an alert
+(not a passing message) and can be tried again by hand. When the outcome is
+unknown (the desktop command timed out) or the report changed meanwhile, the
+dialog says so, offers no second try and the list is read again; a change is
+never retried automatically.
 Approval moves the draft into `SELECT/` exactly like `approve_report` (it still
 needs a successful run of the current SQL); revoking moves it back into
 `_drafts/`, keeps its SQL versions and runs, and is refused while another
@@ -200,7 +213,8 @@ buttons (see below).
 
 On the *Rules* tab an active note has an **Archive** (TR *Arşivle*) button. It
 opens a confirm dialog with the note and a required reason (one line, at most
-200 characters). Archiving runs the same store logic as `remember
+200 characters). The dialog stays open while the note is archived; a refusal
+stays in it as an alert with the typed reason kept. Archiving runs the same store logic as `remember
 action=archive`, under the profile's memory lock, keeps the note with its
 reason, `archivedAt` and `status: archived` (notes are never deleted) and
 rebuilds the schema memory view. Restoring an archived note is not offered.
