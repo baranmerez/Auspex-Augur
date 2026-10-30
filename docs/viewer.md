@@ -46,12 +46,14 @@ Opens a local page at http://127.0.0.1:4719 (port: `AUSPEX_VIEWER_PORT`):
 
 Scheduled reports (see Scheduled runs): an approved report with a schedule
 carries a badge in the Reports list with its last scheduled result, the worst
-one when it has several schedules: *failed* (red); then, in amber, *state
-unreadable* (the scheduler state file cannot be read, so the last result is
-unknown), *ran, saving failed* (the run finished but its trend point or the
-state could not be saved), *ran, trend point lost*, *unreachable* and *ran,
-repair pending* (a trend point waits to be saved by the next scheduled run);
-*ok* (green). Its header lists each schedule (cadence, preset, last result with
+one when it has several schedules. The badge speaks for the latest slot only:
+*failed* (red); then, in amber, *state unreadable* (the scheduler state file
+cannot be read, so the last result is unknown), *ran, saving failed* (the run
+finished but its trend point could not be saved and still waits),
+*ran, trend point lost*, *unreachable* and *ran, repair pending* (its trend
+point waits to be saved by the next scheduled run); *ok* (green). Older lost
+points and saving errors that the next run already repaired stay in the
+schedule line and the chart note, not the badge. Its header lists each schedule (cadence, preset, last result with
 its error or saving code, next slot, and how many trend points wait or were
 lost, with their slots), and above the report a small trend chart shows the
 row count and up to four column totals per scheduled run (one line each with
@@ -154,7 +156,8 @@ page itself and the vendored scripts need no token.
 On the *Reports* tab a draft has an **Approve** (TR *Onayla*) button and an
 approved report a **Revoke approval** (TR *Onayı geri al*) button. Each opens a
 confirm dialog with the report name, SQL version, last run, rows and warnings.
-The dialog stays open while the change runs; a refusal stays in it as an alert
+The dialog stays open while the change runs (a dialog closed meanwhile opens
+again when the result is a failure); a refusal stays in it as an alert
 (not a passing message) and can be tried again by hand. When the outcome is
 unknown (the desktop command timed out) or the report changed meanwhile, the
 dialog says so, offers no second try and the list is read again; a change is
