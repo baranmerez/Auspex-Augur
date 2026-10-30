@@ -26,7 +26,7 @@ function load() {
     t: (en, vars = {}) => en.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? ''),
     fmt: n => (n === null || n === undefined ? '–' : String(n)),
   });
-  vm.runInContext(`${block}\nthis.api = { scheduleBadge, scheduleLines, trendSeries, trendChart };`, context);
+  vm.runInContext(`${block}\nthis.api = { scheduleBadge, scheduleLines, trendSeries, trendChart, scheduleKind, scheduleTrendInfo };`, context);
   return context.api;
 }
 const api = load();
@@ -41,6 +41,48 @@ test('the list badge shows the worst last result of a report\'s schedules', () =
   assert.equal(api.scheduleBadge([{ last: { status: '<img src=x onerror=alert(1)>' } }]).cls, 'sched-none', 'an unknown status is not used as a class');
   const [line] = api.scheduleLines([{ id: 'weekly-example', cadence: 'weekly monday 08:00', preset: 'last_7_days', next: '2026-10-19T08:00', last: { status: 'failed', errorCode: 'DATABASE_ERROR', slot: '2026-10-12T08:00' } }]);
   assert.equal(line.last, 'scheduled: failed (DATABASE_ERROR) · 2026-10-12T08:00');
+});
+
+test('saving problems are told apart from plain ok and failed, worst first, in the amber or red badge colours', () => {
+  const ok = { last: { status: 'ok', slot: '2026-10-12T08:00' } };
+  const saveFailed = { last: { status: 'ok', slot: '2026-10-12T08:00', persistenceError: 'STATE_WRITE_FAILED' } };
+  const pending = { last: { status: 'ok', slot: '2026-10-12T08:00' }, pendingTrends: 2, pendingSlots: ['2026-10-05T08:00', '2026-10-12T08:00'] };
+  const lost = { last: { status: 'ok', slot: '2026-10-19T08:00' }, trendLostSlots: ['2026-10-05T08:00'] };
+  const lostNow = { last: { status: 'ok', slot: '2026-10-19T08:00', trendLost: true } };
+  const unreadable = { last: null, stateUnreadable: true };
+  assert.equal(api.scheduleKind(ok), 'ok');
+  assert.equal(api.scheduleKind(saveFailed), 'save-failed');
+  assert.equal(api.scheduleKind({ last: { status: 'ok', persistenceError: 'TREND_LOST' } }), 'trend-lost');
+  assert.equal(api.scheduleKind(pending), 'repair-pending');
+  assert.equal(api.scheduleKind(lost), 'trend-lost');
+  assert.equal(api.scheduleKind(lostNow), 'trend-lost');
+  assert.equal(api.scheduleKind(unreadable), 'unreadable');
+  assert.equal(api.scheduleKind({ last: { status: 'ok', persistenceError: '<b>x</b>' } }), 'ok', 'only an upper-case code counts');
+  const badge = list => { const b = api.scheduleBadge(list); return [b.cls, b.label]; };
+  assert.deepEqual(badge([saveFailed]), ['sched-skipped', 'scheduled: ran, saving failed']);
+  assert.deepEqual(badge([pending]), ['sched-skipped', 'scheduled: ran, repair pending']);
+  assert.deepEqual(badge([lost]), ['sched-skipped', 'scheduled: ran, trend point lost']);
+  assert.deepEqual(badge([unreadable]), ['sched-skipped', 'scheduled: state unreadable']);
+  assert.deepEqual(badge([ok, pending, saveFailed]), ['sched-skipped', 'scheduled: ran, saving failed'], 'worst of the report\'s schedules');
+  assert.deepEqual(badge([saveFailed, { last: { status: 'failed' } }]), ['sched-failed', 'scheduled: failed']);
+  assert.deepEqual(badge([unreadable, { last: { status: 'skipped-unreachable' } }]), ['sched-skipped', 'scheduled: state unreadable']);
+  const [l1, l2, l3, l4] = api.scheduleLines([saveFailed, pending, { ...lost, trendLostSlots: ['2026-09-07T08:00', '2026-09-14T08:00', '2026-09-21T08:00', '2026-09-28T08:00'] }, unreadable]);
+  assert.equal(l1.last, 'scheduled: ran, saving failed (STATE_WRITE_FAILED) · 2026-10-12T08:00');
+  assert.deepEqual(JSON.parse(JSON.stringify(l2.notes)), ['2 trend points wait to be saved by the next scheduled run']);
+  assert.deepEqual(JSON.parse(JSON.stringify(l3.notes)), ['4 trend points lost (2026-09-07T08:00, 2026-09-14T08:00, 2026-09-21T08:00 +1)']);
+  assert.equal(l4.last, 'scheduler state unreadable: last result unknown', 'not "no scheduled run yet"');
+  assert.equal(api.scheduleLines([{ last: null }])[0].last, 'no scheduled run yet');
+});
+
+test('the trend note says points were lost or wait to be saved instead of "none yet"', () => {
+  const info = api.scheduleTrendInfo([{ last: { status: 'ok', slot: 'b', trendLost: true }, trendLostSlots: ['a'] }, { pendingTrends: 1 }]);
+  assert.deepEqual(JSON.parse(JSON.stringify(info)), { lost: ['a', 'b'], pending: 1 });
+  const empty = JSON.stringify(api.trendChart([], info));
+  assert.doesNotMatch(empty, /No trend points yet/);
+  assert.match(empty, /2 trend points were lost before they could be saved \(a, b\)/);
+  assert.match(empty, /1 trend point waits to be saved; the next scheduled run saves it/);
+  assert.match(JSON.stringify(api.trendChart([{ slot: 'c', rows: 1 }], { lost: ['a'], pending: 0 })), /1 trend point was lost before it could be saved \(a\)/, 'also below a chart');
+  assert.match(JSON.stringify(api.trendChart([], { lost: [], pending: 0 })), /No trend points yet/);
 });
 
 const points = [
@@ -131,6 +173,7 @@ test('/api/reports carries the schedule and last result of approved reports', as
   assert.equal(r.schedules[0].cadence, 'weekly monday 08:00');
   assert.deepEqual(r.schedules[0].last, { status: 'skipped-unreachable', slot: '2026-10-12T08:00', at: '2026-10-12T06:00:00.000Z', errorCode: 'CONNECTION_FAILED' });
   assert.match(r.schedules[0].next, /^\d{4}-\d{2}-\d{2}T08:00$/);
+  for (const k of ['pendingTrends', 'pendingSlots', 'trendLostSlots', 'stateUnreadable']) assert.equal(Object.hasOwn(r.schedules[0], k), false, `${k} only when there is something to say`);
 });
 
 test('the trend route returns aggregates without parameters and validates the report path', async () => {
@@ -163,4 +206,42 @@ test('day counts follow a log file that grows (cached by size and modification t
   assert.equal(await count(), 2, 'unchanged file, same count');
   fs.appendFileSync(file, entry);
   assert.equal(await count(), 3, 'a grown file is counted again');
+});
+
+test('scheduleIndex passes saving problems on as codes, counts and slot keys, and flags an unreadable state without writing', async () => {
+  const { scheduleIndex, scheduleKey } = await import('../src/schedule/viewerData.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-sched-index-'));
+  try {
+    const env = { AUSPEX_HOME: dir };
+    fs.writeFileSync(path.join(dir, 'schedules.json'), JSON.stringify({ schedules: [
+      { id: 'a', profile: 'exampledb', report: ref, preset: 'last_7_days', cadence: { weekly: 'monday', at: '08:00' } },
+      { id: 'b', profile: 'exampledb', report: ref, preset: 'last_7_days', cadence: { weekly: 'monday', at: '09:00' } }] }));
+    const stateFile = path.join(dir, 'schedule-state.json');
+    fs.writeFileSync(stateFile, JSON.stringify({ schedules: {
+      a: { last: { status: 'ok', slot: '2026-10-12T08:00', at: 'x', persistenceError: 'STATE_WRITE_FAILED', message: 'C:\\secret\\file is locked' },
+        pendingTrends: [{ slot: '2026-10-05T08:00', point: { rows: 1 } }, { slot: '2026-10-12T08:00', point: { rows: 2 } }], trendLostSlots: ['2026-09-28T08:00', '<script>'] },
+      b: { last: { status: 'ok', slot: '2026-10-12T09:00', at: 'y', trendLost: true, persistenceError: 'not a code' } } } }));
+    const [a, b] = scheduleIndex({ env }).byReport.get(scheduleKey(ref));
+    assert.deepEqual(a.last, { status: 'ok', slot: '2026-10-12T08:00', at: 'x', persistenceError: 'STATE_WRITE_FAILED' });
+    assert.equal(a.pendingTrends, 2);
+    assert.deepEqual(a.pendingSlots, ['2026-10-05T08:00', '2026-10-12T08:00']);
+    assert.deepEqual(a.trendLostSlots, ['2026-09-28T08:00'], 'only slot keys');
+    assert.equal(a.stateUnreadable, undefined);
+    assert.deepEqual(b.last, { status: 'ok', slot: '2026-10-12T09:00', at: 'y', trendLost: true });
+    assert.ok(!JSON.stringify([a, b]).includes('secret'), 'no messages or file paths');
+    // A state file that cannot be read strictly: no last result, flagged, left as it is.
+    const broken = '{"schedules": {"a": "not an object"}}';
+    fs.writeFileSync(stateFile, broken);
+    const before = fs.statSync(stateFile).mtimeMs;
+    const [ua] = scheduleIndex({ env }).byReport.get(scheduleKey(ref));
+    assert.equal(ua.stateUnreadable, true);
+    assert.equal(ua.last, null);
+    fs.writeFileSync(stateFile, '{ not json');
+    assert.equal(scheduleIndex({ env }).byReport.get(scheduleKey(ref))[0].stateUnreadable, true);
+    assert.equal(fs.readFileSync(stateFile, 'utf8'), '{ not json', 'never written');
+    assert.ok(fs.statSync(stateFile).mtimeMs >= before);
+    assert.deepEqual(fs.readdirSync(dir).sort(), ['schedule-state.json', 'schedules.json'], 'no lock or temp files left');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
