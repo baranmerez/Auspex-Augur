@@ -300,3 +300,37 @@ test('N6: a failed schema-memory step of a scheduled run is in its schedule_run 
   assert.match(String(run.memoryErrorCode), /^[A-Z_]+$/);
   assert.equal(run.partialCommit, undefined);
 });
+
+test('R2: an earlier slot whose state repair keeps failing stops the backlog; later slots wait, then all repair in order', async () => {
+  const store = await import('../src/schedule/store.js');
+  const fail = () => { throw eacces(); };
+  // Oct 12 and Oct 13 ran (Oct 13 by an earlier build that did not hold it
+  // back), their points and state were not written: the Oct 13 run is added
+  // to the saved runs as such a build left it.
+  await runDue(at(12, 9), { appendTrend: fail, recordResult: fail });
+  const lib = library();
+  const meta = lib.readMeta('approved', refA);
+  const oct13At = '2026-10-13T07:00:00.000Z';
+  meta.runs.push({ ...meta.runs.at(-1), at: oct13At, schedule: { id: 'example-daily', slot: slot2 } });
+  meta.last = { ...meta.last, at: oct13At };
+  lib.writeMeta('approved', refA, meta);
+  assert.equal(explains, 1);
+  // Oct 14: the Oct 12 state repair keeps failing.
+  const failOct12 = (...a) => (a[2] === slot1 ? fail() : store.reconcileSlot(...a));
+  const blocked = await runDue(at(14, 9), { reconcileSlot: failOct12 });
+  assert.deepEqual(blocked.out.repairs.map(x => [x.slot, x.persistence.state]), [[slot1, 'failed']], 'Oct 13 is not committed in this run');
+  assert.equal(blocked.out.ran, 0, 'Oct 14 is held');
+  assert.equal(lastSuccess(), undefined);
+  const again = await runDue(at(14, 10), { reconcileSlot: failOct12 });
+  assert.deepEqual(again.out.repairs.map(x => x.slot), [slot1], 'Oct 12 stays eligible');
+  assert.equal(again.out.ran, 0);
+  assert.equal(explains, 1, 'no SQL while blocked');
+  // Recovery: Oct 12 (its saved result was replaced by Oct 13's: lost), then
+  // Oct 13, then Oct 14 runs once.
+  const recovered = await runDue(at(14, 11));
+  assert.deepEqual(recovered.out.repairs.map(x => [x.slot, x.persistence.trend, x.persistence.state]), [[slot1, 'lost', 'ok'], [slot2, 'ok', 'ok']]);
+  assert.deepEqual(recovered.out.results.map(x => x.slot), ['2026-10-14T08:00']);
+  assert.deepEqual(points(refA).map(p => p.slot), [slot2, '2026-10-14T08:00']);
+  assert.equal(lastSuccess(), '2026-10-14T08:00');
+  assert.equal(explains, 2);
+});

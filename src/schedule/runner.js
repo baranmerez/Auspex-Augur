@@ -199,7 +199,8 @@ export class ScheduleRunner {
     return target ? { trend: 'ok', state: 'ok' } : { trend: 'lost', state: 'ok', trendLost: [p.slot] };
   }
 
-  // Repairs of finished slots after lastSuccessSlot (see reconcile).
+  // Repairs of finished slots after lastSuccessSlot (see reconcile), oldest
+  // first, up to the first one whose state cannot be recorded.
   reconcileFromSaved(schedule, label, own, dueSlot, pendingSlots) {
     const after = own?.lastSuccessSlot ?? '';
     let meta = null;
@@ -238,6 +239,10 @@ export class ScheduleRunner {
         // cannot be read.
         out.push(this.repairStep(schedule, label, slotKey, 'state', () => ({ trend: 'unknown', state: 'unknown', error: persistenceError(metaError ?? trendError) })));
       }
+      // A slot whose state could not be recorded stops the backlog: a later
+      // slot recorded now would move lastSuccessSlot past it, and it would
+      // never be repaired. The later slots wait for the next run-due.
+      if (['failed', 'unknown'].includes(out.at(-1)?.persistence.state) && out.at(-1).slot === slotKey) break;
     }
     return out;
   }
