@@ -186,3 +186,19 @@ test('archiving keeps the "used" relations of approved reports in the rebuilt vi
   assert.equal(graphNote(note.id).status, 'archived');
   assert.deepEqual(usedEdges(), [['example.orders', 'example.customers', 'customer_id']], 'still there after the archive');
 });
+
+// ----- A failed archive keeps the dialog open with the typed reason -----
+test('page: a failed archive stays in the open dialog with a persistent alert and the typed reason; busy blocks a second submit', () => {
+  const src = fs.readFileSync(new URL('../src/viewer.html', import.meta.url), 'utf8');
+  const confirm = src.match(/function confirmArchiveNote\(n\) \{[\s\S]*?\r?\n\}\r?\n/)[0];
+  assert.match(confirm, /const status = h\('div', \{ class: 'dlg-status', role: 'alert' \}\);/);
+  assert.match(confirm, /const failure = await runArchiveNote\(state\.db, n, input\.value\);\s*if \(!failure\) \{ busy = false; dlg\.close\('ok'\); return; \}/);
+  assert.match(confirm, /status\.textContent = failureText\(failure\);/);
+  assert.match(confirm, /input\.readOnly = on;/, 'the reason is kept (read-only while busy, editable after)');
+  assert.match(confirm, /const allowed = \(\) => !busy && !final && !archiveReasonProblem\(input\.value\);/, 'no second submit while busy or after an unknown outcome');
+  assert.match(confirm, /dlg\.oncancel = ev => \{ if \(busy\) ev\.preventDefault\(\); \};/);
+  assert.doesNotMatch(confirm, /method: 'dialog'/);
+  const run = src.match(/async function runArchiveNote\(profile, n, text\) \{[\s\S]*?\r?\n\}\r?\n/)[0];
+  assert.match(run, /catch \(err\) \{\s*return actionFailure\(err\);/);
+  assert.match(run, /finally \{[\s\S]*state\.memory = await getJson\('\/api\/memory'\)/, 'the notes are read again after any outcome');
+});

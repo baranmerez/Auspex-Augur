@@ -1222,7 +1222,7 @@
 </main>
 
 <div class="tip" id="tip" role="status" aria-live="polite"></div>
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 <dialog class="dlg" id="stageDlg" aria-labelledby="stageDlgTitle"></dialog>
 <dialog class="dlg" id="archiveDlg" aria-labelledby="archiveDlgTitle"></dialog>
 <dialog class="dlg" id="scoreDlg" aria-labelledby="scoreDlgTitle"></dialog>
@@ -1523,8 +1523,11 @@ function relationsOf(e) {
 }
 const isSystemRel = r => /^(pg_|information_schema\.)|^pg_catalog\./.test(r) || /^(pg_\w+)$/.test(r);
 
-function toast(msg) {
+// announce: false for the live refresh's "{n} new operations", which a
+// screen reader should not repeat every few seconds.
+function toast(msg, { announce = true } = {}) {
   const t = $('toast');
+  t.setAttribute('aria-live', announce ? 'polite' : 'off');
   t.textContent = msg;
   t.classList.add('show');
   clearTimeout(toast.timer);
@@ -1648,7 +1651,7 @@ async function load({ quiet = false } = {}) {
     if (!state.firstLoad) for (const e of state.all) if (!state.seen.has(e._id)) fresh.add(e._id);
     state.seen = new Set(state.all.map(e => e._id));
     state.fresh = fresh;
-    if (fresh.size && quiet) toast(t('{n} new operations', { n: fresh.size }));
+    if (fresh.size && quiet) toast(t('{n} new operations', { n: fresh.size }), { announce: false });
     state.firstLoad = false;
     syncFilterOptions();
     render();
@@ -2702,6 +2705,21 @@ async function invokeStageChange(invoke, command, r, hash) {
     throw stageError(message, code);
   }
 }
+// What a failed approve, revoke or note archive tells the person, kept in
+// the open dialog (never a passing toast): text and vars for t(); final when
+// the outcome is unknown (desktop CLI timed out or gave no result), the
+// report changed meanwhile or the viewer restarted: the dialog then offers no
+// second try and the person reloads; refresh: read the list again to show
+// the state as it is now. A change is never retried automatically.
+function actionFailure(err) {
+  if (err?.viewerRestarted) return { text: 'The viewer was restarted; reload the page', vars: {}, suffix: null, final: true, refresh: false };
+  const unknown = err?.code === 'TIMEOUT' || err?.code === 'CLI_FAILED';
+  const stale = err?.code === 'STALE_VERSION';
+  if (err?.setupText) {
+    return { text: err.setupText, vars: {}, suffix: err.version ? { text: ' (now version {v})', vars: { v: err.version } } : null, final: unknown || stale, refresh: unknown || stale };
+  }
+  return { text: String(err?.message ?? err), vars: {}, suffix: null, final: false, refresh: false };
+}
 // stage-change:end
 function stageButton(r, doc) {
   const sc = stageChangeFor(r);
@@ -2713,22 +2731,44 @@ function stageButton(r, doc) {
     title: blocked && blocked !== 'loading' ? t(blocked) : null,
     onclick: () => confirmStageChange(r, sc, hash) }, pending ? t('Working…') : t(sc.label));
 }
+const failureText = f => t(f.text, f.vars) + (f.suffix ? t(f.suffix.text, f.suffix.vars) : '');
+// The confirm dialog stays open while the change runs and after a failure,
+// which it shows as an alert (like the score dialog); Esc does nothing while
+// busy. It closes only on success or Cancel.
 function confirmStageChange(r, sc, hash) {
   const dlg = $('stageDlg');
   const value = (label, v) => v === null || v === undefined ? '–' : label === 'Last run' ? `${dateTimeOf(v)} (${ago(v)})` : typeof v === 'number' ? fmt(v) : String(v);
-  const cancel = h('button', { class: 'icon-btn', value: 'cancel' }, t('Cancel'));
-  put(dlg, h('form', { method: 'dialog' },
+  const status = h('div', { class: 'dlg-status', role: 'alert' });
+  const cancel = h('button', { type: 'button', class: 'icon-btn', onclick: () => dlg.close('cancel') }, t('Cancel'));
+  const ok = h('button', { type: 'button', class: 'icon-btn primary' }, t(sc.label));
+  let busy = false;
+  const setBusy = on => { busy = on; ok.disabled = on; cancel.disabled = on; ok.textContent = on ? t('Working…') : t(sc.label); dlg.setAttribute('aria-busy', on ? 'true' : 'false'); };
+  ok.addEventListener('click', async () => {
+    if (busy) return;
+    setBusy(true);
+    status.textContent = '';
+    const failure = await runStageChange(r, sc, hash);
+    setBusy(false);
+    if (!failure) { dlg.close('ok'); return; }
+    status.textContent = failureText(failure);
+    if (failure.final) ok.disabled = true;
+  });
+  put(dlg, h('div', {},
     h('h3', { id: 'stageDlgTitle' }, t(sc.question)),
     h('p', {}, t(sc.note)),
     h('dl', {}, stageChangeFacts(r).map(([label, v]) => [h('dt', {}, t(label)), h('dd', {}, value(label, v))])),
-    h('div', { class: 'dlg-actions' }, cancel, h('button', { class: 'icon-btn primary', value: 'ok' }, t(sc.label)))));
+    status,
+    h('div', { class: 'dlg-actions' }, cancel, ok)));
+  dlg.oncancel = ev => { if (busy) ev.preventDefault(); };
+  dlg.onclose = null;
   dlg.returnValue = '';
-  dlg.onclose = () => { if (dlg.returnValue === 'ok') runStageChange(r, sc, hash); };
   dlg.showModal();
   cancel.focus();
 }
+// Runs the change; null on success (a toast confirms it), else the failure
+// for the dialog (actionFailure).
 async function runStageChange(r, sc, hash) {
-  if (state.stagePending) return;
+  if (state.stagePending) return { text: 'Working…', vars: {}, suffix: null, final: false, refresh: false };
   state.stagePending = repKey(r);
   state.reportViewNode = null;
   renderReports();
@@ -2741,15 +2781,16 @@ async function runStageChange(r, sc, hash) {
     persist();
     toast(t(sc.done));
     try { state.reports = await getJson('/api/reports'); } catch (err) { state.reports = { error: err.message, reports: [] }; }
+    return null;
   } catch (err) {
-    toast(err.viewerRestarted ? t('The viewer was restarted; reload the page')
-      : err.setupText ? t(err.setupText) + (err.version ? t(' (now version {v})', { v: err.version }) : '') : err.message);
-    // Outcome unknown (desktop CLI timed out or gave no result), or the report
-    // changed since the dialog opened (STALE_VERSION): show the library as it is now.
-    if (err.code === 'TIMEOUT' || err.code === 'CLI_FAILED' || err.code === 'STALE_VERSION') {
+    const failure = actionFailure(err);
+    // Outcome unknown, or the report changed since the dialog opened: show
+    // the library as it is now (never a second attempt).
+    if (failure.refresh) {
       if (err.code === 'STALE_VERSION') state.reportDoc = null;
       try { state.reports = await getJson('/api/reports'); } catch {}
     }
+    return failure;
   } finally {
     state.stagePending = null;
     state.reportViewNode = null;
@@ -5061,29 +5102,53 @@ function confirmArchiveNote(n) {
   const input = h('input', { id: 'archiveReason', type: 'text', maxlength: String(archiveReasonMax), autocomplete: 'off', placeholder: t('Why is this note no longer valid?') });
   const hint = h('span', { role: 'status' });
   const count = h('span', {}, `0 / ${archiveReasonMax}`);
-  const ok = h('button', { class: 'icon-btn secondary-danger', value: 'ok', disabled: true }, t('Archive'));
+  const ok = h('button', { type: 'button', class: 'icon-btn secondary-danger', disabled: true }, t('Archive'));
+  const cancel = h('button', { type: 'button', class: 'icon-btn', onclick: () => dlg.close('cancel') }, t('Cancel'));
+  const status = h('div', { class: 'dlg-status', role: 'alert' });
+  let busy = false, final = false;
+  const allowed = () => !busy && !final && !archiveReasonProblem(input.value);
+  const setBusy = on => { busy = on; ok.disabled = !allowed(); cancel.disabled = on; input.readOnly = on; ok.textContent = on ? t('Working…') : t('Archive'); dlg.setAttribute('aria-busy', on ? 'true' : 'false'); };
   input.addEventListener('input', () => {
     const problem = archiveReasonProblem(input.value);
-    ok.disabled = !!problem;
+    ok.disabled = !allowed();
     hint.textContent = problem && input.value ? t(problem) : '';
     count.textContent = `${input.value.trim().length} / ${archiveReasonMax}`;
   });
+  // The dialog stays open while the note is archived and after a failure,
+  // with the typed reason kept; it closes only on success or Cancel.
+  const submit = async () => {
+    if (!allowed()) return;
+    setBusy(true);
+    status.textContent = '';
+    const failure = await runArchiveNote(state.db, n, input.value);
+    if (!failure) { busy = false; dlg.close('ok'); return; }
+    final = failure.final;
+    setBusy(false);
+    status.textContent = failureText(failure);
+  };
+  ok.addEventListener('click', submit);
+  input.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); submit(); } });
   const facts = [['Note', `#${n.id} · ${t(n.kind)}`], ['Table', n.table ? ruleTarget(n) + (n.column ? `.${n.column}` : '') : t('Database-wide')], ['Text', n.text]];
-  put(dlg, h('form', { method: 'dialog' },
+  put(dlg, h('div', {},
     h('h3', { id: 'archiveDlgTitle' }, t('Archive this note?')),
     h('p', {}, t('The note stays in the schema memory as archived, with your reason, and is no longer given to your agent. Only local Auspex files change; no database is touched.')),
     h('dl', {}, facts.map(([label, v]) => [h('dt', {}, t(label)), h('dd', {}, v)])),
     h('label', { class: 'dlg-field', for: 'archiveReason' }, h('span', {}, t('Reason')), input),
     h('div', { class: 'dlg-hint' }, hint, count),
-    h('div', { class: 'dlg-actions' }, h('button', { type: 'button', class: 'icon-btn', onclick: () => dlg.close('cancel') }, t('Cancel')), ok)));
+    status,
+    h('div', { class: 'dlg-actions' }, cancel, ok)));
+  dlg.oncancel = ev => { if (busy) ev.preventDefault(); };
+  dlg.onclose = null;
   dlg.returnValue = '';
-  dlg.onclose = () => { if (dlg.returnValue === 'ok') runArchiveNote(state.db, n, input.value); };
   dlg.showModal();
   input.focus();
 }
 
+// Archives the note; null on success (a toast confirms it), else the failure
+// for the dialog (actionFailure). The memory is read again either way, so an
+// unknown outcome shows the notes as they are now.
 async function runArchiveNote(profile, n, text) {
-  if (state.archivePending || archiveReasonProblem(text)) return;
+  if (state.archivePending || archiveReasonProblem(text)) return { text: 'Working…', vars: {}, suffix: null, final: false, refresh: false };
   const req = archiveRequest(profile, n, text);
   state.archivePending = n.id;
   renderRules();
@@ -5091,8 +5156,9 @@ async function runArchiveNote(profile, n, text) {
     if (tauriCore) await invokeArchiveNote(tauriCore.invoke, req);
     else await postArchiveNote(fetch, pageToken, req);
     toast(t('Note archived'));
+    return null;
   } catch (err) {
-    toast(err.viewerRestarted ? t('The viewer was restarted; reload the page') : err.setupText ? t(err.setupText) : err.message);
+    return actionFailure(err);
   } finally {
     state.archivePending = null;
     // Show the memory as it is now (also after an unknown outcome).
