@@ -43,35 +43,52 @@ test('the list badge shows the worst last result of a report\'s schedules', () =
   assert.equal(line.last, 'scheduled: failed (DATABASE_ERROR) · 2026-10-12T08:00');
 });
 
-test('saving problems are told apart from plain ok and failed, worst first, in the amber or red badge colours', () => {
+test('saving problems of the latest slot are told apart from plain ok and failed, worst first, in the amber or red badge colours', () => {
   const ok = { last: { status: 'ok', slot: '2026-10-12T08:00' } };
-  const saveFailed = { last: { status: 'ok', slot: '2026-10-12T08:00', persistenceError: 'STATE_WRITE_FAILED' } };
+  const saveFailed = { last: { status: 'ok', slot: '2026-10-12T08:00', persistenceError: 'TREND_WRITE_FAILED' }, pendingTrends: 1, pendingSlots: ['2026-10-12T08:00'] };
   const pending = { last: { status: 'ok', slot: '2026-10-12T08:00' }, pendingTrends: 2, pendingSlots: ['2026-10-05T08:00', '2026-10-12T08:00'] };
-  const lost = { last: { status: 'ok', slot: '2026-10-19T08:00' }, trendLostSlots: ['2026-10-05T08:00'] };
   const lostNow = { last: { status: 'ok', slot: '2026-10-19T08:00', trendLost: true } };
   const unreadable = { last: null, stateUnreadable: true };
   assert.equal(api.scheduleKind(ok), 'ok');
   assert.equal(api.scheduleKind(saveFailed), 'save-failed');
-  assert.equal(api.scheduleKind({ last: { status: 'ok', persistenceError: 'TREND_LOST' } }), 'trend-lost');
   assert.equal(api.scheduleKind(pending), 'repair-pending');
-  assert.equal(api.scheduleKind(lost), 'trend-lost');
   assert.equal(api.scheduleKind(lostNow), 'trend-lost');
   assert.equal(api.scheduleKind(unreadable), 'unreadable');
-  assert.equal(api.scheduleKind({ last: { status: 'ok', persistenceError: '<b>x</b>' } }), 'ok', 'only an upper-case code counts');
+  assert.equal(api.scheduleKind({ ...saveFailed, last: { ...saveFailed.last, persistenceError: '<b>x</b>' } }), 'repair-pending', 'only an upper-case code counts');
   const badge = list => { const b = api.scheduleBadge(list); return [b.cls, b.label]; };
   assert.deepEqual(badge([saveFailed]), ['sched-skipped', 'scheduled: ran, saving failed']);
   assert.deepEqual(badge([pending]), ['sched-skipped', 'scheduled: ran, repair pending']);
-  assert.deepEqual(badge([lost]), ['sched-skipped', 'scheduled: ran, trend point lost']);
+  assert.deepEqual(badge([lostNow]), ['sched-skipped', 'scheduled: ran, trend point lost']);
   assert.deepEqual(badge([unreadable]), ['sched-skipped', 'scheduled: state unreadable']);
   assert.deepEqual(badge([ok, pending, saveFailed]), ['sched-skipped', 'scheduled: ran, saving failed'], 'worst of the report\'s schedules');
   assert.deepEqual(badge([saveFailed, { last: { status: 'failed' } }]), ['sched-failed', 'scheduled: failed']);
   assert.deepEqual(badge([unreadable, { last: { status: 'skipped-unreachable' } }]), ['sched-skipped', 'scheduled: state unreadable']);
-  const [l1, l2, l3, l4] = api.scheduleLines([saveFailed, pending, { ...lost, trendLostSlots: ['2026-09-07T08:00', '2026-09-14T08:00', '2026-09-21T08:00', '2026-09-28T08:00'] }, unreadable]);
-  assert.equal(l1.last, 'scheduled: ran, saving failed (STATE_WRITE_FAILED) · 2026-10-12T08:00');
+  const old = { last: { status: 'ok', slot: '2026-10-19T08:00' }, trendLostSlots: ['2026-09-07T08:00', '2026-09-14T08:00', '2026-09-21T08:00', '2026-09-28T08:00'] };
+  const [l1, l2, l3, l4] = api.scheduleLines([saveFailed, pending, old, unreadable]);
+  assert.equal(l1.last, 'scheduled: ran, saving failed (TREND_WRITE_FAILED) · 2026-10-12T08:00');
   assert.deepEqual(JSON.parse(JSON.stringify(l2.notes)), ['2 trend points wait to be saved by the next scheduled run']);
   assert.deepEqual(JSON.parse(JSON.stringify(l3.notes)), ['4 trend points lost (2026-09-07T08:00, 2026-09-14T08:00, 2026-09-21T08:00 +1)']);
   assert.equal(l4.last, 'scheduler state unreadable: last result unknown', 'not "no scheduled run yet"');
   assert.equal(api.scheduleLines([{ last: null }])[0].last, 'no scheduled run yet');
+});
+
+test('the badge follows the latest slot: historic lost points and a repaired saving error no longer keep it amber', () => {
+  // Points lost weeks ago (trendLostSlots is never cleared), then later runs went fine.
+  const historic = { last: { status: 'ok', slot: '2026-10-26T08:00' }, trendLostSlots: ['2026-09-28T08:00'] };
+  assert.equal(api.scheduleKind(historic), 'ok');
+  assert.deepEqual(api.scheduleBadge([historic]).cls, 'sched-ok');
+  const [line] = api.scheduleLines([historic]);
+  assert.equal(line.last, 'scheduled: ok · 2026-10-26T08:00');
+  assert.deepEqual(JSON.parse(JSON.stringify(line.notes)), ['1 trend point lost (2026-09-28T08:00)'], 'the older loss stays in the line');
+  assert.match(JSON.stringify(api.trendChart([{ slot: '2026-10-26T08:00', rows: 3 }], api.scheduleTrendInfo([historic]))), /1 trend point was lost before it could be saved \(2026-09-28T08:00\)/, 'and in the chart note');
+  // The saving error of the latest slot after run-due saved its point: no pending entry for that slot.
+  const repaired = { last: { status: 'ok', slot: '2026-10-26T08:00', persistenceError: 'TREND_WRITE_FAILED' } };
+  assert.equal(api.scheduleKind(repaired), 'ok');
+  assert.equal(api.scheduleLines([repaired])[0].last, 'scheduled: ok · 2026-10-26T08:00', 'no stale code in the line');
+  // An older slot still waiting while the latest one is fine: ok badge, the wait in the notes.
+  const olderWait = { last: { status: 'ok', slot: '2026-10-26T08:00' }, pendingTrends: 1, pendingSlots: ['2026-10-19T08:00'] };
+  assert.equal(api.scheduleKind(olderWait), 'ok');
+  assert.deepEqual(JSON.parse(JSON.stringify(api.scheduleLines([olderWait])[0].notes)), ['1 trend point waits to be saved by the next scheduled run']);
 });
 
 test('the trend note says points were lost or wait to be saved instead of "none yet"', () => {
