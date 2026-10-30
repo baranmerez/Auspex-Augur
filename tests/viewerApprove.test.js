@@ -362,14 +362,78 @@ test('a failed approve or revoke is described for the dialog; an unknown outcome
   assert.deepEqual(plainOf(plain), { text: 'The draft has no successful run of its current SQL.', vars: {}, suffix: null, final: false, refresh: false }, 'a plain refusal may be tried again by hand');
 });
 
-test('page: the confirm dialog stays open on failure with a persistent alert, stays busy while running, and never retries', () => {
+// A dialog double: close() and showModal() like the browser's <dialog>, with
+// the close event run synchronously.
+function fakeDialog() {
+  const d = { open: true, log: [], onclose: null, oncancel: null,
+    close(v) { if (!this.open) return; this.open = false; this.log.push(['close', v]); this.onclose?.(); },
+    showModal() { this.open = true; this.log.push(['showModal']); },
+    esc() { const ev = { prevented: false, preventDefault() { this.prevented = true; } }; this.oncancel?.(ev); if (!ev.prevented) this.close('cancel'); return ev.prevented; } };
+  return d;
+}
+function loadRun() {
+  const src = page.match(/\/\/ stage-change:start[\s\S]*?\/\/ stage-change:end/)[0];
+  const ctx = vm.createContext({});
+  vm.runInContext(`${src}\nthis.runInDialog = runInDialog; this.actionFailure = actionFailure; this.stageError = stageError;`, ctx);
+  return ctx;
+}
+
+test('dialog run: a failure stays in the open dialog; busy blocks Esc; success closes first, then confirms', async () => {
+  const { runInDialog } = loadRun();
+  const dlg = fakeDialog();
+  const seen = [];
+  let resolve;
+  const run = runInDialog(dlg, () => new Promise(r => { resolve = r; }), {
+    onBusy: on => seen.push(['busy', on]), onSuccess: () => seen.push(['success', dlg.open]), onFailure: f => seen.push(['failure', f.text, dlg.open]) });
+  assert.equal(dlg.esc(), true, 'the first Esc is refused while busy');
+  resolve({ text: 'Refused', vars: {}, suffix: null, final: false });
+  await run;
+  assert.deepEqual(seen, [['busy', true], ['busy', false], ['failure', 'Refused', true]]);
+  assert.deepEqual(dlg.log, [], 'never closed or reopened');
+  const ok = fakeDialog();
+  const okSeen = [];
+  await runInDialog(ok, async () => null, { onBusy() {}, onSuccess: () => okSeen.push(ok.open), onFailure() {} });
+  assert.deepEqual(ok.log, [['close', 'ok']]);
+  assert.deepEqual(okSeen, [false], 'the toast comes after the modal closed');
+});
+
+test('dialog run: a second Esc closes the busy dialog; the failure arriving later opens it again with the alert', async () => {
+  const { runInDialog, actionFailure, stageError } = loadRun();
+  for (const code of ['TIMEOUT', 'CLI_FAILED', 'STALE_VERSION', 'PRECONDITION_FAILED']) {
+    const dlg = fakeDialog();
+    const seen = [];
+    let resolve;
+    const run = runInDialog(dlg, () => new Promise(r => { resolve = r; }), { onBusy() {}, onSuccess: () => seen.push('success'), onFailure: f => seen.push([f.final, dlg.open]) });
+    dlg.esc();
+    dlg.close('cancel'); // Chromium / WebView2: a second Esc closes despite preventDefault
+    assert.equal(dlg.open, false);
+    resolve(actionFailure(stageError('outcome', code)));
+    await run;
+    assert.deepEqual(dlg.log.map(x => x[0]), ['close', 'showModal'], `${code}: reopened`);
+    assert.deepEqual(seen, [[code !== 'PRECONDITION_FAILED', true]], `${code}: the alert goes into the open dialog`);
+    assert.equal(dlg.onclose, null, 'handlers released');
+  }
+  // A success after the dialog was closed only confirms.
+  const dlg = fakeDialog();
+  let resolve;
+  const seen = [];
+  const run = runInDialog(dlg, () => new Promise(r => { resolve = r; }), { onBusy() {}, onSuccess: () => seen.push('success'), onFailure() {} });
+  dlg.close('cancel');
+  resolve(null);
+  await run;
+  assert.deepEqual(seen, ['success']);
+  assert.deepEqual(dlg.log, [['close', 'cancel']], 'not reopened');
+});
+
+test('page: approve, revoke and archive run through runInDialog; a failure is never a toast and never retried', () => {
   const confirm = page.match(/function confirmStageChange\(r, sc, hash\) \{[\s\S]*?\r?\n\}\r?\n/)[0];
   assert.match(confirm, /const status = h\('div', \{ class: 'dlg-status', role: 'alert' \}\);/);
-  assert.match(confirm, /if \(!failure\) \{ dlg\.close\('ok'\); return; \}\s*status\.textContent = failureText\(failure\);\s*if \(failure\.final\) ok\.disabled = true;/);
-  assert.match(confirm, /dlg\.oncancel = ev => \{ if \(busy\) ev\.preventDefault\(\); \};/);
-  assert.doesNotMatch(confirm, /method: 'dialog'/, 'no form that closes the dialog before the change ran');
+  assert.match(confirm, /await runInDialog\(dlg, \(\) => runStageChange\(r, sc, hash\), \{/);
+  assert.match(confirm, /onSuccess: \(\) => toast\(t\(sc\.done\)\),/);
+  assert.match(confirm, /onFailure: failure => \{ status\.textContent = failureText\(failure\); if \(failure\.final\) ok\.disabled = true; \},/);
+  assert.doesNotMatch(confirm, /method: 'dialog'/);
   const run = page.match(/async function runStageChange\(r, sc, hash\) \{[\s\S]*?\r?\n\}\r?\n/)[0];
-  assert.doesNotMatch(run.slice(run.indexOf('catch (err)')), /toast\(/, 'a failure is not a toast');
+  assert.doesNotMatch(run, /toast\(/, 'no toast behind the modal');
   assert.equal((run.match(/postStageChange\(|invokeStageChange\(/g) || []).length, 2, 'one attempt (browser or desktop)');
 });
 
