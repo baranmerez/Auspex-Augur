@@ -290,12 +290,13 @@ export class SchemaMemory {
   constructor(root, { now = () => new Date().toISOString(), approvedJoins = () => [], scannedFilesPerRoot = maxScannedFilesPerRoot, storeUpgradedCalls = false } = {}) {
     this.scannedFilesPerRoot = scannedFilesPerRoot;
     this.storeUpgradedCalls = storeUpgradedCalls;
+    this.root = path.resolve(root);
     // Profiles whose graph is stale although neither graph.stale nor the
     // removal of graph.json could be written (markGraphStale); shared by all
-    // instances on this memory folder in this process.
+    // instances on this memory folder in this process (keyed by the resolved
+    // root, so it must be set first).
     if (!staleByRoot.has(this.root)) staleByRoot.set(this.root, new Set());
     this.staleProfiles = staleByRoot.get(this.root);
-    this.root = path.resolve(root);
     this.now = now;
     this.approvedJoins = approvedJoins;
     this.cache = new Map();
