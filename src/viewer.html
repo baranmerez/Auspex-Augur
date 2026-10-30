@@ -466,6 +466,7 @@
   .rep-trend .tr-line { fill: none; stroke: var(--series-1); stroke-width: 2; }
   .rep-trend .tr-dot { fill: var(--series-1); }
   .rep-trend .tr-note { font-size: 12px; color: var(--text-3); }
+  .rep-trend .tr-note.warn { color: var(--warn-ink); }
   .badge.viewer { background: var(--good-soft); color: var(--good-ink); }
   .icon-btn:disabled { opacity: .55; cursor: default; pointer-events: none; }
   .dlg { border: 1px solid var(--line-strong); border-radius: 12px; background: var(--surface); color: var(--text); box-shadow: var(--shadow-lg);
@@ -1419,7 +1420,15 @@ const TR = {
   'scheduled': 'zamanlanmış', 'scheduled: ok': 'zamanlanmış: başarılı', 'scheduled: unreachable': 'zamanlanmış: erişilemedi', 'scheduled: failed': 'zamanlanmış: hata',
   'Last scheduled result': 'Son zamanlanmış çalıştırma sonucu', 'manual run': 'elle çalıştırma', 'no scheduled run yet': 'henüz zamanlanmış çalıştırma yok',
   'Schedule:': 'Zamanlama:', 'disabled': 'kapalı', 'next: {s}': 'sonraki: {s}', 'Trend of scheduled runs': 'Zamanlanmış çalıştırmaların eğilimi',
-  'The trend could not be loaded.': 'Eğilim yüklenemedi.', 'No trend points yet: they are added after each successful scheduled run.': 'Henüz eğilim noktası yok: her başarılı zamanlanmış çalıştırmadan sonra eklenir.',
+  'The trend could not be loaded.': 'Eğilim yüklenemedi.',
+  'scheduled: state unreadable': 'zamanlandı: durum okunamıyor', 'scheduled: ran, saving failed': 'zamanlandı: çalıştı, kayıt başarısız', 'scheduled: ran, trend point lost': 'zamanlandı: çalıştı, eğilim noktası kayboldu',
+  'scheduled: ran, repair pending': 'zamanlandı: çalıştı, onarım bekliyor', 'scheduler state unreadable: last result unknown': 'zamanlayıcı durumu okunamıyor: son sonuç bilinmiyor',
+  '1 trend point waits to be saved by the next scheduled run': '1 eğilim noktası sonraki zamanlanmış çalıştırmada kaydedilmeyi bekliyor',
+  '{n} trend points wait to be saved by the next scheduled run': '{n} eğilim noktası sonraki zamanlanmış çalıştırmada kaydedilmeyi bekliyor',
+  '1 trend point lost ({s})': '1 eğilim noktası kayboldu ({s})', '{n} trend points lost ({s})': '{n} eğilim noktası kayboldu ({s})',
+  '1 trend point was lost before it could be saved ({s}).': '1 eğilim noktası kaydedilemeden kayboldu ({s}).', '{n} trend points were lost before they could be saved ({s}).': '{n} eğilim noktası kaydedilemeden kayboldu ({s}).',
+  '1 trend point waits to be saved; the next scheduled run saves it.': '1 eğilim noktası kaydedilmeyi bekliyor; sonraki zamanlanmış çalıştırma kaydeder.',
+  '{n} trend points wait to be saved; the next scheduled run saves them.': '{n} eğilim noktası kaydedilmeyi bekliyor; sonraki zamanlanmış çalıştırma kaydeder.', 'No trend points yet: they are added after each successful scheduled run.': 'Henüz eğilim noktası yok: her başarılı zamanlanmış çalıştırmadan sonra eklenir.',
   'schedules.json could not be read: ': 'schedules.json okunamadı: ',
 };
 let lang = 'en';
@@ -2447,23 +2456,62 @@ function presetMeta(data, r, doc) {
 // and src/scheduleCli.js runs them). The list badge shows the worst last
 // result of a report's schedules; the report screen shows each schedule and
 // a small trend chart (row count and column totals per scheduled run).
-const scheduleRank = { failed: 3, 'skipped-unreachable': 2, ok: 1 };
+// What a schedule's last result says, worst first: the run failed; the
+// scheduler state cannot be read (the last result is unknown); the run
+// finished but saving its trend point or the state failed; a trend point was
+// lost for good; the database was unreachable; the run finished and a trend
+// point waits to be saved by the next run-due; plain ok. Warnings share the
+// amber "unreachable" colour, failures the red one.
+const scheduleRank = { failed: 7, unreadable: 6, 'save-failed': 5, 'trend-lost': 4, 'skipped-unreachable': 3, 'repair-pending': 2, ok: 1 };
+const scheduleClass = { failed: 'sched-failed', unreadable: 'sched-skipped', 'save-failed': 'sched-skipped', 'trend-lost': 'sched-skipped', 'skipped-unreachable': 'sched-skipped', 'repair-pending': 'sched-skipped', ok: 'sched-ok' };
+const scheduleLabels = {
+  failed: 'scheduled: failed', unreadable: 'scheduled: state unreadable', 'save-failed': 'scheduled: ran, saving failed', 'trend-lost': 'scheduled: ran, trend point lost',
+  'skipped-unreachable': 'scheduled: unreachable', 'repair-pending': 'scheduled: ran, repair pending', ok: 'scheduled: ok',
+};
+const scheduleCode = v => (typeof v === 'string' && /^[A-Z][A-Z0-9_]{0,39}$/.test(v) ? v : null);
+// Trend points of a schedule lost for good (slot keys) and waiting to be saved (count).
+const scheduleLost = s => [...new Set([...(Array.isArray(s?.trendLostSlots) ? s.trendLostSlots : []), ...(s?.last?.trendLost === true && s.last.slot ? [s.last.slot] : [])])].filter(x => typeof x === 'string');
+const schedulePending = s => (Number.isInteger(s?.pendingTrends) && s.pendingTrends > 0 ? s.pendingTrends : 0);
+function scheduleKind(s) {
+  if (s?.stateUnreadable === true) return 'unreadable';
+  const st = s?.last?.status;
+  if (st === 'failed' || st === 'skipped-unreachable') return st;
+  if (st !== 'ok') return null;
+  const pe = scheduleCode(s.last.persistenceError);
+  if (pe && pe !== 'TREND_LOST') return 'save-failed';
+  if (pe === 'TREND_LOST' || scheduleLost(s).length) return 'trend-lost';
+  if (schedulePending(s)) return 'repair-pending';
+  return 'ok';
+}
 function scheduleBadge(schedules) {
   const list = Array.isArray(schedules) ? schedules : [];
   if (!list.length) return null;
-  const known = list.map(s => s?.last?.status).filter(st => typeof st === 'string' && Object.hasOwn(scheduleRank, st));
-  const worst = known.sort((a, b) => scheduleRank[b] - scheduleRank[a])[0] ?? null;
-  const cls = { ok: 'sched-ok', 'skipped-unreachable': 'sched-skipped', failed: 'sched-failed' }[worst] ?? 'sched-none';
-  const label = { ok: t('scheduled: ok'), 'skipped-unreachable': t('scheduled: unreachable'), failed: t('scheduled: failed') }[worst] ?? t('scheduled');
-  return { status: worst, cls, label };
+  const worst = list.map(scheduleKind).filter(Boolean).sort((a, b) => scheduleRank[b] - scheduleRank[a])[0] ?? null;
+  return { status: worst, cls: scheduleClass[worst] ?? 'sched-none', label: worst ? t(scheduleLabels[worst]) : t('scheduled') };
 }
-// One line per schedule: cadence, preset, last result and next slot.
+// A few slot keys, the rest as "+N".
+const scheduleSlots = list => list.slice(0, 3).join(', ') + (list.length > 3 ? ` +${list.length - 3}` : '');
+// One line per schedule: cadence, preset, last result and next slot, and
+// notes on trend points that wait to be saved or were lost.
 function scheduleLines(schedules) {
   return (Array.isArray(schedules) ? schedules : []).map(s => {
+    const kind = scheduleKind(s);
     const b = scheduleBadge([s]);
-    const last = s.last ? `${b.label}${s.last.errorCode ? ` (${s.last.errorCode})` : ''} · ${s.last.slot ?? t('manual run')}` : t('no scheduled run yet');
-    return { id: String(s.id ?? ''), cadence: String(s.cadence ?? ''), preset: s.preset ?? null, enabled: s.enabled !== false, cls: b.cls, last, next: s.next ?? null };
+    const code = kind === 'save-failed' ? scheduleCode(s.last.persistenceError) : s.last?.errorCode;
+    const last = kind === 'unreadable' ? t('scheduler state unreadable: last result unknown')
+      : s.last ? `${b.label}${code ? ` (${code})` : ''} · ${s.last.slot ?? t('manual run')}` : t('no scheduled run yet');
+    const pending = schedulePending(s), lost = scheduleLost(s);
+    const notes = [
+      pending ? t(pending === 1 ? '1 trend point waits to be saved by the next scheduled run' : '{n} trend points wait to be saved by the next scheduled run', { n: pending }) : null,
+      lost.length ? t(lost.length === 1 ? '1 trend point lost ({s})' : '{n} trend points lost ({s})', { n: lost.length, s: scheduleSlots(lost) }) : null,
+    ].filter(Boolean);
+    return { id: String(s.id ?? ''), cadence: String(s.cadence ?? ''), preset: s.preset ?? null, enabled: s.enabled !== false, cls: b.cls, last, next: s.next ?? null, notes };
   });
+}
+// Lost and waiting trend points over a report's schedules, for the chart.
+function scheduleTrendInfo(schedules) {
+  const list = Array.isArray(schedules) ? schedules : [];
+  return { lost: [...new Set(list.flatMap(scheduleLost))].sort(), pending: list.reduce((a, s) => a + schedulePending(s), 0) };
 }
 const maxTrendSeries = 5;
 // Series of the trend chart: the row count, then the column totals in the
@@ -2487,9 +2535,19 @@ function trendSeries(points) {
 }
 // Small multiples: one line per series with its own scale. Text goes in as
 // text nodes (h, textContent), never as markup.
-function trendChart(points) {
+// info: { lost: slot keys, pending: count } (scheduleTrendInfo); without
+// points the note says why instead of "none yet" when points were lost or wait.
+function trendChart(points, info = {}) {
   const { labels, series } = trendSeries(points);
-  if (!series.length) return h('div', { class: 'tr-note' }, t('No trend points yet: they are added after each successful scheduled run.'));
+  const lost = Array.isArray(info.lost) ? info.lost : [], pending = Number.isInteger(info.pending) ? info.pending : 0;
+  const notes = [
+    lost.length ? h('div', { class: 'tr-note warn' }, t(lost.length === 1 ? '1 trend point was lost before it could be saved ({s}).' : '{n} trend points were lost before they could be saved ({s}).', { n: lost.length, s: scheduleSlots(lost) })) : null,
+    pending ? h('div', { class: 'tr-note' }, t(pending === 1 ? '1 trend point waits to be saved; the next scheduled run saves it.' : '{n} trend points wait to be saved; the next scheduled run saves them.', { n: pending })) : null,
+  ];
+  if (!series.length) return lost.length || pending ? h('div', {}, notes) : h('div', { class: 'tr-note' }, t('No trend points yet: they are added after each successful scheduled run.'));
+  return h('div', {}, trendGrid(labels, series), notes);
+}
+function trendGrid(labels, series) {
   const W = 240, H = 56, P = 4;
   return h('div', { class: 'tr-grid' }, series.map(s => {
     const vals = s.values.filter(v => v !== null);
@@ -2519,12 +2577,13 @@ function scheduleMeta(r) {
     h('span', { class: 'chip', title: l.id }, l.cadence + (l.enabled ? '' : ` (${t('disabled')})`)),
     l.preset ? h('span', { class: 'chip' }, presetLabel(l.preset, lang)) : null,
     h('span', { class: 'badge ' + l.cls }, l.last),
-    l.next ? h('span', {}, t('next: {s}', { s: l.next })) : null));
+    l.next ? h('span', {}, t('next: {s}', { s: l.next })) : null,
+    l.notes.map(n => h('span', { class: 'muted' }, n))));
 }
 function trendView(r, doc) {
   if (!r?.schedules?.length || !doc || doc.loading || doc.trend === undefined) return null;
   return h('div', { class: 'rep-trend' }, h('div', { class: 'tr-h' }, t('Trend of scheduled runs')),
-    doc.trend === null ? h('div', { class: 'tr-note' }, t('The trend could not be loaded.')) : trendChart(doc.trend));
+    doc.trend === null ? h('div', { class: 'tr-note' }, t('The trend could not be loaded.')) : trendChart(doc.trend, scheduleTrendInfo(r.schedules)));
 }
 // stage-change:start (tests/viewerApprove.test.js runs this block in isolation)
 // The stage change the Reports view offers: approve a draft or revoke an
