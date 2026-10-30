@@ -127,15 +127,21 @@ test('N4: an older copy of a table that could not be removed is not listed next 
   assert.deepEqual(graph.edges, [], 'no edge from the older copy\'s foreign key');
 });
 
-test('N5: the in-process stale fallback is shared by every instance on the same memory folder', () => {
-  const m = mk();
-  m.addNote(P, { kind: 'rule', schema: 'example', table: 'orders', text: 'note' });
-  const other = new SchemaMemory(m.root);
-  m.staleProfiles.add(P);
-  assert.equal(other.isGraphStale(P), true);
+test('N5: the in-process stale fallback is shared by every instance on the same memory folder, and only that folder', () => {
+  const a = mk();
+  a.addNote(P, { kind: 'rule', schema: 'example', table: 'orders', text: 'note' });
+  const b = mk();
+  b.addNote(P, { kind: 'rule', schema: 'example', table: 'orders', text: 'note' });
+  a.staleProfiles.add(P);
+  assert.equal(new SchemaMemory(a.root).isGraphStale(P), true, 'a second instance on folder A sees it');
+  assert.equal(b.isGraphStale(P), false, 'folder B is not stale');
+  b.knowledge(P, 'example', 'orders'); // a read on B
+  b.rebuildView(P); // and a rebuild on B
+  assert.equal(a.isGraphStale(P), true, 'rebuilding B does not clear A');
+  assert.equal(new SchemaMemory(a.root).isGraphStale(P), true);
+  const other = new SchemaMemory(a.root);
   other.knowledge(P, 'example', 'orders');
-  assert.equal(m.isGraphStale(P), false, 'cleared for all instances by the rebuild');
-  assert.equal(new SchemaMemory(fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-mem-review-other-'))).staleProfiles.has(P), false, 'per memory folder');
+  assert.equal(a.isGraphStale(P), false, 'a rebuild on A clears it for every instance on A');
 });
 
 test('N6: run_report audit fields carry the memory error code and partial-commit counts, never text', async () => {
