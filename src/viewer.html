@@ -2496,8 +2496,8 @@ function presetMeta(data, r, doc) {
 // a small trend chart (row count and column totals per scheduled run).
 // What a schedule's last result says, worst first: the run failed; the
 // scheduler state cannot be read (the last result is unknown); the run
-// finished but saving its trend point or the state failed; a trend point was
-// lost for good; the database was unreachable; the run finished and a trend
+// finished but saving its trend point failed and it still waits; its trend
+// point was lost; the database was unreachable; the run finished and its trend
 // point waits to be saved by the next run-due; plain ok. Warnings share the
 // amber "unreachable" colour, failures the red one.
 const scheduleRank = { failed: 7, unreadable: 6, 'save-failed': 5, 'trend-lost': 4, 'skipped-unreachable': 3, 'repair-pending': 2, ok: 1 };
@@ -2510,15 +2510,20 @@ const scheduleCode = v => (typeof v === 'string' && /^[A-Z][A-Z0-9_]{0,39}$/.tes
 // Trend points of a schedule lost for good (slot keys) and waiting to be saved (count).
 const scheduleLost = s => [...new Set([...(Array.isArray(s?.trendLostSlots) ? s.trendLostSlots : []), ...(s?.last?.trendLost === true && s.last.slot ? [s.last.slot] : [])])].filter(x => typeof x === 'string');
 const schedulePending = s => (Number.isInteger(s?.pendingTrends) && s.pendingTrends > 0 ? s.pendingTrends : 0);
+// The badge speaks for the latest slot only: older lost points and repairs
+// show in the schedule line and the chart note. A saving error counts while
+// the point of that slot still waits in pendingSlots; once the next run-due
+// saved it, the error is history.
 function scheduleKind(s) {
   if (s?.stateUnreadable === true) return 'unreadable';
   const st = s?.last?.status;
   if (st === 'failed' || st === 'skipped-unreachable') return st;
   if (st !== 'ok') return null;
-  const pe = scheduleCode(s.last.persistenceError);
-  if (pe && pe !== 'TREND_LOST') return 'save-failed';
-  if (pe === 'TREND_LOST' || scheduleLost(s).length) return 'trend-lost';
-  if (schedulePending(s)) return 'repair-pending';
+  const slot = typeof s.last.slot === 'string' ? s.last.slot : null;
+  const waits = slot ? (Array.isArray(s.pendingSlots) ? s.pendingSlots : []).includes(slot) : schedulePending(s) > 0;
+  if (scheduleCode(s.last.persistenceError) && waits) return 'save-failed';
+  if (s.last.trendLost === true) return 'trend-lost';
+  if (waits) return 'repair-pending';
   return 'ok';
 }
 function scheduleBadge(schedules) {
