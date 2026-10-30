@@ -3234,7 +3234,23 @@ function memErrorBox(db, message, ctx) {
     message && message !== memStaleUnbuilt ? h('span', { class: 'mem-error-detail' }, message) : null,
     h('div', {}, h('button', { type: 'button', class: 'icon-btn sm', onclick: ctx.onRetry }, t('Retry')))));
 }
+// The error box of the last failed read, kept while the database, message,
+// language and client stay the same, so a redraw (the 5 s live refresh)
+// neither announces the alert again nor takes the focus from Retry.
+const memErrorKept = { key: null, node: null };
+function memErrorNode(db, message, ctx) {
+  const key = JSON.stringify([db, message, !!ctx.stale, !!ctx.desktop, ctx.lang ?? '']);
+  if (memErrorKept.key !== key) { memErrorKept.key = key; memErrorKept.node = memErrorBox(db, message, ctx); }
+  return memErrorKept.node;
+}
 // mem-state:end
+// Puts node as the only child of view, unless it already is (kept nodes keep
+// their focus and are not announced again).
+function putKept(view, node) {
+  if (view.childElementCount === 1 && view.firstElementChild === node) return;
+  put(view, node);
+}
+const memErrorCtx = sum => ({ stale: !!sum?.stale, desktop: !!tauriCore, lang, onRetry: () => retryMemView(state.db) });
 // Reads the graph of db again after a failed read (Retry).
 function retryMemView(db) {
   state.memView = memDropError(state.memView, db);
@@ -4918,7 +4934,7 @@ function renderRules() {
     ensureMemView(state.db);
     if (!mv || mv.profile !== state.db) return plain(null, h('div', { class: 'panel' }, h('div', { class: 'rep-empty' }, t('Loading…'))));
   }
-  if (mv.error) return plain(null, memErrorBox(state.db, mv.error, { stale: !!sum.stale, onRetry: () => retryMemView(state.db) }));
+  if (mv.error) { state.rulesKey = null; return putKept(view, memErrorNode(state.db, mv.error, memErrorCtx(sum))); }
 
   const f = state.rulesFilter ??= { kind: '', table: '', status: 'active', q: '' };
   const key = JSON.stringify([state.db, mv.data.generatedAt, lang, f, state.archivePending ?? null, state.rulesSel ?? null, state.rulesOpen ?? null, !!state.rulesListCollapsed]);
@@ -7095,7 +7111,7 @@ function renderObjectTab(tab) {
     ensureMemView(state.db);
     if (!mv || mv.profile !== state.db) return plain(h('div', { class: 'panel' }, h('div', { class: 'rep-empty' }, t('Loading…'))));
   }
-  if (mv.error) return plain(memErrorBox(state.db, mv.error, { stale: !!sum.stale, onRetry: () => retryMemView(state.db) }));
+  if (mv.error) { state[listKey] = null; setPageKey(tab, null); return putKept(view, memErrorNode(state.db, mv.error, memErrorCtx(sum))); }
   const tp = pageOf(tab);
   if (tp?.db === state.db && tp.trail.length) { state[listKey] = null; renderTablePage(view, mv.data, tab); return; }
   setPageKey(tab, null);
@@ -7159,7 +7175,7 @@ function renderSchema() {
     ensureMemView(state.db);
     if (!mv || mv.profile !== state.db) { stopGraph(); state.schemaKey = null; put(view, h('div', { class: 'panel' }, h('div', { class: 'rep-empty' }, t('Loading…')))); return; }
   }
-  if (mv.error) { stopGraph(); state.schemaKey = null; put(view, memErrorBox(state.db, mv.error, { stale: !!sum.stale, onRetry: () => retryMemView(state.db) })); return; }
+  if (mv.error) { stopGraph(); state.schemaKey = null; putKept(view, memErrorNode(state.db, mv.error, memErrorCtx(sum))); return; }
   if (state.tablePage?.db === state.db && state.tablePage.trail.length) {
     if (state.schemaKey) { stopGraph(); state.schemaKey = null; state.tablePageKey = null; }
     renderTablePage(view, mv.data);

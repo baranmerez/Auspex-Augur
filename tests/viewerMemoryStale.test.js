@@ -108,7 +108,7 @@ const msTR = vm.runInNewContext(`(${msPage.match(/const TR = (\{[\s\S]*?\n\});/)
 function msLoad(lang = 'en') {
   assert.ok(msBlock, 'mem-state block found');
   const ctx = vm.createContext({ h: msH, t: (en, vars = {}) => String(lang === 'tr' && msTR[en] !== undefined ? msTR[en] : en).replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? '') });
-  vm.runInContext(`${msBlock}\nObject.assign(this, { memIsStale, memStaleBanner, memErrorBox, memStaleUnbuilt });`, ctx);
+  vm.runInContext(`${msBlock}\nObject.assign(this, { memIsStale, memStaleBanner, memErrorBox, memStaleUnbuilt, memErrorNode });`, ctx);
   return ctx;
 }
 
@@ -161,7 +161,9 @@ test('page: Schema, Rules, Views and Functions draw the banner and the error box
   assert.match(msPage, /<div class="chips" id="chips"><\/div>\s*<div id="memStale"><\/div>/);
   for (const fn of ['renderSchema', 'renderRules', 'renderObjectTab']) assert.match(msPage, new RegExp(`function ${fn}\\([a-z]*\\) \\{\\s*renderMemStale\\(\\);`), fn);
   assert.equal((msPage.match(/if \(memGraphWanted\(mv, state\.db, sum\)\) \{/g) || []).length, 3);
-  assert.equal((msPage.match(/memErrorBox\(state\.db, mv\.error, \{ stale: !!sum\.stale, onRetry: \(\) => retryMemView\(state\.db\) \}\)/g) || []).length, 3);
+  assert.equal((msPage.match(/putKept\(view, memErrorNode\(state\.db, mv\.error, memErrorCtx\(sum\)\)\)/g) || []).length, 3, 'the kept error node, not a new one per redraw');
+  assert.match(msPage, /function putKept\(view, node\) \{\s*if \(view\.childElementCount === 1 && view\.firstElementChild === node\) return;\s*put\(view, node\);\s*\}/);
+  assert.match(msPage, /const memErrorCtx = sum => \(\{ stale: !!sum\?\.stale, desktop: !!tauriCore, lang, onRetry: \(\) => retryMemView\(state\.db\) \}\);/);
   assert.match(msPage, /memStaleBanner\(stale, \{ desktop: !!tauriCore, onRefresh: \(\) => load\(\) \}\)/);
 });
 
@@ -182,4 +184,16 @@ test('page: the route\'s rebuild-failed message is the one the page explains', a
     fs.writeFileSync(notesFile, notes);
     fs.writeFileSync(graphFile, graph);
   }
+});
+
+test('page: a redraw with the same error keeps the same alert node; a new error, database or language builds a new one', () => {
+  const ctx = msLoad();
+  const c = { stale: false, desktop: false, lang: 'en', onRetry() {} };
+  const a = ctx.memErrorNode('exampledb', 'boom', c);
+  assert.equal(ctx.memErrorNode('exampledb', 'boom', { ...c, onRetry() {} }), a, 'same node: not announced again, Retry keeps focus');
+  assert.notEqual(ctx.memErrorNode('exampledb', 'other', c), a);
+  const b = ctx.memErrorNode('exampledb', 'boom', c);
+  assert.notEqual(ctx.memErrorNode('test', 'boom', c), b);
+  const d = ctx.memErrorNode('test', 'boom', c);
+  assert.notEqual(ctx.memErrorNode('test', 'boom', { ...c, lang: 'tr' }), d);
 });
