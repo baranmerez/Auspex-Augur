@@ -275,6 +275,7 @@
   .pcard dl { display: grid; grid-template-columns: 100px 1fr; gap: 4px 10px; margin: 0; font-size: 13px; }
   .pcard dt { color: var(--text-3); }
   .pcard dd { margin: 0; font: 12px var(--mono); word-break: break-all; }
+  .pcard dd .role-when { font: 11px/1.4 inherit; color: var(--text-3); word-break: normal; }
   .paths { margin-top: 18px; font: 12px var(--mono); color: var(--text-3); }
   .paths div { margin: 3px 0; }
 
@@ -1425,7 +1426,7 @@ const TR = {
   'scheduled': 'zamanlanmış', 'scheduled: ok': 'zamanlanmış: başarılı', 'scheduled: unreachable': 'zamanlanmış: erişilemedi', 'scheduled: failed': 'zamanlanmış: hata',
   'Last scheduled result': 'Son zamanlanmış çalıştırma sonucu', 'manual run': 'elle çalıştırma', 'no scheduled run yet': 'henüz zamanlanmış çalıştırma yok',
   'Schedule:': 'Zamanlama:', 'disabled': 'kapalı', 'next: {s}': 'sonraki: {s}', 'Trend of scheduled runs': 'Zamanlanmış çalıştırmaların eğilimi',
-  'The trend could not be loaded.': 'Eğilim yüklenemedi.',
+  'The trend could not be loaded.': 'Eğilim yüklenemedi.', 'last check in this range: {d}': 'bu aralıktaki son kontrol: {d}',
   'Refresh': 'Yenile', 'Retry': 'Yeniden dene', 'The schema memory graph may be out of date.': 'Şema hafızası grafiği güncel olmayabilir.',
   'A change was stored but the graph was not rebuilt. The desktop app only shows this; the next memory change or agent read rebuilds it.': 'Bir değişiklik kaydedildi ama grafik yeniden oluşturulamadı. Masaüstü uygulaması yalnızca bunu gösterir; bir sonraki hafıza değişikliği ya da ajan okuması onu yeniden oluşturur.',
   'A change was stored but the graph was not rebuilt. The viewer rebuilds it when you refresh.': 'Bir değişiklik kaydedildi ama grafik yeniden oluşturulamadı. Yenilediğinde görüntüleyici onu yeniden oluşturur.',
@@ -2026,20 +2027,39 @@ function renderTables(rows) {
   $('cTables').textContent = groups.length ? fmt(groups.length) : '';
 }
 
+// role-check:start (tests/viewerRoles.test.js runs this block in isolation)
+// Latest read-only role check per profile, from the audit log (the viewer
+// never connects to a database itself). rows: the entries of the chosen time
+// range only; the Operations filters are hidden on Profiles and never apply
+// here. The newest check wins whatever its outcome, so a later failure is
+// never hidden by an older success. A check_profile that failed (for example
+// no connection) means the role could not be assessed, which is not the same
+// as a passed check.
+const isRoleCheck = e => !!e && (e.tool === 'role_check' || (e.tool === 'check_profile' && !!e.error));
+function latestRoleChecks(rows) {
+  const out = new Map();
+  for (const e of Array.isArray(rows) ? rows : []) {
+    if (!isRoleCheck(e) || typeof e.profile !== 'string') continue;
+    const cur = out.get(e.profile);
+    if (!cur || String(e.ts ?? '') > String(cur.ts ?? '')) out.set(e.profile, e);
+  }
+  return out;
+}
+function roleCheckText(rc) {
+  return !rc ? t('no check in this range')
+    : rc.error ? t('unable to assess ({c})', { c: rc.errorCode || t('error') })
+    : rc.roleStatus === 'ok' ? t('read-only ✓')
+    : `${rc.roleStatus === 'blocked' ? t('BLOCKED') : t('warning')}: ${[...(rc.blocking || []), ...(rc.warnings || [])].join(', ')}`;
+}
+// role-check:end
 function renderProfiles(rows) {
   const data = state.profiles;
   if (!data) return;
   const per = new Map(groupCount(rows, e => e.profile).map(g => [g.key, g]));
-  // Latest read-only role check per profile, from the audit log (the viewer
-  // never connects to a database itself). A check_profile that failed (for
-  // example no connection) means the role could not be assessed, which is not
-  // the same as a passed check.
-  const roleChecks = new Map();
-  for (const e of rows) if ((e.tool === 'role_check' || (e.tool === 'check_profile' && e.error)) && (!roleChecks.has(e.profile) || e.ts > roleChecks.get(e.profile).ts)) roleChecks.set(e.profile, e);
-  const roleText = rc => !rc ? t('no check in this range')
-    : rc.error ? t('unable to assess ({c})', { c: rc.errorCode || t('error') })
-    : rc.roleStatus === 'ok' ? t('read-only ✓')
-    : `${rc.roleStatus === 'blocked' ? t('BLOCKED') : t('warning')}: ${[...(rc.blocking || []), ...(rc.warnings || [])].join(', ')}`;
+  // Role evidence from the time range alone (state.all), not the hidden
+  // Operations filters.
+  const roleChecks = latestRoleChecks(state.all);
+  const roleText = roleCheckText;
   const cards = (data.profiles || []).map((p, i) => {
     const g = per.get(p.name);
     const rc = roleChecks.get(p.name);
@@ -2059,7 +2079,8 @@ function renderProfiles(rows) {
         h('dt', {}, t('Timeout')), h('dd', {}, t('{d} s default · max {m} s', { d: p.defaultTimeoutSeconds ?? data.defaultTimeoutSeconds, m: p.maxTimeoutSeconds })),
         p.maxQueriesPerMinute ? h('dt', {}, t('Query budget')) : null, p.maxQueriesPerMinute ? h('dd', {}, t('{q} per minute', { q: p.maxQueriesPerMinute })) : null,
         h('dt', {}, t('Password')), h('dd', {}, p.passwordInString ? t('in URL (move it to pgpass)') : 'pgpass'),
-        h('dt', {}, t('Role check')), h('dd', { style: rc?.roleStatus === 'blocked' ? 'color:var(--critical)' : rc?.error ? 'color:var(--text-3)' : null, title: rc ? dateTimeOf(rc.ts) : null }, roleText(rc))),
+        h('dt', {}, t('Role check')), h('dd', { style: rc?.roleStatus === 'blocked' ? 'color:var(--critical)' : rc?.error ? 'color:var(--text-3)' : null },
+          roleText(rc), rc ? h('div', { class: 'muted role-when' }, t('last check in this range: {d}', { d: rc.ts ? dateTimeOf(rc.ts) : '?' })) : null)),
       h('div', { style: 'margin-top:12px;display:flex;gap:8px' },
         h('button', { class: 'icon-btn', onclick: () => { F.profile.value = p.name; switchTab('ops'); } }, t('Show operations'))));
   });
