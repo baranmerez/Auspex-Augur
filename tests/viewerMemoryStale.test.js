@@ -197,3 +197,11 @@ test('page: a redraw with the same error keeps the same alert node; a new error,
   const d = ctx.memErrorNode('test', 'boom', c);
   assert.notEqual(ctx.memErrorNode('test', 'boom', { ...c, lang: 'tr' }), d);
 });
+
+test('page: the desktop app does not point to the viewer output', () => {
+  const ctx = msLoad();
+  const desk = msText(ctx.memErrorBox('exampledb', ctx.memStaleUnbuilt, { stale: true, desktop: true, onRetry() {} }));
+  assert.match(desk, /Retry after the next memory change\./);
+  assert.doesNotMatch(desk, /viewer output/);
+  assert.match(msText(ctx.memErrorBox('exampledb', ctx.memStaleUnbuilt, { stale: true, desktop: false, onRetry() {} })), /check the viewer output/);
+});
