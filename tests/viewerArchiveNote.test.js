@@ -192,13 +192,14 @@ test('page: a failed archive stays in the open dialog with a persistent alert an
   const src = fs.readFileSync(new URL('../src/viewer.html', import.meta.url), 'utf8');
   const confirm = src.match(/function confirmArchiveNote\(n\) \{[\s\S]*?\r?\n\}\r?\n/)[0];
   assert.match(confirm, /const status = h\('div', \{ class: 'dlg-status', role: 'alert' \}\);/);
-  assert.match(confirm, /const failure = await runArchiveNote\(state\.db, n, input\.value\);\s*if \(!failure\) \{ busy = false; dlg\.close\('ok'\); return; \}/);
-  assert.match(confirm, /status\.textContent = failureText\(failure\);/);
+  assert.match(confirm, /await runInDialog\(dlg, \(\) => runArchiveNote\(state\.db, n, input\.value\), \{/, 'the same detach-safe run as approve and revoke');
+  assert.match(confirm, /onSuccess: \(\) => toast\(t\('Note archived'\)\),/);
+  assert.match(confirm, /onFailure: failure => \{ final = failure\.final; ok\.disabled = !allowed\(\); status\.textContent = failureText\(failure\); \},/);
   assert.match(confirm, /input\.readOnly = on;/, 'the reason is kept (read-only while busy, editable after)');
   assert.match(confirm, /const allowed = \(\) => !busy && !final && !archiveReasonProblem\(input\.value\);/, 'no second submit while busy or after an unknown outcome');
-  assert.match(confirm, /dlg\.oncancel = ev => \{ if \(busy\) ev\.preventDefault\(\); \};/);
   assert.doesNotMatch(confirm, /method: 'dialog'/);
   const run = src.match(/async function runArchiveNote\(profile, n, text\) \{[\s\S]*?\r?\n\}\r?\n/)[0];
   assert.match(run, /catch \(err\) \{\s*return actionFailure\(err\);/);
+  assert.doesNotMatch(run, /toast\(/, 'no toast behind the modal');
   assert.match(run, /finally \{[\s\S]*state\.memory = await getJson\('\/api\/memory'\)/, 'the notes are read again after any outcome');
 });

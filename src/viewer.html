@@ -2720,6 +2720,35 @@ function actionFailure(err) {
   }
   return { text: String(err?.message ?? err), vars: {}, suffix: null, final: false, refresh: false };
 }
+// Runs fn (a change; resolves to null or a failure) for an open confirm
+// dialog. Esc is refused while busy, but Chromium and WebView2 let a second
+// Esc close the dialog anyway: a close during the run detaches it, and a
+// failure arriving then opens the dialog again, so the alert is never written
+// into a closed dialog. On success the dialog closes first and onSuccess runs
+// after it (a modal dialog makes the page, the toast included, inert).
+async function runInDialog(dlg, fn, { onBusy, onSuccess, onFailure }) {
+  let detached = false;
+  const cancel = ev => ev.preventDefault();
+  dlg.onclose = () => { detached = true; };
+  dlg.oncancel = cancel;
+  onBusy(true);
+  let failure = null;
+  try {
+    failure = await fn();
+  } finally {
+    dlg.onclose = null;
+    dlg.oncancel = null;
+    onBusy(false);
+  }
+  if (!failure) {
+    if (dlg.open) dlg.close('ok');
+    onSuccess();
+    return null;
+  }
+  if (detached || !dlg.open) dlg.showModal();
+  onFailure(failure);
+  return failure;
+}
 // stage-change:end
 function stageButton(r, doc) {
   const sc = stageChangeFor(r);
@@ -2745,13 +2774,12 @@ function confirmStageChange(r, sc, hash) {
   const setBusy = on => { busy = on; ok.disabled = on; cancel.disabled = on; ok.textContent = on ? t('Working…') : t(sc.label); dlg.setAttribute('aria-busy', on ? 'true' : 'false'); };
   ok.addEventListener('click', async () => {
     if (busy) return;
-    setBusy(true);
     status.textContent = '';
-    const failure = await runStageChange(r, sc, hash);
-    setBusy(false);
-    if (!failure) { dlg.close('ok'); return; }
-    status.textContent = failureText(failure);
-    if (failure.final) ok.disabled = true;
+    await runInDialog(dlg, () => runStageChange(r, sc, hash), {
+      onBusy: setBusy,
+      onSuccess: () => toast(t(sc.done)),
+      onFailure: failure => { status.textContent = failureText(failure); if (failure.final) ok.disabled = true; },
+    });
   });
   put(dlg, h('div', {},
     h('h3', { id: 'stageDlgTitle' }, t(sc.question)),
@@ -2759,14 +2787,14 @@ function confirmStageChange(r, sc, hash) {
     h('dl', {}, stageChangeFacts(r).map(([label, v]) => [h('dt', {}, t(label)), h('dd', {}, value(label, v))])),
     status,
     h('div', { class: 'dlg-actions' }, cancel, ok)));
-  dlg.oncancel = ev => { if (busy) ev.preventDefault(); };
+  dlg.oncancel = null;
   dlg.onclose = null;
   dlg.returnValue = '';
   dlg.showModal();
   cancel.focus();
 }
-// Runs the change; null on success (a toast confirms it), else the failure
-// for the dialog (actionFailure).
+// Runs the change; null on success (the dialog's onSuccess confirms it), else
+// the failure for the dialog (actionFailure).
 async function runStageChange(r, sc, hash) {
   if (state.stagePending) return { text: 'Working…', vars: {}, suffix: null, final: false, refresh: false };
   state.stagePending = repKey(r);
@@ -2779,7 +2807,6 @@ async function runStageChange(r, sc, hash) {
     state.reportDoc = null;
     if (state.stageFilter !== 'all') state.stageFilter = sc.to;
     persist();
-    toast(t(sc.done));
     try { state.reports = await getJson('/api/reports'); } catch (err) { state.reports = { error: err.message, reports: [] }; }
     return null;
   } catch (err) {
@@ -5118,13 +5145,12 @@ function confirmArchiveNote(n) {
   // with the typed reason kept; it closes only on success or Cancel.
   const submit = async () => {
     if (!allowed()) return;
-    setBusy(true);
     status.textContent = '';
-    const failure = await runArchiveNote(state.db, n, input.value);
-    if (!failure) { busy = false; dlg.close('ok'); return; }
-    final = failure.final;
-    setBusy(false);
-    status.textContent = failureText(failure);
+    await runInDialog(dlg, () => runArchiveNote(state.db, n, input.value), {
+      onBusy: setBusy,
+      onSuccess: () => toast(t('Note archived')),
+      onFailure: failure => { final = failure.final; ok.disabled = !allowed(); status.textContent = failureText(failure); },
+    });
   };
   ok.addEventListener('click', submit);
   input.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); submit(); } });
@@ -5137,14 +5163,14 @@ function confirmArchiveNote(n) {
     h('div', { class: 'dlg-hint' }, hint, count),
     status,
     h('div', { class: 'dlg-actions' }, cancel, ok)));
-  dlg.oncancel = ev => { if (busy) ev.preventDefault(); };
+  dlg.oncancel = null;
   dlg.onclose = null;
   dlg.returnValue = '';
   dlg.showModal();
   input.focus();
 }
 
-// Archives the note; null on success (a toast confirms it), else the failure
+// Archives the note; null on success (the dialog confirms it), else the failure
 // for the dialog (actionFailure). The memory is read again either way, so an
 // unknown outcome shows the notes as they are now.
 async function runArchiveNote(profile, n, text) {
@@ -5155,7 +5181,6 @@ async function runArchiveNote(profile, n, text) {
   try {
     if (tauriCore) await invokeArchiveNote(tauriCore.invoke, req);
     else await postArchiveNote(fetch, pageToken, req);
-    toast(t('Note archived'));
     return null;
   } catch (err) {
     return actionFailure(err);
