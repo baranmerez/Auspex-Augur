@@ -1433,6 +1433,7 @@ const TR = {
   'The schema memory graph of {db} is out of date and could not be rebuilt; there is no earlier graph to show.': '{db} şema hafızası grafiği güncel değil ve yeniden oluşturulamadı; gösterilecek önceki bir grafik de yok.',
   'The schema memory graph of {db} could not be loaded.': '{db} şema hafızası grafiği yüklenemedi.',
   'Retry after the next memory change, or check the viewer output.': 'Bir sonraki hafıza değişikliğinden sonra yeniden dene ya da görüntüleyici çıktısına bak.',
+  'Retry after the next memory change.': 'Bir sonraki hafıza değişikliğinden sonra yeniden dene.',
   'scheduled: state unreadable': 'zamanlandı: durum okunamıyor', 'scheduled: ran, saving failed': 'zamanlandı: çalıştı, kayıt başarısız', 'scheduled: ran, trend point lost': 'zamanlandı: çalıştı, eğilim noktası kayboldu',
   'scheduled: ran, repair pending': 'zamanlandı: çalıştı, onarım bekliyor', 'scheduler state unreadable: last result unknown': 'zamanlayıcı durumu okunamıyor: son sonuç bilinmiyor',
   '1 trend point waits to be saved by the next scheduled run': '1 eğilim noktası sonraki zamanlanmış çalıştırmada kaydedilmeyi bekliyor',
@@ -3230,7 +3231,7 @@ function memErrorBox(db, message, ctx) {
   return h('div', { class: 'panel' }, h('div', { class: 'error-box mem-error', role: 'alert', style: 'margin:16px' },
     h('b', {}, unbuilt ? t('The schema memory graph of {db} is out of date and could not be rebuilt; there is no earlier graph to show.', { db })
       : t('The schema memory graph of {db} could not be loaded.', { db })),
-    unbuilt ? h('span', {}, t('Retry after the next memory change, or check the viewer output.')) : null,
+    unbuilt ? h('span', {}, t(ctx.desktop ? 'Retry after the next memory change.' : 'Retry after the next memory change, or check the viewer output.')) : null,
     message && message !== memStaleUnbuilt ? h('span', { class: 'mem-error-detail' }, message) : null,
     h('div', {}, h('button', { type: 'button', class: 'icon-btn sm', onclick: ctx.onRetry }, t('Retry')))));
 }
