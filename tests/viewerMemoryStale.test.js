@@ -7,6 +7,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
 import { seedExampleMemory } from './fixtures/exampleMemory.js';
 
 // EN02: a stale graph (graph.stale after a failed rebuild) is rebuilt by the
@@ -91,5 +92,94 @@ test('a graph that cannot be rebuilt is served with stale: true', async () => {
     assert.equal(summary.profiles.find(p => p.name === 'exampledb').stale, true);
   } finally {
     fs.writeFileSync(notesFile, notes);
+  }
+});
+
+// ----- The page side (mem-state block of src/viewer.html, in isolation with a
+// recording h()): a stale graph is called out with a Refresh action, and a
+// stale graph without an earlier one is explained with Retry instead of the
+// raw message.
+const msPage = fs.readFileSync(new URL('../src/viewer.html', import.meta.url), 'utf8');
+const msBlock = msPage.match(/\/\/ mem-state:start[\s\S]*?\/\/ mem-state:end/)?.[0];
+const msH = (tag, attrs = {}, ...kids) => ({ tag, attrs: attrs || {}, kids: kids.flat(Infinity).filter(k => k !== null && k !== undefined && k !== false) });
+const msText = n => (typeof n === 'string' ? n : n ? n.kids.map(msText).join(' ') : '');
+const msAll = (n, pred, out = []) => { if (n && typeof n === 'object') { if (pred(n)) out.push(n); n.kids.forEach(k => msAll(k, pred, out)); } return out; };
+const msTR = vm.runInNewContext(`(${msPage.match(/const TR = (\{[\s\S]*?\n\});/)[1]})`);
+function msLoad(lang = 'en') {
+  assert.ok(msBlock, 'mem-state block found');
+  const ctx = vm.createContext({ h: msH, t: (en, vars = {}) => String(lang === 'tr' && msTR[en] !== undefined ? msTR[en] : en).replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? '') });
+  vm.runInContext(`${msBlock}\nObject.assign(this, { memIsStale, memStaleBanner, memErrorBox, memStaleUnbuilt });`, ctx);
+  return ctx;
+}
+
+test('page: the summary or the graph marks the memory stale', () => {
+  const ctx = msLoad();
+  assert.equal(ctx.memIsStale(null, null), false);
+  assert.equal(ctx.memIsStale({ stale: true }, null), true);
+  assert.equal(ctx.memIsStale({ generatedAt: 'x' }, { stale: true }), true);
+  assert.equal(ctx.memIsStale({ generatedAt: 'x' }, { generatedAt: 'x' }), false);
+});
+
+test('page: the banner explains the stale graph per client and offers Refresh', () => {
+  const ctx = msLoad();
+  assert.equal(ctx.memStaleBanner(false, {}), null);
+  let refreshed = 0;
+  const web = ctx.memStaleBanner(true, { desktop: false, onRefresh: () => refreshed++ });
+  assert.equal(web.attrs.role, 'status');
+  assert.match(msText(web), /may be out of date/);
+  assert.match(msText(web), /The viewer rebuilds it when you refresh/);
+  const btn = msAll(web, n => n.tag === 'button')[0];
+  assert.equal(btn.attrs.type, 'button');
+  btn.attrs.onclick();
+  assert.equal(refreshed, 1);
+  const desk = ctx.memStaleBanner(true, { desktop: true, onRefresh() {} });
+  assert.match(msText(desk), /The desktop app only shows this; the next memory change or agent read rebuilds it/);
+  assert.doesNotMatch(msText(desk), /rebuilds it when you refresh/);
+});
+
+test('page: a stale graph that could not be rebuilt, without an earlier one, is explained with Retry; other errors keep their detail', () => {
+  const ctx = msLoad();
+  let retried = 0;
+  const box = msAll(ctx.memErrorBox('exampledb', ctx.memStaleUnbuilt, { stale: true, onRetry: () => retried++ }), n => n.attrs.role === 'alert')[0];
+  assert.match(msText(box), /The schema memory graph of exampledb is out of date and could not be rebuilt; there is no earlier graph to show/);
+  assert.doesNotMatch(msText(box), /see the viewer output\./, 'not the raw server message');
+  msAll(box, n => n.tag === 'button')[0].attrs.onclick();
+  assert.equal(retried, 1);
+  assert.match(msText(ctx.memErrorBox('exampledb', 'graph.json: not found', { stale: true, onRetry() {} })), /could not be rebuilt/, 'the desktop words it differently; the stale summary explains it');
+  const other = ctx.memErrorBox('exampledb', 'Memory path is a link or junction; refused.', { stale: false, onRetry() {} });
+  assert.match(msText(other), /could not be loaded/);
+  assert.match(msText(other), /Memory path is a link or junction; refused\./);
+});
+
+test('page: Turkish texts exist for every banner and error string', () => {
+  const keys = [...msBlock.matchAll(/\bt\('((?:[^'\\]|\\.)+)'/g)].map(m => m[1].replace(/\\'/g, "'"));
+  assert.deepEqual([...new Set(keys)].filter(k => msTR[k] === undefined), []);
+  assert.match(msText(msLoad('tr').memStaleBanner(true, { desktop: false, onRefresh() {} })), /güncel olmayabilir/);
+});
+
+test('page: Schema, Rules, Views and Functions draw the banner and the error box and never read a failed graph in a loop', () => {
+  assert.match(msPage, /<div class="chips" id="chips"><\/div>\s*<div id="memStale"><\/div>/);
+  for (const fn of ['renderSchema', 'renderRules', 'renderObjectTab']) assert.match(msPage, new RegExp(`function ${fn}\\([a-z]*\\) \\{\\s*renderMemStale\\(\\);`), fn);
+  assert.equal((msPage.match(/if \(memGraphWanted\(mv, state\.db, sum\)\) \{/g) || []).length, 3);
+  assert.equal((msPage.match(/memErrorBox\(state\.db, mv\.error, \{ stale: !!sum\.stale, onRetry: \(\) => retryMemView\(state\.db\) \}\)/g) || []).length, 3);
+  assert.match(msPage, /memStaleBanner\(stale, \{ desktop: !!tauriCore, onRefresh: \(\) => load\(\) \}\)/);
+});
+
+test('page: the route\'s rebuild-failed message is the one the page explains', async () => {
+  const dir = path.dirname(staleFile);
+  const notesFile = path.join(dir, 'notes.json'), graphFile = path.join(dir, 'graph.json');
+  const notes = fs.readFileSync(notesFile, 'utf8'), graph = fs.readFileSync(graphFile, 'utf8');
+  fs.writeFileSync(staleFile, '{}');
+  fs.writeFileSync(notesFile, '{ broken');
+  fs.rmSync(graphFile);
+  try {
+    const res = await get('/api/memory/graph?profile=exampledb', { 'x-auspex-token': token });
+    assert.notEqual(res.status, 200);
+    assert.equal(JSON.parse(res.text).error, msLoad().memStaleUnbuilt);
+    const summary = JSON.parse((await get('/api/memory', { 'x-auspex-token': token })).text);
+    assert.deepEqual(summary.profiles.find(p => p.name === 'exampledb'), { name: 'exampledb', generatedAt: null, stale: true });
+  } finally {
+    fs.writeFileSync(notesFile, notes);
+    fs.writeFileSync(graphFile, graph);
   }
 });

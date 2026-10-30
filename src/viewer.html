@@ -247,6 +247,10 @@
   .detail .meta span { color: var(--text-3); }
   .detail .acts { display: flex; gap: 8px; margin-top: 10px; }
   .error-box { background: var(--critical-soft); color: var(--critical); padding: 10px 12px; border-radius: 8px; margin-top: 10px; font-size: 13px; }
+  .stale-box { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; background: var(--warn-soft); color: var(--warn-ink); border: 1px solid color-mix(in srgb, var(--warn-ink) 30%, transparent);
+    padding: 8px 12px; border-radius: 8px; margin: 0 0 12px; font-size: 13px; overflow-wrap: anywhere; }
+  .mem-error { display: grid; gap: 6px; }
+  .mem-error-detail { font-size: 12px; opacity: .85; overflow-wrap: anywhere; }
   .pager { display: flex; align-items: center; gap: 8px; padding: 10px 16px; font-size: 13px; color: var(--text-2); }
   .pager .grow { flex: 1; }
 
@@ -1203,6 +1207,7 @@
     </div>
   </div>
   <div class="chips" id="chips"></div>
+  <div id="memStale"></div>
 
   <section id="v-overview" class="view"></section>
   <section id="v-ops" class="view" hidden></section>
@@ -1421,6 +1426,12 @@ const TR = {
   'Last scheduled result': 'Son zamanlanmış çalıştırma sonucu', 'manual run': 'elle çalıştırma', 'no scheduled run yet': 'henüz zamanlanmış çalıştırma yok',
   'Schedule:': 'Zamanlama:', 'disabled': 'kapalı', 'next: {s}': 'sonraki: {s}', 'Trend of scheduled runs': 'Zamanlanmış çalıştırmaların eğilimi',
   'The trend could not be loaded.': 'Eğilim yüklenemedi.',
+  'Refresh': 'Yenile', 'Retry': 'Yeniden dene', 'The schema memory graph may be out of date.': 'Şema hafızası grafiği güncel olmayabilir.',
+  'A change was stored but the graph was not rebuilt. The desktop app only shows this; the next memory change or agent read rebuilds it.': 'Bir değişiklik kaydedildi ama grafik yeniden oluşturulamadı. Masaüstü uygulaması yalnızca bunu gösterir; bir sonraki hafıza değişikliği ya da ajan okuması onu yeniden oluşturur.',
+  'A change was stored but the graph was not rebuilt. The viewer rebuilds it when you refresh.': 'Bir değişiklik kaydedildi ama grafik yeniden oluşturulamadı. Yenilediğinde görüntüleyici onu yeniden oluşturur.',
+  'The schema memory graph of {db} is out of date and could not be rebuilt; there is no earlier graph to show.': '{db} şema hafızası grafiği güncel değil ve yeniden oluşturulamadı; gösterilecek önceki bir grafik de yok.',
+  'The schema memory graph of {db} could not be loaded.': '{db} şema hafızası grafiği yüklenemedi.',
+  'Retry after the next memory change, or check the viewer output.': 'Bir sonraki hafıza değişikliğinden sonra yeniden dene ya da görüntüleyici çıktısına bak.',
   'scheduled: state unreadable': 'zamanlandı: durum okunamıyor', 'scheduled: ran, saving failed': 'zamanlandı: çalıştı, kayıt başarısız', 'scheduled: ran, trend point lost': 'zamanlandı: çalıştı, eğilim noktası kayboldu',
   'scheduled: ran, repair pending': 'zamanlandı: çalıştı, onarım bekliyor', 'scheduler state unreadable: last result unknown': 'zamanlayıcı durumu okunamıyor: son sonuç bilinmiyor',
   '1 trend point waits to be saved by the next scheduled run': '1 eğilim noktası sonraki zamanlanmış çalıştırmada kaydedilmeyi bekliyor',
@@ -1630,6 +1641,8 @@ async function load({ quiet = false } = {}) {
     if (!state.profiles || !quiet) state.profiles = await getJson('/api/profiles');
     try { state.reports = await getJson('/api/reports'); } catch (err) { state.reports = { error: err.message, reports: [] }; }
     try { state.memory = await getJson('/api/memory'); } catch (err) { state.memory = { error: err.message, profiles: [] }; }
+    // The Refresh button also reads a graph again whose last read failed.
+    if (!quiet) state.memView = memDropError(state.memView, state.db);
     const fresh = new Set();
     if (!state.firstLoad) for (const e of state.all) if (!state.seen.has(e._id)) fresh.add(e._id);
     state.seen = new Set(state.all.map(e => e._id));
@@ -3101,6 +3114,54 @@ const memFocus = () => state.memFocusBy?.[state.db] || null;
 function setMemSel(id) { state.memSelBy = { ...(state.memSelBy || {}), [state.db]: id }; persist(); }
 function setMemFocus(id) { state.memFocusBy = { ...(state.memFocusBy || {}), [state.db]: id }; persist(); }
 
+// mem-state:start (tests/viewerMemoryStale.test.js and tests/viewerMemoryRetry.test.js run this block in isolation)
+// The graph of a profile can be behind its stored memory: a change was stored
+// but graph.json could not be rebuilt (graph.stale). The browser viewer
+// rebuilds it when it reads the memory; the desktop app only reports it.
+const memStaleUnbuilt = 'The schema memory graph is stale and could not be rebuilt; see the viewer output.';
+const memIsStale = (sum, data) => !!(sum?.stale || data?.stale);
+// Whether the graph of db must be read: none yet, another profile, or the
+// summary has a newer one. A failed read is not repeated on its own (no
+// loop); Retry and the Refresh button read it again.
+const memGraphWanted = (mv, db, sum) => !mv || mv.profile !== db || (!!mv.data && mv.data.generatedAt !== sum?.generatedAt);
+// The failed read of a profile's graph is dropped so the next read fetches it.
+const memDropError = (mv, db) => (mv && mv.profile === db && mv.error !== undefined ? null : mv);
+function memStaleBanner(stale, ctx) {
+  if (!stale) return null;
+  return h('div', { class: 'stale-box', role: 'status' },
+    h('b', {}, t('The schema memory graph may be out of date.')),
+    h('span', {}, t(ctx.desktop ? 'A change was stored but the graph was not rebuilt. The desktop app only shows this; the next memory change or agent read rebuilds it.'
+      : 'A change was stored but the graph was not rebuilt. The viewer rebuilds it when you refresh.')),
+    h('button', { type: 'button', class: 'icon-btn sm', onclick: ctx.onRefresh }, t('Refresh')));
+}
+// A failed graph read with Retry; a graph that is stale and could not be
+// rebuilt, without an earlier one, gets its own explanation.
+function memErrorBox(db, message, ctx) {
+  const unbuilt = !!ctx.stale || message === memStaleUnbuilt;
+  return h('div', { class: 'panel' }, h('div', { class: 'error-box mem-error', role: 'alert', style: 'margin:16px' },
+    h('b', {}, unbuilt ? t('The schema memory graph of {db} is out of date and could not be rebuilt; there is no earlier graph to show.', { db })
+      : t('The schema memory graph of {db} could not be loaded.', { db })),
+    unbuilt ? h('span', {}, t('Retry after the next memory change, or check the viewer output.')) : null,
+    message && message !== memStaleUnbuilt ? h('span', { class: 'mem-error-detail' }, message) : null,
+    h('div', {}, h('button', { type: 'button', class: 'icon-btn sm', onclick: ctx.onRetry }, t('Retry')))));
+}
+// mem-state:end
+// Reads the graph of db again after a failed read (Retry).
+function retryMemView(db) {
+  state.memView = memDropError(state.memView, db);
+  ensureMemView(db);
+}
+// The stale-graph banner above the Schema, Views, Functions and Rules tabs.
+function renderMemStale() {
+  const host = $('memStale');
+  const on = ['schema', 'rules', 'views', 'functions'].includes(state.tab) && !!state.db;
+  const mv = on && state.memView?.profile === state.db ? state.memView : null;
+  const stale = on && memIsStale(memSummaryFor(state.db), mv?.data);
+  const key = stale ? `${state.db}|${lang}|${!!tauriCore}` : '';
+  if (host.dataset.key === key) return;
+  host.dataset.key = key;
+  put(host, memStaleBanner(stale, { desktop: !!tauriCore, onRefresh: () => load() }));
+}
 async function ensureMemView(db) {
   if (state.memLoading === db) return;
   state.memLoading = db;
@@ -4749,6 +4810,7 @@ function ruleGroup(g) {
 }
 
 function renderRules() {
+  renderMemStale();
   const profiles = memProfiles();
   const sum = state.db ? memSummaryFor(state.db) : null;
   const active = state.db ? (sum?.notes || 0) : profiles.reduce((a, p) => a + (p.notes || 0), 0);
@@ -4763,11 +4825,11 @@ function renderRules() {
       h('p', {}, t('It fills as your agent describes tables (describe_table) and runs reports.')))));
   }
   const mv = state.memView;
-  if (!mv || mv.profile !== state.db || (mv.data && mv.data.generatedAt !== sum.generatedAt)) {
+  if (memGraphWanted(mv, state.db, sum)) {
     ensureMemView(state.db);
     if (!mv || mv.profile !== state.db) return plain(null, h('div', { class: 'panel' }, h('div', { class: 'rep-empty' }, t('Loading…'))));
   }
-  if (mv.error) return plain(null, h('div', { class: 'panel' }, h('div', { class: 'error-box', style: 'margin:16px' }, mv.error)));
+  if (mv.error) return plain(null, memErrorBox(state.db, mv.error, { stale: !!sum.stale, onRetry: () => retryMemView(state.db) }));
 
   const f = state.rulesFilter ??= { kind: '', table: '', status: 'active', q: '' };
   const key = JSON.stringify([state.db, mv.data.generatedAt, lang, f, state.archivePending ?? null, state.rulesSel ?? null, state.rulesOpen ?? null, !!state.rulesListCollapsed]);
@@ -6900,6 +6962,7 @@ function objectTabCount(tab) {
   return n ? fmt(n) : '';
 }
 function renderObjectTab(tab) {
+  renderMemStale();
   const profiles = memProfiles();
   const sum = state.db ? memSummaryFor(state.db) : null;
   // The counts need the graph of the chosen database; it is read once.
@@ -6916,11 +6979,11 @@ function renderObjectTab(tab) {
       h('p', {}, t('It fills as your agent describes tables (describe_table) and runs reports.')))));
   }
   const mv = state.memView;
-  if (!mv || mv.profile !== state.db || (mv.data && mv.data.generatedAt !== sum.generatedAt)) {
+  if (memGraphWanted(mv, state.db, sum)) {
     ensureMemView(state.db);
     if (!mv || mv.profile !== state.db) return plain(h('div', { class: 'panel' }, h('div', { class: 'rep-empty' }, t('Loading…'))));
   }
-  if (mv.error) return plain(h('div', { class: 'panel' }, h('div', { class: 'error-box', style: 'margin:16px' }, mv.error)));
+  if (mv.error) return plain(memErrorBox(state.db, mv.error, { stale: !!sum.stale, onRetry: () => retryMemView(state.db) }));
   const tp = pageOf(tab);
   if (tp?.db === state.db && tp.trail.length) { state[listKey] = null; renderTablePage(view, mv.data, tab); return; }
   setPageKey(tab, null);
@@ -6963,6 +7026,7 @@ function renderObjectTab(tab) {
   if (refocus) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
 }
 function renderSchema() {
+  renderMemStale();
   const profiles = memProfiles();
   const sum = state.db ? memSummaryFor(state.db) : null;
   const explored = state.db ? (sum?.explored || 0) : profiles.reduce((a, p) => a + (p.explored || 0), 0);
@@ -6979,11 +7043,11 @@ function renderSchema() {
     return;
   }
   const mv = state.memView;
-  if (!mv || mv.profile !== state.db || (mv.data && mv.data.generatedAt !== sum.generatedAt)) {
+  if (memGraphWanted(mv, state.db, sum)) {
     ensureMemView(state.db);
     if (!mv || mv.profile !== state.db) { stopGraph(); state.schemaKey = null; put(view, h('div', { class: 'panel' }, h('div', { class: 'rep-empty' }, t('Loading…')))); return; }
   }
-  if (mv.error) { stopGraph(); state.schemaKey = null; put(view, h('div', { class: 'panel' }, h('div', { class: 'error-box', style: 'margin:16px' }, mv.error))); return; }
+  if (mv.error) { stopGraph(); state.schemaKey = null; put(view, memErrorBox(state.db, mv.error, { stale: !!sum.stale, onRetry: () => retryMemView(state.db) })); return; }
   if (state.tablePage?.db === state.db && state.tablePage.trail.length) {
     if (state.schemaKey) { stopGraph(); state.schemaKey = null; state.tablePageKey = null; }
     renderTablePage(view, mv.data);
