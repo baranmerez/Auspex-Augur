@@ -342,3 +342,39 @@ test('a report in a nested category is listed, opened and approved with its cate
   assert.equal(ok.json.report, 'exampledb/example/Orders/Delivery/late-deliveries');
   assert.equal(lib.exists('approved', nested), true);
 });
+
+// ----- Failed local actions stay in the open dialog (never a passing toast) -----
+test('a failed approve or revoke is described for the dialog; an unknown outcome or a changed report ends the attempt', () => {
+  const src = page.match(/\/\/ stage-change:start[\s\S]*?\/\/ stage-change:end/)[0];
+  const ctx = vm.createContext({});
+  vm.runInContext(`${src}\nthis.actionFailure = actionFailure; this.stageError = stageError;`, ctx);
+  const plainOf = v => JSON.parse(JSON.stringify(v));
+  assert.deepEqual(plainOf(ctx.actionFailure(Object.assign(new Error('boom'), { viewerRestarted: true }))),
+    { text: 'The viewer was restarted; reload the page', vars: {}, suffix: null, final: true, refresh: false });
+  const timeout = ctx.actionFailure(ctx.stageError('timed out', 'TIMEOUT'));
+  assert.equal(timeout.text, 'The change may or may not have been applied; reload the list.', 'the reconciliation text stays');
+  assert.equal(timeout.final, true, 'no second try from the same dialog');
+  assert.equal(timeout.refresh, true, 'the list is read again');
+  const stale = ctx.actionFailure(ctx.stageError('changed: now version 3', 'STALE_VERSION'));
+  assert.deepEqual(plainOf(stale.suffix), { text: ' (now version {v})', vars: { v: 3 } });
+  assert.equal(stale.final, true);
+  const plain = ctx.actionFailure(ctx.stageError('The draft has no successful run of its current SQL.', 'PRECONDITION_FAILED'));
+  assert.deepEqual(plainOf(plain), { text: 'The draft has no successful run of its current SQL.', vars: {}, suffix: null, final: false, refresh: false }, 'a plain refusal may be tried again by hand');
+});
+
+test('page: the confirm dialog stays open on failure with a persistent alert, stays busy while running, and never retries', () => {
+  const confirm = page.match(/function confirmStageChange\(r, sc, hash\) \{[\s\S]*?\r?\n\}\r?\n/)[0];
+  assert.match(confirm, /const status = h\('div', \{ class: 'dlg-status', role: 'alert' \}\);/);
+  assert.match(confirm, /if \(!failure\) \{ dlg\.close\('ok'\); return; \}\s*status\.textContent = failureText\(failure\);\s*if \(failure\.final\) ok\.disabled = true;/);
+  assert.match(confirm, /dlg\.oncancel = ev => \{ if \(busy\) ev\.preventDefault\(\); \};/);
+  assert.doesNotMatch(confirm, /method: 'dialog'/, 'no form that closes the dialog before the change ran');
+  const run = page.match(/async function runStageChange\(r, sc, hash\) \{[\s\S]*?\r?\n\}\r?\n/)[0];
+  assert.doesNotMatch(run.slice(run.indexOf('catch (err)')), /toast\(/, 'a failure is not a toast');
+  assert.equal((run.match(/postStageChange\(|invokeStageChange\(/g) || []).length, 2, 'one attempt (browser or desktop)');
+});
+
+test('page: the toast is a polite status region and the live refresh count is not announced', () => {
+  assert.match(page, /<div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"><\/div>/);
+  assert.match(page, /t\.setAttribute\('aria-live', announce \? 'polite' : 'off'\);/);
+  assert.match(page, /toast\(t\('\{n\} new operations', \{ n: fresh\.size \}\), \{ announce: false \}\)/);
+});

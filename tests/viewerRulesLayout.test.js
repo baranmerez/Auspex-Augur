@@ -115,7 +115,7 @@ test('evidence styles also apply to the dense rows, and long SQL stays inside it
 
 test('the pending archive button spins and the dialog confirm button is the only red one', () => {
   assert.match(page, /class: 'icon-btn sm' \+ \(pending \? ' spin' : ''\)/);
-  assert.match(page, /'icon-btn secondary-danger', value: 'ok', disabled: true \}, t\('Archive'\)/);
+  assert.match(page, /h\('button', \{ type: 'button', class: 'icon-btn secondary-danger', disabled: true \}, t\('Archive'\)\)/);
 });
 
 test('rules navigator: table list left in schema and prefix groups, a divider, the chosen notes right', () => {
