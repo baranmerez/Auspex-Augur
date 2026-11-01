@@ -5644,7 +5644,7 @@ const tpSummaryReasons = {
   'definition-missing': 'Only the signature of the trigger function was in memory (list_functions) when this summary was written.',
   'definition-truncated': 'The stored function definition is cut, so a change after the cut cannot be seen.',
   'function-missing': 'The trigger function is no longer in memory with a definition.',
-  'binding-unresolved': 'The function name of the trigger matches more than one recorded function, or none is named.',
+  'binding-unresolved': 'The function of the trigger cannot be identified exactly; describe the table again.',
 };
 function tpSummaryBadge(tr) {
   const state = tr.summaryFreshness ?? (tr.summaryStale ? 'stale' : null);
@@ -6041,7 +6041,7 @@ const tablePageTr = {
   'Only the signature of the trigger function was in memory (list_functions) when this summary was written.': 'Bu özet yazılırken trigger fonksiyonunun yalnızca imzası hafızadaydı (list_functions).',
   'The stored function definition is cut, so a change after the cut cannot be seen.': 'Saklanan fonksiyon tanımı kesik; kesilen yerden sonraki bir değişiklik görülemez.',
   'The trigger function is no longer in memory with a definition.': 'Trigger fonksiyonu artık tanımıyla birlikte hafızada değil.',
-  'The function name of the trigger matches more than one recorded function, or none is named.': 'Trigger\'ın fonksiyon adı birden çok kayıtlı fonksiyonla eşleşiyor ya da ad yok.',
+  'The function of the trigger cannot be identified exactly; describe the table again.': 'Trigger\'ın fonksiyonu kesin belirlenemiyor; tabloyu yeniden describe et.',
   'No summary yet (auspex-columns writes one).': 'Henüz özet yok (auspex-columns yazar).', 'No triggers recorded.': 'Kayıtlı trigger yok.',
   'Referenced by': 'Ona başvuran tablolar', 'Tables this table points to': 'Bu tablonun işaret ettiği tablolar', 'Tables that point to this table': 'Bu tabloya işaret eden tablolar',
   'Not explored yet: describe_table records it.': 'Henüz keşfedilmedi: describe_table kaydeder.', '~{n} rows (est.)': '~{n} satır (tahmini)', 'not explored yet': 'henüz keşfedilmedi', 'None known.': 'Bilinen yok.',

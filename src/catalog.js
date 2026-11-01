@@ -96,7 +96,7 @@ order by a.attrelid, a.attnum`;
 // 64 instead of.
 const triggersSql = `
 select t.tgrelid::bigint as relid, t.tgname as name, t.tgtype::int as tgtype, t.tgenabled::text as enabled,
-       fn.nspname || '.' || p.proname as function,
+       fn.nspname || '.' || p.proname as function, fn.nspname as function_schema, p.proname as function_name,
        t.tgconstraint <> 0 as constraint_trigger,
        pg_get_triggerdef(t.oid) as definition
 from pg_trigger t
@@ -118,6 +118,8 @@ export function triggerFromRow(row) {
     level: type & 1 ? 'ROW' : 'STATEMENT',
     enabled: triggerEnabled[row.enabled] ?? row.enabled,
     function: row.function,
+    // The flattened name above cannot be split back when a name has a dot.
+    ...(row.function_schema != null && row.function_name != null ? { functionSchema: row.function_schema, functionName: row.function_name } : {}),
     whenCondition: when ? when[1] : null,
     ...(row.constraint_trigger ? { constraintTrigger: true } : {}),
     definition: row.definition,

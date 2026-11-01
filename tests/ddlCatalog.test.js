@@ -169,6 +169,9 @@ test('trigger rows: timing, events, level, enabled state, WHEN condition', () =>
   assert.deepEqual([instead.timing, instead.enabled, instead.constraintTrigger], ['INSTEAD OF', 'always', true]);
   assert.equal(triggerFromRow({ ...base, tgtype: 1 | 16, enabled: 'R', definition: 'CREATE TRIGGER t AFTER UPDATE ON s.x FOR EACH ROW WHEN ((old.a IS DISTINCT FROM new.a)) EXECUTE PROCEDURE s.f()' }).whenCondition,
     '(old.a IS DISTINCT FROM new.a)');
+  const quoted = triggerFromRow({ ...base, function: 's.f()', function_schema: 's', function_name: 'f()', tgtype: 1 | 4, enabled: 'O', definition: 'CREATE TRIGGER t AFTER INSERT ON s.x FOR EACH ROW EXECUTE FUNCTION s."f()"()' });
+  assert.deepEqual([quoted.function, quoted.functionSchema, quoted.functionName], ['s.f()', 's', 'f()'], 'the exact identity next to the flattened name');
+  assert.equal('functionSchema' in after, false);
 });
 
 test('describe_functions by name: every overload, aggregates without definition, unknown and invalid names per entry, 1 statement', async () => {
