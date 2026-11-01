@@ -1502,6 +1502,7 @@ const TR = {
   'schedules.json could not be read: ': 'schedules.json okunamadı: ',
   'Sort by {c}, ascending': '{c} sütununa göre artan sırala', 'Sort by {c}, descending': '{c} sütununa göre azalan sırala',
   'The focused operation is no longer listed; focus moved to the nearest one.': 'Odaktaki işlem artık listede yok; odak en yakın işleme geçti.',
+  'The focused operation is no longer listed; no operations are shown now.': 'Odaktaki işlem artık listede yok; şu an gösterilen işlem yok.',
   'Ask agent': 'Ajana sor', 'Ask agent to describe it': 'Ajandan tanımlamasını iste', 'Ask agent about this column': 'Bu kolonu ajana sor', 'Ask agent about {s}': '{s} hakkında ajana sor',
   'Copy a request about this report for your agent (no row values, no SQL)': 'Bu rapor için ajanına bir istek kopyala (satır değeri ve SQL yok)',
   'Copy a request about this object for your agent (no row values)': 'Bu nesne için ajanına bir istek kopyala (satır değeri yok)',
@@ -2055,7 +2056,8 @@ function opsFocusOf(el, root) {
 // there; the row of a detail action that closed; for a row that left the page
 // (removed by live refresh or a filter) the row now at its position, else the
 // last row; the other pager button once one is disabled; else the first sort
-// button. moved: focus did not stay on the same operation or control, so the
+// button, or the first toolbar control when no rows (and so no headers) are
+// left. moved: focus did not stay on the same operation or control, so the
 // change is announced once.
 function opsFocusTarget(saved, keys, rowKeys) {
   if (!saved) return null;
@@ -2063,8 +2065,16 @@ function opsFocusTarget(saved, keys, rowKeys) {
   if (saved.row && keys.includes(`row:${saved.row}`)) return { key: `row:${saved.row}`, moved: false };
   if (saved.row && rowKeys.length) return { key: rowKeys[Math.min(Math.max(saved.index, 0), rowKeys.length - 1)], moved: true };
   const pager = saved.key.startsWith('pager:') ? keys.find(k => k.startsWith('pager:')) : null;
-  const key = pager ?? keys.find(k => k.startsWith('sort:')) ?? null;
+  const key = pager ?? keys.find(k => k.startsWith('sort:')) ?? keys.find(k => k.startsWith('tools:')) ?? null;
   return key ? { key, moved: true } : null;
+}
+// The one announcement after a redraw: only when the focused operation left
+// the list, saying whether focus went to a neighbouring row or nothing is left.
+function opsFocusNotice(saved, target) {
+  if (!target?.moved || !saved?.row) return null;
+  return target.key.startsWith('row:')
+    ? t('The focused operation is no longer listed; focus moved to the nearest one.')
+    : t('The focused operation is no longer listed; no operations are shown now.');
 }
 // A native button per header (Tab, Enter, Space; the browser turns both keys
 // into a click, so keyboard and mouse sort alike). The header carries the sort
@@ -2150,7 +2160,8 @@ function renderOps(rows) {
   const target = opsFocusTarget(saved, keys, keys.filter(k => k.startsWith('row:')));
   if (target) {
     drawn[keys.indexOf(target.key)].focus({ preventScroll: !target.moved });
-    if (target.moved && saved.row) toast(t('The focused operation is no longer listed; focus moved to the nearest one.'));
+    const notice = opsFocusNotice(saved, target);
+    if (notice) toast(notice);
   }
 }
 
