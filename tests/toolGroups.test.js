@@ -129,6 +129,11 @@ test('a disabled tool called directly by name is refused with TOOL_DISABLED befo
   assert.equal(fs.existsSync(path.join(home, 'library')), false, 'nothing was written to the library');
   const unknown = await client.callTool({ name: 'no_such_tool', arguments: {} });
   assert.equal(unknown.structuredContent.error.code, 'INVALID_INPUT', 'an unknown tool is answered as before');
+  // Astra B-F2: a name that only starts with a disabled tool's name is unknown, not disabled.
+  for (const name of ['query unknown', 'query not found', 'save_report x']) {
+    const r = await client.callTool({ name, arguments: {} });
+    assert.equal(r.structuredContent.error.code, 'INVALID_INPUT', name);
+  }
   assert.deepEqual(auditEntries(home), [], 'refused before any audited work');
 });
 

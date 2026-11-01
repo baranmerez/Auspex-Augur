@@ -182,11 +182,13 @@ function tool(name, toolConfig, handler) {
 // database work or library change.
 if (typeof server.createToolError === 'function') {
   server.createToolError = message => {
-    const toolName = /\bfor tool ([\w-]+)|\bTool ([\w-]+) /.exec(message)?.slice(1).find(Boolean) ?? null;
-    if (disabledTools.has(toolName) && /not found/.test(message)) {
-      const text = `Tool ${toolName} is not enabled on this Auspex server: it belongs to tool group "${disabledTools.get(toolName)}", and enabledToolGroups is ${[...enabledGroups].join(', ')}. The user can add the group and restart the server.`;
-      return errorResult(new ToolError('TOOL_DISABLED', text), crypto.randomUUID(), text, toolName);
+    // The whole requested name, so "query unknown" is not taken for query.
+    const missing = /^(?:MCP error -?\d+: )?Tool (.+) not found$/s.exec(message)?.[1];
+    if (missing !== undefined && disabledTools.has(missing)) {
+      const text = `Tool ${missing} is not enabled on this Auspex server: it belongs to tool group "${disabledTools.get(missing)}", and enabledToolGroups is ${[...enabledGroups].join(', ')}. The user can add the group and restart the server.`;
+      return errorResult(new ToolError('TOOL_DISABLED', text), crypto.randomUUID(), text, missing);
     }
+    const toolName = /\bfor tool ([\w-]+)|\bTool ([\w-]+) /.exec(message)?.slice(1).find(Boolean) ?? null;
     return errorResult(
       new ToolError(/-32602|Input validation error|Invalid arguments/.test(message) ? 'INVALID_INPUT' : 'INTERNAL', message),
       crypto.randomUUID(), message, toolName);
