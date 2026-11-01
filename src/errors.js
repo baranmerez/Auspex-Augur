@@ -12,6 +12,7 @@
 //   TIMEOUT                statement, lock or export time limit reached
 //   CANCELLED              the client cancelled the request (MCP cancellation)
 //   INVALID_INPUT          invalid arguments or names
+//   TOOL_DISABLED          the tool's group is not in enabledToolGroups (startup setting)
 //   PROFILE_INVALID        missing or unknown profile
 //   NOT_FOUND              report, note, table or column not found
 //   PRECONDITION_FAILED    the operation needs an earlier step (save, run)
@@ -22,7 +23,7 @@
 //   DATABASE_ERROR         any other PostgreSQL error (see sqlState)
 //   INTERNAL               anything else
 export const errorCodes = [
-  'QUERY_BUDGET_EXCEEDED', 'LOCK_BUSY', 'ROLE_REJECTED', 'SQL_REJECTED', 'TIMEOUT', 'CANCELLED', 'INVALID_INPUT',
+  'QUERY_BUDGET_EXCEEDED', 'LOCK_BUSY', 'ROLE_REJECTED', 'SQL_REJECTED', 'TIMEOUT', 'CANCELLED', 'INVALID_INPUT', 'TOOL_DISABLED',
   'PROFILE_INVALID', 'NOT_FOUND', 'PRECONDITION_FAILED', 'STALE_VERSION', 'PERMISSION_DENIED', 'CONNECTION_FAILED',
   'DISK_ERROR', 'DATABASE_ERROR', 'INTERNAL',
 ];
