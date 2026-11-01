@@ -43,8 +43,9 @@ database statements, and leave the answer in the schema memory.
 
 1. **Profile and memory.** Profile check (rule 1). `table_knowledge` on the
    tables the user named; read `databaseNotes`, table notes,
-   `columnScores`, trigger `summary` (hints; `summaryStale` means the trigger
-   definition changed since; a function body change is not detected)
+   `columnScores`, trigger `summary` (hints; `summaryFreshness` stale means
+   the trigger or its function changed since, unverified means it could not be
+   checked; `summaryFreshnessReason` says why)
    and `unexploredNeighbors`. No scores: offer `auspex-columns`.
 2. **Candidates.** `search` with the business word and its likely table-name
    forms (in the languages the schema may use, singular and plural). Filter the list in the

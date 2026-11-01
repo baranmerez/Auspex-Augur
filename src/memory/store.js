@@ -768,6 +768,39 @@ export class SchemaMemory {
     return out.filter(Boolean).sort((a, b) => textOrder(tableKey(a.schema, a.name), tableKey(b.schema, b.name)));
   }
 
+  // Resolves the function a trigger record names ("schema.name" as
+  // describe_table stored it) to its stored record, without definitions:
+  // { status: 'found', record } | { status: 'not-recorded' } |
+  // { status: 'unresolved' } (no name, or a dot in a name lets more than one
+  // stored record match). fns: every stored record (graph rebuild); without
+  // it only the candidate files are read, a few per trigger. An unreadable
+  // record counts as not recorded.
+  functionLookup(profile, fns = null) {
+    const byKey = fns ? new Map(fns.map(f => [tableKey(f.schema, f.name), f])) : null;
+    const read = (schema, name) => {
+      if (byKey) return byKey.get(tableKey(schema, name)) ?? null;
+      try {
+        const file = this.functionPath(profile, schema, name);
+        if (!fs.existsSync(file)) return null;
+        const rec = this.readFunctionSummary(profile, file);
+        return rec?.schema === schema && rec?.name === name ? rec : null;
+      } catch (err) {
+        process.stderr.write(`auspex: schema memory function not read: ${repairError(err).message}\n`);
+        return null;
+      }
+    };
+    return ref => {
+      if (!ref) return { status: 'unresolved' };
+      const found = [];
+      for (let i = ref.indexOf('.'); i > 0; i = ref.indexOf('.', i + 1)) {
+        const rec = read(ref.slice(0, i), ref.slice(i + 1));
+        if (rec) found.push(rec);
+      }
+      if (found.length > 1) return { status: 'unresolved' };
+      return found.length ? { status: 'found', record: found[0] } : { status: 'not-recorded' };
+    };
+  }
+
   // describe_functions read these overloads (catalog.describeFunctions
   // entries without error): store them per schema and name and report what
   // changed since the last describe. partial: keys (tableKey of schema and
@@ -878,8 +911,7 @@ export class SchemaMemory {
 
   // graph.json functions: one light entry per stored function name (no
   // definitions), with the views and stored functions that call it.
-  functionsView(profile, tables) {
-    const fns = this.listFunctions(profile);
+  functionsView(profile, tables, fns = this.listFunctions(profile)) {
     const byViews = new Map();
     for (const t of tables) {
       for (const f of t.viewFunctions ?? []) {
@@ -1184,8 +1216,13 @@ export class SchemaMemory {
       if (triggers.length) {
         const summaries = {};
         for (const [name, value] of Object.entries(rec.triggerSummaries ?? {})) setOwn(summaries, name, value);
-        // definitionHash marks the summary stale when the trigger changes later.
-        for (const t of triggers) setOwn(summaries, t.name, { summary: t.summary, at, definitionHash: definitionHash(recorded.get(t.name).definition) });
+        // definitionHash marks the summary stale when the trigger changes
+        // later; functionEvidence when its function changes (#152).
+        const lookup = this.functionLookup(profile);
+        for (const t of triggers) {
+          const trig = recorded.get(t.name);
+          setOwn(summaries, t.name, { summary: t.summary, at, definitionHash: definitionHash(trig.definition), functionEvidence: functionEvidence(trig, lookup) });
+        }
         rec.triggerSummaries = summaries;
       }
       this.writeTable(profile, rec); // commit point: the scores and summaries
@@ -1363,7 +1400,7 @@ export class SchemaMemory {
       })),
       recentChanges: (rec.history || []).slice(-5).map(h => `${h.at.slice(0, 10)}: ${h.changes.map(changeText).join('; ')}`),
       ...columnScoresSection(rec, notes),
-      ...(Array.isArray(rec.triggers) ? { triggers: triggersWithSummaries(rec) } : {}),
+      ...(Array.isArray(rec.triggers) ? { triggers: triggersWithSummaries(rec, this.functionLookup(profile)) } : {}),
       ...this.databaseNotesSection(profile),
       ...this.neighborsSection(profile, [rec], tables),
     };
@@ -1375,6 +1412,8 @@ export class SchemaMemory {
     const tables = this.listTables(profile);
     const edges = this.edges(profile, tables);
     const notes = this.activeNotes(profile);
+    const fns = this.listFunctions(profile);
+    const lookup = this.functionLookup(profile, fns);
     const nodes = new Map(tables.map(t => [tableKey(t.schema, t.table), {
       id: tableKey(t.schema, t.table), schema: t.schema, table: t.table,
       file: `tables/${fileSegment(t.schema)}/${fileSegment(t.table)}.json`,
@@ -1383,7 +1422,7 @@ export class SchemaMemory {
       notes: notes.filter(n => n.schema === t.schema && n.table === t.table).length,
       ...(t.estRows !== undefined ? { estRows: t.estRows } : {}),
       ...(t.columnScores ? { scoredAt: t.scoredAt, columnScores: columnScoresView(t.columnScores) } : {}),
-      ...(t.triggers?.length ? { triggers: triggersWithSummaries(t) } : {}),
+      ...(t.triggers?.length ? { triggers: triggersWithSummaries(t, lookup) } : {}),
       ...(Array.isArray(t.viewSources) ? { viewSources: [...new Set(t.viewSources.map(v => tableKey(v.schema, v.table)))] } : {}),
       ...(Array.isArray(t.viewFunctions) ? { viewFunctions: [...new Set(t.viewFunctions.map(f => tableKey(f.schema, f.name)))] } : {}),
     }]));
@@ -1399,7 +1438,7 @@ export class SchemaMemory {
     const viewEdges = tables.flatMap(t => (t.viewSources ?? [])
       .filter(v => nodes.has(tableKey(v.schema, v.table)) && !sameTable(v, t))
       .map(v => ({ level: 'view', from: tableKey(t.schema, t.table), to: tableKey(v.schema, v.table), columns: v.columns ?? [], refColumns: [] })));
-    return { profile, nodes: [...nodes.values()], edges: [...edges, ...viewEdges], functions: this.functionsView(profile, tables) };
+    return { profile, nodes: [...nodes.values()], edges: [...edges, ...viewEdges], functions: this.functionsView(profile, tables, fns) };
   }
 
   // Everything the viewer shows for one profile, in one file the viewer and
@@ -1773,15 +1812,78 @@ function columnScoresSection(rec, notes = []) {
   };
 }
 
-// Recorded triggers with the agent's one-line summary (score_columns);
-// summaryStale when the trigger definition changed after the summary.
-function triggersWithSummaries(rec) {
+// The function a trigger record names, as describe_table stored it
+// (nspname || '.' || proname, unquoted); records of older builds may end
+// with "()".
+const triggerFunctionRef = t => (typeof t.function === 'string' && t.function ? t.function.replace(/\(\)$/, '') : null);
+
+// A trigger function takes no declared arguments: its overload is the one
+// with an empty argument list.
+const triggerOverload = rec => (rec.overloads ?? []).find(o => o.arguments === '') ?? null;
+
+// What a new trigger summary was based on (#152): the trigger's function as
+// the memory knew it then. complete is true only when the stored definition
+// is the whole text; gap names why freshness cannot be established later:
+// binding-unresolved, function-not-recorded, definition-missing (listed
+// only) or definition-truncated.
+function functionEvidence(t, lookup) {
+  const ref = triggerFunctionRef(t);
+  const found = lookup(ref);
+  if (found.status !== 'found') return { ref, complete: false, gap: found.status === 'unresolved' ? 'binding-unresolved' : 'function-not-recorded' };
+  const rec = found.record;
+  const o = triggerOverload(rec);
+  const identity = { ref, schema: rec.schema, name: rec.name, arguments: '' };
+  if (!o) return { ...identity, complete: false, gap: 'function-not-recorded' };
+  if (!o.definitionHash) return { ...identity, capturedAt: rec.describedAt ?? null, complete: false, gap: 'definition-missing' };
+  const complete = o.truncated !== true;
+  return {
+    ...identity, capturedAt: rec.describedAt ?? null, definitionHash: o.definitionHash, definitionLength: o.definitionLength ?? null,
+    complete, ...(complete ? {} : { gap: 'definition-truncated' }),
+  };
+}
+
+// Freshness of a trigger summary: { state: 'fresh' | 'stale' | 'unverified',
+// reason? }. stale: trigger-changed (its definition), binding-changed (it
+// now calls another function), function-changed (the stored definition of
+// that function differs from the one the summary was based on). unverified:
+// legacy (written before function evidence), the gap of functionEvidence, or
+// function-missing (the function or its overload is no longer in memory
+// with a definition). A detected change wins over a gap; missing evidence is
+// never fresh.
+export function summaryFreshness(t, s, lookup) {
+  const stale = reason => ({ state: 'stale', reason });
+  const unverified = reason => ({ state: 'unverified', reason });
+  if (s.definitionHash !== definitionHash(t.definition)) return stale('trigger-changed');
+  const ev = s.functionEvidence;
+  if (!ev || typeof ev !== 'object') return unverified('legacy');
+  const ref = triggerFunctionRef(t);
+  if (ref !== ev.ref) return stale('binding-changed');
+  if (ev.gap === 'binding-unresolved') return unverified(ev.gap);
+  const found = lookup(ref);
+  if (found.status === 'found' && ev.schema !== undefined && (found.record.schema !== ev.schema || found.record.name !== ev.name)) return stale('binding-changed');
+  const o = found.status === 'found' ? triggerOverload(found.record) : null;
+  if (!o?.definitionHash) return unverified(ev.gap ?? 'function-missing');
+  if (ev.definitionHash && (o.definitionHash !== ev.definitionHash || (o.definitionLength ?? null) !== (ev.definitionLength ?? null))) return stale('function-changed');
+  if (ev.gap) return unverified(ev.gap);
+  if (o.truncated === true) return unverified('definition-truncated');
+  return { state: 'fresh' };
+}
+
+// Recorded triggers with the agent's one-line summary (score_columns) and
+// its freshness: summaryFreshness, summaryFreshnessReason when not fresh,
+// and summaryStale: true as before when stale.
+function triggersWithSummaries(rec, lookup) {
   const summaries = rec.triggerSummaries ?? {};
   return (rec.triggers ?? []).map(t => {
     const s = Object.hasOwn(summaries, t.name) ? summaries[t.name] : null;
+    if (!s) return { ...t };
+    const f = summaryFreshness(t, s, lookup);
     return {
       ...t,
-      ...(s ? { summary: s.summary, summaryAt: s.at, ...(s.definitionHash !== definitionHash(t.definition) ? { summaryStale: true } : {}) } : {}),
+      summary: s.summary, summaryAt: s.at,
+      summaryFreshness: f.state,
+      ...(f.reason ? { summaryFreshnessReason: f.reason } : {}),
+      ...(f.state === 'stale' ? { summaryStale: true } : {}),
     };
   });
 }

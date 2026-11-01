@@ -106,15 +106,20 @@ column appears.
    `notesLanguage` from `list_profiles` (ask once if null).
 5. **Triggers.** `table_knowledge` lists the recorded triggers of the table
    (an older record without a `triggers` field needs one more
-   `describe_tables` call). For each trigger without a summary, or with
-   `summaryStale: true`, read its function with one `describe_functions` call
-   for all of them (1 statement) and write a one-line summary of what it does
+   `describe_tables` call). For each trigger without a summary, or whose
+   `summaryFreshness` is `stale` or `unverified`, read its function with one
+   `describe_functions` call for all of them (1 statement; `function_knowledge`
+   shows what memory already has without a query) and write a one-line
+   summary of what it does
    (at most 200 characters, `notesLanguage`), for example "Rejects
    example.orders rows whose status_code is not in example.status_codes".
-   Describe the effect, never paste or store the function source. A summary
-   is marked stale only when the trigger definition changes, not when only
-   the function body changes; when the user asks, read the functions again
-   and rewrite the summaries.
+   Describe the effect, never paste or store the function source. Save the
+   summary after describing its function: the summary records that
+   definition, and a later `describe_functions` that records a changed body
+   marks it stale (`function-changed`). Helper functions the trigger function
+   calls are not followed; a summary written without the function in memory
+   stays `unverified` until you save it again. Never mark a summary current
+   without rereading its function.
 6. **Save.** One `score_columns` call per table with every column you
    scored as `by: "agent"` (the default; unlisted columns keep their earlier
    score, user scores are never touched), the trigger summaries

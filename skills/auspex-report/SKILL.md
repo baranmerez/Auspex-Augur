@@ -20,9 +20,9 @@ late one.
    (the user layer wins) 4-5 columns for output and filters and treat score
    1-2 or unused columns as low value; never drop a column the user asked for,
    a low score only means no report or script uses it. A trigger may rewrite
-   or reject values, so read its summary: summaries are hints; `summaryStale`
-   means the trigger definition changed since; a function body change is not
-   detected. If a table has no scores, say
+   or reject values, so read its summary: summaries are hints;
+   `summaryFreshness` stale means the trigger or its function changed since,
+   unverified means it could not be checked. If a table has no scores, say
    so and offer the `auspex-columns` skill; never block a report on missing
    scores. Scores are advisory: rules from the user and remembered rules win.
 3. **One question round, at most 3 questions,** in one message, each with a

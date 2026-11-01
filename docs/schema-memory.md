@@ -129,7 +129,7 @@ node: { id: "schema.table", schema, table, file?, state: "explored" | "seen" | "
                                      agent?: { score, roles, reason, sources, at, history },
                                      user?: { score, roles?, at, history } | { cleared: true, at, history } } },
         triggers?: [{ name, timing, events, level, enabled, function, when, definition, constraintTrigger,
-                      summary?, summaryAt?, summaryStale? }],
+                      summary?, summaryAt?, summaryFreshness?, summaryFreshnessReason?, summaryStale? }],
         viewSources?: ["schema.table", ...],   // views and materialized views: relations they read
         viewFunctions?: ["schema.name", ...] }  // views and materialized views: functions they call
 edge: { level: "fk" | "used" | "suggested" | "view", from: "schema.table", to: "schema.table",
@@ -318,9 +318,35 @@ low; after a scan the skill asks once which such columns matter and saves the
 answers as user scores.
 
 - Optional `triggers`: one-line summary per trigger of what its function does
-  (the source is never stored). A summary is marked `summaryStale` when the
-  trigger definition changes; a change of only the function body is not
-  detected, so ask the agent to re-read the functions when they changed.
+  (the source is never stored). Each summary keeps the hash of the trigger
+  definition and `functionEvidence`: the function the trigger calls as the
+  memory knew it then (`ref` as the trigger names it, `schema`, `name`,
+  `arguments` `""`, `capturedAt` = its `describedAt`, `definitionHash`,
+  `definitionLength`, `complete`, and `gap` when freshness cannot be
+  established later). `table_knowledge` and `graph.json` compute the
+  freshness on every read by comparing with the current records, so a
+  `describe_functions` that records a changed definition makes every summary
+  of a trigger calling that function stale, on any table of the profile,
+  without rewriting table records; an unchanged refresh changes nothing.
+
+  | `summaryFreshness` | `summaryFreshnessReason` | meaning |
+  | --- | --- | --- |
+  | `fresh` | – | trigger definition, its function and that function's stored definition are as when the summary was written |
+  | `stale` | `trigger-changed` | the trigger definition changed |
+  | `stale` | `binding-changed` | the trigger now calls another function |
+  | `stale` | `function-changed` | the function's stored definition (hash or full length) changed |
+  | `unverified` | `legacy` | written before `functionEvidence` existed |
+  | `unverified` | `function-not-recorded` | the function was not in memory when the summary was written |
+  | `unverified` | `definition-missing` | only listed (`list_functions`), no definition, at that time |
+  | `unverified` | `definition-truncated` | the stored definition is cut at 200000 characters; a change after the cut is invisible |
+  | `unverified` | `function-missing` | the function, or its overload without arguments, is no longer in memory with a definition |
+  | `unverified` | `binding-unresolved` | the trigger names no function, or a dot in a name lets two records match |
+
+  A detected change wins over a gap; missing evidence is never `fresh`.
+  `summaryStale: true` stays on stale summaries for older readers. Only the
+  function the trigger calls directly is checked, not the helpers it calls.
+  The summary text is never changed or confirmed automatically; saving it
+  again with `score_columns` binds it to the current definitions.
 - Optional `scannedFiles`: `root` (a configured script root name), path
   relative to it and sha256 of each script file read. `scanned_files` lists
   them, so later runs skip unchanged files. Each root keeps at most 20000
