@@ -216,8 +216,12 @@
   table { width: 100%; border-collapse: collapse; }
   th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
   th { font-size: 12px; color: var(--text-2); font-weight: 600; white-space: nowrap; user-select: none; background: var(--surface); }
-  th.sort { cursor: pointer; }
-  th.sort:hover { color: var(--text); }
+  /* Operations headers: a native button per column fills the cell, so mouse and keyboard sort alike. */
+  th.sort .sort-btn { all: unset; box-sizing: border-box; width: 100%; cursor: pointer; display: inline-flex; align-items: center; color: inherit; font: inherit; border-radius: 4px; }
+  th.num .sort-btn { justify-content: flex-end; }
+  th.sort .sort-btn:hover, th[aria-sort="ascending"] .sort-btn, th[aria-sort="descending"] .sort-btn { color: var(--text); }
+  th.sort .sort-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  tr.r:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   th .arr { display: inline-block; margin-left: 4px; color: var(--accent); transition: transform .2s; }
   th .arr.desc { transform: rotate(180deg); }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -1443,6 +1447,8 @@ const TR = {
   '1 trend point waits to be saved; the next scheduled run saves it.': '1 eğilim noktası kaydedilmeyi bekliyor; sonraki zamanlanmış çalıştırma kaydeder.',
   '{n} trend points wait to be saved; the next scheduled run saves them.': '{n} eğilim noktası kaydedilmeyi bekliyor; sonraki zamanlanmış çalıştırma kaydeder.', 'No trend points yet: they are added after each successful scheduled run.': 'Henüz eğilim noktası yok: her başarılı zamanlanmış çalıştırmadan sonra eklenir.',
   'schedules.json could not be read: ': 'schedules.json okunamadı: ',
+  'Sort by {c}, ascending': '{c} sütununa göre artan sırala', 'Sort by {c}, descending': '{c} sütununa göre azalan sırala',
+  'The focused operation is no longer listed; focus moved to the nearest one.': 'Odaktaki işlem artık listede yok; odak en yakın işleme geçti.',
 };
 let lang = 'en';
 try { lang = localStorage.getItem('auspex.viewer.lang') || ((navigator.language || '').toLowerCase().startsWith('tr') ? 'tr' : 'en'); } catch {}
@@ -1948,23 +1954,73 @@ function exportRows(rows, kind) {
   download(`auspex-log-${stamp}.csv`, '﻿' + [cols.join(';'), ...rows.map(e => cols.map(c => cell(c === 'source' ? sourceOf(e) : e[c])).join(';'))].join('\r\n'), 'text/csv');
 }
 // csv-export:end
+// ops-focus:start (tests/viewerOpsFocus.test.js runs this block in isolation)
+// The Operations grid is drawn anew on every sort, row expansion and live
+// refresh. Each focusable control in it carries a stable key (data-ops-focus):
+// sort:<column>, row:<operation id>, act:<operation id>:<action>, pager:<prev|next>
+// or tools:<name>; a row and its detail actions also carry the operation id
+// (data-ops-row) and the row's position on the page (data-ops-index).
+function opsFocusOf(el, root) {
+  if (!el || !root || el === root || !root.contains(el)) return null;
+  const key = el.getAttribute?.('data-ops-focus');
+  if (!key) return null;
+  const index = Number(el.getAttribute('data-ops-index') ?? -1);
+  return { key, row: el.getAttribute('data-ops-row') || null, index: Number.isInteger(index) && index >= 0 ? index : -1 };
+}
+// Where focus goes after a redraw. keys: the focusable keys now drawn, in
+// order; rowKeys: the row keys among them. The same control when it is still
+// there; the row of a detail action that closed; for a row that left the page
+// (removed by live refresh or a filter) the row now at its position, else the
+// last row; the other pager button once one is disabled; else the first sort
+// button. moved: focus did not stay on the same operation or control, so the
+// change is announced once.
+function opsFocusTarget(saved, keys, rowKeys) {
+  if (!saved) return null;
+  if (keys.includes(saved.key)) return { key: saved.key, moved: false };
+  if (saved.row && keys.includes(`row:${saved.row}`)) return { key: `row:${saved.row}`, moved: false };
+  if (saved.row && rowKeys.length) return { key: rowKeys[Math.min(Math.max(saved.index, 0), rowKeys.length - 1)], moved: true };
+  const pager = saved.key.startsWith('pager:') ? keys.find(k => k.startsWith('pager:')) : null;
+  const key = pager ?? keys.find(k => k.startsWith('sort:')) ?? null;
+  return key ? { key, moved: true } : null;
+}
+// A native button per header (Tab, Enter, Space; the browser turns both keys
+// into a click, so keyboard and mouse sort alike). The header carries the sort
+// state; the button names its column and what pressing it does. A new column
+// starts descending, the active one flips. onSort gets { key, dir }.
+function opsSortHead(cols, sort, onSort) {
+  return h('tr', {}, cols.map(([k, label, cls]) => {
+    const on = sort.key === k;
+    const next = on && sort.dir === 'desc' ? 'asc' : 'desc';
+    return h('th', { class: 'sort ' + (cls || ''), scope: 'col', 'aria-sort': on ? (sort.dir === 'desc' ? 'descending' : 'ascending') : 'none' },
+      h('button', { type: 'button', class: 'sort-btn', 'data-ops-focus': `sort:${k}`,
+        'aria-label': t(next === 'asc' ? 'Sort by {c}, ascending' : 'Sort by {c}, descending', { c: label }),
+        onclick: () => onSort({ key: k, dir: next }) },
+        label, on ? h('span', { class: 'arr ' + (sort.dir === 'desc' ? 'desc' : ''), 'aria-hidden': 'true' }, '▲') : null));
+  }));
+}
+// ops-focus:end
 function renderOps(rows) {
+  const root = $('v-ops');
+  const saved = opsFocusOf(document.activeElement, root);
   const sorted = sortRows(rows);
   const pages = Math.max(1, Math.ceil(sorted.length / state.pageSize));
-  if (state.open) { const idx = sorted.findIndex(e => e._id === state.open); if (idx >= 0) state.page = Math.floor(idx / state.pageSize); }
+  // The page follows the expanded operation, else the focused one, so a live
+  // refresh that adds operations above it does not page it away.
+  const keep = state.open ?? saved?.row;
+  if (keep) { const idx = sorted.findIndex(e => e._id === keep); if (idx >= 0) state.page = Math.floor(idx / state.pageSize); }
   state.page = Math.min(state.page, pages - 1);
   const slice = sorted.slice(state.page * state.pageSize, (state.page + 1) * state.pageSize);
   const maxMs = Math.max(1, ...rows.map(e => e.ms).filter(Number.isFinite));
   const cols = [['ts', t('Time')], ['source', t('Source')], ['tool', t('Tool')], ['profile', t('Profile'), 'hide-sm'], ['summary', t('SQL / details')], ['ms', t('Duration'), 'num'], ['rowCount', t('Rows'), 'num hide-sm'], ['status', t('Status')]];
-  const head = h('tr', {}, cols.map(([k, label, cls]) => h('th', { class: 'sort ' + (cls || ''), onclick: () => {
-    state.sort = { key: k, dir: state.sort.key === k && state.sort.dir === 'desc' ? 'asc' : 'desc' }; state.page = 0; render(); } },
-    label, state.sort.key === k ? h('span', { class: 'arr ' + (state.sort.dir === 'desc' ? 'desc' : '') }, '▲') : null)));
+  const head = opsSortHead(cols, state.sort, sort => { state.sort = sort; state.page = 0; render(); });
   const body = h('tbody');
   slice.forEach((e, i) => {
     const open = state.open === e._id;
     const src = sourceOf(e);
     const tr = h('tr', { class: 'r' + (open ? ' open' : '') + (state.animateRows ? ' enter' : '') + (state.fresh?.has(e._id) ? ' fresh' : ''), style: state.animateRows && !reduceMotion ? `animation-delay:${Math.min(i, 20) * 18}ms` : null,
-      tabindex: 0, onclick: () => { state.open = open ? null : e._id; render(); }, onkeydown: ev => { if (ev.key === 'Enter') { state.open = open ? null : e._id; render(); } } },
+      tabindex: 0, 'aria-expanded': String(open), 'data-ops-focus': `row:${e._id}`, 'data-ops-row': e._id, 'data-ops-index': i,
+      onclick: () => { state.open = open ? null : e._id; render(); },
+      onkeydown: ev => { if (ev.target === ev.currentTarget && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); state.open = open ? null : e._id; render(); } } },
       h('td', { class: 'time', title: dateTimeOf(e.ts) }, (state.range === 'today' || state.range === 'yesterday') ? timeOf(e.ts) : dateTimeOf(e.ts)),
       h('td', {}, h('span', { class: 'badge ' + src }, sourceLabel(src))),
       h('td', { class: 'op-one', title: toolName(e.tool) + (e.analyze ? ' + analyze' : '') + (e.timeoutSeconds ? ` · ${t('custom timeout')} ${e.timeoutSeconds} s` : '') },
@@ -1976,6 +2032,7 @@ function renderOps(rows) {
       h('td', {}, e.error ? h('span', { class: 'badge err', title: e.errorCode || null }, h('span', { class: 'sw', style: 'background:var(--critical)' }), e.errorCode || t('error')) : h('span', { class: 'badge ok' }, h('span', { class: 'sw', style: 'background:var(--good)' }), 'ok')));
     body.append(tr);
     if (open) {
+      const act = name => ({ type: 'button', 'data-ops-focus': `act:${e._id}:${name}`, 'data-ops-row': e._id, 'data-ops-index': i });
       const meta = Object.entries(e).filter(([k, v]) => !['_id', 'sql', 'params', 'error'].includes(k) && v !== null && v !== undefined && v !== '');
       body.append(h('tr', { class: 'd' }, h('td', { colspan: cols.length }, h('div', { class: 'detail' },
         e.sql ? h('pre', {}, e.sql) : null,
@@ -1983,26 +2040,35 @@ function renderOps(rows) {
         e.params?.length ? h('div', { class: 'meta' }, h('div', {}, h('span', {}, t('Parameters: ')), JSON.stringify(e.params))) : null,
         e.error ? h('div', { class: 'error-box' }, e.error) : null,
         h('div', { class: 'acts' },
-          e.sql ? h('button', { class: 'icon-btn', onclick: ev => { ev.stopPropagation(); copy(e.sql, 'SQL'); } }, t('Copy SQL')) : null,
-          h('button', { class: 'icon-btn', onclick: ev => { ev.stopPropagation(); const { _id, ...raw } = e; copy(JSON.stringify(raw, null, 2), t('Entry')); } }, t('Copy entry as JSON')),
-          e.profile ? h('button', { class: 'icon-btn', onclick: ev => { ev.stopPropagation(); F.profile.value = e.profile; render(); } }, t('Only {p}', { p: e.profile })) : null)))));
+          e.sql ? h('button', { class: 'icon-btn', ...act('sql'), onclick: ev => { ev.stopPropagation(); copy(e.sql, 'SQL'); } }, t('Copy SQL')) : null,
+          h('button', { class: 'icon-btn', ...act('json'), onclick: ev => { ev.stopPropagation(); const { _id, ...raw } = e; copy(JSON.stringify(raw, null, 2), t('Entry')); } }, t('Copy entry as JSON')),
+          e.profile ? h('button', { class: 'icon-btn', ...act('only'), onclick: ev => { ev.stopPropagation(); F.profile.value = e.profile; render(); } }, t('Only {p}', { p: e.profile })) : null)))));
     }
   });
   state.animateRows = false;
   const tools = h('div', { class: 'tbl-tools' },
     h('span', { class: 'muted' }, t('{n} operations', { n: fmt(rows.length) })), h('span', { class: 'grow' }),
-    h('div', { class: 'field' }, h('label', {}, t('Per page')), (() => { const s = h('select', { onchange: ev => { state.pageSize = Number(ev.target.value); state.page = 0; persist(); render(); } },
+    h('div', { class: 'field' }, h('label', {}, t('Per page')), (() => { const s = h('select', { 'data-ops-focus': 'tools:per-page', onchange: ev => { state.pageSize = Number(ev.target.value); state.page = 0; persist(); render(); } },
       [25, 50, 100, 250].map(n => h('option', { value: n, selected: n === state.pageSize }, n))); return s; })()),
-    h('button', { class: 'icon-btn', onclick: () => exportRows(sortRows(rows), 'csv'), title: t('Download filtered operations as CSV') }, t('Download CSV')),
-    h('button', { class: 'icon-btn', onclick: () => exportRows(sortRows(rows), 'json'), title: t('Download filtered operations as JSON') }, t('Download JSON')));
+    h('button', { class: 'icon-btn', 'data-ops-focus': 'tools:csv', onclick: () => exportRows(sortRows(rows), 'csv'), title: t('Download filtered operations as CSV') }, t('Download CSV')),
+    h('button', { class: 'icon-btn', 'data-ops-focus': 'tools:json', onclick: () => exportRows(sortRows(rows), 'json'), title: t('Download filtered operations as JSON') }, t('Download JSON')));
   const pager = h('div', { class: 'pager' },
     h('span', {}, `${fmt(state.page * state.pageSize + (slice.length ? 1 : 0))}–${fmt(state.page * state.pageSize + slice.length)} / ${fmt(rows.length)}`), h('span', { class: 'grow' }),
-    h('button', { class: 'icon-btn', disabled: state.page === 0 ? true : null, onclick: () => { state.page--; state.animateRows = true; render(); } }, t('‹ Previous')),
+    h('button', { class: 'icon-btn', 'data-ops-focus': 'pager:prev', disabled: state.page === 0 ? true : null, onclick: () => { state.page--; state.animateRows = true; render(); } }, t('‹ Previous')),
     h('span', {}, `${state.page + 1} / ${pages}`),
-    h('button', { class: 'icon-btn', disabled: state.page >= pages - 1 ? true : null, onclick: () => { state.page++; state.animateRows = true; render(); } }, t('Next ›')));
-  $('v-ops').replaceChildren(h('div', { class: 'panel' }, tools,
+    h('button', { class: 'icon-btn', 'data-ops-focus': 'pager:next', disabled: state.page >= pages - 1 ? true : null, onclick: () => { state.page++; state.animateRows = true; render(); } }, t('Next ›')));
+  root.replaceChildren(h('div', { class: 'panel' }, tools,
     rows.length ? h('div', { class: 'tbl-wrap' }, h('table', {}, h('thead', {}, head), body)) : emptyState(state.all.length ? t('No operations match the filters') : t('No entries in this range')),
     rows.length > state.pageSize ? pager : null));
+  // Focus returns to the same control (or the nearest row, announced once);
+  // it never jumps to operations that arrived meanwhile.
+  const drawn = [...root.querySelectorAll('[data-ops-focus]')].filter(el => !el.disabled);
+  const keys = drawn.map(el => el.getAttribute('data-ops-focus'));
+  const target = opsFocusTarget(saved, keys, keys.filter(k => k.startsWith('row:')));
+  if (target) {
+    drawn[keys.indexOf(target.key)].focus({ preventScroll: !target.moved });
+    if (target.moved && saved.row) toast(t('The focused operation is no longer listed; focus moved to the nearest one.'));
+  }
 }
 
 // A schema-qualified table name in the Tables tab opens its table page when
