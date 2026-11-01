@@ -19,8 +19,9 @@ import { builtInPresetKeys, maxPresetName, maxPresets } from './reports/presets.
 import { SchemaMemory, tableKey, noteKinds, columnRoles, scoreHistoryLimit, maxScoreReason, maxScoredColumns, maxScannedFiles, maxTriggerSummary, scoreLayers, maxTriggerSummaries, maxEvidenceCode, maxCodeSymbol, maxCodeLine } from './memory/store.js';
 import { relationsFromTextPlan } from './memory/planUsage.js';
 import { repairAudit, memoryAudit } from './memory/repairAudit.js';
-import { loadPromptSkills, promptText } from './skills.js';
+import { loadPromptSkills, promptText, toolsMentioned } from './skills.js';
 import { queryOutput, explainOutput, tableKnowledgeOutput } from './outputSchemas.js';
+import { toolGroupNames, toolGroupOf, toolsOfGroups } from './toolGroups.js';
 
 let config;
 try {
@@ -43,10 +44,21 @@ const db = new ReadOnlyDatabase(config, { source: 'mcp' });
 const memory = new SchemaMemory(config.memoryDir, { approvedJoins: profile => reports.approvedJoinPairs(profile), storeUpgradedCalls: true });
 const reports = new ReportService(db, config.libraryDir, memory, { scriptRoots: config.scriptRoots });
 
+// enabledToolGroups (src/toolGroups.js): only tools of these groups are
+// registered; the others are neither listed nor callable.
+const enabledGroups = new Set(config.toolGroups.groups);
+const disabledTools = new Map(toolGroupNames.filter(g => !enabledGroups.has(g)).flatMap(g => toolsOfGroups([g]).map(t => [t, g])));
+if (config.toolGroups.source !== 'default') {
+  process.stderr.write(`auspex: tool groups ${[...enabledGroups].join(', ')} (from ${config.toolGroups.source}); ${disabledTools.size} tools disabled: ${[...disabledTools.keys()].join(', ')}\n`);
+}
+
 const defaultTimeoutS = config.statementTimeoutMs / 1000;
 const maxTimeoutS = config.maxStatementTimeoutMs / 1000;
 
-const instructions = [
+// Server instructions. An entry [groups, text] is kept when any of those
+// tool groups is enabled, so a smaller tool set gets no guidance for tools
+// it does not have; the last sentence names the disabled tools.
+const instructionLines = [
   'Auspex gives read-only access to one or more PostgreSQL databases, each configured as a named profile.',
   'Every tool except list_profiles requires an explicit profile. There is no default database.',
   'On the first call to a profile Auspex checks that its database role is read-only. If the role could write, every call on that profile fails with an explanation: tell the user which privilege to remove; do not look for a way around it. Warnings (for example CREATE on a schema) do not block; mention them once.',
@@ -54,20 +66,24 @@ const instructions = [
   'If they have not, call list_profiles, show the profiles and ask which one to use. Never guess a profile and never reuse a choice from another conversation.',
   'When switching to a different profile mid-conversation, confirm with the user first.',
   'Each profile has a query budget (maxQueriesPerMinute in list_profiles); when it is used up calls are refused for a while, so batch work into fewer, set-based queries instead of one query per item, and never retry a refused call in a loop.',
-  'Some tables are very large. Use search to find tables and columns, use estimated_rows instead of count(*) on big tables, check plans with explain (without analyze) first, and narrow by indexed columns.',
-  `Queries time out after ${defaultTimeoutS} s by default. Before running a query with a longer timeoutSeconds, or explain analyze on a large table, tell the user which table, the estimated rows and why it may take long.`,
-  'Report library: when an analysis query is worth keeping, save it with save_report (it becomes a draft under <db>/<schema>/<category>; category may be nested up to 3 levels with "/", e.g. Orders/Delivery), run it with run_report and show the user the summary and the HTML file path; iterate by saving new SQL versions.',
-  'Call approve_report only after the user explicitly approved that report in this conversation.',
-  'Change scripts (INSERT/UPDATE/DELETE/DDL) are never executed through Auspex: write them with save_execute_script for the user to run with a privileged role.',
-  'run_report with analyze="auto" skips EXPLAIN ANALYZE when the previous run took longer than 30 s; ask the user before forcing analyze="always" on such reports.',
-  'Schema memory: Auspex keeps local notes per profile about the tables you worked with. describe_table and describe_tables record a table and report changesSinceLast (tell the user about them); describe_functions records functions the same way and list_functions records an inventory of them; run_report and explain record the tables and columns their plans used. It never crawls the catalog on its own.',
-  'Before describing a table again, call table_knowledge: it answers from memory without touching the database.',
-  `When you need several tables, do not loop over describe_table or send one measuring query per table: use describe_tables for the structure of up to ${maxDescribeTables} tables and profile_tables for row estimates, fill rates, distinct counts and parent-child fan-out of up to ${maxProfileTables} tables. Each takes a constant number of statements however many tables are listed. To see which neighbours of a table matter most, relation_stats ranks its referenced (instance) and referencing (dependent) tables by estimated linked rows from planner statistics, without reading data.`,
-  'When the user states a business rule, save it with remember kind=rule. Save a finding from data as kind=observation with evidence (the SQL and aggregate figures only, never row values or personal data). Your own interpretations are kind=inference; never present them as fact, and confirm one only after the user agreed.',
-  'Write every user-facing text you save into Auspex files in the notesLanguage from list_profiles: remember note text, save_report title, description and note, save_execute_script title and purpose (and comments inside the script), and score_columns reasons and trigger summaries. Identifiers, SQL, column aliases and the script step markers (BEGIN, DEFINE, PROCESS, MATCH, CORRECT/FAIL, ROLLBACK) are not translated; only the text after a marker follows notesLanguage. If notesLanguage is null, ask the user once "Which language should notes and report texts be saved in?" (in the user language), use the answer for this conversation and suggest adding "notesLanguage": "<code>" to profiles.json. Do not translate existing notes.',
+  [['explore', 'query'], 'Some tables are very large. Use search to find tables and columns, use estimated_rows instead of count(*) on big tables, check plans with explain (without analyze) first, and narrow by indexed columns.'],
+  [['query', 'explore'], `Queries time out after ${defaultTimeoutS} s by default. Before running a query with a longer timeoutSeconds, or explain analyze on a large table, tell the user which table, the estimated rows and why it may take long.`],
+  [['reports'], 'Report library: when an analysis query is worth keeping, save it with save_report (it becomes a draft under <db>/<schema>/<category>; category may be nested up to 3 levels with "/", e.g. Orders/Delivery), run it with run_report and show the user the summary and the HTML file path; iterate by saving new SQL versions.'],
+  [['reports'], 'Call approve_report only after the user explicitly approved that report in this conversation.'],
+  [['reports'], 'Change scripts (INSERT/UPDATE/DELETE/DDL) are never executed through Auspex: write them with save_execute_script for the user to run with a privileged role.'],
+  [['reports'], 'run_report with analyze="auto" skips EXPLAIN ANALYZE when the previous run took longer than 30 s; ask the user before forcing analyze="always" on such reports.'],
+  [['explore'], 'Schema memory: Auspex keeps local notes per profile about the tables you worked with. describe_table and describe_tables record a table and report changesSinceLast (tell the user about them); describe_functions records functions the same way and list_functions records an inventory of them; run_report and explain record the tables and columns their plans used. It never crawls the catalog on its own.'],
+  [['explore'], 'Before describing a table again, call table_knowledge: it answers from memory without touching the database.'],
+  [['explore'], `When you need several tables, do not loop over describe_table or send one measuring query per table: use describe_tables for the structure of up to ${maxDescribeTables} tables and profile_tables for row estimates, fill rates, distinct counts and parent-child fan-out of up to ${maxProfileTables} tables. Each takes a constant number of statements however many tables are listed. To see which neighbours of a table matter most, relation_stats ranks its referenced (instance) and referencing (dependent) tables by estimated linked rows from planner statistics, without reading data.`],
+  [['memory'], 'When the user states a business rule, save it with remember kind=rule. Save a finding from data as kind=observation with evidence (the SQL and aggregate figures only, never row values or personal data). Your own interpretations are kind=inference; never present them as fact, and confirm one only after the user agreed.'],
+  [['reports', 'memory'], 'Write every user-facing text you save into Auspex files in the notesLanguage from list_profiles: remember note text, save_report title, description and note, save_execute_script title and purpose (and comments inside the script), and score_columns reasons and trigger summaries. Identifiers, SQL, column aliases and the script step markers (BEGIN, DEFINE, PROCESS, MATCH, CORRECT/FAIL, ROLLBACK) are not translated; only the text after a marker follows notesLanguage. If notesLanguage is null, ask the user once "Which language should notes and report texts be saved in?" (in the user language), use the answer for this conversation and suggest adding "notesLanguage": "<code>" to profiles.json. Do not translate existing notes.'],
   'Results may carry notes for the tables they touched; take them into account.',
-  'Column importance: score_columns saves your own 1-5 score per column (by agent) after you read the SQL that uses a table (report library and the user script files); it never queries the database. Save a by user score only when the user stated it in this conversation, and their usage note with remember kind=rule on that column. Never save user script files as reports.',
-  'When a report or analysis is finished and results listed unexploredNeighbors, name them and ask the user whether to explore them. Only after a yes, call describe_tables on them (structure only); do not query their data unless asked.',
+  [['memory'], 'Column importance: score_columns saves your own 1-5 score per column (by agent) after you read the SQL that uses a table (report library and the user script files); it never queries the database. Save a by user score only when the user stated it in this conversation, and their usage note with remember kind=rule on that column. Never save user script files as reports.'],
+  [['explore'], 'When a report or analysis is finished and results listed unexploredNeighbors, name them and ask the user whether to explore them. Only after a yes, call describe_tables on them (structure only); do not query their data unless asked.'],
+];
+const instructions = [
+  ...instructionLines.filter(line => !Array.isArray(line) || line[0].some(g => enabledGroups.has(g))).map(line => (Array.isArray(line) ? line[1] : line)),
+  ...(disabledTools.size ? [`This server was started with enabledToolGroups ${[...enabledGroups].join(', ')}; these tools are not available: ${[...disabledTools.keys()].join(', ')}. Do not plan steps that need them; tell the user when a request needs one.`] : []),
 ].join(' ');
 
 const server = new McpServer({ name: 'auspex', version: '0.9.0' }, { instructions });
@@ -160,6 +176,9 @@ function errorResult(err, correlationId, text = `Error: ${err?.message ?? String
 // The request's AbortSignal (extra.signal) goes along: a cancelled call stops
 // its running statement and starts no further phase (src/db.js, CANCELLED).
 function tool(name, toolConfig, handler) {
+  const group = toolGroupOf(name);
+  if (!group) throw new Error(`Tool ${name} belongs to no tool group; add it to src/toolGroups.js.`);
+  if (!enabledGroups.has(group)) return; // not registered: not listed, a call is refused by the SDK (TOOL_DISABLED)
   if (toolConfig.outputSchema) outputSchemaTools.add(name);
   server.registerTool(name, toolConfig, async (args, extra) => {
     const correlationId = crypto.randomUUID();
@@ -186,10 +205,20 @@ function tool(name, toolConfig, handler) {
 // Failures inside the MCP SDK (input schema validation, unknown tool) never
 // reach tool() and are not audited; they get the same envelope. The SDK's
 // text is kept as is; the tool name is read from it (the SDK passes only the message).
+// A tool of a disabled group is not registered: the SDK's "not found" becomes
+// TOOL_DISABLED with the group that would enable it, before any handler,
+// database work or library change.
 if (typeof server.createToolError === 'function') {
-  server.createToolError = message => errorResult(
-    new ToolError(/-32602|Input validation error|Invalid arguments/.test(message) ? 'INVALID_INPUT' : 'INTERNAL', message),
-    crypto.randomUUID(), message, /\bfor tool ([\w-]+)|\bTool ([\w-]+) /.exec(message)?.slice(1).find(Boolean) ?? null);
+  server.createToolError = message => {
+    const toolName = /\bfor tool ([\w-]+)|\bTool ([\w-]+) /.exec(message)?.slice(1).find(Boolean) ?? null;
+    if (disabledTools.has(toolName) && /not found/.test(message)) {
+      const text = `Tool ${toolName} is not enabled on this Auspex server: it belongs to tool group "${disabledTools.get(toolName)}", and enabledToolGroups is ${[...enabledGroups].join(', ')}. The user can add the group and restart the server.`;
+      return errorResult(new ToolError('TOOL_DISABLED', text), crypto.randomUUID(), text, toolName);
+    }
+    return errorResult(
+      new ToolError(/-32602|Input validation error|Invalid arguments/.test(message) ? 'INVALID_INPUT' : 'INTERNAL', message),
+      crypto.randomUUID(), message, toolName);
+  };
 }
 
 tool('list_profiles', {
@@ -203,6 +232,8 @@ tool('list_profiles', {
   },
   exportDir: config.exportDir,
   profilesFile: config.profilesFile,
+  // The callable tool set of this server (enabledToolGroups; startup only).
+  toolGroups: { enabled: [...enabledGroups], source: config.toolGroups.source, disabledTools: [...disabledTools.keys()] },
   // Language for schema-memory notes; null = not configured, ask the user.
   notesLanguage: config.notesLanguage,
   // Folders save_execute_script can write into (root parameter).
@@ -651,7 +682,11 @@ tool('scanned_files', {
 });
 
 // ---------- workflow prompts (text from skills/<name>/SKILL.md) ----------
+// A workflow is offered only when the tool groups it needs are enabled; it
+// names the tools it mentions that this server does not offer.
 for (const skill of promptSkills) {
+  if (!skill.groups.every(g => enabledGroups.has(g))) continue;
+  const unavailable = toolsMentioned(skill, [...disabledTools.keys()]);
   server.registerPrompt(skill.prompt, {
     title: `Auspex workflow: ${skill.prompt}`,
     description: skill.description,
@@ -661,7 +696,7 @@ for (const skill of promptSkills) {
     },
   }, ({ profile, goal }) => ({
     description: skill.description,
-    messages: [{ role: 'user', content: { type: 'text', text: promptText(skill, { profile: profile?.trim(), goal: goal?.trim() }) } }],
+    messages: [{ role: 'user', content: { type: 'text', text: promptText(skill, { profile: profile?.trim(), goal: goal?.trim(), unavailable }) } }],
   }));
 }
 

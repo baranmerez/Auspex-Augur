@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { resolveToolGroups } from './toolGroups.js';
 
 // Profiles come from two sources:
 //   1. A profiles file (default ~/.auspex/profiles.json, override with
@@ -20,7 +21,8 @@ import path from 'node:path';
 // remember evidenceCode references),
 // an optional top-level "notesLanguage" (language code such as en or pt-BR), and
 // an optional top-level "auspexRoot" (this checkout, for the desktop app's
-// approve/revoke through src/stageCli.js).
+// approve/revoke through src/stageCli.js), and an optional top-level
+// "enabledToolGroups" (src/toolGroups.js; AUSPEX_ENABLED_TOOL_GROUPS overrides it).
 const profilePrefix = 'AUSPEX_DB_';
 const scriptRootPrefix = 'AUSPEX_SCRIPT_ROOT_';
 const codeRootPrefix = 'AUSPEX_CODE_ROOT_';
@@ -28,7 +30,9 @@ export const scriptRootsKey = 'scriptRoots';
 export const codeRootsKey = 'codeRoots';
 export const notesLanguageKey = 'notesLanguage';
 export const auspexRootKey = 'auspexRoot';
-const settingKeys = new Set([scriptRootsKey, codeRootsKey, notesLanguageKey, auspexRootKey]);
+export const enabledToolGroupsKey = 'enabledToolGroups';
+const enabledToolGroupsEnv = 'AUSPEX_ENABLED_TOOL_GROUPS';
+const settingKeys = new Set([scriptRootsKey, codeRootsKey, notesLanguageKey, auspexRootKey, enabledToolGroupsKey]);
 const notesLanguagePattern = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/i;
 const profileNamePattern = /^[a-z][a-z0-9_-]{0,39}$/;
 const profileKeys = new Set(['url', 'description', 'maxTimeoutSeconds', 'maxQueriesPerMinute']);
@@ -145,8 +149,8 @@ function readProfilesData(file) {
 
 // Reads and validates the profiles file. A missing file means no file profiles;
 // any other problem is an error so a broken file is never silently ignored.
-// The "scriptRoots", "codeRoots", "notesLanguage" and "auspexRoot" keys are
-// not profiles.
+// The "scriptRoots", "codeRoots", "notesLanguage", "auspexRoot" and
+// "enabledToolGroups" keys are not profiles.
 export function readProfilesFile(file) {
   const data = readProfilesData(file);
   if (!data) return [];
@@ -201,6 +205,20 @@ export function readNotesLanguage(file) {
     throw new Error(`Invalid "${notesLanguageKey}" in ${file}: expected a language code such as tr, en or pt-BR.`);
   }
   return value;
+}
+
+// The tool groups this server registers (src/toolGroups.js): from
+// AUSPEX_ENABLED_TOOL_GROUPS (comma-separated) when set, else from
+// "enabledToolGroups" in the profiles file, else every group. An invalid value
+// stops the server; it never falls back to enabling everything.
+export function readEnabledToolGroups(file, env = process.env) {
+  const fromEnv = env[enabledToolGroupsEnv];
+  if (fromEnv !== undefined && fromEnv.trim() !== '') {
+    return { groups: resolveToolGroups(fromEnv.split(','), enabledToolGroupsEnv), source: 'env' };
+  }
+  const value = readProfilesData(file)?.[enabledToolGroupsKey];
+  if (value === undefined) return { groups: resolveToolGroups(null), source: 'default' };
+  return { groups: resolveToolGroups(value, `"${enabledToolGroupsKey}" in ${file}`), source: 'file' };
 }
 
 // The Auspex checkout the desktop app runs src/stageCli.js from, or null when
@@ -316,6 +334,7 @@ export function loadConfig(env = process.env) {
     codeRoots: readCodeRoots(profilesFile, env),
     notesLanguage: readNotesLanguage(profilesFile),
     auspexRoot: readAuspexRoot(profilesFile),
+    toolGroups: readEnabledToolGroups(profilesFile, env),
     maxRows: intFromEnv(env, 'AUSPEX_MAX_ROWS', 500, 1, 10000),
     exportMaxRows: intFromEnv(env, 'AUSPEX_EXPORT_MAX_ROWS', 100000, 1, 5000000),
     // Whole-export budget on top of the per-statement timeout.

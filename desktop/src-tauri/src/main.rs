@@ -520,9 +520,9 @@ fn profiles() -> Value {
             match parsed {
                 Ok(Value::Object(entries)) => {
                     for (name, p) in entries {
-                        // Named folders for change scripts and source code, the notes language and the
-                        // Auspex checkout: settings, not profiles.
-                        if name == "scriptRoots" || name == "codeRoots" || name == "notesLanguage" || name == AUSPEX_ROOT_KEY {
+                        // Named folders for change scripts and source code, the notes language, the
+                        // Auspex checkout and the MCP tool groups: settings, not profiles.
+                        if name == "scriptRoots" || name == "codeRoots" || name == "notesLanguage" || name == AUSPEX_ROOT_KEY || name == "enabledToolGroups" {
                             continue;
                         }
                         let url_text = p.get("url").and_then(Value::as_str).unwrap_or("");

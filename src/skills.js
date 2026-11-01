@@ -8,13 +8,21 @@ import { fileURLToPath } from 'node:url';
 export const defaultSkillsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'skills');
 
 // Skill name -> MCP prompt name. Every listed skill must exist at startup.
+// groups: the tool groups (src/toolGroups.js) the workflow cannot do without;
+// the prompt is listed only when all of them are enabled.
 export const promptSkills = [
-  { prompt: 'explore', skill: 'auspex-explore' },
-  { prompt: 'report', skill: 'auspex-report' },
-  { prompt: 'ddl', skill: 'auspex-ddl' },
-  { prompt: 'columns', skill: 'auspex-columns' },
-  { prompt: 'code', skill: 'auspex-code' },
+  { prompt: 'explore', skill: 'auspex-explore', groups: ['explore'] },
+  { prompt: 'report', skill: 'auspex-report', groups: ['query', 'reports'] },
+  { prompt: 'ddl', skill: 'auspex-ddl', groups: ['explore', 'reports'] },
+  { prompt: 'columns', skill: 'auspex-columns', groups: ['explore', 'memory'] },
+  { prompt: 'code', skill: 'auspex-code', groups: ['explore', 'memory'] },
 ];
+
+// Tool names a skill's text mentions (body and references), from the given list.
+export function toolsMentioned(skill, tools) {
+  const text = [skill.body, ...skill.references.map(r => r.text)].join('\n');
+  return tools.filter(t => new RegExp(`\\b${t}\\b`).test(text));
+}
 
 export class SkillError extends Error {}
 
@@ -64,8 +72,9 @@ export function loadPromptSkills(dir = defaultSkillsDir) {
 }
 
 // Prompt text: the user's arguments, the skill body, then its reference
-// files under headings that match the links in the body.
-export function promptText(skill, { profile, goal } = {}) {
+// files under headings that match the links in the body. unavailable: tools
+// the workflow names that this server does not offer (enabledToolGroups).
+export function promptText(skill, { profile, goal, unavailable = [] } = {}) {
   const head = [
     `Follow the ${skill.name} workflow below.`,
     profile
@@ -73,6 +82,9 @@ export function promptText(skill, { profile, goal } = {}) {
       : 'Profile: not named yet. Call list_profiles, show the profiles and ask the user which one to use before any database call.',
   ];
   if (goal) head.push(`Goal: ${goal}`);
+  if (unavailable.length) {
+    head.push(`Not available on this server (enabledToolGroups): ${unavailable.join(', ')}. Skip the steps that need them and tell the user what was skipped.`);
+  }
   const refs = skill.references.map(r => `\n\n---\n\n## ${r.file}\n\n${r.text}`).join('');
   return `${head.join('\n')}\n\n${skill.body}${refs}\n`;
 }
