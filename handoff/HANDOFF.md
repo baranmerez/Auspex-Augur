@@ -503,3 +503,152 @@ Working agreements:
 - Changes go through a pull request and review; required checks run in CI.
 - Commits and PRs carry no attribution trailer.
 - Exploration batches announce their statement count first.
+
+## 16. Workflow skill review (2026-10-31)
+
+Reviewed the five shipped skills against local source at `0cba601`, the
+earlier exploration/report workflows, the Agent Skills specification and
+official Claude/Supabase guidance. This was a source/workflow review, with
+no database connection or production-data evaluation.
+
+- `auspex-explore`: view definitions alongside dependencies, a comparison
+  funnel, history-table relevance, sample limits and committed-memory repair.
+- `auspex-report`: scope-aware SQL/plan/library delivery, exact grain and
+  reconciliation, stage/version selection, persistence and scheduler recovery.
+- `auspex-columns`: complete-corpus attribution for replacement scores,
+  report identity instead of filename guessing, partial-coverage disclosure
+  and preservation of user scores. A stored scan hash has no column lineage.
+- `auspex-code`: reuse authorized roots, check converters and stale meanings,
+  and retain a replacement note before archiving its predecessor.
+- `auspex-ddl`: explicit design-only/user-run boundaries and correct recovery
+  from an expected error at a savepoint; saving never proves deployment.
+
+`docs/clients.md` documents routing, installation versus server reload, the
+eager reference loading of MCP prompts, and 14 synthetic evaluation cases.
+Three independent `gpt-6-luna` agents at max reasoning evaluated the installed
+skills against those cases. All 14 case criteria passed after the bounded
+corrections below. This is a synthetic workflow evaluation, not a general
+model-quality benchmark. Existing prompt/installation checks passed 8/8
+after the final skill change, with temporary homes and no database calls.
+All five entrypoints remain below the existing 150-line body limit;
+references resolve. `git diff --check` passed.
+
+The first mock did not validate tool arguments and accepted invalid calls.
+Those results were not accepted as passes. The harness then used input
+schemas obtained through an isolated MCP `tools/list` call, rejected
+undeclared argument names, and reran only the six affected/ambiguous cases.
+The original outputs remain preserved. An erroneous fixture date type and
+an ambiguous code-root path were corrected. Output review also found a
+copied assignment in a code-meaning answer; `auspex-code` now explicitly
+requires prose for computations. A different agent verified that case
+against the updated installed skill. Final selected traces contain 29 mock
+calls with valid arguments and no out-of-scope execution/mutation calls.
+
+The optional skill-creator `quick_validate.py` could not run because this
+Python environment lacks PyYAML; no dependency was installed. No full test
+suite, live database acceptance, automatic skill-selection evaluation or
+Claude-model end-to-end run was performed in that initial pass. The later
+native Claude evaluation is recorded separately below.
+
+Repository changes remain limited to skills/docs. The five Claude copies
+were updated and the five Codex copies installed (none were present in the
+checked Codex locations). Existing local Turkish trigger suffixes were
+preserved in both installations; bodies and references match the repository.
+All 34 installed files were checked by SHA-256. In a follow-up reload check,
+the user restarted the client connection. Process inspection found new
+client-owned MCP processes started after the final skill edit, and the live
+connection answered `list_profiles` with every role check still unstarted.
+That tool reads local configuration and does not connect to a database.
+Separately, an isolated MCP process with outbound socket connections denied
+returned all five prompt bodies and all 12 references exactly as shipped.
+It attempted no network connection. Full prompt readback was verified on
+that isolated process, not through the clients' existing connections; other
+open sessions were not stopped. Runtime tool contracts were not changed.
+Deferred-reference MCP prompts and durable per-file SQL attribution remain
+separate runtime design work; the current skills use existing capabilities
+instead of claiming either feature exists.
+
+## 17. Native Claude skill evaluation (2026-10-31)
+
+Ran the 14 cases once each in fresh Claude Code 2.1.309 sessions using the
+installed default model, `claude-opus-5-5`. No target skill name or expected
+answer was supplied in a case prompt. All five Auspex skills were visible
+among 109 discovered skills. User/project hooks, auto-memory, shell/code
+tools, web tools and real MCP servers were excluded from the evaluation.
+Only the installed skill resources, isolated fixture files and a synthetic
+Auspex MCP server were available. The synthetic server used current tool
+input schemas and could not open network sockets.
+
+This native integration pass is **not fully accepted**:
+
+- 13/14 cases invoked the expected installed Auspex skill. S14 answered the
+  savepoint follow-up without invoking any skill; it therefore does not prove
+  automatic selection or use of `auspex-ddl`, despite giving the right
+  rollback ordering.
+- Nine invoked bodies matched their installed source exactly after line-end
+  normalization. All four `auspex-report` invocations loaded the current
+  file but Claude's positional-argument expansion changed the SQL `$1`/`$2`
+  examples in `skills/auspex-report/SKILL.md:70`. For example, the inclusive
+  start/exclusive end placeholders became ordinary words from the invocation
+  arguments. This is a concrete client compatibility defect, not an old
+  installation. The earlier MCP prompt tests do not perform Claude's native
+  skill expansion and could not detect it.
+- S05 correctly asked for the missing count definition, but incorrectly
+  explained that `status_code <> 'C'` includes NULL values. S03 preserved
+  both join keys and disclosed unverified uniqueness, but claimed exclusions
+  necessarily lower `SUM(amount)` without establishing nonnegative amounts.
+  These output defects remain distinct from the routing and loading results.
+
+All 24 synthetic MCP calls passed current input validation; no file read
+left its case/skill scope and no synthetic server attempted a network
+connection. Installed skill files remained unchanged and matched the repo.
+No live database, production memory/library, or desktop UI acceptance was
+performed. The initial restricted-mode setup check hid personal skills and
+was stopped before scenario testing; it is not counted among the 14 cases.
+No scenario was retried to obtain a pass, and no skill fix was applied during
+this evaluation. Detailed traces, the per-case matrix and bounded follow-up
+recommendations are in the ignored local skill-evaluation handoff.
+
+## 18. Skill corrections and scoped Claude retests (2026-10-31)
+
+Corrected the native-evaluation findings in five skill files:
+
+- `auspex-report`: moved literal positional SQL parameters out of the native
+  entrypoint into the correctness reference; clarified NULL predicates and
+  schema discovery; pause before catalog work when supplied facts already
+  expose a missing business decision that only the user can make.
+- `auspex-explore` view reference: the direction of a total depends on the
+  net excluded amount and join multiplicity, not just the presence of an
+  excluded negative amount.
+- `auspex-ddl`: added returned preview errors to automatic selection and
+  documented recovery without inventing a SQL client or executing commands.
+
+Updated both installed client copies, preserving their Turkish description
+suffixes. Ten installed files changed; all 34 files were verified, and both
+clients' bodies/references match the repository. No runtime source changed.
+
+Repeated only S03, S05, S06, S10, S11 and S14 with Claude Code 2.1.309,
+explicitly selecting the baseline model `claude-opus-5-5`. Inputs were
+unchanged apart from isolated fixture paths; prompts did not name a target
+skill. The first six retests exposed residual issues in S03/S05/S14. Specific
+instruction changes were followed by only those three cases; a remaining
+S05 schema assumption led to the missing-decision pause rule and one final
+S05 run. All intermediate failures remain recorded. No unchanged scenario
+was repeated merely to obtain a pass.
+
+The final selected evidence meets the six scoped checks: S03 leaves the
+amount direction unmeasured, S05 asks the missing definition without catalog
+calls and explains NULL correctly, S06 preserves full-key pre-aggregation,
+S10/S11 do not rerun completed SQL for persistence repair, and S14 selects
+the DDL skill and orders savepoint recovery correctly. All ten model sessions
+selected the intended skill and loaded its installed body unchanged. Across
+them, 12 synthetic MCP calls had valid arguments, with no out-of-scope file
+access or mock-server network attempt.
+
+Validation: `node --test tests/prompts.test.js tests/installSkills.test.js`
+passed 8/8; `git diff --check` passed. The eight unaffected cases were not
+rerun. Selected traces prove the installed version at each recorded run;
+later edits reran only cases with the affected precondition. In particular,
+schema discovery after the missing count definition is answered was not
+tested. No Claude test connected to a live database; these results do not
+establish production SQL correctness or refresh existing clients' caches.

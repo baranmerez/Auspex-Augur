@@ -1,7 +1,7 @@
 # Script skeleton (recommended step structure)
 
 Enforced for every script: `BEGIN;` first, `ROLLBACK;` last, never
-`COMMIT`, no DML without WHERE. Recommended: the DEFINE / PROCESS / MATCH /
+`COMMIT`, WHERE on every UPDATE/DELETE. Recommended: the DEFINE / PROCESS / MATCH /
 CORRECT or FAIL steps below, with a comment header per step.
 Schema-qualified names and explicit column lists. `save_execute_script` accepts `CREATE [OR REPLACE] FUNCTION`
 with `LANGUAGE plpgsql` or `sql` and one dollar-quoted body, and
@@ -104,7 +104,11 @@ INSERT INTO <schema>.<name>_import (external_no, payload) VALUES ('T-1', '[]');
 ROLLBACK TO SAVEPOINT bad_payload;
 ```
 
-A statement that raises an error aborts the rest of a plain script run;
-tell the user to run such checks one by one, or to read the expected error
-and continue from the next SAVEPOINT. State the run order of the files in
-the summary of the answer.
+An error leaves the transaction failed until `ROLLBACK TO SAVEPOINT
+bad_payload` (or a full rollback). Tell the user to run that recovery statement
+before the next test; starting another SAVEPOINT does not recover it. Keep
+recovery advice client-neutral unless the user named a SQL client; do not add
+product-specific steps for an unspecified client. Client stop-on-error
+behavior may require executing checks individually. ROLLBACK
+does not undo sequence advancement or external function/trigger effects.
+State the run order; the agent never executes these checks.
