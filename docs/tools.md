@@ -294,6 +294,34 @@ server instructions tell the model to prefer estimated row counts over
 `count(*)`, check plans with `explain` first, and tell the user before running
 anything longer than the default.
 
+### Structured results
+
+A successful call returns its result as JSON text in the first content block
+(unchanged, for clients that only read text) and, when the result is an
+object (every tool today), the same JSON as `structuredContent`. Both are
+built from one serialization, so they hold exactly the same values; `_meta`
+keeps the `correlationId`.
+
+`query`, `explain` and `table_knowledge` also advertise an `outputSchema` in
+`tools/list` (`src/outputSchemas.js`), and the MCP SDK checks every success
+against it before replying:
+
+| Tool | Always present | Optional |
+|---|---|---|
+| `query` | `profile`, `columns` (names), `rows` (arrays in column order), `rowCount`, `truncated` | `notes`, `repair`, `memoryError`, `memoryErrorCode`, `partialCommit` |
+| `explain` | `profile`, `analyzed`, `plan` (text) | `notes`, `unexploredNeighbors`, `repair`, `memoryError`, `memoryErrorCode`, `partialCommit` |
+| `table_knowledge` | `relation`, `known` | `hint` (not in memory), the record fields (`explored`, `kind`, `columnCount`, `keyColumns`, `relations`, `notes`, `recentChanges`, `columnScores`, `triggers`, ...), `databaseNotes`, `unexploredNeighbors` |
+
+The schemas are open: fields they name are typed, and a field added later is
+allowed, so a client validating against an older schema keeps working. Cells
+are strings, numbers, booleans or null, as described in *Exact values*:
+numeric, bigint, date/time and json values stay PostgreSQL's text and are
+never turned into JavaScript numbers. The other tools return
+`structuredContent` without a schema; their fields are the ones documented for
+each tool. No tool has behaviour annotations yet. The structured copy doubles
+the size of a reply; `maxRows`, `AUSPEX_MAX_CELL_CHARS` and the other limits
+bound both copies.
+
 ### Cancellation
 
 When a client cancels a `tools/call` (`notifications/cancelled`) or the
@@ -329,6 +357,12 @@ first text block (unchanged), followed by a machine-readable envelope, both as
 { "error": { "code": "QUERY_BUDGET_EXCEEDED", "retryable": true, "retryAfterSeconds": 42,
              "budgetScope": "process", "correlationId": "5f0c…" } }
 ```
+
+For `query`, `explain` and `table_knowledge` (the tools with an
+`outputSchema`) the envelope is only in the second text block: SDK clients
+check any `structuredContent` against the tool's schema, errors included, so
+an error envelope there would be rejected. Read `JSON.parse(content[1].text).error`
+for those tools.
 
 Decide from `code` and `retryable`, never from the English text. The envelope
 holds no message text, SQL, parameters, row values or connection details;
