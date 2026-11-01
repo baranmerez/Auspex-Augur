@@ -1007,7 +1007,7 @@ export class SchemaMemory {
         language: o.language ?? null,
         volatility: o.volatility ?? null,
         ...(o.listedOnly ? { listedOnly: true } : {
-          securityDefiner: !!o.securityDefiner, strict: !!o.strict, parallel: o.parallel ?? null, config: o.config ?? [],
+          securityDefiner: !!o.securityDefiner, strict: !!o.strict, parallel: o.parallel ?? null, ...capped(o.config ?? [], 'config'),
           owner: o.owner ?? null, canExecute: o.canExecute ?? null, comment: o.comment ?? null,
         }),
         returnsTrigger: o.returnsTrigger ?? o.returns === 'trigger',

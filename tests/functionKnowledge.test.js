@@ -116,6 +116,19 @@ test('oversized relationship lists are capped with an omitted count', () => {
   assert.equal(all.overloads[0].usedByTriggersOmitted, 10);
 });
 
+test('the overload config list is capped with an omitted count', () => {
+  const mem = new SchemaMemory(tempDir(), { now });
+  const [a] = exampleFunctions();
+  const config = Array.from({ length: 30 }, (_, i) => `example.setting_${i}=on`);
+  mem.recordFunctions(profile, [{ ...a, config }]);
+  const [o] = mem.functionKnowledge(profile, 'example', 'order_total', { maxItems: 2 }).overloads;
+  assert.deepEqual(o.config, config.slice(0, 2));
+  assert.equal(o.configOmitted, 28);
+  const [small] = mem.functionKnowledge(profile, 'example', 'order_total', { maxItems: 50 }).overloads;
+  assert.equal(small.config.length, 30);
+  assert.equal(small.configOmitted, undefined);
+});
+
 test('quoted identifiers and profile boundaries: exact names, no cross-profile answer', () => {
   const mem = new SchemaMemory(tempDir(), { now });
   const [a] = exampleFunctions();
