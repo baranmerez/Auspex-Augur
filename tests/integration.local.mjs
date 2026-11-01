@@ -246,6 +246,29 @@ test('a cancelled call stops its statement on the server with a CancelRequest an
   }
 });
 
+test('query over MCP returns the same exact values as text and structuredContent, validated against its outputSchema', async () => {
+  const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+  const { StdioClientTransport } = await import('@modelcontextprotocol/sdk/client/stdio.js');
+  const { fileURLToPath } = await import('node:url');
+  const serverPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'index.js');
+  const client = new Client({ name: 'it-structured', version: '1.0.0' });
+  await client.connect(new StdioClientTransport({ command: process.execPath, args: [serverPath], env, stderr: 'ignore' }));
+  try {
+    const sql = "select 12345678901234567890.000000000000000001::numeric as n, 9007199254740993::int8 as b, "
+      + "timestamp '2026-01-01 10:00:00.123456' as t, '{\"a\": 1.000000000000000001}'::jsonb as j, 7::int4 as i, true as ok, null::text as nothing";
+    const r = await client.callTool({ name: 'query', arguments: { profile: 'local', sql } });
+    assert.equal(r.isError, undefined, r.content[0].text);
+    assert.deepEqual(r.structuredContent, JSON.parse(r.content[0].text));
+    assert.deepEqual(r.structuredContent.rows[0], ['12345678901234567890.000000000000000001', '9007199254740993', '2026-01-01 10:00:00.123456', '{"a": 1.000000000000000001}', 7, true, null]);
+    const empty = await client.callTool({ name: 'query', arguments: { profile: 'local', sql: 'select 1 as n where false' } });
+    assert.deepEqual([empty.structuredContent.rows, empty.structuredContent.rowCount, empty.structuredContent.truncated], [[], 0, false]);
+    const plan = await client.callTool({ name: 'explain', arguments: { profile: 'local', sql: 'select 1' } });
+    assert.equal(typeof plan.structuredContent.plan, 'string');
+  } finally {
+    await client.close();
+  }
+});
+
 test('run report with previewRows 0 and no ANALYZE does not execute the query', async () => {
   // Executing this would hit the 1 s timeout; with previewRows 0 only the plan
   // and the LIMIT 0 column probe run, so it returns at once with the columns.
