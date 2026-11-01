@@ -219,6 +219,33 @@ test('a connection that drops mid-query is CONNECTION_FAILED and retryable', asy
   assert.equal((await raw('select 1 as ok')).rows[0].ok, 1); // the next call gets a working connection
 });
 
+test('a cancelled call stops its statement on the server with a CancelRequest and the next call works', async () => {
+  // cancelGraceMs is far above the expected time, so a fast end proves the
+  // server stopped the statement (57014), not that the socket was dropped.
+  const cancellable = new ReadOnlyDatabase(config);
+  cancellable.cancelGraceMs = 10000;
+  try {
+    for (const [label, run] of [
+      ['query', () => cancellable.query('local', 'select count(*) as slept_query from generate_series(1, 2000000000) a')],
+      ['export', () => cancellable.exportCsv('local', 'select count(*) as slept_export from generate_series(1, 2000000000) a', [], 'cancelled', ',')],
+    ]) {
+      const controller = new AbortController();
+      const started = Date.now();
+      const pending = cancellable.withCorrelation('it-cancel', run, controller.signal);
+      setTimeout(() => controller.abort(), 300);
+      await assert.rejects(pending, err => classifyError(err).code === 'CANCELLED', label);
+      const elapsed = Date.now() - started;
+      assert.ok(elapsed < 3000, `${label} ended after ${elapsed} ms`);
+    }
+    await new Promise(resolve => setTimeout(resolve, 200));
+    const active = await cancellable.query('local', "select count(*)::int as n from pg_stat_activity where pid <> pg_backend_pid() and position('slept_' in query) > 0 and state = 'active'");
+    assert.equal(active.rows[0][0], 0, 'no cancelled statement runs on');
+    assert.deepEqual(fs.readdirSync(config.exportDir).filter(f => f.includes('cancelled')), [], 'the cancelled export kept no file');
+  } finally {
+    await cancellable.close();
+  }
+});
+
 test('run report with previewRows 0 and no ANALYZE does not execute the query', async () => {
   // Executing this would hit the 1 s timeout; with previewRows 0 only the plan
   // and the LIMIT 0 column probe run, so it returns at once with the columns.
