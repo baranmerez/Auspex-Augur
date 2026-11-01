@@ -27,7 +27,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/stats.svg" alt="24 MCP tools · 5 safety layers · 0 write paths · 5 agent skills" width="100%">
+  <img src="docs/assets/stats.svg" alt="25 MCP tools · 5 safety layers · 0 write paths · 5 agent skills" width="100%">
 </p>
 
 ## 🎯 Analysis only, no changes

@@ -89,6 +89,61 @@ at startup:
 }
 ```
 
+### Tool groups
+
+An optional top-level `enabledToolGroups` limits the MCP tools this server
+offers to the groups listed. Leave it out to get every tool, as before.
+
+```json
+{
+  "enabledToolGroups": ["explore", "query"]
+}
+```
+
+| Group | Tools |
+|---|---|
+| `core` (always on) | `list_profiles`, `check_profile` |
+| `explore` | `search`, `list_schemas`, `list_tables`, `describe_table`, `describe_tables`, `describe_functions`, `list_functions`, `profile_tables`, `relation_stats`, `table_knowledge`, `scanned_files` |
+| `query` | `query`, `explain`, `export_csv` |
+| `reports` | `save_report`, `run_report`, `approve_report`, `list_reports`, `share_report`, `render_reports`, `save_execute_script` |
+| `memory` | `remember`, `score_columns` (needs `explore`) |
+
+`AUSPEX_ENABLED_TOOL_GROUPS=explore,query` overrides the file. An unknown
+group, a list with nothing besides `core`, or `memory` without `explore` stops
+the server at startup; it never falls back to enabling everything.
+
+- **Startup only.** The setting is read when the server starts. After a
+  change, restart the server (your MCP client session) so the client
+  rediscovers the tools; nothing changes while it runs.
+- **What it controls.** Tools of a disabled group are not registered: they
+  are missing from `tools/list`, and a call by name is refused with
+  `TOOL_DISABLED` before any handler, database work or library change. The
+  server instructions leave out guidance for disabled groups and name the
+  disabled tools; a workflow prompt is offered only when the groups it needs
+  are enabled (`explore`: explore; `report`: query and reports; `ddl`: explore
+  and reports; `columns` and `code`: explore and memory) and names the
+  disabled tools its text mentions. `list_profiles` shows the effective set
+  (`toolGroups`), and a non-default setting is printed to stderr at startup.
+- **What it does not control.** It is not a database permission: the
+  read-only role, role check, SQL guard, timeouts, budgets and audit apply to
+  every enabled tool as before. An enabled tool keeps its own local effects:
+  catalog tools and `explain` still record what they read in the schema
+  memory, and `run_report` still saves its run. The local viewer and the
+  desktop app (approve/revoke, notes, column scores) are not affected by it.
+
+Measured with the five workflow prompts and the default limits (bytes of
+UTF-8; descriptions only, the whole `tools/list` array as JSON, and the server
+instructions). Smaller numbers mean less text for the client to load; no
+claim is made about tokens or task quality.
+
+| `enabledToolGroups` | Tools | Description bytes | `tools/list` bytes | Instruction bytes | Prompts |
+|---|---|---|---|---|---|
+| not set | 25 | 17571 | 53079 | 5024 | 5 |
+| `explore` | 13 | 9479 | 22433 | 3202 | 1 |
+| `explore`, `query` | 16 | 10545 | 29780 | 3181 | 1 |
+| `explore`, `query`, `memory` | 18 | 13970 | 38385 | 4583 | 3 |
+| `explore`, `query`, `reports` | 23 | 14146 | 44474 | 4542 | 3 |
+
 Profile names are case-insensitive and use `a-z`, `0-9`, `-`, `_`. Restart
 your MCP client session after editing (profiles are read at start). A missing
 file means no file profiles; an invalid file stops the server with a message
@@ -106,6 +161,7 @@ naming the problem.
 | `AUSPEX_DB_<NAME>` | none | Extra profile from the environment, e.g. `AUSPEX_DB_LOCAL`; the same name in the file and env is an error |
 | `AUSPEX_SCRIPT_ROOT_<NAME>` | none | Extra script root (absolute folder for `save_execute_script`), e.g. `AUSPEX_SCRIPT_ROOT_SCRIPTS`; the same name in `scriptRoots` and env is an error |
 | `AUSPEX_CODE_ROOT_<NAME>` | none | Extra code root (absolute source code folder the agent reads itself; names `remember` `evidenceCode` roots), e.g. `AUSPEX_CODE_ROOT_EXAMPLE_APP`; the same name in `codeRoots` and env is an error |
+| `AUSPEX_ENABLED_TOOL_GROUPS` | `enabledToolGroups` in the profiles file, else all | Comma-separated tool groups this server offers (see Tool groups); startup only |
 | `AUSPEX_ROOT` | `auspexRoot` in the profiles file | Auspex checkout the desktop app runs `src/stageCli.js` from (report approve/revoke) |
 | `AUSPEX_NODE` | `node` on `PATH` | Absolute path of the Node executable the desktop app uses for approve/revoke |
 | `AUSPEX_MAX_ROWS` | 500 | Row cap for `query` |

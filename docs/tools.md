@@ -8,7 +8,7 @@ Every MCP tool, plus the details of choosing a database, CSV export, batch explo
 
 | Tool | What it does |
 |---|---|
-| 🗂️ `list_profiles` | Configured profiles (description, host, database, user, timeout limit, role check; never passwords), script roots and code roots (name and folder) |
+| 🗂️ `list_profiles` | Configured profiles (description, host, database, user, timeout limit, role check; never passwords), script roots and code roots (name and folder), and the enabled tool groups (`toolGroups`) |
 | 🔐 `check_profile` | Checks that a profile's database role is read-only; a role that can write blocks the profile |
 | 🔎 `search` | Tables, views, columns, functions and triggers whose name or comment contains a text (always a case-insensitive contains-match), across all schemas, in one statement; with estimated rows and privileges; optionally function source text too (`searchSource`) |
 | 📁 `list_schemas` | Non-system schemas with owner, relation count, usage privilege, comment |
@@ -377,6 +377,7 @@ holds no message text, SQL, parameters, row values or connection details;
 | `TIMEOUT` | Statement timeout (57014), idle-in-transaction timeout (25P03) or export time limit; lock timeout (55P03) is retryable | lock timeout only |
 | `CANCELLED` | The client cancelled the request (see *Cancellation*); the SDK sends no reply, so this code is mainly seen in the audit log | no |
 | `INVALID_INPUT` | Invalid arguments, names or option values, including MCP schema validation | no |
+| `TOOL_DISABLED` | The tool's group is not in `enabledToolGroups` (docs/configuration.md, Tool groups); nothing ran. Not audited, like other refusals inside the MCP SDK | no (after a restart with the group) |
 | `PROFILE_INVALID` | Missing or unknown profile | no |
 | `NOT_FOUND` | Report, note, relation or column not found | no |
 | `PRECONDITION_FAILED` | An earlier step is missing (for example run the current SQL version before approving or sharing) | no |

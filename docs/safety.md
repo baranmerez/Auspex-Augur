@@ -34,6 +34,8 @@ How Auspex keeps every call read-only, layer by layer.
    with `ROLLBACK`. A call the MCP client cancels stops its statement with a
    PostgreSQL CancelRequest for its own backend only (no SQL, no other
    backend), and its connection is never reused (docs/tools.md, Cancellation).
+   `enabledToolGroups` only chooses which MCP tools exist; it is no database
+   permission, and every enabled tool keeps all of these layers.
 3. **Cursor + extended protocol:** queries run as `DECLARE CURSOR FOR <query>`
    over the extended protocol, which rejects stacked statements and
    data-modifying CTEs at the server.
