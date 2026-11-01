@@ -4,7 +4,7 @@ Filter candidate tables before any `describe_tables` or `profile_tables`
 call. Everything here uses the output of `search` / `list_tables`, so it costs
 no extra statement.
 
-## Skip by default (name patterns)
+## Deprioritize by name, then check relevance
 
 | Pattern | Usually |
 |---|---|
@@ -14,9 +14,10 @@ no extra statement.
 | `*_YYYYMMDD`, `*_2024*`, `*_v2` next to an undated twin | dated snapshots |
 | `x_*`, `del_*`, `deleted_*`, `old_*`, `backup_*` | retired tables (also try the same words in the languages the schema uses) |
 
-Keep a skipped table when the user asks for history or logs, when the live
-twin does not exist, or when it is the only match. Name what you skipped in
-one line so the user can ask for it.
+Names are hints, not proof of retirement. Keep a history/log table for
+lifecycle questions, when a relevant view reads it, when no live twin exists,
+or when it is the only match. Do not drop an explicit target. State meaningful
+exclusions so the user can correct the scope.
 
 ## Rank the rest
 
@@ -31,8 +32,9 @@ one line so the user can ask for it.
 
 - `describe_tables`: up to 50 names, 7 statements (8 with a view).
 - `profile_tables`: up to 30 names, at most 3 statements.
-- More candidates than that: ask the user to narrow (schema, module, date)
-  instead of sending a second batch unprompted.
+- Split a clearly requested module into bounded batches within its query
+  budget. Ask to narrow only when the scope or cost is unclear; a tool's
+  batch limit alone is not a reason to ask for the same authorization again.
 
 ## Search terms
 

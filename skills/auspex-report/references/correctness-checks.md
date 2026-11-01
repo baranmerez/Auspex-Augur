@@ -1,8 +1,8 @@
 # Report correctness checks
 
 Run through this list before `save_report`. Every item that applies is
-either handled in the SQL or named as an assumption in the report
-description.
+handled in SQL or explicitly unresolved. An assumption that changes totals
+needs a business decision before the report is presented as correct.
 
 ## Fan-out (1:N joins)
 
@@ -14,7 +14,7 @@ description.
 ```sql
 WITH inv AS (
   SELECT i.order_id, sum(i.amount) AS invoice_amount, count(*) AS invoice_count
-  FROM test.invoices i
+  FROM example.invoices i
   WHERE i.created_at >= $1 AND i.created_at < $2
   GROUP BY i.order_id
 )
@@ -25,15 +25,18 @@ WHERE o.created_at >= $1 AND o.created_at < $2
 GROUP BY o.customer_id;
 ```
 
-- Two children of the same parent are never joined to each other directly
-  (N x M rows): aggregate each to the parent key first.
+- For parent totals, aggregate each child to the full parent key first;
+  two unaggregated children can produce N x M rows. A detail report may
+  intentionally return child rows; document that grain.
 - `count(DISTINCT parent_key)` for counts at the parent grain after a join.
+  This repairs a count only; `sum(DISTINCT amount)` incorrectly merges
+  different parents with equal amounts. Use EXISTS for presence-only filters.
 
 ## Duplicates
 
-- Check that the driving key is unique at the report grain (primary key or
-  a `count(*) vs count(DISTINCT key)` check in the plan's estimate or one
-  aggregate query).
+- Check the full driving key at the report grain using an applicable
+  primary/unique constraint or a scoped aggregate comparing row and distinct
+  key counts. Neither a plan estimate nor a capped sample proves uniqueness.
 - Lookup joins must be on a unique key; a lookup with repeated codes
   (per language, per period) needs its extra key in the join.
 
@@ -43,8 +46,8 @@ GROUP BY o.customer_id;
   where 0 is the correct business reading, otherwise keep NULL and say so.
 - `col <> 'X'` drops NULL rows: write `col IS DISTINCT FROM 'X'` when NULLs
   must stay.
-- `NOT IN (subquery)` returns nothing when the subquery has a NULL: use
-  `NOT EXISTS`.
+- `NOT IN (subquery)` can exclude all candidate rows when its result includes
+  NULL; use `NOT EXISTS` with explicit NULL semantics.
 - Group keys that can be NULL get a visible label (`coalesce(name, '(none)')`).
 
 ## Cancelled, deleted, test rows
@@ -67,12 +70,30 @@ GROUP BY o.customer_id;
 
 - `numeric` for money; no float sums. Integer division: cast first.
 - Half-open date ranges; time zone named for `timestamptz`.
-- Percentages computed from sums, not averaged per group.
+- For a report with `dateRange: true`, `$1` is the inclusive start and `$2`
+  the exclusive end: `created_at >= $1 AND created_at < $2`. Keep literal
+  positional SQL parameters in reference files: Claude expands the same
+  notation as skill arguments inside a `SKILL.md` entrypoint.
+- Ratios use the correct denominator and weighting, not an unweighted
+  average of group percentages. State zero-denominator behavior.
+
+## Reconciliation
+
+- Compare at the same grain, full join keys, period, time zone and filters.
+  A grouped report's row count is its group count, not the number of parents.
+- Check additive measures with a separate bounded aggregate; use the proper
+  formula for distinct counts and ratios. Sample statistics, estimated plan
+  rows and a truncated preview cannot establish exact equality.
+- Missing/overlapping classification rules: count distinct driving keys with
+  zero, one and multiple rule matches. Keep overlaps separate from mutually
+  exclusive exclusions; do not hide duplicate matches with DISTINCT.
+- If no exact check ran, state what remains unverified.
 
 ## Performance
 
-- `explain` before the first run; filter on indexed columns; window the
-  period on the driving table.
+- `explain` before the first run; look for unintended multiplication and
+  estimate errors. A sequential scan may be appropriate. Preserve the
+  requested population; do not add filters just to force index use.
 - Expected run longer than the default timeout: tell the user the table,
   estimated rows and reason, and use `timeoutSeconds` only after a yes.
 - `run_report` with `analyze="auto"` skips EXPLAIN ANALYZE after a slow

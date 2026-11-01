@@ -1,10 +1,10 @@
-# Question templates (one message, max 3)
+# Resolve report decisions in small batches
 
-Ask only for gaps. Every question carries a proposed default so the user can
-answer with one word, except whether cancelled or deleted rows count: ask
-that neutrally, without a default, and save the answer as a rule. Put the
-rules you will apply anyway above the questions, so the user can object
-without being asked.
+Ask only for gaps, up to three questions at a time. Propose defaults for
+presentation and naming; do not invent missing business semantics. Ask
+neutrally whether cancelled/deleted rows count. Record the user's answer as
+a rule with its actual scope: a one-off report choice is not automatically a
+database-wide policy. Reuse explicit answers and applicable remembered rules.
 
 ## Shape
 
@@ -17,14 +17,16 @@ Applying from memory: <rule 1>; <rule 2>.
 
 ## Choosing the 3 questions
 
-Priority when more than 3 gaps exist (ask the first three, assume and state
-the rest):
+Resolve the most consequential gaps first. Continue a second short round if
+an unresolved choice changes the population or totals; never assume grain or
+state semantics just to stop at three questions. Presentation can use a
+stated default.
 
 1. Which date column defines the period (order, invoice, delivery date give
    different totals).
 2. Whether cancelled or deleted rows count, when a state or soft-delete
    column exists and no rule is remembered (neutral, no default; it cannot
-   be assumed, so it is never pushed out of the 3).
+   be assumed).
 3. Codes or states whose meaning is not in memory or in their source
    (lookup table, enum type, CHECK constraint or column comment).
 4. Grain and grouping (one row per order, per line, per person).
@@ -33,7 +35,8 @@ the rest):
 
 ## Do not ask
 
-- Rules already in `databaseNotes` or table notes: apply and list them.
+- Applicable user rules already in memory: apply and list them. A conflict,
+  stale observation or unconfirmed inference may still need clarification.
 - Anything the request states.
 - Column meanings the catalog comments state.
 - The profile when the user named it in this conversation.

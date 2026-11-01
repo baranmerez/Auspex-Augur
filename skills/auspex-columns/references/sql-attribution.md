@@ -41,18 +41,33 @@ Rules:
 
 ## Counting sources
 
-- One report = one source, whatever its number of versions (`_v2`, `v3`,
-  draft and approved copies): read the latest version only.
+- One report identity (db/schema/category/name) = one source across its
+  stored versions/stages. For deployed usage choose approved SQL, otherwise
+  the current draft; a draft-specific task uses its draft. A filename suffix
+  such as `_v2` alone does not establish shared identity.
 - One script file = one source. A file that holds several statements still
   counts once per column.
 - Keep a small table while reading: column -> set of source names. `sources`
   is the size of that set.
+- A scan hash is not that table. Reusing a file without reading it requires
+  its attribution for the same content and target scope. A new session with
+  only `scanned_files` cannot compute full scores from changed files alone.
+- Remove deleted files' contributions when recomputing the complete corpus.
+  Unreadable or ambiguous sources make coverage incomplete, not zero.
+
+Example: one unchanged script reads `amount`, while a changed script now
+reads only `status_code`. Reading only the changed file would incorrectly
+erase the first script's contribution. Re-read both for a replacement score
+unless the unchanged script's full attribution is available. The same file
+may use two tables; a hash recorded while scoring one says nothing about
+whether the other was scored.
 
 ## Score scale reminders
 
 - Relative within the table: a table used in one report can still have
   columns scored 5 when that report revolves around them.
 - Primary key columns joined in most sources: 5. Columns only displayed in a
-  single report: 2. Never read: 1.
+  single report: 2. No use in the complete inspected corpus: 1. Unknown
+  coverage: leave unscored or preserve the previous score with a warning.
 - Do not raise a score for columns you believe matter but no SQL reads; say
   so in the summary for the user's review instead.

@@ -14,7 +14,7 @@ confidence; it stays an inference until the user confirms it.
 | Two foreign keys, few other columns | link table (N:M) |
 | Date + amount + foreign keys, large row count | transaction / movement table |
 | Same columns as another table plus date/user/op columns | log or history copy |
-| Estimated rows 0 | empty when it was last vacuumed or analyzed |
+| Estimated rows 0 | estimated empty; not proof of current emptiness |
 | Estimated rows `null` | no estimate (never vacuumed or analyzed, or statistics not available on a standby or after a reset): measure with `profile_tables` before calling it empty |
 | Write activity (inserts/updates/deletes since stats reset, when a tool returns it) | live vs frozen table |
 
@@ -22,25 +22,34 @@ confidence; it stays an inference until the user confirms it.
 
 | Figure | Reading |
 |---|---|
-| fillRate 0 | unused column; good note candidate |
+| fillRate 0 | no non-NULL values in this sample; not proof the column is unused |
 | fillRate 1 and distinctInSample = sampled rows | identifier or unique key candidate |
 | fillRate 1, low distinct (2-20) | status / type / flag; find where its codes are defined (lookup table, enum, CHECK or comment) |
 | Low fillRate (< 0.1) | optional or legacy field; check whether recent rows fill it |
-| distinctInSample 1 | constant; ignore in reports |
+| distinctInSample 1 | one distinct value observed; may vary outside this sample |
 | Column in an index or foreign key | used for access or joins |
 | Column used in approved reports (memory, `used` relations) | known important |
 
 Distinct counts come from a sample: "distinct in sample" is a lower bound,
 not the table's distinct count. Say so when it matters.
+Read `sample.method` and `sampling`: LIMIT takes the first returned rows,
+not a random sample; TABLESAMPLE SYSTEM samples pages and may miss sparse
+values. An empty sample provides no evidence about column use. Indexes,
+keys and business rules can make a rarely populated column important.
 
 ## Fan-out (`profile_tables` with `parent`)
 
-- `fanOut.avgPerParent` and `fanOut.maxPerParent`: max 1 means 1:1 in
-  practice; max > 1 means a join multiplies parent rows.
+- `fanOut.avgPerParent` and `fanOut.maxPerParent`: max 1 means no
+  multiplication observed in this scope; it does not prove a global 1:1
+  relationship. Max > 1 demonstrates multiplication for those parents.
 - `parentsWithChildren` / `parentRows`: share of parents that have any child;
   low share means an inner join drops most parents. `parentRowsCapped` true:
   the figures cover only the first `sampleRows` parent keys.
-- Use `window` on a parent date column for large parents; say which window.
+- `window` and `parentFilter` constrain the parent population used for
+  fan-out, not the independent column samples or the children's date/status
+  columns. Name these limits when comparing the figures with a report.
+- `relation_stats.linkedRows` comes from planner statistics; missing
+  statistics mean unknown, not zero. It cannot reconcile an exact total.
 
 ## What to record
 

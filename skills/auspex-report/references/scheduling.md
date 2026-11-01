@@ -28,3 +28,24 @@ schedule file or registers a task for the user. Propose; the user does it.
 - Results land in the report's run history, a trend file of aggregates and
   a notification with the title and status; the viewer shows the last
   scheduled result and the trend.
+
+## Inspecting a failed schedule
+
+- For diagnosis, read `status` and supplied local evidence. `run` executes
+  a report; `run-due` performs recovery and may execute other due slots. It
+  is not a repair-only command. Do not invoke either without authorization
+  for those executions.
+- Read `status` and `persistence` separately: successful execution can have
+  failed trend/state writes and exit 1. A lost trend is not a failed SQL run.
+  Notifications use codes; do not paste SQL, parameters or file contents.
+- Completed-slot evidence prevents reruns. Recovery uses `pendingTrends`,
+  existing trend points or saved runs tagged with schedule ID and slot;
+  a manual run or matching timestamp alone is not scheduled evidence.
+- A failure recording an older slot holds newer slots for that schedule.
+  Read the repair outcome before diagnosing a stuck schedule. Recovery
+  continues in slot order when state can be recorded; do not reset
+  `lastSuccessSlot`, delete evidence or change schedule IDs to force it.
+- `STATE_UNREADABLE` stops execution before SQL. Preserve the state file;
+  report the code and request a reviewed recovery decision. Do not silently
+  replace it with empty state. Pending points are bounded (50 per schedule);
+  `trendLost` / `trendLostSlots` mean missing history, never a zero value.

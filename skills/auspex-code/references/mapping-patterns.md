@@ -30,6 +30,14 @@ Then follow the mapped property, not the column name, through the code:
   the column holds `OrderStatus` values; name the enum, do not list
   business meanings the code does not state.
 
+Check value converters and serialization: a property can use an enum while
+the column stores a string or a different numeric code. Follow the actual
+mapping in both directions rather than copying the enum's ordinal. A DTO,
+display label or query alias alone may not establish a write mapping.
+For an indirect calculation, record the relevant condition and unit; one
+branch of a method does not define every row. If two current readers/writers
+disagree, preserve the conflict as an inference for the user to resolve.
+
 Skip a column when:
 
 - two tables or two properties could map to it and the code does not say
