@@ -180,7 +180,11 @@ export function recordFromDescribe(desc) {
 export function triggerRecord(t) {
   return {
     name: t.name, timing: t.timing ?? null, events: t.events ?? [], level: t.level ?? null, enabled: t.enabled ?? null,
-    function: t.function ?? null, when: t.whenCondition ?? t.when ?? null, definition: t.definition ?? null, constraintTrigger: !!t.constraintTrigger,
+    function: t.function ?? null,
+    // The exact identity of that function; records of older builds have only
+    // the flattened "schema.name" above.
+    ...(typeof t.functionSchema === 'string' && typeof t.functionName === 'string' ? { functionSchema: t.functionSchema, functionName: t.functionName } : {}),
+    when: t.whenCondition ?? t.when ?? null, definition: t.definition ?? null, constraintTrigger: !!t.constraintTrigger,
   };
 }
 
@@ -768,13 +772,12 @@ export class SchemaMemory {
     return out.filter(Boolean).sort((a, b) => textOrder(tableKey(a.schema, a.name), tableKey(b.schema, b.name)));
   }
 
-  // Resolves the function a trigger record names ("schema.name" as
-  // describe_table stored it) to its stored record, without definitions:
-  // { status: 'found', record } | { status: 'not-recorded' } |
-  // { status: 'unresolved' } (no name, or a dot in a name lets more than one
-  // stored record match). fns: every stored record (graph rebuild); without
-  // it only the candidate files are read, a few per trigger. An unreadable
-  // record counts as not recorded.
+  // Resolves the function a trigger record calls (triggerFunctionIdentity) to
+  // its stored record, without definitions: { status: 'found', record } |
+  // { status: 'not-recorded' } | { status: 'unresolved' } (no identity: no
+  // name, or an older record whose flattened name reads more than one way).
+  // fns: every stored record (graph rebuild); without it only the one
+  // candidate file is read. An unreadable record counts as not recorded.
   functionLookup(profile, fns = null) {
     const byKey = fns ? new Map(fns.map(f => [tableKey(f.schema, f.name), f])) : null;
     const read = (schema, name) => {
@@ -789,15 +792,11 @@ export class SchemaMemory {
         return null;
       }
     };
-    return ref => {
-      if (!ref) return { status: 'unresolved' };
-      const found = [];
-      for (let i = ref.indexOf('.'); i > 0; i = ref.indexOf('.', i + 1)) {
-        const rec = read(ref.slice(0, i), ref.slice(i + 1));
-        if (rec) found.push(rec);
-      }
-      if (found.length > 1) return { status: 'unresolved' };
-      return found.length ? { status: 'found', record: found[0] } : { status: 'not-recorded' };
+    return t => {
+      const id = triggerFunctionIdentity(t);
+      if (!id) return { status: 'unresolved' };
+      const rec = read(id.schema, id.name);
+      return rec ? { status: 'found', record: rec } : { status: 'not-recorded' };
     };
   }
 
@@ -1813,9 +1812,21 @@ function columnScoresSection(rec, notes = []) {
 }
 
 // The function a trigger record names, as describe_table stored it
-// (nspname || '.' || proname, unquoted); records of older builds may end
-// with "()".
-const triggerFunctionRef = t => (typeof t.function === 'string' && t.function ? t.function.replace(/\(\)$/, '') : null);
+// (nspname || '.' || proname, unquoted).
+const triggerFunctionRef = t => (typeof t.function === 'string' && t.function ? t.function : null);
+
+// The exact { schema, name } of the function a trigger calls, or null when
+// it cannot be known: describe_table stores both since #152; an older
+// record has only the flattened name, used when it reads one way only (one
+// dot, no "()" a name may also contain). Never a guess between readings.
+function triggerFunctionIdentity(t) {
+  if (typeof t.functionSchema === 'string' && typeof t.functionName === 'string' && t.functionSchema && t.functionName) return { schema: t.functionSchema, name: t.functionName };
+  const ref = triggerFunctionRef(t);
+  if (!ref || ref.endsWith('()')) return null;
+  const dot = ref.indexOf('.');
+  if (dot <= 0 || dot === ref.length - 1 || ref.indexOf('.', dot + 1) !== -1) return null;
+  return { schema: ref.slice(0, dot), name: ref.slice(dot + 1) };
+}
 
 // A trigger function takes no declared arguments: its overload is the one
 // with an empty argument list.
@@ -1828,7 +1839,7 @@ const triggerOverload = rec => (rec.overloads ?? []).find(o => o.arguments === '
 // only) or definition-truncated.
 function functionEvidence(t, lookup) {
   const ref = triggerFunctionRef(t);
-  const found = lookup(ref);
+  const found = lookup(t);
   if (found.status !== 'found') return { ref, complete: false, gap: found.status === 'unresolved' ? 'binding-unresolved' : 'function-not-recorded' };
   const rec = found.record;
   const o = triggerOverload(rec);
@@ -1859,8 +1870,10 @@ export function summaryFreshness(t, s, lookup) {
   const ref = triggerFunctionRef(t);
   if (ref !== ev.ref) return stale('binding-changed');
   if (ev.gap === 'binding-unresolved') return unverified(ev.gap);
-  const found = lookup(ref);
-  if (found.status === 'found' && ev.schema !== undefined && (found.record.schema !== ev.schema || found.record.name !== ev.name)) return stale('binding-changed');
+  const id = triggerFunctionIdentity(t);
+  if (!id) return unverified('binding-unresolved');
+  if (ev.schema !== undefined && (id.schema !== ev.schema || id.name !== ev.name)) return stale('binding-changed');
+  const found = lookup(t);
   const o = found.status === 'found' ? triggerOverload(found.record) : null;
   if (!o?.definitionHash) return unverified(ev.gap ?? 'function-missing');
   if (ev.definitionHash && (o.definitionHash !== ev.definitionHash || (o.definitionLength ?? null) !== (ev.definitionLength ?? null))) return stale('function-changed');

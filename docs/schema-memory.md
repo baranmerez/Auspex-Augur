@@ -128,7 +128,7 @@ node: { id: "schema.table", schema, table, file?, state: "explored" | "seen" | "
         columnScores?: { [column]: { score: 1-5 | null, scoreBy?: "user" | "agent",   // effective score
                                      agent?: { score, roles, reason, sources, at, history },
                                      user?: { score, roles?, at, history } | { cleared: true, at, history } } },
-        triggers?: [{ name, timing, events, level, enabled, function, when, definition, constraintTrigger,
+        triggers?: [{ name, timing, events, level, enabled, function, functionSchema?, functionName?, when, definition, constraintTrigger,
                       summary?, summaryAt?, summaryFreshness?, summaryFreshnessReason?, summaryStale? }],
         viewSources?: ["schema.table", ...],   // views and materialized views: relations they read
         viewFunctions?: ["schema.name", ...] }  // views and materialized views: functions they call
@@ -320,7 +320,8 @@ answers as user scores.
 - Optional `triggers`: one-line summary per trigger of what its function does
   (the source is never stored). Each summary keeps the hash of the trigger
   definition and `functionEvidence`: the function the trigger calls as the
-  memory knew it then (`ref` as the trigger names it, `schema`, `name`,
+  memory knew it then (`ref` as the trigger names it, `schema`, `name` from
+  the trigger's `functionSchema` and `functionName`,
   `arguments` `""`, `capturedAt` = its `describedAt`, `definitionHash`,
   `definitionLength`, `complete`, and `gap` when freshness cannot be
   established later). `table_knowledge` and `graph.json` compute the
@@ -340,7 +341,7 @@ answers as user scores.
   | `unverified` | `definition-missing` | only listed (`list_functions`), no definition, at that time |
   | `unverified` | `definition-truncated` | the stored definition is cut at 200000 characters; a change after the cut is invisible |
   | `unverified` | `function-missing` | the function, or its overload without arguments, is no longer in memory with a definition |
-  | `unverified` | `binding-unresolved` | the trigger names no function, or a dot in a name lets two records match |
+  | `unverified` | `binding-unresolved` | the trigger names no function, or a record from before `functionSchema`/`functionName` has a flattened name that reads more than one way (several dots, or a trailing `()`); `describe_table` again records the exact identity |
 
   A detected change wins over a gap; missing evidence is never `fresh`.
   `summaryStale: true` stays on stale summaries for older readers. Only the

@@ -176,10 +176,37 @@ test('same names in two profiles: a change in one never touches the other', () =
   assert.deepEqual(graphTriggers(mem, 'orders', 'exampledb'), [['orders_check', 'fresh', null, false]]);
 });
 
-test('older trigger records naming the function with "()" resolve the same way', () => {
+test('a flattened name ending in "()" is never stripped to bind another function', () => {
   const mem = memory();
   mem.recordDescribe(describe('exampledb', 'orders', [trigger('orders', 'orders_check', 'example.orders_before_write()')]));
   mem.recordFunctions('exampledb', [fn('orders_before_write', 'false')]);
   summarize(mem, 'orders', ['orders_check']);
+  assert.deepEqual(freshness(mem, 'orders'), [['orders_check', 'unverified', 'binding-unresolved', false]]);
+});
+
+test('separate function schema and name bind exactly, also with "()" or dots in a name', () => {
+  const mem = memory();
+  // Both example."audit()" and example.audit are cached; the trigger calls the first.
+  const exact = (table, name, schema, fnName) => trigger(table, name, `${schema}.${fnName}`, { functionSchema: schema, functionName: fnName });
+  mem.recordDescribe(describe('exampledb', 'orders', [exact('orders', 'a_parens', 'example', 'audit()'), exact('orders', 'b_dotted', 'a', 'b.c')]));
+  mem.recordFunctions('exampledb', [fn('audit()', 'false'), fn('audit', 'false'), fn('b.c', 'false', { schema: 'a' }), fn('c', 'false', { schema: 'a.b' })]);
+  summarize(mem, 'orders', ['a_parens', 'b_dotted']);
+  const ev = mem.readTable('exampledb', 'example', 'orders').triggerSummaries;
+  assert.deepEqual([ev.a_parens, ev.b_dotted].map(s => [s.functionEvidence.schema, s.functionEvidence.name, s.functionEvidence.complete]), [['example', 'audit()', true], ['a', 'b.c', true]]);
+  assert.deepEqual(freshness(mem, 'orders'), [['a_parens', 'fresh', null, false], ['b_dotted', 'fresh', null, false]]);
+  // A change of the namesakes leaves them fresh; a change of the called functions does not.
+  mem.recordFunctions('exampledb', [fn('audit', 'true'), fn('c', 'true', { schema: 'a.b' })]);
+  assert.deepEqual(freshness(mem, 'orders'), [['a_parens', 'fresh', null, false], ['b_dotted', 'fresh', null, false]]);
+  mem.recordFunctions('exampledb', [fn('audit()', 'true'), fn('b.c', 'true', { schema: 'a' })]);
+  assert.deepEqual(freshness(mem, 'orders'), [['a_parens', 'stale', 'function-changed', true], ['b_dotted', 'stale', 'function-changed', true]]);
+  assert.deepEqual(graphTriggers(mem, 'orders'), freshness(mem, 'orders'));
+});
+
+test('an older flattened record bound before keeps its evidence when describe_table adds the identity', () => {
+  const mem = memory();
+  mem.recordDescribe(describe('exampledb', 'orders', [trigger('orders', 'orders_check')]));
+  mem.recordFunctions('exampledb', [fn('orders_before_write', 'false')]);
+  summarize(mem, 'orders', ['orders_check']);
+  mem.recordDescribe(describe('exampledb', 'orders', [trigger('orders', 'orders_check', 'example.orders_before_write', { functionSchema: 'example', functionName: 'orders_before_write' })]));
   assert.deepEqual(freshness(mem, 'orders'), [['orders_check', 'fresh', null, false]]);
 });

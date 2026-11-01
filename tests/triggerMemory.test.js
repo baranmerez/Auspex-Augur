@@ -34,6 +34,8 @@ test('the record keeps trigger fields from describe_table', () => {
     when: '(new.status_code IS NOT NULL)', definition: trigger('orders_check').definition, constraintTrigger: true,
   }]);
   assert.equal('triggers' in recordFromDescribe(ordersDescribe()), false, 'no field when the describe result had none');
+  const exact = recordFromDescribe(ordersDescribe([trigger('orders_check', { functionSchema: 'example', functionName: 'orders_before_write' })]));
+  assert.deepEqual([exact.triggers[0].functionSchema, exact.triggers[0].functionName], ['example', 'orders_before_write']);
 });
 
 test('trigger changes are diffed: added, dropped, changed and enabled-changed', () => {
