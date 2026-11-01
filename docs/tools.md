@@ -260,7 +260,7 @@ the catalog tools return the structure needed to rebuild it:
   `definitionReturnedChars` and `definitionTruncated` (true when the returned
   text is shorter than `definitionLength`). With several overloads and no
   selection the answer says `definitionOmitted`. Every list (`overloads`,
-  `usedByTriggers`, `calls`, `reads`, `writes`, `calledBy.views`,
+  `usedByTriggers`, `config`, `calls`, `reads`, `writes`, `calledBy.views`,
   `calledBy.functions`, `knownOverloads`) holds at most `maxItems` entries
   (default 20, at most 200) and adds `<field>Omitted` with the number left
   out. Calls, touches and function callers are text inferences from stored
