@@ -606,7 +606,8 @@ ddlTest('describe_tables shows triggers, checks, identity/serial/generated colum
   assert.equal(job.comment, 'Test import staging with a before-validate trigger');
   assert.deepEqual(job.triggers.map(({ definition, ...t }) => t), [{
     name: 'import_job_validate', timing: 'BEFORE', events: ['INSERT', 'UPDATE'], level: 'ROW', enabled: 'enabled',
-    function: 'auspex_test.import_job_before_validate', whenCondition: '(new.payload IS NOT NULL)',
+    function: 'auspex_test.import_job_before_validate', functionSchema: 'auspex_test', functionName: 'import_job_before_validate',
+    whenCondition: '(new.payload IS NOT NULL)',
   }]);
   assert.match(job.triggers[0].definition, /UPDATE OF payload ON auspex_test\.import_job FOR EACH ROW/);
   const cols = Object.fromEntries(job.columns.map(c => [c.column, c]));
