@@ -117,7 +117,7 @@ A small native app (about 3 MB) that sits in the tray and reads `~/.auspex` dire
 </p>
 
 - 📈 **Overview and operations**: activity charts, slowest queries, recent errors, and the full SQL log with filters and CSV export.
-- 📚 **Reports**: browse the library tree, preview results, approve or revoke drafts, pin favorites, and copy an *Ask Claude* prompt.
+- 📚 **Reports**: browse the library tree, preview results, approve or revoke drafts, pin favorites, and copy an *Ask agent* request (also on table, view and function pages).
 - 🗺️ **Schema**: relation map, ER diagram and a timeline of schema changes.
 - 🧾 **Table pages**: columns by importance with their meanings, keys, triggers and the reports that use the table, plus search and grouping. You can give your own column scores here.
 - 📌 **Rules**: every business rule and note in one list, where you can archive outdated ones.
