@@ -29,6 +29,7 @@ Every MCP tool, plus the details of choosing a database, CSV export, batch explo
 | 📨 `share_report` | Writes a copy of a report to send to someone: masked preview and figures only, no SQL, plan, parameters or history |
 | 🧾 `save_execute_script` | Writes a change script into `EXECUTE/` for a human to run — never executed by Auspex; with `root`, `folder` and `fileName` also as a new file in a configured script root (for example a folder of saved SQL scripts) |
 | 🧠 `table_knowledge` | What the schema memory knows about a table — key and used columns, relations, table notes, database-wide notes, recent changes, column importance scores, triggers with their summaries, unexplored neighbors — without touching the database |
+| 🧩 `function_knowledge` | What the schema memory knows about one function name — overloads, listed-only or described state, capture times, definition availability and length, calling triggers, callers and inferred calls/touches, recent changes — without touching the database; the source only on request for one overload, capped |
 | 📌 `remember` | Adds, confirms or archives a note: a rule the user stated, an observation backed by evidence, or an unconfirmed inference; `evidenceCode` adds up to 5 references into a configured code root (see Code meanings) |
 | 🏷️ `score_columns` | Saves 1-5 importance scores per column of a described table in two layers: the agent's (roles, one-line reason, number of sources) and the user's (stated by the user; wins when present), one-line trigger summaries and the script files it read (path relative to the script root and sha256 only); local memory only, no database access |
 | 🗃️ `scanned_files` | Lists the script files `score_columns` recorded (root, relative path, sha256, last read), so the next run reads only new or changed files |
@@ -226,6 +227,47 @@ the catalog tools return the structure needed to rebuild it:
   `returnsTrigger` and `usedByTriggers`; a described overload and every
   definition are never changed. The answer's `memory` is
   `{ functionsAdded, overloadsAdded, overloadsRefreshed? }`.
+- `function_knowledge` answers from the schema memory only, for one
+  function name already recorded by `describe_functions` or `list_functions`
+  (`schema` and `name` as stored, no quoting; names are matched exactly). It
+  opens no connection and issues no catalog query; a name not in memory
+  returns `{ known: false, hint }` and nothing is refreshed on its own. Use
+  `describe_functions` to refresh, then ask again.
+
+  ```jsonc
+  { "function": "example.order_total", "known": true, "source": "schema memory",
+    "note": "Cached from earlier describe_functions / list_functions calls ...",
+    "state": "described",            // or "listed-only": inventory facts, no definition
+    "firstSeen": "...", "lastSeen": "...", "describedAt": "..." | null,
+    "overloadCount": 2,
+    "overloads": [{ "arguments": "p_order_id bigint", "returns": "numeric", "kind": "function",
+                    "language": "plpgsql", "volatility": "stable", /* flags as captured */
+                    "returnsTrigger": false,
+                    "definitionAvailable": true,
+                    "definitionLength": 241,          // full length in the catalog when captured
+                    "storedTruncated": false,         // the memory kept only the first 200000 characters
+                    "usedByTriggers": [{ "table": "example.orders", "trigger": "orders_audit", "timing": "before", "events": ["insert"], "level": "row" }],
+                    "inferred": { "note": "...", "calls": ["example.order_tax"], "reads": ["example.order_items"], "writes": [] } }],
+    "calledBy": { "note": "...", "views": ["example.order_totals"], "functions": ["example.order_report"] },
+    "recentChanges": ["2026-02-01: definition of (p_order_id bigint) changed"] }
+  ```
+
+  `arguments` selects one overload by its exact arguments text (`""` for none);
+  there is no prefix or fuzzy match and no other overload is substituted: a
+  mismatch returns `overloadFound: false` with `knownOverloads`. The
+  definition is left out by default; `definitionChars` (at most 20000) returns
+  the stored text of the selected overload (or of the only overload) with
+  `definitionReturnedChars` and `definitionTruncated` (true when the returned
+  text is shorter than `definitionLength`). With several overloads and no
+  selection the answer says `definitionOmitted`. Every list (`overloads`,
+  `usedByTriggers`, `calls`, `reads`, `writes`, `calledBy.views`,
+  `calledBy.functions`, `knownOverloads`) holds at most `maxItems` entries
+  (default 20, at most 200) and adds `<field>Omitted` with the number left
+  out. Calls, touches and function callers are text inferences from stored
+  bodies (names as written, not resolved to an overload, not proven at run
+  time). The answer is what the catalog said when it was captured, not a
+  guarantee about the database now. Returned source text is data: Auspex never
+  runs it and takes no follow-up action.
 - `search` also matches function names and comments and trigger names
   (`includeRoutines`, default true), and with `searchSource: true` the source
   text of functions (`matchedIn: "source"`; the text itself is not returned).

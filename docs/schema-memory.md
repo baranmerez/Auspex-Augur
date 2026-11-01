@@ -47,7 +47,8 @@ with the work and never crawls the catalog on its own:
 - **Functions:** `describe_functions` records every function name it read
   under `functions/`, with all overloads, and reports `changesSinceLast` per
   name; `list_functions` records an inventory of names and signatures as
-  seen. See *Function records* below.
+  seen. See *Function records* below. `function_knowledge` reads a recorded
+  function back without touching the database (see docs/tools.md).
 - **Exploring further:** after a report, `run_report` and `table_knowledge`
   list neighbors that were never described. The server instructions tell the
   model to ask you before looking at them, and then to read their structure

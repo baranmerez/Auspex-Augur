@@ -57,6 +57,10 @@ export const maxScoredColumns = 2000;
 export const maxScannedFiles = 1000;
 export const maxTriggerSummary = 200;
 export const maxTriggerSummaries = 200;
+// function_knowledge caps: items per returned list, definition characters.
+export const defaultKnowledgeItems = 20;
+export const maxKnowledgeItems = 200;
+export const maxKnowledgeDefinitionChars = 20000;
 // remember evidenceCode: references into a configured code root (name, path
 // relative to it, optional line and symbol); never the code itself.
 export const maxEvidenceCode = 5;
@@ -923,6 +927,82 @@ export class SchemaMemory {
         changes: (f.history ?? []).length,
       };
     });
+  }
+
+  // function_knowledge: one stored function name from memory, never the
+  // database. Overloads with their catalog facts as captured, definition
+  // availability (never the text unless definitionChars is given and one
+  // overload is selected or the name has only one), callers from views and
+  // stored function bodies, triggers and recent changes. Lists are capped at
+  // maxItems with an omitted count; calls and touches are text inferences.
+  // A missing record or overload is a cache miss, never a refresh.
+  functionKnowledge(profile, schema, name, { arguments: args, definitionChars = 0, maxItems = defaultKnowledgeItems } = {}) {
+    const key = tableKey(schema, name);
+    const rec = this.readFunction(profile, schema, name);
+    if (!rec || rec.schema !== schema || rec.name !== name) {
+      return { function: key, known: false, hint: 'Not in memory. describe_functions reads it from the catalog and records it; list_functions records it without a definition.' };
+    }
+    const capped = (list, field) => (list.length > maxItems ? { [field]: list.slice(0, maxItems), [`${field}Omitted`]: list.length - maxItems } : { [field]: list });
+    const all = rec.overloads ?? [];
+    const selected = args === undefined ? all : all.filter(o => o.arguments === args);
+    const base = {
+      function: key,
+      known: true,
+      source: 'schema memory',
+      note: 'Cached from earlier describe_functions / list_functions calls: what the catalog said then, not a guarantee about the database now. describe_functions refreshes it.',
+      state: rec.describedAt ? 'described' : 'listed-only',
+      firstSeen: rec.firstSeen ?? null,
+      lastSeen: rec.lastSeen ?? null,
+      describedAt: rec.describedAt ?? null,
+      overloadCount: all.length,
+    };
+    if (!selected.length) {
+      return { ...base, overloadFound: false, ...capped(all.map(o => o.arguments), 'knownOverloads'), hint: 'No stored overload has exactly these arguments; nothing else was substituted. Use one of knownOverloads, or describe_functions when the overload is new.' };
+    }
+    const withDefinition = definitionChars > 0 && selected.length === 1;
+    const overload = o => {
+      const available = typeof o.definition === 'string';
+      const stored = available ? charCount(o.definition) : 0;
+      const length = o.definitionLength ?? (available ? stored : null);
+      const text = withDefinition && available ? cutText(o.definition, definitionChars) : null;
+      const returned = text === null ? 0 : charCount(text);
+      const triggers = (o.usedByTriggers ?? []).map(t => ({ table: triggerTableId(t), trigger: t.trigger ?? null, ...(t.timing ? { timing: t.timing } : {}), ...(t.events ? { events: t.events } : {}), ...(t.level ? { level: t.level } : {}) }));
+      const calls = (o.calls ?? []).map(c => (c.schema ? tableKey(c.schema, c.name) : c.name));
+      return {
+        arguments: o.arguments,
+        returns: o.returns ?? null,
+        kind: o.kind ?? null,
+        language: o.language ?? null,
+        volatility: o.volatility ?? null,
+        ...(o.listedOnly ? { listedOnly: true } : {
+          securityDefiner: !!o.securityDefiner, strict: !!o.strict, parallel: o.parallel ?? null, config: o.config ?? [],
+          owner: o.owner ?? null, canExecute: o.canExecute ?? null, comment: o.comment ?? null,
+        }),
+        returnsTrigger: o.returnsTrigger ?? o.returns === 'trigger',
+        definitionAvailable: available,
+        definitionLength: length,
+        storedTruncated: o.truncated === true,
+        ...(text !== null ? { definition: text, definitionReturnedChars: returned, definitionTruncated: length !== null && returned < length } : {}),
+        ...capped(triggers, 'usedByTriggers'),
+        inferred: {
+          note: 'Read from the stored definition text: names as written, not resolved to an overload and not proven at run time.',
+          ...capped(calls, 'calls'),
+          ...(o.touches ? { ...capped(o.touches.reads ?? [], 'reads'), ...capped(o.touches.writes ?? [], 'writes') } : {}),
+        },
+      };
+    };
+    const callers = this.functionsView(profile, this.listTables(profile)).find(f => f.id === key)?.calledBy ?? { views: [], functions: [] };
+    return {
+      ...base,
+      ...(args !== undefined ? { overloadFound: true } : {}),
+      ...capped(selected.map(overload), 'overloads'),
+      ...(definitionChars > 0 && !withDefinition ? { definitionOmitted: 'Definitions are returned for one overload only: select it with arguments.' } : {}),
+      calledBy: {
+        note: 'views: recorded view dependencies (catalog); functions: stored function bodies that name it (text inference, any overload).',
+        ...capped(callers.views, 'views'), ...capped(callers.functions, 'functions'),
+      },
+      recentChanges: (rec.history ?? []).slice(-5).map(h => `${h.at.slice(0, 10)}: ${h.changes.map(changeText).join('; ')}`),
+    };
   }
 
   // ---------- notes ----------
