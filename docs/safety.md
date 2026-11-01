@@ -31,7 +31,9 @@ How Auspex keeps every call read-only, layer by layer.
    `BEGIN ... READ ONLY` with `statement_timeout`, `lock_timeout`,
    `idle_in_transaction_session_timeout` and `standard_conforming_strings = on`
    (so strings are read the way the SQL guard reads them), and always ends
-   with `ROLLBACK`.
+   with `ROLLBACK`. A call the MCP client cancels stops its statement with a
+   PostgreSQL CancelRequest for its own backend only (no SQL, no other
+   backend), and its connection is never reused (docs/tools.md, Cancellation).
 3. **Cursor + extended protocol:** queries run as `DECLARE CURSOR FOR <query>`
    over the extended protocol, which rejects stacked statements and
    data-modifying CTEs at the server.
