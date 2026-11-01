@@ -118,8 +118,8 @@ the server at startup; it never falls back to enabling everything.
 - **What it controls.** Tools of a disabled group are not registered: they
   are missing from `tools/list`, and a call by name is refused with
   `TOOL_DISABLED` before any handler, database work or library change. The
-  server instructions leave out guidance for disabled groups and name the
-  disabled tools; a workflow prompt is offered only when the groups it needs
+  server instructions keep only guidance whose tools are all enabled and
+  name the disabled tools; a workflow prompt is offered only when the groups it needs
   are enabled (`explore`: explore; `report`: query and reports; `ddl`: explore
   and reports; `columns` and `code`: explore and memory) and names the
   disabled tools its text mentions. `list_profiles` shows the effective set
@@ -138,11 +138,11 @@ claim is made about tokens or task quality.
 
 | `enabledToolGroups` | Tools | Description bytes | `tools/list` bytes | Instruction bytes | Prompts |
 |---|---|---|---|---|---|
-| not set | 25 | 17571 | 53079 | 5024 | 5 |
-| `explore` | 13 | 9479 | 22433 | 3202 | 1 |
-| `explore`, `query` | 16 | 10545 | 29780 | 3181 | 1 |
-| `explore`, `query`, `memory` | 18 | 13970 | 38385 | 4583 | 3 |
-| `explore`, `query`, `reports` | 23 | 14146 | 44474 | 4542 | 3 |
+| not set | 25 | 17571 | 53079 | 5116 | 5 |
+| `explore` | 13 | 9479 | 22433 | 2879 | 1 |
+| `explore`, `query` | 16 | 10545 | 29780 | 3199 | 1 |
+| `explore`, `query`, `memory` | 18 | 13970 | 38385 | 4484 | 3 |
+| `explore`, `query`, `reports` | 23 | 14146 | 44474 | 4569 | 3 |
 
 Profile names are case-insensitive and use `a-z`, `0-9`, `-`, `_`. Restart
 your MCP client session after editing (profiles are read at start). A missing
