@@ -294,6 +294,31 @@ server instructions tell the model to prefer estimated row counts over
 `count(*)`, check plans with `explain` first, and tell the user before running
 anything longer than the default.
 
+### Cancellation
+
+When a client cancels a `tools/call` (`notifications/cancelled`) or the
+connection closes, the MCP SDK aborts the request's signal and Auspex stops
+the call's work:
+
+- Not started yet, or waiting for a pooled connection: it stops at once,
+  costs no query budget, and a connection that arrives later is closed unused.
+- A running statement is cancelled on the server with a PostgreSQL
+  CancelRequest for that call's own backend (its process ID and secret key,
+  over a new socket, as node-postgres sends it): no SQL runs and no other
+  backend can be reached. A multi-statement call starts no further statement.
+  If the server has not stopped the statement 2 s later, the connection is
+  dropped. A connection that saw a cancellation is never reused.
+- `export_csv` stops fetching and waiting for the disk and removes the file it
+  created; no partial file is kept.
+- `run_report` cancelled during the database phase saves no run and no HTML.
+  Once the run is saved it stays saved; only the schema-memory step after it
+  is skipped. The same holds for the memory step of the other tools.
+- Library and memory changes that are already written are never undone.
+
+The call is audited once with `errorCode: "CANCELLED"` (one entry with the
+tool name and `ms: 0` when it was cancelled before its handler started). The
+scheduler and scripts have no request signal and are not affected.
+
 ### Errors
 
 A failed tool call returns `isError: true` with the readable message as the
@@ -316,6 +341,7 @@ holds no message text, SQL, parameters, row values or connection details;
 | `ROLE_REJECTED` | The profile's database role is not read-only | no |
 | `SQL_REJECTED` | The SQL guard, or the READ ONLY transaction (SQLSTATE 25006), refused the statement | no |
 | `TIMEOUT` | Statement timeout (57014), idle-in-transaction timeout (25P03) or export time limit; lock timeout (55P03) is retryable | lock timeout only |
+| `CANCELLED` | The client cancelled the request (see *Cancellation*); the SDK sends no reply, so this code is mainly seen in the audit log | no |
 | `INVALID_INPUT` | Invalid arguments, names or option values, including MCP schema validation | no |
 | `PROFILE_INVALID` | Missing or unknown profile | no |
 | `NOT_FOUND` | Report, note, relation or column not found | no |
