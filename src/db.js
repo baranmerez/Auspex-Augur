@@ -52,6 +52,9 @@ const exportBatchSize = 1000;
 // How long past exportMaxMs an export waits for a cancelled FETCH to come back
 // and, separately, for the file to close (docs/tools.md: CSV export budget).
 const exportGraceMs = 2000;
+// How long a cancelled call waits for the server to stop its statement after
+// the CancelRequest before the connection is dropped (docs/safety.md).
+const cancelGraceMs = 2000;
 const connectTimeoutMs = 10000;
 const budgetWindowMs = 60000;
 export const defaultMaxQueriesPerMinute = 60;
@@ -107,8 +110,10 @@ export class ReadOnlyDatabase {
     this.budgetUse = new Map(); // profile -> start times (ms) of operations in the window
     this.operation = new AsyncLocalStorage(); // profiles already charged by the current audited operation
     this.correlation = new AsyncLocalStorage(); // correlation ID of the current tool call
+    this.cancellation = new AsyncLocalStorage(); // AbortSignal of the current tool call (MCP request), or null
     this.auditScope = new AsyncLocalStorage(); // { tool, fields } of the innermost audited operation
     this.exportGraceMs = exportGraceMs; // tests shorten it
+    this.cancelGraceMs = cancelGraceMs; // tests shorten it
   }
 
   // Effective query budget of a profile: per-profile setting, else the global one.
@@ -134,8 +139,20 @@ export class ReadOnlyDatabase {
 
   // Runs fn as one tool call: every audit entry it writes carries this
   // correlation ID, so the call, its audit entries and its result are linked.
-  withCorrelation(correlationId, fn) {
-    return this.correlation.run(correlationId, fn);
+  // signal: the AbortSignal of the MCP request; when it aborts, the running
+  // statement is cancelled and no further work of the call starts.
+  withCorrelation(correlationId, fn, signal = null) {
+    return this.correlation.run(correlationId, () => this.cancellation.run(signal ?? null, fn));
+  }
+
+  // True when the client cancelled the current tool call.
+  cancelled() {
+    return this.cancellation.getStore()?.aborted === true;
+  }
+
+  // Refuses to start the next phase of a cancelled call.
+  throwIfCancelled() {
+    if (this.cancelled()) throw new CancelledError();
   }
 
   // Audit field of the current tool call; none outside one (scripts).
@@ -273,11 +290,14 @@ export class ReadOnlyDatabase {
     const timeoutMs = this.timeoutMs(name, timeoutSeconds);
     const known = this.roleChecks.get(name);
     if (known?.status === 'blocked') throw new RoleCheckError(name, known); // no connection needed
+    const signal = this.cancellation.getStore();
+    this.throwIfCancelled(); // before the budget: a cancelled call costs nothing
     this.chargeQueryBudget(name);
     let client;
     try {
-      client = await this.pool(name).connect();
+      client = await connectCancellable(this.pool(name), signal);
     } catch (err) {
+      if (err instanceof CancelledError) throw err;
       throw connectionError(err, name);
     }
     let broken = false;
@@ -285,6 +305,25 @@ export class ReadOnlyDatabase {
     // without a listener it would be an uncaught exception that ends the server.
     const onClientError = () => { broken = true; };
     client.on?.('error', onClientError); // test doubles may not be emitters
+    // Cancellation: no statement starts once the call is cancelled, and the
+    // running one is cancelled by a CancelRequest for this backend only. A
+    // client that saw a cancellation never goes back to the pool, so a late
+    // CancelRequest can never reach another call's statement. If the server
+    // does not stop within cancelGraceMs, the connection is dropped.
+    const ownQuery = Object.hasOwn(client, 'query');
+    const query = client.query;
+    let dropTimer = null;
+    const onAbort = () => {
+      broken = true;
+      this.sendCancel(client, name);
+      dropTimer = setTimeout(() => dropConnection(client), this.cancelGraceMs);
+    };
+    if (signal) {
+      client.query = function (...args) {
+        return signal.aborted ? Promise.reject(new CancelledError()) : query.apply(this, args);
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
     try {
       await client.query('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
       await client.query(`SET LOCAL statement_timeout = ${timeoutMs}`);
@@ -296,15 +335,45 @@ export class ReadOnlyDatabase {
       return await fn(client, name);
     } catch (err) {
       if (!err.code && !(err instanceof SqlGuardError)) broken = true;
+      // Whatever the cancelled statement failed with (57014, a dropped
+      // connection), the call ends as cancelled.
+      if (signal?.aborted) throw err instanceof CancelledError ? err : new CancelledError();
       throw err;
     } finally {
+      if (signal) {
+        signal.removeEventListener('abort', onAbort);
+        if (ownQuery) client.query = query;
+        else delete client.query;
+      }
       try {
         await client.query('ROLLBACK');
       } catch {
         broken = true;
       }
+      clearTimeout(dropTimer);
       client.off?.('error', onClientError);
       client.release(broken);
+    }
+  }
+
+  // Sends a PostgreSQL CancelRequest for the backend of this client: its
+  // process ID and secret key, over a new socket, as node-postgres does. No
+  // SQL runs, no pooled connection is used and no other backend can be hit.
+  // Best effort: withReadOnly drops the connection if it has no effect.
+  sendCancel(client, name) {
+    if (!client.processID || !client.secretKey) return; // not connected yet, or a test double
+    try {
+      const canceller = new pg.Client({ connectionString: this.config.profiles.get(name) });
+      const con = canceller.connection;
+      con.on('error', () => {});
+      con.on('connect', () => con.cancel(client.processID, client.secretKey));
+      const host = canceller.host;
+      if (host && host.startsWith('/')) con.connect(`${host}/.s.PGSQL.${canceller.port}`);
+      else con.connect(canceller.port, host);
+      // The server closes the socket after reading the request; never wait longer.
+      setTimeout(() => con.stream?.destroy(), this.cancelGraceMs).unref?.();
+    } catch {
+      // withReadOnly drops the connection after cancelGraceMs.
     }
   }
 
@@ -444,11 +513,18 @@ export class ReadOnlyDatabase {
       // Listening from the start: a stream error is never an unhandled rejection.
       const failed = new Promise((_, reject) => out.once('error', reject));
       failed.catch(() => {});
+      // A cancelled call stops waiting for the disk at once; the file is removed.
+      const signal = this.cancellation.getStore();
+      const aborted = new Promise((_, reject) => {
+        if (signal?.aborted) reject(new CancelledError());
+        else signal?.addEventListener('abort', () => reject(new CancelledError()), { once: true });
+      });
+      aborted.catch(() => {});
       let bytes = 0;
       // Resolves with timeUp when the budget ends while waiting for the disk.
       const write = chunk => {
         bytes += Buffer.byteLength(chunk);
-        return out.write(chunk) ? null : Promise.race([once(out, 'drain'), failed, expiry.promise]);
+        return out.write(chunk) ? null : Promise.race([once(out, 'drain'), failed, aborted, expiry.promise]);
       };
       // One FETCH within the budget. The server cancels it at the deadline:
       // its statement_timeout is lowered to the remaining time (never raised
@@ -469,6 +545,7 @@ export class ReadOnlyDatabase {
           if (res === timeUp) dropConnection(client);
           return res;
         } catch (err) {
+          if (signal?.aborted) throw new CancelledError(); // the client's cancellation, not the budget
           if (capped && err.code === '57014') return timeUp; // cancelled by the budget
           throw err;
         } finally {
@@ -519,7 +596,7 @@ export class ReadOnlyDatabase {
         out.end();
         const finishing = timer(Math.max(0, deadline - Date.now()) + this.exportGraceMs);
         try {
-          if (await Promise.race([Promise.all([finished, closed]), failed, finishing.promise]) === timeUp) {
+          if (await Promise.race([Promise.all([finished, closed]), failed, aborted, finishing.promise]) === timeUp) {
             throw new ToolError('TIMEOUT', `Export could not finish writing the file within the time limit (exportMaxMs ${maxMs} ms plus ${this.exportGraceMs} ms); no file was kept.`);
           }
         } finally {
@@ -566,6 +643,14 @@ export class ReadOnlyDatabase {
 
 const timeUp = Symbol('timeUp');
 
+// The client cancelled the MCP request (notifications/cancelled, or the
+// connection closed). Nothing after the cancellation point was done.
+export class CancelledError extends ToolError {
+  constructor() {
+    super('CANCELLED', 'The request was cancelled by the client; no further work was done for it.');
+  }
+}
+
 // SQL over the guard's limit is always refused, so its audit entry keeps only
 // the start and the length instead of the whole text.
 function boundedSql(details) {
@@ -578,6 +663,27 @@ function timer(ms) {
   let id;
   const promise = new Promise(resolve => { if (Number.isFinite(ms)) id = setTimeout(resolve, Math.max(0, ms), timeUp); });
   return { promise, clear: () => clearTimeout(id) };
+}
+
+// Waits for a pooled connection, but a cancelled call stops waiting at once;
+// the connection that arrives later is closed, never used.
+async function connectCancellable(pool, signal) {
+  const pending = pool.connect();
+  if (!signal) return pending;
+  let onAbort;
+  const aborted = new Promise((_, reject) => {
+    onAbort = () => reject(new CancelledError());
+    if (signal.aborted) onAbort();
+    else signal.addEventListener('abort', onAbort, { once: true });
+  });
+  try {
+    return await Promise.race([pending, aborted]);
+  } catch (err) {
+    if (err instanceof CancelledError) pending.then(client => client.release(true), () => {});
+    throw err;
+  } finally {
+    signal.removeEventListener('abort', onAbort);
+  }
 }
 
 // Drops the connection of a FETCH that did not come back in time: its pending

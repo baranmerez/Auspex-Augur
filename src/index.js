@@ -4,7 +4,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { loadConfig, describeConnection } from './config.js';
-import { ReadOnlyDatabase } from './db.js';
+import { ReadOnlyDatabase, CancelledError } from './db.js';
 import { classifyError, ToolError } from './errors.js';
 import {
   listSchemas, listTables, describeTable, describeTables, describeFunctions, listFunctions, profileTables, relationStats, search,
@@ -87,7 +87,9 @@ const timeoutArg = z.number().min(1).optional()
 // A change that was stored but whose derived steps failed comes back with a
 // repair field (src/memory/store.js); it is passed through in the result and
 // recorded in the audit log as a memory_repair entry (codes only).
+// A cancelled call skips it: the database work is done, memory is not written.
 function learn(fn, profile = null) {
+  if (db.cancelled()) return {};
   try {
     const result = fn() ?? {};
     const repair = findRepair(result);
@@ -148,11 +150,22 @@ function errorResult(err, correlationId, text = `Error: ${err?.message ?? String
 // ReadOnlyDatabase (database calls) or in the handler via db.audited (library
 // and memory changes), so each call is recorded exactly once. One correlation
 // ID per call links its audit entries and its result (_meta.correlationId).
+// The request's AbortSignal (extra.signal) goes along: a cancelled call stops
+// its running statement and starts no further phase (src/db.js, CANCELLED).
 function tool(name, toolConfig, handler) {
-  server.registerTool(name, toolConfig, async args => {
+  server.registerTool(name, toolConfig, async (args, extra) => {
     const correlationId = crypto.randomUUID();
+    const signal = extra?.signal ?? null;
     try {
-      const result = await db.withCorrelation(correlationId, () => handler(args));
+      const result = await db.withCorrelation(correlationId, () => {
+        if (signal?.aborted) {
+          // Cancelled before the handler started: audited here, nothing ran.
+          const err = new CancelledError();
+          db.auditFn({ source: db.source, tool: name, correlationId, ms: 0, error: err.message, errorCode: 'CANCELLED' });
+          throw err;
+        }
+        return handler(args);
+      }, signal);
       return { content: [{ type: 'text', text: JSON.stringify(result, null, 1) }], _meta: { correlationId } };
     } catch (err) {
       return errorResult(err, correlationId);

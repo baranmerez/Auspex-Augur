@@ -278,6 +278,8 @@ export class ReportService {
     }
 
     const result = await this.db.runReport(ref.db, sql, { params, preset: usedPreset, analyze: doAnalyze, previewRows, timeoutSeconds, label: refLabel(ref) });
+    // A call cancelled during the database phase saves no run and no HTML.
+    this.db.throwIfCancelled?.();
     const summary = summarizePlan(result.plan);
     const columns = result.columns;
     const hash = sqlHash(sql);
@@ -318,7 +320,9 @@ export class ReportService {
       return { savedStage: now, masked };
     });
     const html = this.library.paths(savedStage, ref).html;
-    const learned = this.learn(result.profile, result.plan, summary);
+    // The run is saved and stays saved; after a cancellation only the memory
+    // step (a derived local write) is skipped.
+    const learned = this.db.cancelled?.() ? {} : this.learn(result.profile, result.plan, summary);
 
     return {
       report: refLabel(ref), stage: savedStage, version, sqlHash: hash, htmlFile: html, note,

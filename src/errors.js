@@ -10,6 +10,7 @@
 //   ROLE_REJECTED          the profile's role is not read-only
 //   SQL_REJECTED           the SQL guard or the READ ONLY transaction refused the SQL
 //   TIMEOUT                statement, lock or export time limit reached
+//   CANCELLED              the client cancelled the request (MCP cancellation)
 //   INVALID_INPUT          invalid arguments or names
 //   PROFILE_INVALID        missing or unknown profile
 //   NOT_FOUND              report, note, table or column not found
@@ -21,7 +22,7 @@
 //   DATABASE_ERROR         any other PostgreSQL error (see sqlState)
 //   INTERNAL               anything else
 export const errorCodes = [
-  'QUERY_BUDGET_EXCEEDED', 'LOCK_BUSY', 'ROLE_REJECTED', 'SQL_REJECTED', 'TIMEOUT', 'INVALID_INPUT',
+  'QUERY_BUDGET_EXCEEDED', 'LOCK_BUSY', 'ROLE_REJECTED', 'SQL_REJECTED', 'TIMEOUT', 'CANCELLED', 'INVALID_INPUT',
   'PROFILE_INVALID', 'NOT_FOUND', 'PRECONDITION_FAILED', 'STALE_VERSION', 'PERMISSION_DENIED', 'CONNECTION_FAILED',
   'DISK_ERROR', 'DATABASE_ERROR', 'INTERNAL',
 ];
