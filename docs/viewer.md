@@ -19,6 +19,7 @@ Opens a local page at http://127.0.0.1:4719 (port: `AUSPEX_VIEWER_PORT`):
   - the **Functions** list is split into collapsible sections (remembered): *Trigger functions* (TR *Trigger fonksiyonları*) by timing, BEFORE / AFTER / INSTEAD OF / timing unknown, then *Functions*, *Procedures*, *Aggregates* and *Window functions*, each with a count. A function is a trigger function when the memory gives it that role, when triggers use it or when it returns `trigger`. Rows are one line: a trigger function shows its other timings and its tables, the others their language; a risk mark appears only when there is one (security definer without search_path, volatile and called from a view). A quiet dot marks listed-only functions (○ listed by `list_functions`, ● described), explained once in a legend line. The list shows at most 400 functions (a function in two timing groups counts once); a group cut short says how many of its entries are not shown
   - **Important tables** (TR *Önemli tablolar*) above the list: the tables the functions relate to, ranked from memory only (2 per active note on the table or its columns, 1 per column scored 4–5, 3 per report whose SQL mentions it, 1 when explored), the top 10 with their function count. A chip filters the list to the functions related to that table: trigger functions on it, functions whose body reads or writes it (inferred) and functions called by views that read it; the search box works together with the chip, *Clear filter* removes it
 - **Reports** — the report library as a collapsible tree: topic → subtopic → report (database and schema come from the database picker and the report header; the list collapses to a rail; a filter box narrows it by name, category or stage and opens the matching branches; change scripts have their own tab and are not part of *All*), with each report's HTML: the title with its stage badge and the approve/revoke button in the viewer header (the report's own title, location chips and language/theme controls are hidden there and stay in the saved file and *Open in new tab*), the question it answers at the top (first sentence, *More* for the rest, parameters on their own line, last run time and parameters beside *Last run*), execution time, rows and the plan-warnings badge in one strip with the cost, buffer, temp and join figures behind a *Performance details* toggle (remembered), and sticky tabs that open on *Preview*. The preview table has readable headers (raw name in the tooltip), click-to-sort, a quick filter, a preview-only totals row for numeric columns and a spreadsheet-safe CSV export of the rows shown (Turkish exports use a decimal comma; identifier and code columns such as `order_id` or `status_code` are skipped in the totals row; the download needs a click in the report and is saved with a sanitized `.csv` file name and a UTF-8 BOM); masked columns stay masked. The header also shows the last run's preset with its parameter values and lists the presets the report offers (read-only: running stays an agent action, the viewer never runs SQL; clicking a preset copies a `run_report` request that names the stage of the opened copy, approved or draft, and its SQL version when known, so a newer draft at the same place is never run instead and a changed copy is refused), a star to pin the report, and *Ask agent* (see below). Above the tree, *Favorites* lists the pinned reports and *Recent* the last 8 opened; both are local to this viewer or desktop app (browser storage, nothing is written to the library) and drop reports that no longer exist. SQL and change scripts are syntax-highlighted (step markers stand out, long lines soft-wrap), copy buttons inside a report work from the viewer, and drafts and approved reports can be approved or revoked (see below)
+- **Schedules** — every schedule of `schedules.json` across your databases with its target, state, cadence and next and last slot, also when its report was revoked or removed (see below)
 - **Schema** — the schema memory of a database. In the 2D graph a view node gets a dashed ring and a view's `level: "view"` edges a dashed green line. The Schema search also lists matching views and functions; opening one goes to the Views or Functions tab. Three views, an inspector with notes, relations and history, and a timeline of schema changes. A schema picker moves the selection and the view center into the chosen schema. A badge in the header counts schema changes you have not seen yet. Around a selected table, foreign keys give two roles: **Reference** (TR *Instance*: tables it points to, such as status codes) and **Dependent** (TR *Beslenen*: tables that point to it, such as order lines). Each role is ranked by linked rows, then by the table's row estimate; both are planner estimates, and a relation without a linked-row figure falls back to the row estimate.
   - *Graph* — a 3D graph (with a 2D fallback): click a table to focus it, and the focused table's Reference and Dependent tables are laid out in directed layers with always-visible labels; *+1 depth* adds the next ring and *Show all* shows everything. The focused table's FK edges are blue (Reference) or orange (Dependent), darkest at rank 1 and lightest at rank 10; edges beyond the top 10 are grey and dashed and can be hidden
   - *ER diagram* — Reference tables on the left, Dependent tables on the right, with a per-side top-N picker (5, 10, 25, 50 or All), every card with its rank, linked rows and explored state; the rest stay in the inspector's Relations list
@@ -83,8 +84,36 @@ wait to be saved the chart says so instead of "no trend points yet". Only
 codes, counts and slot keys come from the state file, never messages. The viewer reads
 `schedules.json`, `schedule-state.json` and the trend files through GET routes
 only (`/api/reports` and `/api/reports/trend`, which leaves out parameter
-values); a broken schedule file is shown above the list. The desktop app does
-not show schedules or trends yet.
+values); a broken schedule file is shown above the list. The desktop app shows
+the same schedules, trends and Schedules screen through the Node checkout
+(`src/stageCli.js schedules`, `schedule-overview` and `trend`), so it needs
+Node and the Auspex folder for them.
+
+**Schedules** (the tab after Reports) lists every schedule of `schedules.json`
+across your databases, also those whose report is no longer an approved
+report, so nothing scheduled disappears silently. Each row shows its state,
+the schedule id with cadence and preset, the report title and location
+(profile › schema › category › name) and the next and last slot. Problems with
+the target come first: *report not approved or removed* (revoked or deleted),
+*only a draft*, *report metadata missing*, *preset problem* (the preset is
+missing for a report with parameters or no longer resolves) and *library
+unreadable*, each with the reason; then the latest-slot states of the Reports
+badge (*failed*, *state unreadable*, *ran, saving failed*, *ran, trend point
+lost*, *unreachable*, *ran, repair pending*, *ok*) and *never run*; trend points
+that wait or were lost are noted under the report. The database picker in the
+header filters by profile; the screen adds *All* / *Needs attention* / *OK*,
+*Show disabled* (disabled schedules never count as needing attention) and a
+search on schedule id, title or location. *Open report* opens the approved
+copy; a schedule with a target problem offers *Copy request*, which opens the
+*Ask agent* preview with a request naming the schedule id, its report and what
+to fix, and asking the agent to run nothing and change no file without asking.
+A missing `schedules.json`, one that cannot be read or validated, an empty one
+and an unreadable scheduler state each have their own message. The screen reads
+`GET /api/schedules` (the browser) or `stageCli.js schedule-overview` (the
+desktop app), both built by `src/schedule/viewerData.js` from local files
+only: no database, no SQL, no parameter values or row data. It does not check
+whether the operating system task is registered or running, and it never runs
+a report.
 
 The viewer uses the full window width with one page scroll, has an English
 and Turkish interface, and offers ready themes plus a theme studio that checks
@@ -281,8 +310,8 @@ profile, schema, table, column, score and role names; there is no free text.
 
 `desktop/` wraps the same viewer in a small native app (about 3 MB) that reads
 `~/.auspex` directly through a Rust command, so no Node server is needed
-(approve/revoke, archiving notes, user column scores and the schedules and
-trend of approved reports need Node 20+ and the Auspex checkout, see below;
+(approve/revoke, archiving notes, user column scores, the Schedules screen and the
+schedules and trend of approved reports need Node 20+ and the Auspex checkout, see below;
 schedules and trends come from the same Node code as in the browser viewer and
 are only read when a schedules file exists).
 Closing the window keeps it in the tray; the tray menu has *Open*, *Show log

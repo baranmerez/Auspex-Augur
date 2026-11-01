@@ -13,6 +13,7 @@
 // Read-only, for the report list (same data as the browser viewer, see
 // src/schedule/viewerData.js; not audited, like the viewer's GET routes):
 //   node src/stageCli.js schedules
+//   node src/stageCli.js schedule-overview
 //   node src/stageCli.js trend --db <db> --schema <s> --category <c> --name <n>
 // Files only: no database, no network. Prints one JSON line,
 // { ok: true, ... } or { ok: false, code, message }, and exits with 1 on any
@@ -28,7 +29,7 @@ import { classifyError } from './errors.js';
 import { StageError, stageActions, validateStageInput, applyStageChange, refKeys, expectedHashKey } from './reports/stageChange.js';
 import { archiveKeys, validateArchiveInput, archiveNoteFor } from './memory/noteArchive.js';
 import { userScoreKeys, validateUserScoreInput, userScoreAudit, setUserScoreFor } from './memory/userScore.js';
-import { scheduleIndex, reportTrend } from './schedule/viewerData.js';
+import { scheduleIndex, reportTrend, scheduleOverview } from './schedule/viewerData.js';
 
 // The folders as the server and viewer see them; a broken profiles file does
 // not hide the library (the viewer falls back the same way).
@@ -145,6 +146,12 @@ function schedulesMain(args, env) {
   return { status: 0, out: { ok: true, error, byReport: [...byReport] } };
 }
 
+// Every configured schedule with its target check, like GET /api/schedules.
+function scheduleOverviewMain(args, env) {
+  if (args.length) return { status: 1, out: { ok: false, code: 'INVALID_INPUT', message: 'schedule-overview takes no arguments' } };
+  return { status: 0, out: { ok: true, ...scheduleOverview({ env, library: new Library(folders(env).libraryDir) }) } };
+}
+
 // Trend points of one report, like GET /api/reports/trend.
 const trendArgKeys = new Map(refKeys.map(k => [k, k]));
 function trendMain(args, env) {
@@ -158,6 +165,7 @@ function trendMain(args, env) {
 
 function main(argv, env) {
   if (argv[0] === 'schedules') return schedulesMain(argv.slice(1), env);
+  if (argv[0] === 'schedule-overview') return scheduleOverviewMain(argv.slice(1), env);
   if (argv[0] === 'trend') return trendMain(argv.slice(1), env);
   if (argv[0] === 'archive-note') return archiveMain(argv.slice(1), folders(env));
   if (argv[0] === 'score-column') return scoreMain(argv.slice(1), folders(env));

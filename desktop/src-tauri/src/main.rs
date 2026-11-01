@@ -598,6 +598,7 @@ fn api_route(path: &str, query: &HashMap<String, String>) -> Result<Value, Strin
         "/api/profiles" => Ok(profiles()),
         "/api/reports" => Ok(list_reports()),
         "/api/reports/trend" => report_trend(query),
+        "/api/schedules" => Ok(schedule_overview()),
         "/api/report" => report_content(query),
         "/api/memory" => Ok(memory_summary()),
         "/api/memory/graph" => memory_graph(&memory_profile(&query)?),
@@ -941,6 +942,32 @@ fn apply_schedules(list: &mut Value, result: Result<Value, Value>) {
     }
 }
 
+// The Schedules screen: every configured schedule with its target check, from
+// `stageCli.js schedule-overview` (the same Node code as GET /api/schedules).
+// Without a schedules file nothing is started; when Node cannot answer, the
+// screen says why (file "unavailable", which only the desktop app reports).
+fn schedule_overview() -> Value {
+    if !schedules_file().exists() {
+        return json!({ "file": "missing", "error": null, "stateUnreadable": false, "schedules": [] });
+    }
+    overview_from(run_read_cli(&["schedule-overview".to_string()]))
+}
+
+fn overview_from(result: Result<Value, Value>) -> Value {
+    let unavailable = |message: &str| json!({ "file": "unavailable", "error": format!("{message} (schedules need Node and the Auspex folder)"), "stateUnreadable": false, "schedules": [] });
+    match result {
+        Ok(Value::Object(mut o)) => {
+            o.remove("ok");
+            if !o.get("schedules").is_some_and(Value::is_array) {
+                o.insert("schedules".into(), json!([]));
+            }
+            Value::Object(o)
+        }
+        Ok(_) => unavailable("src/stageCli.js gave an unexpected result"),
+        Err(e) => unavailable(e["message"].as_str().unwrap_or("not available")),
+    }
+}
+
 // Trend points of one report, like GET /api/reports/trend: the location is
 // checked here first, then again by Node (trendFile).
 fn report_trend(query: &HashMap<String, String>) -> Result<Value, String> {
@@ -1232,6 +1259,20 @@ mod tests {
         let big = vec![b'x'; 600 * 1024];
         assert_eq!(read_capped(std::io::Cursor::new(big.clone()), MAX_READ_OUTPUT).join().unwrap().len(), big.len(), "a long trend list arrives whole");
         assert_eq!(read_capped(std::io::Cursor::new(big), MAX_CLI_OUTPUT).join().unwrap().len(), MAX_CLI_OUTPUT as usize);
+    }
+
+    #[test]
+    fn schedule_overview_passes_the_node_result_through_and_explains_a_missing_node() {
+        let item = json!({ "id": "daily-example", "target": "missing", "problem": "The report was not found among approved reports." });
+        let ok = overview_from(Ok(json!({ "ok": true, "file": "ok", "error": null, "stateUnreadable": true, "schedules": [item.clone()] })));
+        assert_eq!(ok, json!({ "file": "ok", "error": null, "stateUnreadable": true, "schedules": [item] }));
+        let invalid = overview_from(Ok(json!({ "ok": true, "file": "invalid", "error": "schedules.json is not valid JSON", "schedules": "x" })));
+        assert_eq!(invalid["file"], json!("invalid"));
+        assert_eq!(invalid["schedules"], json!([]), "a malformed list is dropped");
+        let no_node = overview_from(Err(stage_error("NODE_NOT_FOUND", "Node was not found on PATH")));
+        assert_eq!(no_node["file"], json!("unavailable"));
+        assert!(no_node["error"].as_str().unwrap().starts_with("Node was not found on PATH"));
+        assert_eq!(overview_from(Ok(json!([1])))["file"], json!("unavailable"));
     }
 
     #[test]

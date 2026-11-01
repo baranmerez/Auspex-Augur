@@ -1,9 +1,11 @@
-// Schedule and trend data for the report list, shared by the browser viewer
-// (src/viewer.js) and the desktop app (through src/stageCli.js), so both show
-// the same schedules, last results, next slots and trend points. Files only:
-// no database, no network, nothing is written.
+// Schedule and trend data for the report list and the Schedules screen,
+// shared by the browser viewer (src/viewer.js) and the desktop app (through
+// src/stageCli.js), so both show the same schedules, last results, next slots,
+// target problems and trend points. Files only: no database, no network,
+// nothing is written.
 import { loadSchedules, schedulesFile, nextSlot, cadenceText } from './config.js';
 import { stateFile, trendsDir, readState, scheduleState, trendFile, readTrend, pendingTrends } from './store.js';
+import { checkSchedule } from './check.js';
 
 // Schedules of approved reports (schedules.json) with their last result and
 // next slot, keyed like the report list: db|schema|category|name. A broken
@@ -22,6 +24,33 @@ const slotKeys = list => (Array.isArray(list) ? list : []).filter(s => typeof s 
 // them), trendLostSlots (points dropped for good) and stateUnreadable (the
 // state file exists but cannot be read strictly; the lenient read then shows
 // no last result). The strict read only reads; nothing is written.
+function readScheduleState(env) {
+  try {
+    return { state: readState(stateFile(env), { strict: true }), stateUnreadable: false };
+  } catch {
+    return { state: readState(stateFile(env)), stateUnreadable: true };
+  }
+}
+
+function scheduleItem(s, state, stateUnreadable, now) {
+  const own = scheduleState(state, s.id);
+  const last = own?.last && typeof own.last === 'object' ? own.last : null;
+  const pending = slotKeys(pendingTrends(own).map(p => p.slot));
+  const lost = slotKeys(own?.trendLostSlots);
+  return {
+    id: s.id, enabled: s.enabled, cadence: cadenceText(s.cadence), preset: s.preset,
+    next: s.enabled ? nextSlot(s.cadence, now)?.key ?? null : null,
+    last: last ? {
+      status: last.status, slot: last.slot ?? null, at: last.at ?? null, ...(codeOf(last.errorCode) ? { errorCode: codeOf(last.errorCode) } : {}), ...(last.manual ? { manual: true } : {}),
+      ...(codeOf(last.persistenceError) ? { persistenceError: codeOf(last.persistenceError) } : {}),
+      ...(last.trendLost === true ? { trendLost: true } : {}),
+    } : null,
+    ...(pending.length ? { pendingTrends: pending.length, pendingSlots: pending } : {}),
+    ...(lost.length ? { trendLostSlots: lost } : {}),
+    ...(stateUnreadable ? { stateUnreadable: true } : {}),
+  };
+}
+
 export function scheduleIndex({ now = new Date(), env = process.env } = {}) {
   let loaded;
   try {
@@ -29,35 +58,46 @@ export function scheduleIndex({ now = new Date(), env = process.env } = {}) {
   } catch (err) {
     return { error: err.message, byReport: new Map() };
   }
-  let state, stateUnreadable = false;
-  try {
-    state = readState(stateFile(env), { strict: true });
-  } catch {
-    stateUnreadable = true;
-    state = readState(stateFile(env));
-  }
+  const { state, stateUnreadable } = readScheduleState(env);
   const byReport = new Map();
   for (const s of loaded.schedules) {
-    const own = scheduleState(state, s.id);
-    const last = own?.last && typeof own.last === 'object' ? own.last : null;
-    const pending = slotKeys(pendingTrends(own).map(p => p.slot));
-    const lost = slotKeys(own?.trendLostSlots);
-    const item = {
-      id: s.id, enabled: s.enabled, cadence: cadenceText(s.cadence), preset: s.preset,
-      next: s.enabled ? nextSlot(s.cadence, now)?.key ?? null : null,
-      last: last ? {
-        status: last.status, slot: last.slot ?? null, at: last.at ?? null, ...(last.errorCode ? { errorCode: last.errorCode } : {}), ...(last.manual ? { manual: true } : {}),
-        ...(codeOf(last.persistenceError) ? { persistenceError: codeOf(last.persistenceError) } : {}),
-        ...(last.trendLost === true ? { trendLost: true } : {}),
-      } : null,
-      ...(pending.length ? { pendingTrends: pending.length, pendingSlots: pending } : {}),
-      ...(lost.length ? { trendLostSlots: lost } : {}),
-      ...(stateUnreadable ? { stateUnreadable: true } : {}),
-    };
     const key = scheduleKey(s.report);
-    byReport.set(key, [...(byReport.get(key) || []), item]);
+    byReport.set(key, [...(byReport.get(key) || []), scheduleItem(s, state, stateUnreadable, now)]);
   }
   return { error: null, byReport };
+}
+
+// Every configured schedule for the Schedules screen, whatever the report
+// list holds: the same item as scheduleIndex plus its profile, report location
+// and target check (src/schedule/check.js: approved report found, preset
+// resolves), so a schedule whose report was revoked, removed or replaced by a
+// draft stays visible with its problem. file: missing (no schedules.json),
+// invalid (it cannot be read or validated; error says why) or ok. The check
+// reads the library only; a library that cannot be read gives the target
+// "unreadable". Neither the OS task nor the database is consulted.
+export function scheduleOverview({ library, now = new Date(), env = process.env } = {}) {
+  let loaded;
+  try {
+    loaded = loadSchedules(schedulesFile(env));
+  } catch (err) {
+    return { file: 'invalid', error: err.message, stateUnreadable: false, schedules: [] };
+  }
+  if (loaded.missing) return { file: 'missing', error: null, stateUnreadable: false, schedules: [] };
+  const { state, stateUnreadable } = readScheduleState(env);
+  const schedules = loaded.schedules.map(s => {
+    let check;
+    try {
+      check = checkSchedule(library, s, now);
+    } catch {
+      check = { title: s.report.name, problem: 'The report library could not be read.', code: 'LIBRARY_UNREADABLE', target: 'unreadable' };
+    }
+    return {
+      ...scheduleItem(s, state, stateUnreadable, now),
+      profile: s.profile, report: { ...s.report }, title: check.title,
+      target: check.target, ...(check.problem ? { problem: check.problem, problemCode: check.code } : {}),
+    };
+  });
+  return { file: 'ok', error: null, stateUnreadable, taskTime: loaded.taskTime, schedules };
 }
 
 // Trend points of one report (aggregates only: slot, run time, preset, row

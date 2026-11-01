@@ -22,7 +22,7 @@ import { validateUserScoreInput, userScoreAudit, setUserScoreFor } from './memor
 import { createAuditLog } from './auditLog.js';
 import { linkBelow } from './privateFiles.js';
 import { classifyError } from './errors.js';
-import { scheduleIndex, scheduleKey, reportTrend } from './schedule/viewerData.js';
+import { scheduleIndex, scheduleKey, reportTrend, scheduleOverview } from './schedule/viewerData.js';
 
 const port = Number.parseInt(process.env.AUSPEX_VIEWER_PORT || '4719', 10);
 const host = '127.0.0.1';
@@ -437,6 +437,9 @@ function handle(req, res) {
       });
       return send(res, 200, { libraryDir: lib.root, reports, ...(sched.error ? { schedulesError: sched.error } : {}) });
     }
+    // Every configured schedule with its target check, for the Schedules
+    // screen (files only, like the report list).
+    if (url.pathname === '/api/schedules') return send(res, 200, scheduleOverview({ library: library() }));
     if (url.pathname === '/api/reports/trend') {
       try {
         return send(res, 200, reportTrendOf(url.searchParams));

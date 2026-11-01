@@ -9,13 +9,13 @@ import crypto from 'node:crypto';
 import { ReadOnlyDatabase } from '../db.js';
 import { ReportService, approvedJoinPairs } from '../reports/service.js';
 import { refLabel, normalizeRef } from '../reports/library.js';
-import { sqlParamCount, resolvePreset } from '../reports/presets.js';
 import { columnTotals } from '../reports/totals.js';
 import { SchemaMemory } from '../memory/store.js';
 import { memoryAudit } from '../memory/repairAudit.js';
 import { createAuditLog } from '../auditLog.js';
 import { ToolError, classifyError } from '../errors.js';
 import { latestDueSlot } from './config.js';
+import { checkSchedule } from './check.js';
 import { recordResult, readState, scheduleState, appendTrend, trendPoint, runRows, clearPendingTrend, reconcileSlot, hasTrendPoint, pendingTrends } from './store.js';
 import { notify as defaultNotify, isEmptyResult } from './notify.js';
 
@@ -36,31 +36,8 @@ export function schedulerDatabase(config, { audit } = {}) {
   return new ReadOnlyDatabase(config, { source: actor, audit: entry => base({ ...entry, actor }) });
 }
 
-// Problems that need no database: the report must be approved, and its preset
-// must resolve for the approved SQL (built-in presets only with dateRange:
-// true). Returns { title, problem } (problem null when runnable).
-export function checkSchedule(library, schedule, now = new Date()) {
-  const ref = schedule.report;
-  if (!library.exists('approved', ref)) {
-    const draft = library.exists('draft', ref);
-    return { title: ref.name, problem: draft ? 'The report is a draft; only approved reports can be scheduled.' : 'The report was not found among approved reports.', code: draft ? 'PRECONDITION_FAILED' : 'NOT_FOUND' };
-  }
-  const meta = library.readMeta('approved', ref);
-  const title = meta?.title || ref.name;
-  if (!meta) return { title, problem: 'The report metadata is missing.', code: 'NOT_FOUND' };
-  const paramCount = sqlParamCount(library.readSql('approved', ref));
-  if (schedule.preset === null) {
-    return paramCount > 0
-      ? { title, problem: `The report SQL takes ${paramCount} parameter(s); set "preset" to a built-in preset (dateRange reports) or a custom preset.`, code: 'PRECONDITION_FAILED' }
-      : { title, problem: null };
-  }
-  try {
-    resolvePreset(schedule.preset, meta.presets, paramCount, msg => new ToolError('PRECONDITION_FAILED', msg), now, meta.dateRange);
-  } catch (err) {
-    return { title, problem: err.message, code: 'PRECONDITION_FAILED' };
-  }
-  return { title, problem: null };
-}
+// Problems that need no database (src/schedule/check.js, shared with the viewers).
+export { checkSchedule };
 
 // Code and a short message of a local write failure (errno or class only).
 // Never the error's own message: a parse error can quote the file it read.
