@@ -20,6 +20,7 @@ import { SchemaMemory, tableKey, noteKinds, columnRoles, scoreHistoryLimit, maxS
 import { relationsFromTextPlan } from './memory/planUsage.js';
 import { repairAudit, memoryAudit } from './memory/repairAudit.js';
 import { loadPromptSkills, promptText } from './skills.js';
+import { queryOutput, explainOutput, tableKnowledgeOutput } from './outputSchemas.js';
 
 let config;
 try {
@@ -136,23 +137,30 @@ function auditRepair(profile, repair) {
 // Error result: the readable text first (unchanged), then the machine-readable
 // envelope (src/errors.js) as structuredContent and as a JSON text block for
 // clients that only read text. The envelope never holds the message itself.
-function errorResult(err, correlationId, text = `Error: ${err?.message ?? String(err)}`) {
+// A tool with an outputSchema gets the envelope in the text block only: SDK
+// clients validate any structuredContent against that schema, errors included.
+const outputSchemaTools = new Set();
+function errorResult(err, correlationId, text = `Error: ${err?.message ?? String(err)}`, toolName = null) {
   const error = { ...classifyError(err), correlationId };
   return {
     content: [{ type: 'text', text }, { type: 'text', text: JSON.stringify({ error }) }],
-    structuredContent: { error },
+    ...(outputSchemaTools.has(toolName) ? {} : { structuredContent: { error } }),
     _meta: { correlationId },
     isError: true,
   };
 }
 
-// Wraps a handler: JSON output and error reporting. Audit logging happens in
+// Wraps a handler: JSON output and error reporting. An object result goes out
+// as JSON text (unchanged, for text-only clients) and as structuredContent
+// parsed back from that same text, so both carry exactly the same values;
+// tools with an outputSchema (src/outputSchemas.js) are validated by the SDK. Audit logging happens in
 // ReadOnlyDatabase (database calls) or in the handler via db.audited (library
 // and memory changes), so each call is recorded exactly once. One correlation
 // ID per call links its audit entries and its result (_meta.correlationId).
 // The request's AbortSignal (extra.signal) goes along: a cancelled call stops
 // its running statement and starts no further phase (src/db.js, CANCELLED).
 function tool(name, toolConfig, handler) {
+  if (toolConfig.outputSchema) outputSchemaTools.add(name);
   server.registerTool(name, toolConfig, async (args, extra) => {
     const correlationId = crypto.randomUUID();
     const signal = extra?.signal ?? null;
@@ -166,20 +174,22 @@ function tool(name, toolConfig, handler) {
         }
         return handler(args);
       }, signal);
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 1) }], _meta: { correlationId } };
+      const text = JSON.stringify(result, null, 1);
+      const structured = result && typeof result === 'object' && !Array.isArray(result) ? { structuredContent: JSON.parse(text) } : {};
+      return { content: [{ type: 'text', text }], ...structured, _meta: { correlationId } };
     } catch (err) {
-      return errorResult(err, correlationId);
+      return errorResult(err, correlationId, undefined, name);
     }
   });
 }
 
 // Failures inside the MCP SDK (input schema validation, unknown tool) never
 // reach tool() and are not audited; they get the same envelope. The SDK's
-// text is kept as is.
+// text is kept as is; the tool name is read from it (the SDK passes only the message).
 if (typeof server.createToolError === 'function') {
   server.createToolError = message => errorResult(
     new ToolError(/-32602|Input validation error|Invalid arguments/.test(message) ? 'INVALID_INPUT' : 'INTERNAL', message),
-    crypto.randomUUID(), message);
+    crypto.randomUUID(), message, /\bfor tool ([\w-]+)|\bTool ([\w-]+) /.exec(message)?.slice(1).find(Boolean) ?? null);
 }
 
 tool('list_profiles', {
@@ -396,6 +406,7 @@ tool('query', {
     maxRows: z.number().int().min(1).max(config.maxRows).optional(),
     timeoutSeconds: timeoutArg,
   },
+  outputSchema: queryOutput,
 }, async ({ profile, sql, params, maxRows, timeoutSeconds }) => {
   const result = await db.query(profile, sql, params, maxRows, timeoutSeconds);
   return { ...result, ...learn(() => memory.notesForSql(result.profile, sql)) };
@@ -411,6 +422,7 @@ tool('explain', {
     analyze: z.boolean().optional().describe('Execute the query and report actual timings (EXPLAIN ANALYZE, BUFFERS). Default false.'),
     timeoutSeconds: timeoutArg,
   },
+  outputSchema: explainOutput,
 }, async ({ profile, sql, params, analyze, timeoutSeconds }) => {
   const result = await db.explain(profile, sql, params, analyze === true, timeoutSeconds);
   return { ...result, ...learn(() => memory.recordSeen(result.profile, relationsFromTextPlan(result.plan)), result.profile) };
@@ -548,6 +560,7 @@ tool('table_knowledge', {
     schema: z.string(),
     table: z.string(),
   },
+  outputSchema: tableKnowledgeOutput,
 }, async ({ profile, schema, table }) => memory.knowledge(db.resolveProfile(profile), schema, table));
 
 tool('remember', {
