@@ -213,6 +213,29 @@ test('triggers: timing and events, level, enabled, function, WHEN, summary; a st
   assert.doesNotMatch(log, /may be out of date/);
 });
 
+test('trigger summary freshness: stale and unverified badges with the reason; fresh and old graphs', () => {
+  const ctx = load();
+  const badge = tr => ctx.tpSummaryBadge(tr);
+  assert.equal(badge({ summary: 'x', summaryFreshness: 'fresh' }), null);
+  assert.equal(badge({ summary: 'x' }), null, 'an old graph without freshness and not stale shows nothing');
+  const stale = badge({ summary: 'x', summaryFreshness: 'stale', summaryFreshnessReason: 'function-changed', summaryStale: true });
+  assert.match(stale.attrs.class, /inference/);
+  assert.equal(textOf(stale), 'may be out of date');
+  assert.match(stale.attrs.title, /described again with a changed definition/);
+  const unverified = badge({ summary: 'x', summaryFreshness: 'unverified', summaryFreshnessReason: 'legacy' });
+  assert.match(unverified.attrs.class, /seen/);
+  assert.equal(textOf(unverified), 'not verified');
+  assert.match(unverified.attrs.title, /cannot be checked/);
+  const old = badge({ summary: 'x', summaryStale: true });
+  assert.equal(textOf(old), 'may be out of date');
+  assert.match(old.attrs.title, /trigger definition changed/);
+  // The seeded log_order function was never described: its summary is unverified.
+  const log = byClass(render(ctx, 'example.orders'), 'tp-trg')[0].kids.map(textOf)[1];
+  assert.match(log, /not verified/);
+  const tr = textOf(load('tr').tpSummaryBadge({ summaryFreshness: 'unverified', summaryFreshnessReason: 'function-missing' }));
+  assert.equal(tr, 'doğrulanmadı');
+});
+
 test('neighbours: references left, referenced-by right, unexplored ones muted; a card opens its page', () => {
   const ctx = load();
   calls.length = 0;

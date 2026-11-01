@@ -5631,6 +5631,29 @@ function tpKeys(model, ctx) {
       part('Indexes', k.indexes, i => tpDef(i.name, i.definition)),
     ]));
 }
+// Freshness of a trigger summary as the schema memory computed it
+// (summaryFreshness and its reason); graph.json files written before it have
+// only summaryStale, which meant a changed trigger definition. Fresh shows
+// nothing.
+const tpSummaryReasons = {
+  'trigger-changed': 'The trigger definition changed after this summary was written.',
+  'binding-changed': 'The trigger now calls another function than the one this summary was written for.',
+  'function-changed': 'The trigger function was described again with a changed definition after this summary was written.',
+  'legacy': 'Written before Auspex recorded which function definition a summary is based on; it cannot be checked.',
+  'function-not-recorded': 'The trigger function was not in memory when this summary was written.',
+  'definition-missing': 'Only the signature of the trigger function was in memory (list_functions) when this summary was written.',
+  'definition-truncated': 'The stored function definition is cut, so a change after the cut cannot be seen.',
+  'function-missing': 'The trigger function is no longer in memory with a definition.',
+  'binding-unresolved': 'The function name of the trigger matches more than one recorded function, or none is named.',
+};
+function tpSummaryBadge(tr) {
+  const state = tr.summaryFreshness ?? (tr.summaryStale ? 'stale' : null);
+  if (state !== 'stale' && state !== 'unverified') return null;
+  const reason = tr.summaryFreshnessReason ?? (tr.summaryStale ? 'trigger-changed' : null);
+  const why = tpSummaryReasons[reason];
+  return h('span', { class: 'badge ' + (state === 'stale' ? 'inference' : 'seen'), title: why ? t(why) : reason },
+    state === 'stale' ? t('may be out of date') : t('not verified'));
+}
 function tpTriggers(model) {
   const list = model.triggers;
   return h('section', { class: 'panel', 'aria-label': t('Triggers') }, h('div', { class: 'panel-h' }, h('h2', {}, t('Triggers')), h('span', { class: 'hint' }, list.length ? fmt(list.length) : '')),
@@ -5641,7 +5664,7 @@ function tpTriggers(model) {
         tr.enabled ? h('span', { class: 'badge ' + (tr.enabled === 'disabled' ? 'seen' : 'ok') }, t(tr.enabled)) : null),
       tr.function ? h('div', {}, h('span', { class: 'muted' }, t('Function')), ' ', h('code', {}, tr.function)) : null,
       tr.when ? h('div', {}, h('span', { class: 'muted' }, 'WHEN'), ' ', h('code', {}, tr.when)) : null,
-      tr.summary ? h('div', { class: 'tp-sum' }, tr.summary, tr.summaryStale ? h('span', { class: 'badge inference', title: t('The trigger definition changed after this summary was written.') }, t('may be out of date')) : null)
+      tr.summary ? h('div', { class: 'tp-sum' }, tr.summary, tpSummaryBadge(tr))
         : h('div', { class: 'muted' }, t('No summary yet (auspex-columns writes one).')))))
       : h('div', { class: 'muted' }, model.described ? t('No triggers recorded.') : t('Not described yet'))));
 }
@@ -6010,7 +6033,16 @@ const tablePageTr = {
   'Primary key': 'Birincil anahtar', 'Unique': 'Tekil', 'Check': 'Check', 'Outgoing foreign keys': 'Giden yabancı anahtarlar', 'Incoming foreign keys': 'Gelen yabancı anahtarlar', 'Indexes': 'İndeksler',
   'Triggers': 'Trigger\'lar', 'for each {l}': 'her {l} için', 'enabled': 'açık', 'disabled': 'kapalı', 'replica only': 'yalnızca replika', 'always': 'her zaman',
   'Function': 'Fonksiyon', 'The trigger definition changed after this summary was written.': 'Bu özet yazıldıktan sonra trigger tanımı değişti.',
-  'may be out of date': 'güncel olmayabilir', 'No summary yet (auspex-columns writes one).': 'Henüz özet yok (auspex-columns yazar).', 'No triggers recorded.': 'Kayıtlı trigger yok.',
+  'may be out of date': 'güncel olmayabilir', 'not verified': 'doğrulanmadı',
+  'The trigger now calls another function than the one this summary was written for.': 'Trigger artık bu özetin yazıldığı fonksiyondan başka bir fonksiyonu çağırıyor.',
+  'The trigger function was described again with a changed definition after this summary was written.': 'Bu özet yazıldıktan sonra trigger fonksiyonu yeniden okundu ve tanımı değişmiş.',
+  'Written before Auspex recorded which function definition a summary is based on; it cannot be checked.': 'Auspex özetin hangi fonksiyon tanımına dayandığını kaydetmeden önce yazıldı; denetlenemiyor.',
+  'The trigger function was not in memory when this summary was written.': 'Bu özet yazılırken trigger fonksiyonu hafızada yoktu.',
+  'Only the signature of the trigger function was in memory (list_functions) when this summary was written.': 'Bu özet yazılırken trigger fonksiyonunun yalnızca imzası hafızadaydı (list_functions).',
+  'The stored function definition is cut, so a change after the cut cannot be seen.': 'Saklanan fonksiyon tanımı kesik; kesilen yerden sonraki bir değişiklik görülemez.',
+  'The trigger function is no longer in memory with a definition.': 'Trigger fonksiyonu artık tanımıyla birlikte hafızada değil.',
+  'The function name of the trigger matches more than one recorded function, or none is named.': 'Trigger\'ın fonksiyon adı birden çok kayıtlı fonksiyonla eşleşiyor ya da ad yok.',
+  'No summary yet (auspex-columns writes one).': 'Henüz özet yok (auspex-columns yazar).', 'No triggers recorded.': 'Kayıtlı trigger yok.',
   'Referenced by': 'Ona başvuran tablolar', 'Tables this table points to': 'Bu tablonun işaret ettiği tablolar', 'Tables that point to this table': 'Bu tabloya işaret eden tablolar',
   'Not explored yet: describe_table records it.': 'Henüz keşfedilmedi: describe_table kaydeder.', '~{n} rows (est.)': '~{n} satır (tahmini)', 'not explored yet': 'henüz keşfedilmedi', 'None known.': 'Bilinen yok.',
   'Est. rows': 'Tahmini satır', 'Last scored': 'Son puanlama', 'Sources': 'Kaynak', 'Most reports and scripts found for one column': 'Tek bir kolon için bulunan en çok rapor ve betik',
