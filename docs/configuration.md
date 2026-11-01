@@ -103,7 +103,7 @@ offers to the groups listed. Leave it out to get every tool, as before.
 | Group | Tools |
 |---|---|
 | `core` (always on) | `list_profiles`, `check_profile` |
-| `explore` | `search`, `list_schemas`, `list_tables`, `describe_table`, `describe_tables`, `describe_functions`, `list_functions`, `profile_tables`, `relation_stats`, `table_knowledge`, `scanned_files` |
+| `explore` | `search`, `list_schemas`, `list_tables`, `describe_table`, `describe_tables`, `describe_functions`, `list_functions`, `profile_tables`, `relation_stats`, `table_knowledge`, `function_knowledge`, `scanned_files` |
 | `query` | `query`, `explain`, `export_csv` |
 | `reports` | `save_report`, `run_report`, `approve_report`, `list_reports`, `share_report`, `render_reports`, `save_execute_script` |
 | `memory` | `remember`, `score_columns` (needs `explore`) |

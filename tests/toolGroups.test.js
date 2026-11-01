@@ -117,6 +117,18 @@ test('exploration only: tools/list, prompts and instructions show only what can 
   assert.equal(auditEntries(home).length, 0);
 });
 
+test('function_knowledge belongs to explore: listed and advised with it, absent without it', async () => {
+  assert.equal(toolGroupOf('function_knowledge'), 'explore');
+  const withExplore = await start({ AUSPEX_ENABLED_TOOL_GROUPS: 'explore' });
+  assert.ok(names((await withExplore.client.listTools()).tools).includes('function_knowledge'));
+  assert.match(withExplore.client.getInstructions(), /function_knowledge does the same/);
+  const without = await start({ AUSPEX_ENABLED_TOOL_GROUPS: 'query' });
+  assert.equal(names((await without.client.listTools()).tools).includes('function_knowledge'), false);
+  const instructions = without.client.getInstructions();
+  assert.doesNotMatch(instructions, /function_knowledge does the same/);
+  assert.match(instructions, /these tools are not available: .*\bfunction_knowledge\b/);
+});
+
 test('a disabled tool called directly by name is refused with TOOL_DISABLED before any handler, database work or library change', async () => {
   const { client, home } = await start({ AUSPEX_ENABLED_TOOL_GROUPS: 'explore' });
   const q = await client.callTool({ name: 'query', arguments: { profile: 'example', sql: 'select 1' } });
