@@ -21,7 +21,7 @@ function load() {
   assert.ok(block, 'ops-focus block found in viewer.html');
   const t = (en, vars = {}) => en.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? '');
   const context = vm.createContext({ h, t });
-  vm.runInContext(`${block}\nObject.assign(this, { opsFocusOf, opsFocusTarget, opsSortHead });`, context);
+  vm.runInContext(`${block}\nObject.assign(this, { opsFocusOf, opsFocusTarget, opsFocusNotice, opsSortHead });`, context);
   return context;
 }
 const cols = [['ts', 'Time'], ['source', 'Source'], ['ms', 'Duration', 'num'], ['rowCount', 'Rows', 'num hide-sm']];
@@ -98,8 +98,28 @@ test('fallbacks: a closed detail goes to its row, a removed row to its neighbour
   assert.deepEqual(plain(opsFocusTarget({ key: 'act:r3:sql', row: 'r3', index: 1 }, keys, rows)), { key: 'row:r3', moved: false }, 'detail closed: its row');
   assert.deepEqual(plain(opsFocusTarget({ key: 'row:r2', row: 'r2', index: 1 }, keys, rows)), { key: 'row:r3', moved: true }, 'removed: the row now at its position');
   assert.deepEqual(plain(opsFocusTarget({ key: 'act:r9:json', row: 'r9', index: 7 }, keys, rows)), { key: 'row:r4', moved: true }, 'past the end: the last row');
-  assert.deepEqual(plain(opsFocusTarget({ key: 'row:r2', row: 'r2', index: 0 }, ['sort:ts', 'sort:ms'], [])), { key: 'sort:ts', moved: true }, 'no rows left: the first sort button');
   assert.deepEqual(plain(opsFocusTarget({ key: 'pager:next', row: null, index: -1 }, keys, rows)), { key: 'pager:prev', moved: true }, 'last page: Next is disabled');
   assert.deepEqual(plain(opsFocusTarget({ key: 'tools:csv', row: null, index: -1 }, keys, rows)), { key: 'sort:ts', moved: true });
   assert.equal(opsFocusTarget({ key: 'tools:csv', row: null, index: -1 }, [], []), null, 'empty grid: focus is not forced anywhere');
+});
+
+test('the last operation disappears: the empty state has no headers, so focus goes to the toolbar and is announced once', () => {
+  const { opsFocusTarget, opsFocusNotice } = load();
+  const plain = x => ({ ...x });
+  // What renderOps draws for zero rows: the toolbar and the empty state, no table and no pager.
+  const keys = ['tools:per-page', 'tools:csv', 'tools:json'];
+  for (const saved of [{ key: 'row:r1', row: 'r1', index: 0 }, { key: 'act:r1:sql', row: 'r1', index: 0 }]) {
+    const target = opsFocusTarget(saved, keys, []);
+    assert.deepEqual(plain(target), { key: 'tools:per-page', moved: true }, saved.key + ': the first toolbar control');
+    assert.equal(opsFocusNotice(saved, target), 'The focused operation is no longer listed; no operations are shown now.');
+  }
+  const header = { key: 'sort:ms', row: null, index: -1 };
+  const toHeader = opsFocusTarget(header, keys, []);
+  assert.deepEqual(plain(toHeader), { key: 'tools:per-page', moved: true }, 'a filter that empties the grid while a header is focused');
+  assert.equal(opsFocusNotice(header, toHeader), null, 'no operation was focused: nothing to announce');
+  const rows = ['row:r1', 'row:r3'];
+  const near = { key: 'row:r2', row: 'r2', index: 1 };
+  assert.equal(opsFocusNotice(near, opsFocusTarget(near, ['sort:ts', ...rows], rows)), 'The focused operation is no longer listed; focus moved to the nearest one.');
+  assert.equal(opsFocusNotice({ key: 'row:r1', row: 'r1', index: 0 }, { key: 'row:r1', moved: false }), null, 'focus stayed: no announcement');
+  assert.equal(opsFocusNotice(near, null), null);
 });
