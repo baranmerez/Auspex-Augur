@@ -1404,8 +1404,13 @@ export class SchemaMemory {
       if (by === 'user') checkExpected(data.current, expectedVersion);
       const at = this.now();
       const fingerprint = fingerprintOf(this.profileInputsOf(profile, rec, schema, table, this.reportsMentioning(profile, schema, table)));
+      // A person's edit without sources keeps the sources of the version it
+      // corrects, for every section that still has text.
+      const kept = by === 'user' && sources === undefined && data.current?.sources
+        ? Object.fromEntries(Object.entries(src).map(([k, list]) => [k, text[k] && Array.isArray(data.current.sources[k]) ? data.current.sources[k] : list]))
+        : src;
       const version = {
-        version: data.nextVersion, author: by, at, language: lang, sections: text, sources: src, fingerprint,
+        version: data.nextVersion, author: by, at, language: lang ?? (by === 'user' ? data.current?.language ?? null : null), sections: text, sources: kept, fingerprint,
         ...(by === 'user' ? { confirmedAt: at } : {}),
       };
       data.nextVersion += 1;

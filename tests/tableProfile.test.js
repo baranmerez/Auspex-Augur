@@ -86,12 +86,16 @@ test('profileFreshness: legacy and missing inputs are unverified, a change wins 
 test('a user-owned profile is never overwritten: an agent save becomes a proposal the user accepts or rejects', () => {
   const { memory, done } = setup();
   try {
-    memory.saveTableProfile(profile, { schema: 'example', table: 'orders', sections });
+    memory.saveTableProfile(profile, { schema: 'example', table: 'orders', sections, sources: { purpose: [{ type: 'note', ref: 1 }], behavior: [{ type: 'trigger', ref: 'orders_check_status' }] } });
     // A person edits the current version (expectedVersion guards a stale edit).
     assert.throws(() => memory.saveTableProfile(profile, { schema: 'example', table: 'orders', sections, expectedVersion: 7 }, { by: 'user' }), e => e.errorCode === 'STALE_VERSION');
     assert.throws(() => memory.saveTableProfile(profile, { schema: 'example', table: 'orders', sections }, { by: 'user' }), /expectedVersion is required/);
-    const mine = { ...sections, caveats: 'Written by the user.' };
+    const mine = { ...sections, behavior: '', caveats: 'Written by the user.' };
     assert.equal(memory.saveTableProfile(profile, { schema: 'example', table: 'orders', sections: mine, expectedVersion: 1 }, { by: 'user' }).stored, 'current');
+    // The user's edit keeps the sources of sections that still have text.
+    const edited = memory.tableProfile(profile, 'example', 'orders').profile;
+    assert.deepEqual(edited.sources.purpose, [{ type: 'note', ref: '1' }]);
+    assert.deepEqual(edited.sources.behavior, [], 'an emptied section drops its sources');
     const proposed = memory.saveTableProfile(profile, { schema: 'example', table: 'orders', sections: { ...sections, usage: 'Agent rewrite.' } });
     assert.equal(proposed.stored, 'proposal');
     assert.equal(proposed.basedOn, 2);
