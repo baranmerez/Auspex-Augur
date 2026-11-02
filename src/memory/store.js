@@ -9,6 +9,11 @@
 //                                  change history (describe_functions,
 //                                  list_functions)
 //   notes.json                     rules, observations and inferences
+//   table-profiles/<schema>/<table>.json
+//                                  the prose profile of one table, its
+//                                  versions, a pending agent proposal and the
+//                                  user's required-table marks
+//                                  (src/memory/tableProfile.js)
 //   changelog.jsonl                explored tables and schema changes, for timelines
 //   scanned-files.json             script files read for column scores: path
 //                                  relative to its script root, sha256 and
@@ -38,6 +43,10 @@ import path from 'node:path';
 import { splitColumnRef } from './planUsage.js';
 import { functionTouches, functionCalls, callsVersion } from './functionTouches.js';
 import { classifyError } from '../errors.js';
+import {
+  validateSections, validateSources, validateLanguage, validName, profileInputs, fingerprintOf, profileFreshness, freshnessText,
+  requiredTables, sqlMentions, profileHistoryLimit, maxRequiredMarks, profileSections,
+} from './tableProfile.js';
 
 export const noteKinds = ['rule', 'observation', 'inference'];
 const historyLimit = 50;
@@ -295,7 +304,11 @@ export class SchemaMemory {
   // function records (upgradeCalls). Only the MCP server sets it; the viewer,
   // desktop CLI and scheduler compute them in memory and never write function
   // records.
-  constructor(root, { now = () => new Date().toISOString(), approvedJoins = () => [], scannedFilesPerRoot = maxScannedFilesPerRoot, storeUpgradedCalls = false } = {}) {
+  // reportSources(profile) -> [{ key, title, sqlHash, sql }]: the draft and
+  // approved reports of the profile's database, for the table profile's
+  // fingerprint; null (or a throw) means the library could not be read.
+  constructor(root, { now = () => new Date().toISOString(), approvedJoins = () => [], reportSources = null, scannedFilesPerRoot = maxScannedFilesPerRoot, storeUpgradedCalls = false } = {}) {
+    this.reportSources = reportSources;
     this.scannedFilesPerRoot = scannedFilesPerRoot;
     this.storeUpgradedCalls = storeUpgradedCalls;
     this.root = path.resolve(root);
@@ -526,6 +539,17 @@ export class SchemaMemory {
       repair.sections = 'omitted';
       repair.error ??= repairError(err);
       return fallback;
+    }
+  }
+
+  // An extra section of a read (no commit involved): a failure leaves it out
+  // with a line on stderr instead of failing the read.
+  optionalSection(what, fn) {
+    try {
+      return fn();
+    } catch (err) {
+      process.stderr.write(`auspex: schema memory ${what} left out: ${repairError(err).message}\n`);
+      return {};
     }
   }
 
@@ -1124,6 +1148,40 @@ export class SchemaMemory {
     return { ...note, ...repairField(repair) };
   }
 
+  // A person corrects a note: the old note is archived with the reason
+  // "edited" and a new one takes its place (same table and column, the new
+  // text, kind rule or observation), each naming the other (replacedBy,
+  // replaces). One write of notes.json, so both happen or neither.
+  editNote(profile, id, { text, kind, source = 'user' }) {
+    return this.locked(profile, () => this.editNoteUnlocked(profile, id, { text, kind, source }));
+  }
+
+  editNoteUnlocked(profile, id, { text, kind, source = 'user' }) {
+    const body = String(text || '').trim();
+    if (!body) throw new MemoryError('Note text is empty.');
+    if (body.length > 2000) throw new MemoryError('Note text is longer than 2000 characters.');
+    const data = this.readNotes(profile);
+    const old = data.notes.find(n => n.id === id);
+    if (!old) throw new MemoryError(`Note #${id} not found.`, 'NOT_FOUND');
+    if (old.status !== 'active') throw new MemoryError(`Note #${id} is archived.`, 'PRECONDITION_FAILED');
+    const newKind = kind ?? old.kind;
+    if (newKind !== 'rule' && newKind !== 'observation') throw new MemoryError('An edited note is a rule or an observation (an inference is confirmed or rejected instead).');
+    if (body === old.text && newKind === old.kind) throw new MemoryError('Nothing changed: the text and kind are the same.', 'PRECONDITION_FAILED');
+    const at = this.now();
+    const note = {
+      id: data.nextId, kind: newKind, schema: old.schema, table: old.table, column: old.column, text: body, source, status: 'active', createdAt: at,
+      ...(newKind === 'observation' ? { asOf: at.slice(0, 10) } : {}), replaces: old.id,
+    };
+    Object.assign(old, { status: 'archived', archivedAt: at, archivedReason: 'edited', replacedBy: note.id });
+    data.notes.push(note);
+    data.nextId += 1;
+    this.writeNotes(profile, data); // commit point
+    const repair = {};
+    if (note.table) this.appendChangelog(profile, { at, schema: note.schema, table: note.table, event: 'note', noteId: note.id, kind: newKind }, repair);
+    this.rebuildAfterCommit(profile, repair);
+    return { note, archived: { ...old }, ...repairField(repair) };
+  }
+
   activeNotes(profile, tables) {
     const notes = this.readNotes(profile).notes.filter(n => n.status === 'active');
     if (!tables) return notes;
@@ -1279,6 +1337,199 @@ export class SchemaMemory {
     return { recorded: scannedFiles.length, total: files.length, ...(pruned ? { pruned } : {}) };
   }
 
+  // ---------- table profiles ----------
+  // The prose profile of one table (src/memory/tableProfile.js). The record
+  // file is its own commit point; nothing derived is rebuilt (graph.json does
+  // not carry profiles). Freshness is computed on every read.
+  tableProfilePath(profile, schema, table) {
+    return this.checkPath(path.join(this.profileDir(profile), 'table-profiles', fileSegment(schema), `${fileSegment(table)}.json`));
+  }
+
+  readTableProfile(profile, schema, table) {
+    const rec = this.readJson(this.tableProfilePath(profile, schema, table), null);
+    return rec && rec.schema === schema && rec.table === table ? rec : null;
+  }
+
+  writeTableProfile(profile, data) {
+    this.writeJson(this.tableProfilePath(profile, data.schema, data.table), data);
+  }
+
+  // Draft and approved reports whose SQL mentions the table, as
+  // [{ key, title, sqlHash }]; null when there is no report source or it
+  // failed (the profile's report input is then unverified).
+  reportsMentioning(profile, schema, table) {
+    if (typeof this.reportSources !== 'function') return null;
+    let list;
+    try {
+      list = this.reportSources(profile);
+    } catch (err) {
+      process.stderr.write(`auspex: report library not read for a table profile: ${repairError(err).message}\n`);
+      return null;
+    }
+    if (!Array.isArray(list)) return null;
+    return list.filter(r => sqlMentions(r.sql, schema, table)).map(r => ({ key: r.key, title: r.title ?? null, sqlHash: r.sqlHash ?? null }));
+  }
+
+  // The inputs a profile of this table is based on now (profileInputs).
+  profileInputsOf(profile, rec, schema, table, reports) {
+    return profileInputs({ rec, notes: this.activeNotes(profile, [{ schema, table }]), reports, effectiveScore });
+  }
+
+  // Tables a trigger's function reads, from its stored body (an inference).
+  triggerReadsOf(profile) {
+    const lookup = this.functionLookup(profile);
+    return t => {
+      const found = lookup(t);
+      if (found.status !== 'found') return [];
+      return triggerOverload(found.record)?.touches?.reads ?? [];
+    };
+  }
+
+  // Saves a profile text. by agent: a new current version, unless the
+  // current one is user-owned (written, confirmed or accepted by the user):
+  // then it becomes the pending proposal (an older pending proposal is
+  // superseded). by user: always the new current version, confirmed;
+  // expectedVersion must be the current version the person edited (null
+  // when there was none), else STALE_VERSION. The table must be in memory.
+  saveTableProfile(profile, { schema, table, sections, sources, language, expectedVersion }, { by = 'agent' } = {}) {
+    if (by !== 'agent' && by !== 'user') throw new MemoryError('by must be agent or user.');
+    if (!validName(schema) || !validName(table)) throw new MemoryError('schema and table must be names of 1 to 63 bytes without control characters.');
+    const text = validateSections(sections);
+    const src = validateSources(sources);
+    const lang = validateLanguage(language);
+    return this.locked(profile, () => {
+      const rec = this.readTable(profile, schema, table);
+      if (!rec) throw new MemoryError(`${tableKey(schema, table)} is not in memory. Describe it first (describe_table or describe_tables).`, 'NOT_FOUND');
+      const data = this.readTableProfile(profile, schema, table) ?? emptyProfile(schema, table);
+      if (by === 'user') checkExpected(data.current, expectedVersion);
+      const at = this.now();
+      const fingerprint = fingerprintOf(this.profileInputsOf(profile, rec, schema, table, this.reportsMentioning(profile, schema, table)));
+      const version = {
+        version: data.nextVersion, author: by, at, language: lang, sections: text, sources: src, fingerprint,
+        ...(by === 'user' ? { confirmedAt: at } : {}),
+      };
+      data.nextVersion += 1;
+      let stored = 'current';
+      if (by === 'agent' && data.current && userOwned(data.current)) {
+        if (data.proposal) pushHistory(data, { ...data.proposal, status: 'superseded', closedAt: at });
+        data.proposal = { ...version, basedOn: data.current.version };
+        stored = 'proposal';
+      } else {
+        if (data.current) pushHistory(data, { ...data.current, status: 'replaced', closedAt: at });
+        data.current = version;
+      }
+      this.writeTableProfile(profile, data); // commit point
+      return {
+        relation: tableKey(schema, table), stored, version: version.version, author: by,
+        ...(stored === 'proposal' ? { basedOn: data.current.version, note: 'The current profile is user-owned; this text is kept as a proposal the user accepts or rejects in the viewer.' } : {}),
+      };
+    });
+  }
+
+  // The user confirms the current agent draft as it is (it becomes
+  // user-owned).
+  confirmTableProfile(profile, { schema, table, expectedVersion }) {
+    return this.locked(profile, () => {
+      const data = this.readTableProfile(profile, schema, table);
+      if (!data?.current) throw new MemoryError(`${tableKey(schema, table)} has no profile.`, 'NOT_FOUND');
+      checkExpected(data.current, expectedVersion);
+      if (userOwned(data.current)) throw new MemoryError('The profile is already confirmed.', 'PRECONDITION_FAILED');
+      data.current.confirmedAt = this.now();
+      this.writeTableProfile(profile, data); // commit point
+      return { relation: tableKey(schema, table), version: data.current.version, confirmedAt: data.current.confirmedAt };
+    });
+  }
+
+  // The user accepts the pending proposal (it becomes the current, confirmed
+  // version) or rejects it (kept in history). proposalVersion: the proposal
+  // the person reviewed.
+  reviewTableProfile(profile, { schema, table, decision, proposalVersion }) {
+    if (decision !== 'accept' && decision !== 'reject') throw new MemoryError('decision must be accept or reject.');
+    return this.locked(profile, () => {
+      const data = this.readTableProfile(profile, schema, table);
+      if (!data?.proposal) throw new MemoryError(`${tableKey(schema, table)} has no pending proposal.`, 'NOT_FOUND');
+      if (data.proposal.version !== proposalVersion) throw new MemoryError(`The proposal changed since you opened it (now version ${data.proposal.version}); reload.`, 'STALE_VERSION');
+      const at = this.now();
+      if (decision === 'accept') {
+        if (data.current) pushHistory(data, { ...data.current, status: 'replaced', closedAt: at });
+        data.current = { ...data.proposal, confirmedAt: at, acceptedAt: at };
+      } else {
+        pushHistory(data, { ...data.proposal, status: 'rejected', closedAt: at });
+      }
+      data.proposal = null;
+      this.writeTableProfile(profile, data); // commit point
+      return { relation: tableKey(schema, table), decision, version: proposalVersion, current: data.current?.version ?? null };
+    });
+  }
+
+  // The user marks (required true) or unmarks a table this one cannot live
+  // without. Only the user's own marks change; catalog and inferred
+  // evidence stays.
+  markRequiredTable(profile, { schema, table, target, required }) {
+    if (typeof required !== 'boolean') throw new MemoryError('required must be true or false.');
+    if (!target || !validName(target.schema) || !validName(target.table)) throw new MemoryError('target needs a schema and a table name.');
+    if (target.schema === schema && target.table === table) throw new MemoryError('A table cannot require itself.');
+    return this.locked(profile, () => {
+      if (!this.readTable(profile, schema, table)) throw new MemoryError(`${tableKey(schema, table)} is not in memory.`, 'NOT_FOUND');
+      const data = this.readTableProfile(profile, schema, table) ?? emptyProfile(schema, table);
+      const marks = Array.isArray(data.required) ? data.required : [];
+      const at = marks.findIndex(m => m.schema === target.schema && m.table === target.table);
+      if (required && at >= 0) throw new MemoryError(`${tableKey(target.schema, target.table)} is already marked as required.`, 'PRECONDITION_FAILED');
+      if (!required && at < 0) throw new MemoryError(`${tableKey(target.schema, target.table)} is not marked as required by you.`, 'PRECONDITION_FAILED');
+      if (required && marks.length >= maxRequiredMarks) throw new MemoryError(`At most ${maxRequiredMarks} required tables can be marked.`);
+      data.required = required ? [...marks, { schema: target.schema, table: target.table, at: this.now() }] : marks.filter((_, i) => i !== at);
+      this.writeTableProfile(profile, data); // commit point
+      return { relation: tableKey(schema, table), target: tableKey(target.schema, target.table), required };
+    });
+  }
+
+  // Everything about the profile of one table, without touching the
+  // database: the current version and a pending proposal with their
+  // freshness against the inputs now, the last versions, the tables it
+  // cannot live without (with evidence) and the inputs now.
+  tableProfile(profile, schema, table, { historyItems = 10 } = {}) {
+    const rec = this.readTable(profile, schema, table);
+    const data = this.readTableProfile(profile, schema, table);
+    const reports = this.reportsMentioning(profile, schema, table);
+    const now = this.profileInputsOf(profile, rec, schema, table, reports);
+    const notes = this.activeNotes(profile, [{ schema, table }]);
+    const req = requiredTables({ rec, tables: this.listTables(profile), triggerReads: this.triggerReadsOf(profile), marks: data?.required ?? [] });
+    const kinds = Object.fromEntries(noteKinds.map(k => [k, notes.filter(n => n.kind === k).length]));
+    return {
+      relation: tableKey(schema, table), known: !!rec, explored: !!rec?.describedAt,
+      sectionKeys: profileSections,
+      profile: data?.current ? versionView(data.current, now) : null,
+      proposal: data?.proposal ? versionView(data.proposal, now) : null,
+      history: (data?.history ?? []).slice(-historyItems).reverse().map(({ fingerprint, ...v }) => v),
+      requiredTables: req.required,
+      optionalReferences: req.optional,
+      inputs: {
+        notes: kinds,
+        reports: reports === null ? null : reports.slice(0, 20).map(r => ({ key: r.key, title: r.title })),
+        ...(reports && reports.length > 20 ? { moreReports: reports.length - 20 } : {}),
+        triggerSummaries: Object.keys(rec?.triggerSummaries ?? {}).length,
+        scoredColumns: Object.keys(rec?.columnScores ?? {}).length,
+      },
+      ...(rec ? {} : { hint: 'Not in memory yet. describe_table records it (reads the catalog only).' }),
+    };
+  }
+
+  // The short form for table_knowledge; {} when there is no profile.
+  tableProfileSection(profile, rec) {
+    const data = this.readTableProfile(profile, rec.schema, rec.table);
+    if (!data?.current && !data?.proposal && !data?.required?.length) return {};
+    const now = this.profileInputsOf(profile, rec, rec.schema, rec.table, this.reportsMentioning(profile, rec.schema, rec.table));
+    const v = data.current ? versionView(data.current, now) : null;
+    return {
+      tableProfile: {
+        ...(v ? { version: v.version, author: v.author, owner: v.owner, freshness: v.freshness, ...(v.freshnessReason ? { freshnessReason: v.freshnessReason } : {}) } : { version: null }),
+        proposalPending: !!data.proposal,
+        userRequiredTables: (data.required ?? []).map(m => tableKey(m.schema, m.table)),
+        hint: 'table_profile action=get returns the text, its sources and the tables it cannot live without.',
+      },
+    };
+  }
+
   // ---------- relations ----------
   // Every relation edge known for a profile: fk (declared), used (joined in an
   // approved report), suggested (same name as another table's primary key).
@@ -1400,6 +1651,7 @@ export class SchemaMemory {
       recentChanges: (rec.history || []).slice(-5).map(h => `${h.at.slice(0, 10)}: ${h.changes.map(changeText).join('; ')}`),
       ...columnScoresSection(rec, notes),
       ...(Array.isArray(rec.triggers) ? { triggers: triggersWithSummaries(rec, this.functionLookup(profile)) } : {}),
+      ...this.optionalSection('table profile', () => this.tableProfileSection(profile, rec)),
       ...this.databaseNotesSection(profile),
       ...this.neighborsSection(profile, [rec], tables),
     };
@@ -1477,6 +1729,29 @@ export class SchemaMemory {
       fs.rmSync(this.checkPath(this.graphStalePath(profile)), { force: true });
     } catch { /* stays marked: the next read rebuilds once more */ }
   }
+}
+
+// ---------- table profile helpers ----------
+const emptyProfile = (schema, table) => ({ schema, table, nextVersion: 1, current: null, proposal: null, history: [], required: [] });
+// Written, confirmed or accepted by the user: an agent save never replaces it.
+const userOwned = v => v.author === 'user' || !!v.confirmedAt;
+function pushHistory(data, version) {
+  data.history = [...(Array.isArray(data.history) ? data.history : []), version].slice(-profileHistoryLimit);
+}
+// expected: the current version the person saw (null when there was none).
+function checkExpected(current, expected) {
+  const now = current?.version ?? null;
+  if (expected === undefined) throw new MemoryError('expectedVersion is required: the version you edited, or null for a new profile.');
+  if (expected !== now) throw new MemoryError(`The profile changed since you opened it (now ${now === null ? 'none' : `version ${now}`}); reload.`, 'STALE_VERSION');
+}
+// A stored version as returned: without the fingerprint, with owner and
+// freshness against the inputs now (profileFreshness).
+function versionView({ fingerprint, ...v }, now) {
+  const f = profileFreshness(fingerprint, now);
+  return {
+    ...v, owner: userOwned(v) ? 'user' : 'agent', freshness: f.state,
+    ...(f.reasons.length ? { freshnessReasons: f.reasons, freshnessReason: freshnessText(f.reasons) } : {}),
+  };
 }
 
 // Safe description of a post-commit failure: the error code and the errno

@@ -44,13 +44,16 @@ test('exploration only: catalog guidance stays, query, report and memory advice 
   const { text } = build(['core', 'explore']);
   assert.match(text, /Use search to find tables/);
   assert.match(text, /describe_tables for the structure/);
-  assert.doesNotMatch(text, /Check plans with explain|Queries time out|notesLanguage from list_profiles/);
+  assert.doesNotMatch(text, /Check plans with explain|Queries time out/);
+  // table_profile (explore) saves prose: the language rule names only it.
+  assert.match(text, /notesLanguage from list_profiles: table_profile sections\./);
   assert.match(text, /these tools are not available: query, explain, export_csv/);
 });
 
 test('the notesLanguage sentence lists only the save tools of enabled groups', () => {
   const memoryOnly = build(['core', 'explore', 'memory']).text;
-  assert.match(memoryOnly, /notesLanguage from list_profiles: remember note text, score_columns reasons and trigger summaries\./);
+  assert.match(memoryOnly, /notesLanguage from list_profiles: remember note text, score_columns reasons and trigger summaries, table_profile sections\./);
   const reportsOnly = build(['core', 'query', 'reports']).text;
   assert.match(reportsOnly, /notesLanguage from list_profiles: save_report title, description and note, save_execute_script title and purpose \(and comments inside the script\)\./);
+  assert.doesNotMatch(reportsOnly, /notesLanguage from list_profiles: [^.]*table_profile/);
 });

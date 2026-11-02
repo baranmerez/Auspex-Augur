@@ -11,6 +11,7 @@ export function serverInstructions(enabledGroups, disabledTools, { defaultTimeou
     enabled.has('memory') && 'remember note text',
     enabled.has('reports') && 'save_report title, description and note, save_execute_script title and purpose (and comments inside the script)',
     enabled.has('memory') && 'score_columns reasons and trigger summaries',
+    enabled.has('explore') && 'table_profile sections',
   ].filter(Boolean);
   const lines = [
     'Auspex gives read-only access to one or more PostgreSQL databases, each configured as a named profile.',
@@ -31,6 +32,7 @@ export function serverInstructions(enabledGroups, disabledTools, { defaultTimeou
     [['query'], 'explain records the tables and columns its plan used in the schema memory.'],
     [['reports'], 'run_report records the tables and columns its plan used in the schema memory.'],
     [['explore'], 'Before describing a table again, call table_knowledge: it answers from memory without touching the database. For a function already described or listed, function_knowledge does the same.'],
+    [['explore'], 'To tell what one table is for, table_profile action=get returns its prose profile (with freshness) and the tables it cannot live without. Write or rewrite a profile with action=save only when the user asks, from memory only; for many tables, state the count and get a yes first.'],
     [['explore'], `When you need several tables, do not loop over describe_table or send one measuring query per table: use describe_tables for the structure of up to ${maxDescribeTables} tables and profile_tables for row estimates, fill rates, distinct counts and parent-child fan-out of up to ${maxProfileTables} tables. Each takes a constant number of statements however many tables are listed. To see which neighbours of a table matter most, relation_stats ranks its referenced (instance) and referencing (dependent) tables by estimated linked rows from planner statistics, without reading data.`],
     [['memory'], 'When the user states a business rule, save it with remember kind=rule. Save a finding from data as kind=observation with evidence (the SQL and aggregate figures only, never row values or personal data). Your own interpretations are kind=inference; never present them as fact, and confirm one only after the user agreed.'],
     ...(savedTexts.length ? [`Write every user-facing text you save into Auspex files in the notesLanguage from list_profiles: ${savedTexts.join(', ')}. Identifiers, SQL, column aliases and the script step markers (BEGIN, DEFINE, PROCESS, MATCH, CORRECT/FAIL, ROLLBACK) are not translated; only the text after a marker follows notesLanguage. If notesLanguage is null, ask the user once "Which language should notes and report texts be saved in?" (in the user language), use the answer for this conversation and suggest adding "notesLanguage": "<code>" to profiles.json. Do not translate existing notes.`] : []),

@@ -14,7 +14,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { loadConfig, describeConnection, auspexHome } from './config.js';
 import { Library, LibraryError, refLabel } from './reports/library.js';
-import { approvedJoinPairs, reportHtmlHash } from './reports/service.js';
+import { approvedJoinPairs, reportHtmlHash, reportSources } from './reports/service.js';
 import { StageError as HttpError, stageActions as actions, validateStageInput, applyStageChange, statusOf } from './reports/stageChange.js';
 import { SchemaMemory } from './memory/store.js';
 import { validateArchiveInput, archiveNoteFor } from './memory/noteArchive.js';
@@ -132,7 +132,7 @@ function memoryDir() {
 // The schema memory as the MCP server sees it, so a stage change rebuilds its
 // view ("used" relations come from approved reports' joins). Files only.
 function schemaMemory(lib) {
-  return new SchemaMemory(memoryDir(), { approvedJoins: profile => approvedJoinPairs(lib, profile) });
+  return new SchemaMemory(memoryDir(), { approvedJoins: profile => approvedJoinPairs(lib, profile), reportSources: profile => reportSources(lib, profile) });
 }
 
 // graph.json of a profile. A change stored while graph.json could not be

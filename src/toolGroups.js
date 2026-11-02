@@ -10,7 +10,7 @@ export const toolGroups = {
   // in the local schema memory).
   explore: [
     'search', 'list_schemas', 'list_tables', 'describe_table', 'describe_tables', 'describe_functions', 'list_functions',
-    'profile_tables', 'relation_stats', 'table_knowledge', 'function_knowledge', 'scanned_files',
+    'profile_tables', 'relation_stats', 'table_knowledge', 'function_knowledge', 'table_profile', 'scanned_files',
   ],
   // Caller SQL: read-only queries, plans and CSV export.
   query: ['query', 'explain', 'export_csv'],
