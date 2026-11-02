@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { SchemaMemory } from '../src/memory/store.js';
-import { profileFreshness, nameMatches, sqlMentions, validateSections, validateSources, freshnessText } from '../src/memory/tableProfile.js';
+import { profileFreshness, profileInputs, fingerprintOf, fingerprintFormat, nameMatches, sqlMentions, validateSections, validateSources, freshnessText } from '../src/memory/tableProfile.js';
 import { seedExampleMemory, ordersDescribe } from './fixtures/exampleMemory.js';
 import { reportSources } from '../src/reports/service.js';
 
@@ -131,6 +131,24 @@ test('profileFreshness: legacy and missing inputs are unverified, a change wins 
   assert.equal(changed.state, 'stale');
   assert.deepEqual(changed.reasons.map(r => r.code), ['notes-removed', 'notes-changed', 'scores-changed']);
   assert.equal(freshnessText(changed.reasons), '1 note archived; 1 note changed; column scores changed');
+});
+
+test('profileFreshness: a fingerprint of an older format compares only the parts of the same shape', () => {
+  const inputs = profileInputs({ rec: { describedAt: 't', columns: [{ name: 'order_id', type: 'integer' }], triggerSummaries: { orders_check: { summary: 'Checks the status.' } } }, notes: [], reports: [], effectiveScore: () => null });
+  assert.equal(inputs.format, fingerprintFormat);
+  // Saved before the format was recorded: other hashes for structure and triggers.
+  const old = { hash: 'h', structure: 'older-shape', notes: [], triggers: 'older-shape', scores: null, reports: [] };
+  assert.deepEqual(profileFreshness(old, inputs), { state: 'unverified', reasons: [{ code: 'fingerprint-format', parts: ['structure', 'triggers'] }] });
+  assert.equal(freshnessText([{ code: 'fingerprint-format', parts: ['structure', 'triggers'] }]), 'saved by an older Auspex; structure and trigger summaries not compared');
+  // The parts of the same shape still compare: a new note is stale.
+  const noted = profileFreshness(old, { ...inputs, notes: [[1, 'rule', 'x']] });
+  assert.equal(noted.state, 'stale');
+  assert.deepEqual(noted.reasons, [{ code: 'notes-added', kind: 'rule', count: 1 }]);
+  // No trigger summaries then and some now is a change in any shape.
+  assert.deepEqual(profileFreshness({ ...old, triggers: null }, inputs).reasons, [{ code: 'trigger-summaries-changed' }]);
+  // The same format compares every part.
+  assert.deepEqual(profileFreshness(fingerprintOf(inputs), inputs), { state: 'fresh', reasons: [] });
+  assert.deepEqual(profileFreshness({ ...fingerprintOf(inputs), structure: 'other' }, inputs).reasons, [{ code: 'structure-changed' }]);
 });
 
 test('a user-owned profile is never overwritten: an agent save becomes a proposal the user accepts or rejects', () => {

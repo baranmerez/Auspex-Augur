@@ -6822,6 +6822,7 @@ function tppFreshText(reasons) {
       case 'table-missing': return t('the table is no longer in memory');
       case 'reports-unknown': return t('the reports could not be compared');
       case 'reports-incomplete': return t('not every report could be read');
+      case 'fingerprint-format': return t('saved by an older Auspex; some parts not compared');
       default: return String(r?.code ?? '');
     }
   };
@@ -7025,7 +7026,7 @@ const tableProfileTr = {
   '{n} note changed': '{n} not değişti', '{n} notes changed': '{n} not değişti', 'trigger summaries changed': 'trigger özetleri değişti', 'column scores changed': 'kolon puanları değişti',
   '{n} new report': '{n} yeni rapor', '{n} new reports': '{n} yeni rapor', '{n} report removed': '{n} rapor kaldırıldı', '{n} reports removed': '{n} rapor kaldırıldı',
   '{n} report changed': '{n} rapor değişti', '{n} reports changed': '{n} rapor değişti', 'written before freshness was recorded': 'tazelik kaydedilmeden önce yazıldı',
-  'written before the structure was recorded': 'yapı kaydedilmeden önce yazıldı', 'the table is no longer in memory': 'tablo artık hafızada yok', 'the reports could not be compared': 'raporlar karşılaştırılamadı', 'not every report could be read': 'raporların hepsi okunamadı',
+  'written before the structure was recorded': 'yapı kaydedilmeden önce yazıldı', 'the table is no longer in memory': 'tablo artık hafızada yok', 'the reports could not be compared': 'raporlar karşılaştırılamadı', 'not every report could be read': 'raporların hepsi okunamadı', 'saved by an older Auspex; some parts not compared': 'eski bir Auspex ile kaydedildi; bazı kısımlar karşılaştırılamadı',
   'catalog': 'katalog', 'inferred': 'çıkarım', 'yours': 'sizin',
   'Foreign key {c} ({cols}): every column is NOT NULL': 'Yabancı anahtar {c} ({cols}): tüm kolonlar NOT NULL', 'You marked it as required': 'Zorunlu olarak siz işaretlediniz',
   'Read by the function of trigger {tr} (inferred from its stored body)': '{tr} trigger\'ının fonksiyonu okuyor (kayıtlı gövdesinden çıkarım)',
