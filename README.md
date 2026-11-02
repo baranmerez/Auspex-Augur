@@ -120,7 +120,7 @@ A small native app (about 3 MB) that sits in the tray and reads `~/.auspex` dire
 - 📚 **Reports**: browse the library tree, preview results, approve or revoke drafts, pin favorites, and copy an *Ask agent* request (also on table, view and function pages).
 - ⏰ **Schedules**: every configured schedule across your databases, with missing or unapproved targets, preset problems and the last run state.
 - 🗺️ **Schema**: relation map, ER diagram and a timeline of schema changes.
-- 🧾 **Table pages**: columns by importance with their meanings, keys, triggers and the reports that use the table, plus search and grouping. You can give your own column scores here.
+- 🧾 **Table pages**: a prose profile of the table (what it is for, what it does, where it is used, what it cannot live without) with its rules, observations and inferences, which you can add, correct and confirm; columns by importance with their meanings, keys, triggers and the reports that use the table, plus search and grouping. You can give your own column scores here.
 - 📌 **Rules**: every business rule and note in one list, where you can archive outdated ones.
 - 🎨 **Themes**: five built-in themes and a theme studio, with an English or Turkish interface.
 - 🔒 **No database access**: the app only reads local files, and `Start with Windows` keeps it ready in the tray.

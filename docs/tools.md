@@ -30,6 +30,7 @@ Every MCP tool, plus the details of choosing a database, CSV export, batch explo
 | 🧾 `save_execute_script` | Writes a change script into `EXECUTE/` for a human to run — never executed by Auspex; with `root`, `folder` and `fileName` also as a new file in a configured script root (for example a folder of saved SQL scripts) |
 | 🧠 `table_knowledge` | What the schema memory knows about a table — key and used columns, relations, table notes, database-wide notes, recent changes, column importance scores, triggers with their summaries, unexplored neighbors — without touching the database |
 | 🧩 `function_knowledge` | What the schema memory knows about one function name — overloads, listed-only or described state, capture times, definition availability and length, calling triggers, callers and inferred calls/touches, recent changes — without touching the database; the source only on request for one overload, capped |
+| 📖 `table_profile` | The prose profile of one table (what it is for, what it does, where it is used, what it depends on, what to watch out for): `get` returns it with its sources, version, author, owner and freshness, a pending proposal and the tables it cannot live without (with evidence); `save` stores the agent's draft, written from memory only. A profile the user wrote, confirmed or accepted is never overwritten: the agent's text becomes a proposal. Local memory only, no database access |
 | 📌 `remember` | Adds, confirms or archives a note: a rule the user stated, an observation backed by evidence, or an unconfirmed inference; `evidenceCode` adds up to 5 references into a configured code root (see Code meanings) |
 | 🏷️ `score_columns` | Saves 1-5 importance scores per column of a described table in two layers: the agent's (roles, one-line reason, number of sources) and the user's (stated by the user; wins when present), one-line trigger summaries and the script files it read (path relative to the script root and sha256 only); local memory only, no database access |
 | 🗃️ `scanned_files` | Lists the script files `score_columns` recorded (root, relative path, sha256, last read), so the next run reads only new or changed files |
@@ -311,6 +312,50 @@ relations with their foreign keys, then `pg_stats`), with one audit entry
 (field `statements`). The result is recorded in the schema memory: centers and
 neighbours are recorded as seen (never as explored), with their row estimates,
 and the edges in `graph.json` carry the linked-row figures (see below).
+
+### Table profile
+
+`table_profile` keeps a short, book-like description of one table in the
+schema memory, in five sections: `purpose` (what it is for), `behavior`
+(what it does: triggers, statuses, life cycle), `usage` (where it is used:
+reports, views, functions, code), `dependencies` (what it depends on) and
+`caveats` (what to watch out for), about one page in all (at most 4000
+characters per section, 12000 in total), in the `notesLanguage`. Each
+section can carry its sources (`{ type, ref }`, type one of `note`,
+`report`, `trigger`, `function`, `table`, `view`, `column`, `score`,
+`code`; at most 20), so every statement can be traced.
+
+```json
+{ "profile": "exampledb", "action": "save", "schema": "example", "table": "orders",
+  "sections": { "purpose": "One row per order of Example Co.", "dependencies": "Every order needs its customer." },
+  "sources": { "purpose": [{ "type": "note", "ref": 12 }], "dependencies": [{ "type": "table", "ref": "example.customers" }] } }
+```
+
+- **Agent and user.** An agent save becomes the current version unless the
+  current one is user-owned (the user wrote it, confirmed the draft or
+  accepted a proposal in the viewer); then it is stored as a **proposal**
+  (`stored: "proposal"`), and a newer agent save supersedes an older
+  proposal. Earlier versions, rejected and superseded proposals stay in the
+  history (the last 20).
+- **Freshness.** Each version records a fingerprint of its inputs: the
+  recorded structure, the active notes on the table, the trigger summaries,
+  the effective column scores and the draft and approved reports whose SQL
+  mentions the table. `get` compares it with the memory now: `fresh`;
+  `stale` with `freshnessReasons` (for example `notes-added` with kind and
+  count, `structure-changed`, `reports-changed`) and a one-line
+  `freshnessReason` ("2 new rules; structure changed"); or `unverified`
+  (`legacy`, `structure-missing`, `table-missing`, `reports-unknown`). A
+  profile is never rewritten automatically.
+- **Cannot live without.** `requiredTables` lists the tables the table
+  needs, each with its evidence: `catalog` (a foreign key whose columns are
+  all NOT NULL), `inference` (a code column without a foreign key whose name
+  parts match one known table, such as `status_code` → `example.status_codes`,
+  or a table the trigger function reads, from its stored body) and `user`
+  (marked in the viewer). Foreign keys with a nullable column are
+  `optionalReferences`.
+- **No database call.** Both actions work on local files only; `table_knowledge`
+  carries a short `tableProfile` section (version, owner, freshness, pending
+  proposal, the user's required tables).
 
 ### Row estimates
 

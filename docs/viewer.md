@@ -31,7 +31,7 @@ Opens a local page at http://127.0.0.1:4719 (port: `AUSPEX_VIEWER_PORT`):
   - column tools above the column list, in Detailed and Summary: a **search box** (TR *Kolonlarda ara*; `/` focuses it while a table page is open, Esc clears it) matching the column name, its meaning, the agent's reason and any note text, Turkish-aware like the Rules tab, with an *N / total* counter and a clear button; while a query is active all columns are searched and the 4–5 filter is ignored. A **group switch** *Score / Type* (TR *Puan / Tür*, remembered): Type groups come only from catalog facts, so they work for any database: keys and links (primary key, foreign key or a column in a unique constraint), date and time, amounts and numbers, text, flags (boolean) and other (json, uuid, bytea, arrays), each with a count and ordered by score, sources, name. In Detailed, a column with a confirmed rule or observation shows its meaning as one muted line (two lines at most, full text in the tooltip); a note with code evidence is preferred, then the newest rule; unconfirmed inferences stay in the expanded row
   - keys and structure (primary key, unique and check constraints with definitions, outgoing and incoming foreign keys, indexes), triggers (timing and events, level, enabled, function, WHEN, the agent summary; a stale summary is marked *may be out of date*), and neighbours: tables it references on the left, tables that reference it on the right (linking columns, estimated rows; not explored ones muted), each opening its own page
   - an undescribed table explains that `describe_table` is needed; an unscored table points to the `auspex-columns` skill. Clicking a score chip sets your own score (see below)
-  - *Detailed / Summary* switch (TR *Ayrıntılı / Özet*). A first visit opens **Summary**: names only, as coloured, clickable chips in groups: primary key, foreign keys (`column → table`, best column score first; the first 12, the rest behind *+N more*, TR *+N daha*; the same for referenced and referencing tables), columns by effective score (coloured by score and grouped under a heading with a count, such as *5 · core (3)*; the five score steps are clearly apart in light and dark; score 1 columns collapse into a *+N unused* chip that expands; unscored columns are dashed), triggers (a disabled one is muted and struck through), trigger functions, reports whose SQL mentions the table (*Mentioned in SQL*, TR *SQL'inde geçiyor*), referenced tables (*Bağlı olduğu*) and referencing tables (*Ona bağlı olan*). A column chip opens its row in the Detailed view, a table chip opens that table's page, a report chip opens the report on the Reports tab. The last choice is remembered in browser storage (the page works without storage). The report match is a simple, case-insensitive name match over the SQL of the database's draft and approved reports (read once each through the existing `GET /api/report`, four at a time, again when the report changes); schema-qualified and bare names match, a longer name that shares a prefix (`example.orders` vs `example.orders_archive`) does not, and neither does the name after another schema (`test.orders`). The first 400 reports are checked (the page says *first 400 reports checked* when there are more); a report that cannot be read is counted as *could not be read* with *Retry*, not remembered as empty. It is a hint, not a hard link
+  - *Profile / Detailed / Summary* switch (TR *Profil / Ayrıntılı / Özet*); a first visit opens **Profile** (see *The Profile view* below). **Summary** shows names only, as coloured, clickable chips in groups: primary key, foreign keys (`column → table`, best column score first; the first 12, the rest behind *+N more*, TR *+N daha*; the same for referenced and referencing tables), columns by effective score (coloured by score and grouped under a heading with a count, such as *5 · core (3)*; the five score steps are clearly apart in light and dark; score 1 columns collapse into a *+N unused* chip that expands; unscored columns are dashed), triggers (a disabled one is muted and struck through), trigger functions, reports whose SQL mentions the table (*Mentioned in SQL*, TR *SQL'inde geçiyor*), referenced tables (*Bağlı olduğu*) and referencing tables (*Ona bağlı olan*). A column chip opens its row in the Detailed view, a table chip opens that table's page, a report chip opens the report on the Reports tab. The last choice is remembered in browser storage (the page works without storage). The report match is a simple, case-insensitive name match over the SQL of the database's draft and approved reports (read once each through the existing `GET /api/report`, four at a time, again when the report changes); schema-qualified and bare names match, a longer name that shares a prefix (`example.orders` vs `example.orders_archive`) does not, and neither does the name after another schema (`test.orders`). The first 400 reports are checked (the page says *first 400 reports checked* when there are more); a report that cannot be read is counted as *could not be read* with *Retry*, not remembered as empty. It is a hint, not a hard link
   - a **view or materialized view** opens the same page in the Views tab with a *View* / *Materialized view* badge (and *not populated* for a matview that was never refreshed): its definition as highlighted SQL with line numbers, copy, soft wrap and a *Show all N lines* toggle for long text (a definition cut in memory says so), the options (security_barrier, check option), **source relations** on the left with the columns the view uses, **functions called** (a VOLATILE one carries a warning: the view cannot be flattened and filters are not pushed into it), **used by views** on the right and the reports whose SQL mentions the view. The Summary view shows the definition and these groups as chips. A table shows *Used by views* under its referencing tables when the memory knows any. Every field is optional: memory written before views were recorded shows the page as before
   - the view page starts with what the view is: its comment and the rules and observations saved on it (a muted line when there is none). The definition stays collapsed behind *Show SQL (N lines)* (TR *SQL'i göster*). Columns: a scored view shows its 4–5 columns first, an unscored one its first 24, with *Show all N columns*; source tables are ranked by the same importance score as the Functions tab and more than 12 sit behind *Show all*
 - **Function page** (TR *Fonksiyon sayfası*) — shown in the Functions tab, opened from its list, the Schema search, a view's *Functions called* or another function; it reads `functions/<schema>/<name>.json` through `GET /api/memory/function` (cached, *Retry* on error). One card per overload: signature `name(args) → returns`, kind and language, flags as chips with a short explanation each (*What do these mean?* lists them: volatility, parallel, strict, security definer or invoker, configuration such as `search_path`, owner, whether the Auspex role may execute it) and risk marks: **security definer without a fixed search_path** and **volatile, called from a view**. The body as highlighted SQL (collapsible, copy, cut notice); a listed-only overload (from `list_functions`) says it is not described yet. On the left **Touches (inferred)**: tables it writes and reads, read from the body text and labelled as an inference (dynamic SQL is missed; `pg_catalog` names are listed apart); on the right **Used by**: views and functions that call it (the triggers of a trigger function are a separate panel at the top of the main column, see below); below, the reports that mention it and the change history
@@ -41,7 +41,7 @@ Opens a local page at http://127.0.0.1:4719 (port: `AUSPEX_VIEWER_PORT`):
   - **Notes** (middle): the notes of the chosen row, table-level notes first, then per column.
   - **Summary** (right): for a table, its estimated rows and column count, its important columns (score 4–5, or the first columns when the table is not scored) with PK/FK marks and their score, and its linked tables. Every name opens the table page. For *Database-wide*, the latest notes and the tables with the most notes, each opening that table's notes.
 
-  Under 1280px the summary moves below the notes; under 900px everything stacks. Each note shows rules, observations and inferences with table and column, text, status, confirmed or unconfirmed, created/confirmed/archived dates, and the evidence (figures, SQL and code references) behind a collapsed *Evidence* toggle; a note with code references carries a *from code* badge (TR *koddan*) under its kind. Filters: status (active by default, archived, all), kind, table (part of `schema.table`) and text (case-insensitive, Turkish İ/I/ı/i match each other). An active note can be archived with a required reason (see below); adding or confirming notes stays an agent action (`remember`). The table header and the column sub-header of each group are links: a table opens its table page, a column opens its row in the Detailed view.
+  Under 1280px the summary moves below the notes; under 900px everything stacks. Each note shows rules, observations and inferences with table and column, text, status, confirmed or unconfirmed, created/confirmed/archived dates, and the evidence (figures, SQL and code references) behind a collapsed *Evidence* toggle; a note with code references carries a *from code* badge (TR *koddan*) under its kind. Filters: status (active by default, archived, all), kind, table (part of `schema.table`) and text (case-insensitive, Turkish İ/I/ı/i match each other). An active note can be archived with a required reason (see below); notes are added, edited and confirmed on a table page's Profile view. The table header and the column sub-header of each group are links: a table opens its table page, a column opens its row in the Detailed view.
 - **Profiles** — configured databases with connection details (never passwords) and the latest role check in the chosen time range with the time it ran (*last check in this range*); a `check_profile` that failed shows "unable to assess" with its code, never as a passed check, and the newest check wins whatever its outcome, so a later failure is not hidden by an older success. The Operations filters (source, tool, status, text) are hidden on Profiles and never apply to the role check
 - **Stale schema memory** — when a change was stored but the memory graph could not be rebuilt (`graph.stale`), Schema, Views, Functions and Rules show a banner above the tab: the graph may be out of date; the browser viewer rebuilds it when you refresh (*Refresh*), the desktop app only shows the state (the next memory change or agent read rebuilds it). A graph that could not be read is shown as an error with *Retry*, which reads that database's graph again (the Refresh button does too; the 5 s live refresh does not repeat a failed read); a stale graph that could not be rebuilt and has no earlier version is explained instead of showing the raw message
 
@@ -188,7 +188,8 @@ before template v2 keep their old layout until `render_reports` re-renders them.
 
 It binds to 127.0.0.1 only, rejects other Host headers, never connects to a
 database and never shows passwords. Every route is GET-only except the two
-approval routes, the note archive route and the user column score route below.
+approval routes, the note archive route, the user column score route and the
+memory edit route below.
 Every `/api` route, reads included, needs the `X-Auspex-Token` header with the
 per-process token the served page carries (401 `TOKEN_INVALID` otherwise); the
 page itself and the vendored scripts need no token.
@@ -306,11 +307,70 @@ that passed the origin and token checks is audited as `score_columns` with
 `layer` `user`, `action` `set` or `clear`, `source` and `actor` `viewer`,
 profile, schema, table, column, score and role names; there is no free text.
 
+#### The Profile view
+
+A table page opens on **Profile** (TR *Profil*), built from the schema memory
+only (`GET /api/memory/table-profile`; nothing reads a database):
+
+- **Centre: the profile.** The five sections (*What it is for*, *What it
+  does*, *Where it is used*, *What it depends on*, *Watch out*) as short
+  paragraphs in a book-like type, each ending in a sources line ("1 rule,
+  2 reports, trigger example_audit"). A badge says who wrote it (*Agent
+  draft*, *Written by you*, *Agent text, confirmed by you*), with the version
+  and date. *May be out of date* (with the reason, such as "2 new rules")
+  or *Not verified* appears when the inputs changed or could not be compared.
+  *Edit* opens all sections in one dialog; *Confirm* takes an agent draft as
+  it is; *Ask agent to rewrite* copies a request (with the version and why it
+  is stale) for your agent, through the *Ask agent* dialog. A pending agent
+  proposal shows a banner and *Review the proposal*: the changed sections
+  side by side (your text, proposed), *Accept the proposal* or *Reject the
+  proposal*. *Earlier versions* lists the history. Without a profile the page
+  offers *Ask agent to write it* and *Write it yourself*.
+- **Below: the notes**, as collapsible groups with a count: *Rules*,
+  *Observations*, *Inferences* (to review: *Confirm as rule*, *Confirm as
+  observation*, *Reject*) and *Column meanings* (notes read from code).
+  *Add a rule* / *Add an observation* save a note written and confirmed by
+  you, on the table or one column. *Edit* archives the old note with the
+  reason "edited" and saves your text as a new note linked to it; *Archive*
+  asks for a reason. Nothing is deleted.
+- **Right: cards** with a count and a one-line header, each listing its top 5
+  (ranked by linked-row estimates from `relation_stats`, then the memory
+  importance) with *+N more*: **Cannot live without** first, each table with
+  its evidence (*catalog*: a foreign key whose columns are all NOT NULL;
+  *inferred*: a code column matched to a lookup table by name parts, or a
+  table read by a trigger function; *yours*: your mark; *Mark a table as
+  required…* and × remove your own marks), then *Referenced tables* (required
+  and optional apart), *Referencing tables*, *Used by views*, *Triggers and
+  functions* and *Reports* (their SQL mentions the table). Under 960px the
+  cards sit between the profile and the notes.
+
+Cards and note groups open and close with the keyboard (they are
+`<details>`); their state is remembered in browser storage, and the first two
+cards start open. Every dialog keeps its text and shows a refusal (for
+example *the profile changed since you opened it*) as an alert; after a
+change, focus returns to the part of the page that changed.
+
+#### Editing notes and the profile in the viewer
+
+`POST /api/memory/edit` has the same protections as the archive route
+(loopback Host, exact `Origin`, per-process `X-Auspex-Token`,
+`application/json`), takes at most 64 KB (a profile text) and accepts
+`{ "op", "profile", ... }` with `op` one of `note-add`, `note-edit`,
+`note-confirm`, `profile-save`, `profile-confirm`, `profile-review` and
+`required-mark`, each with exactly its own fields (`src/memory/memoryEdit.js`;
+anything else is 400). A profile save names the version you edited
+(`expectedVersion`), a review the proposal you saw (`proposalVersion`); a
+newer one is refused with 409 `STALE_VERSION`. An unknown profile or table is
+404. Every request that passed the origin and token checks is audited like
+the tool it acts as (`remember` with `add`, `edit` or `confirm`;
+`table_profile` with `save`, `confirm`, `accept`, `reject`, `mark` or
+`unmark`), with names, ids and versions but never note or profile text.
+
 ### 🖥️ Desktop app (Tauri)
 
 `desktop/` wraps the same viewer in a small native app (about 3 MB) that reads
 `~/.auspex` directly through a Rust command, so no Node server is needed
-(approve/revoke, archiving notes, user column scores, the Schedules screen and the
+(approve/revoke, archiving notes, user column scores, the table page's memory edits and its profile, the Schedules screen and the
 schedules and trend of approved reports need Node 20+ and the Auspex checkout, see below;
 schedules and trends come from the same Node code as in the browser viewer and
 are only read when a schedules file exists).
@@ -377,6 +437,19 @@ node <auspexRoot>/src/stageCli.js score-column --profile=<profile> --schema=<sch
 which writes the user layer only and audits like the viewer route with
 `source` and `actor` `desktop`.
 
+The Profile view's edits use the app's `edit_memory` command: it checks the
+shape of the request in Rust (a known `op`, the profile name, at most 64 KB)
+and runs
+
+```bash
+node <auspexRoot>/src/stageCli.js memory-edit
+```
+
+with the request as JSON on stdin (a profile text may be long and hold line
+breaks), which applies the viewer route's checks and store logic and audits
+with `source` and `actor` `desktop`. The profile itself is read with
+`node <auspexRoot>/src/stageCli.js table-profile --profile=<p> --schema=<s> --table=<t>`.
+
 Requirements:
 
 - **Node 20+** on `PATH`, or `AUSPEX_NODE` set to the absolute path of
@@ -392,5 +465,5 @@ in Rust first, and stops the CLI after 30 seconds. When the CLI times out or
 gives no result, the change may or may not have been applied: the app says so,
 reloads the list and writes an audit line (actor `desktop`, error code
 `TIMEOUT` or `CLI_FAILED`) itself. Only `api`,
-`approve_report`, `revoke_report`, `archive_note` and `score_column` are allowed in the
+`approve_report`, `revoke_report`, `archive_note`, `score_column` and `edit_memory` are allowed in the
 window's capability; there is no shell plugin.
