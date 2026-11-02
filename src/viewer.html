@@ -6866,7 +6866,7 @@ function tppNote(n, cat, ctx) {
       ctx.onConfirmNote ? h('button', { type: 'button', class: 'icon-btn sm', 'aria-label': label('Confirm as an observation'), onclick: () => ctx.onConfirmNote(n, 'observation') }, t('Confirm as observation')) : null,
       ctx.onRejectNote ? h('button', { type: 'button', class: 'icon-btn sm secondary-danger', 'aria-label': label('Reject'), onclick: () => ctx.onRejectNote(n) }, t('Reject')) : null]
     : [ctx.onEditNote ? h('button', { type: 'button', class: 'icon-btn sm', 'aria-label': label('Edit'), onclick: () => ctx.onEditNote(n) }, t('Edit')) : null,
-      ctx.onArchiveNote ? h('button', { type: 'button', class: 'icon-btn sm secondary-danger', 'aria-label': label('Archive'), onclick: () => ctx.onArchiveNote(n) }, t('Archive')) : null];
+      ctx.onArchiveNote ? h('button', { type: 'button', class: 'icon-btn sm secondary-danger', 'aria-label': label('Archive'), onclick: () => ctx.onArchiveNote(n, cat) }, t('Archive')) : null];
   return h('li', { class: `tpp-note ${n.kind}` }, h('div', { class: 'tpp-note-text' }, n.text),
     h('div', { class: 'tpp-note-meta' }, meta, h('span', { class: 'tpp-note-actions' }, actions)));
 }
@@ -8129,7 +8129,8 @@ function tpProfileCtx(tab, tp, model, data, pr, index) {
       build: o => buildObjectAskPrompt({ kind: model.view ? (model.view.kind === 'matview' ? 'matview' : 'view') : 'table', profile: tp.db, schema: model.schema, name: model.table, tableProfile: tpAskProfileFacts(prof) }, lang, o) }),
     onAddNote: onDb(kind => openNoteDialog(model, { kind })),
     onEditNote: onDb(n => openNoteDialog(model, { note: n })),
-    onArchiveNote: onDb(n => confirmArchiveNote(n, { after: `.tpp-cat-${n.kind === 'observation' ? 'observation' : 'rule'} > summary` })),
+    // Focus returns to the category the note was archived from.
+    onArchiveNote: onDb((n, cat) => confirmArchiveNote(n, { after: `.tpp-cat-${cat} > summary` })),
     onConfirmNote: onDb((n, kind) => confirmInferenceDialog(model, n, kind)),
     onRejectNote: onDb(n => confirmArchiveNote(n, { after: '.tpp-cat-inference > summary', reason: t('Rejected by the user'), title: 'Reject this inference?', action: 'Reject', done: 'Inference rejected' })),
     onMark: onDb(() => openMarkDialog(model, data, prof)),

@@ -69,7 +69,7 @@ const baseCtx = (extra = {}) => ({
   view: 'profile', onView: v => calls.push(['view', v]), onOpen: id => calls.push(['open', id]), onBack() {}, onClose() {}, onCrumb() {},
   onCard: (k, v) => calls.push(['card', k, v]), onCat: (k, v) => calls.push(['cat', k, v]), onMore: (k, v) => calls.push(['more', k, v]),
   onEditProfile: () => calls.push(['edit']), onConfirmProfile: () => calls.push(['confirm']), onReviewProposal: () => calls.push(['review']), onAskRewrite: () => calls.push(['ask']),
-  onAddNote: k => calls.push(['add', k]), onEditNote: n => calls.push(['editNote', n.id]), onArchiveNote: n => calls.push(['archive', n.id]),
+  onAddNote: k => calls.push(['add', k]), onEditNote: n => calls.push(['editNote', n.id]), onArchiveNote: (n, cat) => calls.push(['archive', n.id, cat]),
   onConfirmNote: (n, k) => calls.push(['confirmNote', n.id, k]), onRejectNote: n => calls.push(['reject', n.id]), onMark: () => calls.push(['mark']), onUnmark: r => calls.push(['unmark', r.id]),
   ...extra,
 });
@@ -142,6 +142,11 @@ test('categories: rules, observations, inferences to review and code meanings, e
   for (const b of all(rule, x => x.tag === 'button')) b.attrs.onclick();
   assert.equal(calls[0][0], 'add');
   assert.deepEqual(calls.slice(1).map(c => c[0]), ['editNote', 'archive']);
+  assert.equal(calls[2][2], 'rule', 'archive names the category it came from');
+  calls.length = 0;
+  const meaning = byClass(cat('meaning'), 'tpp-note')[0];
+  all(meaning, x => x.tag === 'button' && textOf(x) === 'Archive')[0].attrs.onclick();
+  assert.equal(calls[0][2], 'meaning', 'a column meaning note keeps focus on its own category');
   assert.ok(all(rule, x => x.tag === 'button').every(b => /#\d+$/.test(b.attrs['aria-label'])), 'each action names its note for screen readers');
   // Open state is remembered; a toggle is reported without redrawing.
   const closed = render(ctx, prof, { catOpen: { rule: false } });
