@@ -159,7 +159,8 @@ test('cards: "Cannot live without" first with evidence labels, the first two ope
   assert.deepEqual(cards.map(c => c.attrs.open), [true, true, false, false, false, false]);
   const req = cards[0];
   const items = byClass(req, 'tpp-item').map(textOf);
-  assert.deepEqual(items, ['example.customerscatalog', 'test.invoicesyours×', 'example.status_codesinferred']);
+  // Ranked by importance: test.invoices is not in memory, so it comes last.
+  assert.deepEqual(items, ['example.customerscatalog', 'example.status_codesinferred', 'test.invoicesyours×']);
   assert.match(textOf(all(req, x => x.tag === 'summary')[0]), /1 catalog · 1 inferred · 1 yours/);
   assert.match(all(req, x => String(x.attrs.class).includes('tpp-ev catalog'))[0].attrs.title, /every column is NOT NULL/);
   calls.length = 0;
@@ -173,6 +174,11 @@ test('cards: "Cannot live without" first with evidence labels, the first two ope
   const big = byClass(render(ctx, many), 'tpp-card')[0];
   assert.equal(byClass(big, 'tpp-item').length, 5);
   assert.equal(textOf(byClass(big, 'tpp-more')[0]), '+2 more');
+  // Ranked like the other cards before the cut: linked rows first.
+  const model = ctx.tablePageModel(data, 'example.orders', rec);
+  const linkedData = { ...data, edges: [...data.edges, { level: 'fk', from: 'example.orders', to: 'example.t6', linkedRows: 100 }] };
+  const ranked = ctx.tpProfileModel(model, linkedData, many, { items: [], pending: 0, failed: 0 }).required;
+  assert.equal(ranked[0].id, 'example.t6');
 });
 
 test('Turkish texts exist for the Profile view and its freshness reasons', () => {

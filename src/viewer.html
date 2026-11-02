@@ -6764,14 +6764,14 @@ function tpProfileModel(model, data, prof, reports) {
     inference: active.filter(n => n.kind === 'inference').sort(byNew),
     meaning: active.filter(n => n.kind !== 'inference' && coded(n)).sort((a, b) => tpCmp(a.column ?? '', b.column ?? '') || byNew(a, b)),
   };
-  const required = tpArr(prof?.requiredTables).filter(r => r && typeof r.id === 'string');
-  const optionalIds = new Set(tpArr(prof?.optionalReferences).map(r => r.id));
-  const catalogRequired = new Set(required.filter(r => tpArr(r.evidence).some(e => e.type === 'catalog')).map(r => r.id));
   // Edges with linked-row estimates (relation_stats) rank first, then the
   // memory importance, then the row estimate.
   const linked = (from, to) => Math.max(-1, ...tpArr(data?.edges).filter(e => e && e.level === 'fk' && e.from === from && e.to === to && typeof e.linkedRows === 'number').map(e => e.linkedRows));
   const rank = (list, link) => list.map(n => ({ ...n, linkedRows: link(n.id), importance: tpImportance(data, n.id, reports?.items) }))
     .sort((a, b) => b.linkedRows - a.linkedRows || b.importance - a.importance || (b.estRows ?? -1) - (a.estRows ?? -1) || tpCmp(a.id, b.id));
+  const required = rank(tpArr(prof?.requiredTables).filter(r => r && typeof r.id === 'string'), id => linked(model.id, id));
+  const optionalIds = new Set(tpArr(prof?.optionalReferences).map(r => r.id));
+  const catalogRequired = new Set(required.filter(r => tpArr(r.evidence).some(e => e.type === 'catalog')).map(r => r.id));
   const refs = rank(model.neighbours.refs, id => linked(model.id, id)).map(n => ({ ...n, required: catalogRequired.has(n.id), optional: optionalIds.has(n.id) || !catalogRequired.has(n.id) }));
   const deps = rank(model.neighbours.deps, id => linked(id, model.id));
   const sum = tpSummaryModel(model, reports);
