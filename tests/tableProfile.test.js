@@ -72,6 +72,22 @@ test('freshness: stale with reasons when an input changes, fresh otherwise, unve
   } finally { done(); }
 });
 
+test('a changed CHECK definition or foreign key target columns make the profile stale', () => {
+  const { memory, done } = setup();
+  try {
+    memory.recordDescribe(ordersDescribe(profile));
+    memory.saveTableProfile(profile, { schema: 'example', table: 'orders', sections });
+    const desc = ordersDescribe(profile);
+    desc.constraints = desc.constraints.map(c => (c.type === 'check' ? { ...c, definition: 'CHECK (amount > 0)' } : c));
+    memory.recordDescribe(desc);
+    assert.deepEqual(memory.tableProfile(profile, 'example', 'orders').profile.freshnessReasons, [{ code: 'structure-changed' }]);
+    memory.saveTableProfile(profile, { schema: 'example', table: 'orders', sections });
+    desc.constraints = desc.constraints.map(c => (c.type === 'foreign key' ? { ...c, ref_columns: ['customer_code'] } : c));
+    memory.recordDescribe(desc);
+    assert.deepEqual(memory.tableProfile(profile, 'example', 'orders').profile.freshnessReasons, [{ code: 'structure-changed' }]);
+  } finally { done(); }
+});
+
 test('profileFreshness: legacy and missing inputs are unverified, a change wins over a gap', () => {
   const now = { structure: 'a', notes: [[1, 'rule', 'x']], triggers: null, scores: null, reports: [] };
   assert.deepEqual(profileFreshness(undefined, now), { state: 'unverified', reasons: [{ code: 'legacy' }] });
