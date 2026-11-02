@@ -1459,13 +1459,19 @@ export class SchemaMemory {
 
   // The user accepts the pending proposal (it becomes the current, confirmed
   // version) or rejects it (kept in history). proposalVersion: the proposal
-  // the person reviewed.
+  // the person reviewed; a proposal based on an older current version can
+  // only be rejected (STALE_VERSION).
   reviewTableProfile(profile, { schema, table, decision, proposalVersion }) {
     if (decision !== 'accept' && decision !== 'reject') throw new MemoryError('decision must be accept or reject.');
     return this.locked(profile, () => {
       const data = this.readTableProfile(profile, schema, table);
       if (!data?.proposal) throw new MemoryError(`${tableKey(schema, table)} has no pending proposal.`, 'NOT_FOUND');
       if (data.proposal.version !== proposalVersion) throw new MemoryError(`The proposal changed since you opened it (now version ${data.proposal.version}); reload.`, 'STALE_VERSION');
+      // A proposal written from an older current version would replace the
+      // person's newer text: it can only be rejected.
+      if (decision === 'accept' && (data.proposal.basedOn ?? null) !== (data.current?.version ?? null)) {
+        throw new MemoryError(`The profile changed after this proposal was written (it is based on version ${data.proposal.basedOn ?? 'none'}, now version ${data.current?.version ?? 'none'}); reject it and ask the agent again.`, 'STALE_VERSION');
+      }
       const at = this.now();
       if (decision === 'accept') {
         if (data.current) pushHistory(data, { ...data.current, status: 'replaced', closedAt: at });

@@ -126,6 +126,23 @@ test('a user-owned profile is never overwritten: an agent save becomes a proposa
   } finally { done(); }
 });
 
+test('a proposal written before the user\'s newer edit cannot be accepted over it; it can still be rejected', () => {
+  const { memory, done } = setup();
+  try {
+    memory.saveTableProfile(profile, { schema: 'example', table: 'orders', sections, expectedVersion: null }, { by: 'user' });
+    assert.equal(memory.saveTableProfile(profile, { schema: 'example', table: 'orders', sections: { ...sections, usage: 'Agent rewrite.' } }).basedOn, 1);
+    memory.saveTableProfile(profile, { schema: 'example', table: 'orders', sections: { ...sections, caveats: 'Newer user text.' }, expectedVersion: 1 }, { by: 'user' });
+    assert.throws(() => memory.reviewTableProfile(profile, { schema: 'example', table: 'orders', decision: 'accept', proposalVersion: 2 }), e => e.errorCode === 'STALE_VERSION' && /version 3/.test(e.message));
+    let view = memory.tableProfile(profile, 'example', 'orders');
+    assert.equal(view.profile.sections.caveats, 'Newer user text.', 'the newer user text stays');
+    assert.equal(view.proposal.version, 2);
+    memory.reviewTableProfile(profile, { schema: 'example', table: 'orders', decision: 'reject', proposalVersion: 2 });
+    view = memory.tableProfile(profile, 'example', 'orders');
+    assert.equal(view.proposal, null);
+    assert.equal(view.profile.version, 3);
+  } finally { done(); }
+});
+
 test('confirming an agent draft makes it user-owned; an unknown table is refused', () => {
   const { memory, done } = setup();
   try {

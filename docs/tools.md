@@ -335,7 +335,8 @@ section can carry its sources (`{ type, ref }`, type one of `note`,
   current one is user-owned (the user wrote it, confirmed the draft or
   accepted a proposal in the viewer); then it is stored as a **proposal**
   (`stored: "proposal"`), and a newer agent save supersedes an older
-  proposal. Earlier versions, rejected and superseded proposals stay in the
+  proposal. A proposal written before the user's newer edit can only be
+  rejected. Earlier versions, rejected and superseded proposals stay in the
   history (the last 20).
 - **Freshness.** Each version records a fingerprint of its inputs: the
   recorded structure, the active notes on the table, the trigger summaries,
