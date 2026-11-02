@@ -348,6 +348,18 @@ export class SchemaMemory {
   // inode (ino 0, some network shares) gives no identity: read without cache.
   // cache: false reads without keeping the value (function records with
   // their bodies are not kept in memory).
+  // A memory file as JSON. A file that is not valid JSON is refused with
+  // its path under the memory folder, never its content (a JSON parse error
+  // message quotes the text, and errors reach the audit log).
+  parseFile(file) {
+    const text = fs.readFileSync(file, 'utf8');
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new MemoryError(`The schema memory file ${path.relative(this.root, file)} is not valid JSON.`, 'DISK_ERROR');
+    }
+  }
+
   readJson(file, fallback, { cache = true } = {}) {
     this.checkPath(file);
     let stat;
@@ -360,7 +372,7 @@ export class SchemaMemory {
     const key = stat.ino === 0n ? null : `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
     const hit = key && this.cache.get(file);
     if (hit && hit.key === key) return structuredClone(hit.value);
-    const value = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const value = this.parseFile(file);
     if (!cache) {
       this.cache.delete(file);
       return value;
@@ -747,7 +759,7 @@ export class SchemaMemory {
     this.summaryCache ??= new Map();
     const hit = key && this.summaryCache.get(file);
     if (hit && hit.key === key) return hit.value;
-    const rec = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const rec = this.parseFile(file);
     const current = o => callsCurrent(o);
     const value = {
       ...rec,
