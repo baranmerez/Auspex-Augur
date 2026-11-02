@@ -208,3 +208,19 @@ test('stageCli memory-edit refuses arguments, bad JSON and a too large request',
   assert.equal(big.status, 1);
   assert.match(big.out.message, /too large/);
 });
+
+test('a corrupt profile file is refused without its content in the response or the audit', async () => {
+  const secret = 'EXAMPLE_PRIVATE profile text';
+  for (const home of [viewerHome, cliHome]) {
+    const file = path.join(home, 'memory', profile, 'table-profiles', 'example', 'customers.json');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, secret);
+  }
+  const req = { op: 'profile-confirm', profile, schema: 'example', table: 'customers', expectedVersion: 1 };
+  const v = await post(req);
+  const c = runCli(['memory-edit'], JSON.stringify(req));
+  assert.equal(v.json.code, 'DISK_ERROR');
+  assert.equal(c.out.code, 'DISK_ERROR');
+  assert.match(c.out.message, /customers\.json is not valid JSON/);
+  for (const text of [v.text, JSON.stringify(c.out), JSON.stringify(auditOf(viewerHome)), JSON.stringify(auditOf(cliHome))]) assert.ok(!text.includes('EXAMPLE_PRIVATE'), text);
+});
