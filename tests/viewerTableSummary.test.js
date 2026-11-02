@@ -194,22 +194,25 @@ test('every name goes into text nodes, never into markup', () => {
   assert.doesNotMatch(page.match(/\/\/ ----- Summary view[\s\S]*?const tpViewSwitch/)[0], /innerHTML|insertAdjacentHTML/);
 });
 
-test('the switch: two buttons with pressed state, Summary first on a first visit, the choice is kept', () => {
+test('the switch: three buttons with pressed state, Profile first on a first visit, the choice is kept', () => {
   const ctx = load();
-  assert.equal(ctx.tpViewChoice(undefined, undefined), 'summary', 'first visit');
+  assert.equal(ctx.tpViewChoice(undefined, undefined), 'profile', 'first visit');
   assert.equal(ctx.tpViewChoice(undefined, 'detail'), 'detail', 'remembered');
+  assert.equal(ctx.tpViewChoice(undefined, 'summary'), 'summary', 'remembered');
   assert.equal(ctx.tpViewChoice('summary', 'detail'), 'summary', 'the page choice wins');
-  assert.equal(ctx.tpViewChoice(undefined, '<b>'), 'summary', 'garbage in storage');
+  assert.equal(ctx.tpViewChoice(undefined, '<b>'), 'profile', 'garbage in storage');
   const view = render(ctx, 'example.orders');
   const sw = byClass(view, 'tp-switch')[0];
-  assert.deepEqual(sw.kids.map(textOf), ['Detailed', 'Summary']);
-  assert.deepEqual(sw.kids.map(b => b.attrs['aria-pressed']), ['false', 'true']);
+  assert.deepEqual(sw.kids.map(textOf), ['Profile', 'Detailed', 'Summary']);
+  assert.deepEqual(sw.kids.map(b => b.attrs['aria-pressed']), ['false', 'false', 'true']);
   assert.ok(sw.kids.every(b => b.tag === 'button' && b.attrs.type === 'button'));
   calls.length = 0;
-  sw.kids[0].attrs.onclick();
+  sw.kids[1].attrs.onclick();
   assert.deepEqual(calls.at(-1), ['view', 'detail']);
+  sw.kids[0].attrs.onclick();
+  assert.deepEqual(calls.at(-1), ['view', 'profile']);
   const detail = render(ctx, 'example.orders', { view: 'detail' });
-  assert.equal(byClass(detail, 'tp-switch')[0].kids.map(b => b.attrs['aria-pressed']).join(), 'true,false');
+  assert.equal(byClass(detail, 'tp-switch')[0].kids.map(b => b.attrs['aria-pressed']).join(), 'false,true,false');
   assert.equal(byClass(detail, 'tp-body').length, 1, 'the detailed layout is back');
   // Without a switch handler (older callers) no switch is drawn.
   assert.equal(byClass(ctx.tablePageView(model(ctx, 'example.orders'), ['example.orders'], { onBack() {}, onClose() {}, onCrumb() {} }), 'tp-switch').length, 0);
