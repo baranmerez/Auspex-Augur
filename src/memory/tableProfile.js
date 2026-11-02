@@ -286,16 +286,20 @@ export function profileFreshness(fp, now) {
   else if (triggersThen !== now.triggers) stale.push({ code: 'trigger-summaries-changed' });
   if ((fp.scores ?? null) !== now.scores) stale.push({ code: 'scores-changed' });
   if (!Array.isArray(fp.reports) || now.reports === null) gaps.push({ code: 'reports-unknown' });
-  else if (fp.reportsIncomplete || now.reportsIncomplete) gaps.push({ code: 'reports-incomplete' });
   else {
+    // A report read both times compares in any case; with a partial read a
+    // report on one side only may be coverage, so additions and removals
+    // are not inferred then and the gap is reported instead.
     const was = new Map(fp.reports.map(([k, h]) => [k, h]));
     const is = new Map(now.reports.map(([k, h]) => [k, h]));
-    const count = pred => [...pred].length;
-    const add = count([...is.keys()].filter(k => !was.has(k)));
-    const gone = count([...was.keys()].filter(k => !is.has(k)));
-    const edited = count([...is].filter(([k, h]) => was.has(k) && was.get(k) !== h));
-    if (add) stale.push({ code: 'reports-added', count: add });
-    if (gone) stale.push({ code: 'reports-removed', count: gone });
+    const edited = [...is].filter(([k, h]) => was.has(k) && was.get(k) !== h).length;
+    if (fp.reportsIncomplete || now.reportsIncomplete) gaps.push({ code: 'reports-incomplete' });
+    else {
+      const add = [...is.keys()].filter(k => !was.has(k)).length;
+      const gone = [...was.keys()].filter(k => !is.has(k)).length;
+      if (add) stale.push({ code: 'reports-added', count: add });
+      if (gone) stale.push({ code: 'reports-removed', count: gone });
+    }
     if (edited) stale.push({ code: 'reports-changed', count: edited });
   }
   if (otherShape.length) gaps.push({ code: 'fingerprint-format', parts: otherShape });

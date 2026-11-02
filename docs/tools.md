@@ -346,7 +346,8 @@ section can carry its sources (`{ type, ref }`, type one of `note`,
   count, `structure-changed`, `reports-changed`) and a one-line
   `freshnessReason` ("2 new rules; structure changed"); or `unverified`
   (`legacy`, `structure-missing`, `table-missing`, `reports-unknown`,
-  `reports-incomplete` when only part of the report library was read,
+  `reports-incomplete` when only part of the report library was read; a
+  report read both times still compares, and its change is `reports-changed`,
   `fingerprint-format` when the version was saved with an older fingerprint
   format: the parts whose shape changed are not compared, the rest still
   are). A profile is never rewritten automatically.

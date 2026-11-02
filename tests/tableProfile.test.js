@@ -133,6 +133,15 @@ test('profileFreshness: legacy and missing inputs are unverified, a change wins 
   assert.equal(freshnessText(changed.reasons), '1 note archived; 1 note changed; column scores changed');
 });
 
+test('profileFreshness: with a partial report read, reports read both times still compare', () => {
+  const now = { structure: 'a', notes: [], triggers: null, scores: null, reports: [['example-report', 'h2'], ['test-report', 'h3']], reportsIncomplete: true };
+  const fp = { hash: 'h', structure: 'a', notes: [], triggers: null, scores: null, reports: [['example-report', 'h1'], ['other-report', 'h4']] };
+  // example-report changed; test-report and other-report may be coverage, not additions or removals.
+  assert.deepEqual(profileFreshness(fp, now), { state: 'stale', reasons: [{ code: 'reports-changed', count: 1 }] });
+  assert.deepEqual(profileFreshness({ ...fp, reports: [['example-report', 'h2']] }, now), { state: 'unverified', reasons: [{ code: 'reports-incomplete' }] });
+  assert.deepEqual(profileFreshness({ ...fp, reportsIncomplete: true }, { ...now, reportsIncomplete: undefined }).reasons, [{ code: 'reports-changed', count: 1 }]);
+});
+
 test('profileFreshness: a fingerprint of an older format compares only the parts of the same shape', () => {
   const inputs = profileInputs({ rec: { describedAt: 't', columns: [{ name: 'order_id', type: 'integer' }], triggerSummaries: { orders_check: { summary: 'Checks the status.' } } }, notes: [], reports: [], effectiveScore: () => null });
   assert.equal(inputs.format, fingerprintFormat);
