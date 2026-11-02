@@ -9,7 +9,11 @@
 // runs its archive-note command, which archives one schema-memory note like
 // the viewer's POST /api/memory/archive, and `score_column` runs its
 // score-column command, which sets or removes one user column score like the
-// viewer's POST /api/memory/column-score. Reads through the same CLI: the
+// viewer's POST /api/memory/column-score, and `edit_memory` runs its
+// memory-edit command (the request as JSON on stdin), which makes one table-
+// page memory edit (notes, the table profile, required-table marks) like the
+// viewer's POST /api/memory/edit. Reads through the same CLI: the table
+// profile with its freshness (`table-profile`), the
 // schedules of approved reports and their trend points (`schedules`, `trend`),
 // so both viewers share one schedule implementation.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
@@ -609,6 +613,7 @@ fn api_route(path: &str, query: &HashMap<String, String>) -> Result<Value, Strin
             }
             read_json(&file.split('/').fold(memory_profile(&query)?, |p, part| p.join(part)))
         }
+        "/api/memory/table-profile" => table_profile(query),
         "/api/memory/function" => {
             let file = query.get("file").cloned().unwrap_or_default();
             if !valid_memory_function_file(&file) {
@@ -828,7 +833,9 @@ fn absolute_storage_env(get: impl Fn(&str) -> Option<String>) -> Vec<(&'static s
         .collect()
 }
 
-fn exec_cli(args: &[String], timeout: Duration, stdout_cap: u64) -> Result<(CliRun, Duration), Value> {
+// stdin: written to the CLI's standard input and closed (memory-edit reads
+// its request there); None gives it no input.
+fn exec_cli(args: &[String], timeout: Duration, stdout_cap: u64, stdin: Option<&str>) -> Result<(CliRun, Duration), Value> {
     let node = node_program()?;
     let root = auspex_root()?;
     let mut cmd = Command::new(&node);
@@ -836,13 +843,22 @@ fn exec_cli(args: &[String], timeout: Duration, stdout_cap: u64) -> Result<(CliR
     for (name, path) in absolute_storage_env(env) {
         cmd.env(name, path);
     }
-    cmd.current_dir(&root).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.current_dir(&root).stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() }).stdout(Stdio::piped()).stderr(Stdio::piped());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW: no console window flashes up
     }
     let mut child = cmd.spawn().map_err(|e| stage_error("NODE_START_FAILED", format!("Could not start {}: {e}", node.display())))?;
+    if let (Some(text), Some(mut input)) = (stdin, child.stdin.take()) {
+        let bytes = text.as_bytes().to_vec();
+        // Written from its own thread so a full pipe never blocks the timeout
+        // loop; dropping the handle closes stdin.
+        std::thread::spawn(move || {
+            use std::io::Write;
+            let _ = input.write_all(&bytes);
+        });
+    }
     let out = read_capped(child.stdout.take().expect("piped stdout"), stdout_cap);
     let err = read_capped(child.stderr.take().expect("piped stderr"), MAX_CLI_OUTPUT);
     let started = Instant::now();
@@ -866,7 +882,11 @@ fn exec_cli(args: &[String], timeout: Duration, stdout_cap: u64) -> Result<(CliR
 // outcome (timeout, no result) is audited with `audit` (tool, profile and
 // target of the change) as the base entry.
 fn run_cli(args: &[String], audit: &Value) -> Result<Value, Value> {
-    let (run, elapsed) = exec_cli(args, STAGE_TIMEOUT, MAX_CLI_OUTPUT)?;
+    run_cli_with(args, None, audit)
+}
+
+fn run_cli_with(args: &[String], stdin: Option<&str>, audit: &Value) -> Result<Value, Value> {
+    let (run, elapsed) = exec_cli(args, STAGE_TIMEOUT, MAX_CLI_OUTPUT, stdin)?;
     let CliRun::Done { stdout, stderr, code } = run else {
         let e = stage_error(
             "TIMEOUT",
@@ -889,7 +909,7 @@ fn run_cli(args: &[String], audit: &Value) -> Result<Value, Value> {
 const READ_TIMEOUT: Duration = Duration::from_secs(10);
 
 fn run_read_cli(args: &[String]) -> Result<Value, Value> {
-    let (run, _) = exec_cli(args, READ_TIMEOUT, MAX_READ_OUTPUT)?;
+    let (run, _) = exec_cli(args, READ_TIMEOUT, MAX_READ_OUTPUT, None)?;
     let CliRun::Done { stdout, stderr, code } = run else {
         return Err(stage_error("TIMEOUT", format!("src/stageCli.js did not answer within {} s.", READ_TIMEOUT.as_secs())));
     };
@@ -1159,6 +1179,76 @@ async fn score_column(profile: String, schema: String, table: String, column: St
         .map_err(|e| stage_error("INTERNAL", e.to_string()))?
 }
 
+// ---------- table page memory edits ----------
+// The request is checked in full by validateEditInput in
+// src/memory/memoryEdit.js; here only its shape: an object with a known op,
+// a valid profile name and at most MAX_EDIT_BYTES as JSON. It reaches the
+// CLI on stdin (a profile text can be long and hold line breaks).
+const MAX_EDIT_BYTES: usize = 64 * 1024;
+const EDIT_OPS: [(&str, &str); 7] = [
+    ("note-add", "remember"), ("note-edit", "remember"), ("note-confirm", "remember"),
+    ("profile-save", "table_profile"), ("profile-confirm", "table_profile"), ("profile-review", "table_profile"), ("required-mark", "table_profile"),
+];
+
+fn edit_memory_payload(request: &Value) -> Result<(String, Value), Value> {
+    let Some(obj) = request.as_object() else { return Err(stage_error("INVALID_INPUT", "The request must be a JSON object.")) };
+    let op = obj.get("op").and_then(Value::as_str).unwrap_or("");
+    let Some((_, tool)) = EDIT_OPS.iter().find(|(name, _)| *name == op) else { return Err(stage_error("INVALID_INPUT", "Unknown memory edit.")) };
+    let profile = obj.get("profile").and_then(Value::as_str).unwrap_or("");
+    if !valid_profile(profile) {
+        return Err(stage_error("PROFILE_INVALID", "Invalid profile name."));
+    }
+    let text = request.to_string();
+    if text.len() > MAX_EDIT_BYTES {
+        return Err(stage_error("INVALID_INPUT", "The request is too large."));
+    }
+    let mut audit = json!({ "tool": tool, "op": op, "profile": profile });
+    for key in ["schema", "table", "id"] {
+        if let Some(v) = obj.get(key).filter(|v| v.is_string() || v.is_u64()) {
+            audit[if key == "id" { "noteId" } else { key }] = v.clone();
+        }
+    }
+    Ok((text, audit))
+}
+
+// The page's memory edit: { op, profile, ... } (src/viewer.html).
+#[tauri::command]
+async fn edit_memory(request: Value) -> Result<Value, Value> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let (text, audit) = edit_memory_payload(&request)?;
+        run_cli_with(&["memory-edit".to_string()], Some(&text), &audit)
+    })
+    .await
+    .map_err(|e| stage_error("INTERNAL", e.to_string()))?
+}
+
+// The table profile, like GET /api/memory/table-profile: names checked here,
+// then again by Node.
+fn table_profile_args(query: &HashMap<String, String>) -> Result<Vec<String>, String> {
+    let profile = query.get("profile").map(String::as_str).unwrap_or("");
+    if !valid_profile(profile) {
+        return Err("Invalid profile name".into());
+    }
+    let mut args = vec!["table-profile".to_string(), format!("--profile={profile}")];
+    for key in ["schema", "table"] {
+        let value = query.get(key).map(String::as_str).unwrap_or("");
+        if !valid_name(value) {
+            return Err(format!("Invalid {key} name"));
+        }
+        args.push(format!("--{key}={value}"));
+    }
+    Ok(args)
+}
+
+fn table_profile(query: &HashMap<String, String>) -> Result<Value, String> {
+    let args = table_profile_args(query)?;
+    let mut v = run_read_cli(&args).map_err(|e| e["message"].as_str().unwrap_or("The table profile is not available").to_string())?;
+    if let Some(o) = v.as_object_mut() {
+        o.remove("ok");
+    }
+    Ok(v)
+}
+
 fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
@@ -1171,7 +1261,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![HIDDEN_ARG])))
-        .invoke_handler(tauri::generate_handler![api, approve_report, revoke_report, archive_note, score_column])
+        .invoke_handler(tauri::generate_handler![api, approve_report, revoke_report, archive_note, score_column, edit_memory])
         .setup(|app| {
             let enabled = app.autolaunch().is_enabled().unwrap_or(false);
             let open = MenuItem::with_id(app, "open", "Open Auspex Augur", true, None::<&str>)?;
@@ -1618,6 +1708,35 @@ mod tests {
         assert_eq!(code(score_column_args("exampledb", "example", "orders", "amount", Some(3), None, Some(&r(&["join", "join"])))), json!("INVALID_INPUT"));
         // Refused before Node or the Auspex folder is looked up, so no process starts.
         assert_eq!(run_score_cli("exampledb", "example", "orders", "amount", Some(9), None, None).unwrap_err()["code"], json!("INVALID_INPUT"));
+    }
+
+    #[test]
+    fn memory_edits_are_checked_before_spawning() {
+        let (text, audit) = edit_memory_payload(&json!({ "op": "note-add", "profile": "exampledb", "schema": "example", "table": "orders", "kind": "rule", "text": "Two
+lines ş" })).unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&text).unwrap()["text"], json!("Two
+lines ş"), "the text reaches stdin unchanged");
+        assert_eq!(audit, json!({ "tool": "remember", "op": "note-add", "profile": "exampledb", "schema": "example", "table": "orders" }), "no text in the audit base");
+        let (_, audit) = edit_memory_payload(&json!({ "op": "note-edit", "profile": "exampledb", "id": 7, "text": "x" })).unwrap();
+        assert_eq!(audit["noteId"], json!(7));
+        assert_eq!(edit_memory_payload(&json!({ "op": "required-mark", "profile": "exampledb" })).unwrap().1["tool"], json!("table_profile"));
+        let code = |v: Value| edit_memory_payload(&v).unwrap_err()["code"].clone();
+        assert_eq!(code(json!([1])), json!("INVALID_INPUT"));
+        assert_eq!(code(json!({ "op": "delete-everything", "profile": "exampledb" })), json!("INVALID_INPUT"));
+        assert_eq!(code(json!({ "profile": "exampledb" })), json!("INVALID_INPUT"));
+        assert_eq!(code(json!({ "op": "note-add", "profile": "Example" })), json!("PROFILE_INVALID"));
+        assert_eq!(code(json!({ "op": "profile-save", "profile": "exampledb", "sections": { "purpose": "x".repeat(MAX_EDIT_BYTES) } })), json!("INVALID_INPUT"));
+    }
+
+    #[test]
+    fn table_profile_reads_are_checked_before_spawning() {
+        let q = |p: &str, s: &str, t: &str| HashMap::from([("profile".to_string(), p.to_string()), ("schema".to_string(), s.to_string()), ("table".to_string(), t.to_string())]);
+        assert_eq!(table_profile_args(&q("exampledb", "example", "orders")).unwrap(), ["table-profile", "--profile=exampledb", "--schema=example", "--table=orders"]);
+        assert!(table_profile_args(&q("Example", "example", "orders")).is_err());
+        assert!(table_profile_args(&q("exampledb", "", "orders")).is_err());
+        assert!(table_profile_args(&q("exampledb", "example", "two
+lines")).is_err());
+        assert!(table_profile(&q("exampledb", "example", &"a".repeat(64))).is_err(), "refused before any process starts");
     }
 
     #[test]
