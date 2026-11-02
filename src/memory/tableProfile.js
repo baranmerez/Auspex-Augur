@@ -174,9 +174,8 @@ export function fingerprintOf(inputs) {
 export function profileFreshness(fp, now) {
   if (!fp || typeof fp !== 'object' || typeof fp.hash !== 'string') return { state: 'unverified', reasons: [{ code: 'legacy' }] };
   const stale = [], gaps = [];
-  if (fp.structure === null || fp.structure === undefined) {
-    if (now.structure !== null) gaps.push({ code: 'structure-missing' });
-  } else if (now.structure === null) gaps.push({ code: 'table-missing' });
+  if (fp.structure === null || fp.structure === undefined) gaps.push({ code: 'structure-missing' });
+  else if (now.structure === null) gaps.push({ code: 'table-missing' });
   else if (fp.structure !== now.structure) stale.push({ code: 'structure-changed' });
   const before = new Map((Array.isArray(fp.notes) ? fp.notes : []).map(([id, kind, h]) => [id, { kind, h }]));
   const after = new Map(now.notes.map(([id, kind, h]) => [id, { kind, h }]));
