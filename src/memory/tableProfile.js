@@ -106,22 +106,98 @@ export function validateLanguage(language) {
 }
 
 // ---------- mentions in report SQL ----------
-// A " left after stripSql belongs to a decoded identifier ("a""b" is a"b),
-// so it counts as part of the name.
-const nameChar = '[\\p{L}\\p{N}_$"]';
-const escapeRe = v => String(v).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-// Comments, string literals and dollar-quoted strings become a space; a
-// quoted identifier becomes its name.
-const stripSql = sql => sql.replace(/\/\*[\s\S]*?\*\/|--[^\n]*|\$([A-Za-z_][A-Za-z0-9_]*)?\$[\s\S]*?\$\1\$|'(?:[^']|'')*'|"((?:[^"]|"")*)"/g,
-  (m, tag, ident) => (ident !== undefined ? ident.replace(/""/g, '"') : ' '));
+// The names in SQL, read in one pass (linear in its length): comments
+// (nested /* */ too), string literals (standard, and E'...' with backslash
+// escapes) and dollar-quoted strings (only where a token starts) are
+// skipped; a quoted identifier is one name ("a""b" is a"b, "a.b" is a.b).
+// Each name comes as [name in lower case, qualifier]: the name before the
+// dot in front of it, '' when a dot follows something else, null when no
+// dot is in front of it. The viewer keeps the same reader (tpSqlNames).
+const sqlWord = /[\p{L}_][\p{L}\p{N}_$]*/uy;
+const sqlNumber = /\p{N}[\p{L}\p{N}_]*/uy;
+const sqlDollarTag = /\$(?:[\p{L}_][\p{L}\p{N}_]*)?\$/uy;
+const sqlSpace = /\s/u;
+const sqlDot = {}, sqlOther = {};
+function sqlStringEnd(sql, i, backslash) {
+  for (let j = i + 1; j < sql.length; j++) {
+    if (backslash && sql[j] === '\\') j++;
+    else if (sql[j] === "'") {
+      if (sql[j + 1] !== "'") return j + 1;
+      j++;
+    }
+  }
+  return sql.length;
+}
+function sqlNames(sql) {
+  const names = [], n = sql.length;
+  let i = 0, last = sqlOther, beforeLast = sqlOther;
+  const token = t => { beforeLast = last; last = t; };
+  const name = v => {
+    names.push([v, last !== sqlDot ? null : typeof beforeLast === 'string' ? beforeLast : '']);
+    token(v);
+  };
+  const at = (re, from) => { re.lastIndex = from; return re.exec(sql); };
+  while (i < n) {
+    const c = sql[i], next = sql[i + 1];
+    if (c === '-' && next === '-') {
+      const e = sql.indexOf('\n', i);
+      i = e < 0 ? n : e + 1;
+    } else if (c === '/' && next === '*') {
+      let depth = 1;
+      for (i += 2; i < n && depth; i++) {
+        if (sql[i] === '/' && sql[i + 1] === '*') { depth++; i++; } else if (sql[i] === '*' && sql[i + 1] === '/') { depth--; i++; }
+      }
+    } else if (c === "'") {
+      i = sqlStringEnd(sql, i, false);
+      token(sqlOther);
+    } else if (c === '"') {
+      let v = '';
+      for (i++; ;) {
+        const e = sql.indexOf('"', i);
+        if (e < 0) { v += sql.slice(i); i = n; break; }
+        v += sql.slice(i, e);
+        if (sql[e + 1] !== '"') { i = e + 1; break; }
+        v += '"';
+        i = e + 2;
+      }
+      name(v.toLowerCase());
+    } else if (c === '.') {
+      i++;
+      token(sqlDot);
+    } else if (c === '$') {
+      const tag = at(sqlDollarTag, i);
+      if (tag) {
+        const e = sql.indexOf(tag[0], i + tag[0].length);
+        i = e < 0 ? n : e + tag[0].length;
+      } else i++;
+      token(sqlOther);
+    } else if (sqlSpace.test(c)) {
+      i++;
+    } else {
+      const word = at(sqlWord, i);
+      if (word) {
+        const w = word[0];
+        i += w.length;
+        // E'...', B'...', X'...', N'...': a prefix of the string, not a name.
+        if (sql[i] === "'" && /^[ebxn]$/i.test(w)) {
+          i = sqlStringEnd(sql, i, /^e$/i.test(w));
+          token(sqlOther);
+        } else name(w.toLowerCase());
+      } else {
+        const num = at(sqlNumber, i);
+        i += num ? num[0].length : 1;
+        token(sqlOther);
+      }
+    }
+  }
+  return names;
+}
 // True when the SQL names schema.table, or the bare table name not after a
-// dot (the same rule as the viewer's "mentioned in SQL").
+// dot (the same rule as the viewer's "mentioned in SQL"); case is ignored.
 export function sqlMentions(sql, schema, table) {
   if (typeof sql !== 'string' || !table) return false;
-  const name = escapeRe(table), tail = `(?!${nameChar})`;
-  const qualified = `(?<!${nameChar})${escapeRe(schema)}\\s*\\.\\s*${name}${tail}`;
-  const bare = `(?<!${nameChar})(?<!\\.\\s*)${name}${tail}`;
-  return new RegExp(`${qualified}|${bare}`, 'iu').test(stripSql(sql));
+  const t = String(table).toLowerCase(), s = String(schema ?? '').toLowerCase();
+  return sqlNames(sql).some(([v, q]) => v === t && (q === null || (s !== '' && q === s)));
 }
 
 // ---------- fingerprint ----------

@@ -5928,8 +5928,7 @@ function tpImportance(data, id, reportItems) {
   const scores = node?.columnScores && typeof node.columnScores === 'object' ? Object.values(node.columnScores) : [];
   const top = scores.filter(e => (tpEffective(e).score ?? 0) >= 4).length;
   const items = tpArr(reportItems);
-  const re = items.length && table ? tpMentionRe(schema, table) : null;
-  const reports = re ? items.filter(r => { const text = tpStrippedOf(r); return text !== null && re.test(text); }).length : 0;
+  const reports = items.length && table ? items.filter(r => { const names = tpNamesOf(r); return names !== null && tpNamesMention(names, schema, table); }).length : 0;
   return notes * 2 + top + reports * 3 + (node?.state === 'explored' ? 1 : 0);
 }
 // What the page shows for a view or matview: the definition and options from
@@ -6440,35 +6439,114 @@ function tpLoadError(id, message, trail, ctx) {
       h('button', { type: 'button', class: 'icon-btn sm', onclick: ctx.onRetry }, t('Retry')))));
 }
 // ----- Summary view: names only, as coloured chips -----
-// A simple name match, not a hard link: comments are dropped, double quotes
-// ignored, case ignored. Schema-qualified (schema.table) and bare names match;
+// A simple name match, not a hard link: comments and literals are dropped,
+// case ignored. Schema-qualified (schema.table) and bare names match;
 // a bare name does not match after another schema ("other.orders"), and a
 // longer name that shares the prefix or suffix ("orders_archive") never does.
-// Comments, string literals and dollar-quoted strings become a space; a
-// quoted identifier becomes its name ("a""b" is a"b, and that " counts as
-// part of the name).
-const tpNameChar = '[\\p{L}\\p{N}_$"]';
-const tpEsc = v => String(v).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const tpStripSql = sql => sql.replace(/\/\*[\s\S]*?\*\/|--[^\n]*|\$([A-Za-z_][A-Za-z0-9_]*)?\$[\s\S]*?\$\1\$|'(?:[^']|'')*'|"((?:[^"]|"")*)"/g,
-  (m, tag, ident) => (ident !== undefined ? ident.replace(/""/g, '"') : ' '));
-function tpMentionRe(schema, table) {
-  const name = tpEsc(table), tail = `(?!${tpNameChar})`;
-  const qualified = schema ? `(?<!${tpNameChar})${tpEsc(schema)}\\s*\\.\\s*${name}${tail}` : null;
-  const bare = `(?<!${tpNameChar})(?<!\\.\\s*)${name}${tail}`;
-  return new RegExp(qualified ? `${qualified}|${bare}` : bare, 'iu');
+// The SQL is read in one pass (linear in its length), as the server reads it
+// (sqlNames in src/memory/tableProfile.js): comments (nested /* */ too),
+// string literals (standard, and E'...' with backslash escapes) and
+// dollar-quoted strings (only where a token starts) are skipped; a quoted
+// identifier is one name ("a""b" is a"b, "a.b" is a.b). Each name comes as
+// [name in lower case, qualifier]: the name before the dot in front of it,
+// '' when a dot follows something else, null when no dot is in front of it.
+const tpSqlWord = /[\p{L}_][\p{L}\p{N}_$]*/uy;
+const tpSqlNumber = /\p{N}[\p{L}\p{N}_]*/uy;
+const tpSqlDollarTag = /\$(?:[\p{L}_][\p{L}\p{N}_]*)?\$/uy;
+const tpSqlSpace = /\s/u;
+const tpSqlDot = {}, tpSqlOther = {};
+function tpSqlStringEnd(sql, i, backslash) {
+  for (let j = i + 1; j < sql.length; j++) {
+    if (backslash && sql[j] === '\\') j++;
+    else if (sql[j] === "'") {
+      if (sql[j + 1] !== "'") return j + 1;
+      j++;
+    }
+  }
+  return sql.length;
+}
+function tpSqlNames(sql) {
+  const names = [], n = sql.length;
+  let i = 0, last = tpSqlOther, beforeLast = tpSqlOther;
+  const token = t => { beforeLast = last; last = t; };
+  const name = v => {
+    names.push([v, last !== tpSqlDot ? null : typeof beforeLast === 'string' ? beforeLast : '']);
+    token(v);
+  };
+  const at = (re, from) => { re.lastIndex = from; return re.exec(sql); };
+  while (i < n) {
+    const c = sql[i], next = sql[i + 1];
+    if (c === '-' && next === '-') {
+      const e = sql.indexOf('\n', i);
+      i = e < 0 ? n : e + 1;
+    } else if (c === '/' && next === '*') {
+      let depth = 1;
+      for (i += 2; i < n && depth; i++) {
+        if (sql[i] === '/' && sql[i + 1] === '*') { depth++; i++; } else if (sql[i] === '*' && sql[i + 1] === '/') { depth--; i++; }
+      }
+    } else if (c === "'") {
+      i = tpSqlStringEnd(sql, i, false);
+      token(tpSqlOther);
+    } else if (c === '"') {
+      let v = '';
+      for (i++; ;) {
+        const e = sql.indexOf('"', i);
+        if (e < 0) { v += sql.slice(i); i = n; break; }
+        v += sql.slice(i, e);
+        if (sql[e + 1] !== '"') { i = e + 1; break; }
+        v += '"';
+        i = e + 2;
+      }
+      name(v.toLowerCase());
+    } else if (c === '.') {
+      i++;
+      token(tpSqlDot);
+    } else if (c === '$') {
+      const tag = at(tpSqlDollarTag, i);
+      if (tag) {
+        const e = sql.indexOf(tag[0], i + tag[0].length);
+        i = e < 0 ? n : e + tag[0].length;
+      } else i++;
+      token(tpSqlOther);
+    } else if (tpSqlSpace.test(c)) {
+      i++;
+    } else {
+      const word = at(tpSqlWord, i);
+      if (word) {
+        const w = word[0];
+        i += w.length;
+        // E'...', B'...', X'...', N'...': a prefix of the string, not a name.
+        if (sql[i] === "'" && /^[ebxn]$/i.test(w)) {
+          i = tpSqlStringEnd(sql, i, /^e$/i.test(w));
+          token(tpSqlOther);
+        } else name(w.toLowerCase());
+      } else {
+        const num = at(tpSqlNumber, i);
+        i += num ? num[0].length : 1;
+        token(tpSqlOther);
+      }
+    }
+  }
+  return names;
+}
+// True when the names of the SQL hold schema.table, or the bare table name
+// not after a dot; without a schema only the bare name.
+function tpNamesMention(names, schema, table) {
+  const t = String(table).toLowerCase(), s = String(schema ?? '').toLowerCase();
+  return names.some(([v, q]) => v === t && (q === null || (s !== '' && q === s)));
 }
 function tpMentions(sql, schema, table) {
   if (typeof sql !== 'string' || !table) return false;
-  return tpMentionRe(schema, table).test(tpStripSql(sql));
+  return tpNamesMention(tpSqlNames(sql), schema, table);
 }
-// The stripped SQL of a report item, kept by its key (report, SQL hash and
-// update time) so ranking many tables strips each report once.
-const tpStripCache = new Map();
-function tpStrippedOf(r) {
+// The names in the SQL of a report item, kept by its key (report, SQL hash
+// and update time) so ranking many tables reads each report once.
+const tpNamesCache = new Map();
+function tpNamesOf(r) {
   if (typeof r?.sql !== 'string') return null;
-  if (!r.key) return tpStripSql(r.sql);
-  if (!tpStripCache.has(r.key)) { if (tpStripCache.size > 2000) tpStripCache.clear(); tpStripCache.set(r.key, tpStripSql(r.sql)); }
-  return tpStripCache.get(r.key);
+  if (!r.key) return tpSqlNames(r.sql);
+  if (!tpNamesCache.has(r.key)) { if (tpNamesCache.size > 2000) tpNamesCache.clear(); tpNamesCache.set(r.key, tpSqlNames(r.sql)); }
+  return tpNamesCache.get(r.key);
 }
 // The SQL of a /api/report document: the content of a plain report, the active
 // version embedded in the data of an HTML report; null when neither is there.
