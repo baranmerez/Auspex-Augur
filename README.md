@@ -27,7 +27,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/stats.svg" alt="26 MCP tools · 5 safety layers · 0 write paths · 5 agent skills" width="100%">
+  <img src="docs/assets/stats.svg" alt="27 MCP tools · 5 safety layers · 0 write paths · 5 agent skills" width="100%">
 </p>
 
 ## 🎯 Analysis only, no changes
@@ -156,7 +156,7 @@ cd auspex && npm install && npm test
 | 🔎 Explore | `search` · `list_schemas` · `list_tables` · `describe_table` · `describe_tables` · `describe_functions` · `list_functions` · `profile_tables` · `relation_stats` |
 | ▶️ Query | `query` · `explain` · `export_csv` |
 | 📚 Reports | `save_report` · `run_report` · `approve_report` · `list_reports` · `render_reports` · `share_report` · `save_execute_script` |
-| 🧠 Memory | `table_knowledge` · `function_knowledge` · `remember` · `score_columns` · `scanned_files` |
+| 🧠 Memory | `table_knowledge` · `function_knowledge` · `table_profile` · `remember` · `score_columns` · `scanned_files` |
 
 Every tool, with its limits and error codes: [docs/tools.md](docs/tools.md)
 

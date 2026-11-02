@@ -13,12 +13,13 @@ import {
   maxProfileTables, maxRelationStatsTables, defaultSampleRows, maxSampleRows,
   parentFilterOps, maxParentFilters, maxParentFilterValues,
 } from './catalog.js';
-import { ReportService } from './reports/service.js';
+import { ReportService, reportSources } from './reports/service.js';
 import { sqlHash, sqlHashPattern } from './reports/library.js';
 import { builtInPresetKeys, maxPresetName, maxPresets } from './reports/presets.js';
 import { SchemaMemory, tableKey, noteKinds, columnRoles, scoreHistoryLimit, maxScoreReason, maxScoredColumns, maxScannedFiles, maxTriggerSummary, scoreLayers, maxTriggerSummaries, maxEvidenceCode, maxCodeSymbol, maxCodeLine,
   defaultKnowledgeItems, maxKnowledgeItems, maxKnowledgeDefinitionChars } from './memory/store.js';
 import { relationsFromTextPlan } from './memory/planUsage.js';
+import { profileSections, sourceTypes, maxSectionChars, maxProfileChars, maxSourcesPerSection, maxSourceRef } from './memory/tableProfile.js';
 import { repairAudit, memoryAudit } from './memory/repairAudit.js';
 import { loadPromptSkills, promptText, toolsMentioned } from './skills.js';
 import { queryOutput, explainOutput, tableKnowledgeOutput } from './outputSchemas.js';
@@ -43,7 +44,7 @@ try {
   process.exit(1);
 }
 const db = new ReadOnlyDatabase(config, { source: 'mcp' });
-const memory = new SchemaMemory(config.memoryDir, { approvedJoins: profile => reports.approvedJoinPairs(profile), storeUpgradedCalls: true });
+const memory = new SchemaMemory(config.memoryDir, { approvedJoins: profile => reports.approvedJoinPairs(profile), reportSources: profile => reportSources(reports.library, profile), storeUpgradedCalls: true });
 const reports = new ReportService(db, config.libraryDir, memory, { scriptRoots: config.scriptRoots });
 
 // enabledToolGroups (src/toolGroups.js): only tools of these groups are
@@ -581,6 +582,36 @@ tool('function_knowledge', {
     maxItems: z.number().int().min(1).max(maxKnowledgeItems).optional().describe(`Entries per list. Default ${defaultKnowledgeItems}, at most ${maxKnowledgeItems}.`),
   },
 }, async ({ profile, schema, name, ...options }) => memory.functionKnowledge(db.resolveProfile(profile), schema, name, options));
+
+const sectionArg = z.string().max(maxSectionChars).optional();
+const sourcesArg = z.array(z.object({
+  type: z.enum(sourceTypes),
+  ref: z.union([z.string().min(1).max(maxSourceRef), z.number().int().positive()]).describe('note: the note id; report: its title or schema/category/name; trigger, column: the name; function, table, view: schema.name; score: the column; code: root:path.'),
+}).strict()).max(maxSourcesPerSection).optional();
+
+tool('table_profile', {
+  title: 'Table profile in memory',
+  description: `Reads or writes the prose profile of one table in the local schema memory (no database access). action=get returns the profile (sections ${profileSections.join(', ')}; their sources; version, author agent or user, owner, freshness fresh, stale or unverified with freshnessReason), a pending proposal, the last versions, requiredTables (tables it cannot live without, each with evidence: catalog = a foreign key whose columns are all NOT NULL; inference = a code column matched by name parts to a known table, or a table its trigger function reads; user = marked by the user), optionalReferences (foreign keys with a nullable column) and the inputs now (note counts by kind, reports whose SQL mentions it, trigger summaries, scored columns). action=save stores your draft, written from memory only (table_knowledge, function_knowledge, notes, scores, report SQL, trigger summaries, code meanings): about one page in all (at most ${maxProfileChars} characters, ${maxSectionChars} per section), in the notesLanguage from list_profiles, never row values or personal data; purpose = what it is for, behavior = what it does (triggers, statuses, life cycle), usage = where it is used (reports, views, functions, code), dependencies = what it depends on, caveats = what to watch out for. Give each section its sources (type and ref; at most ${maxSourcesPerSection}) so every statement can be traced; leave out what memory does not support and ask the user instead of guessing. If the facts you need are missing, ask the user before any database call. A profile the user wrote, confirmed or accepted is never overwritten: your save then becomes a proposal the user accepts or rejects in the viewer. The profile records a fingerprint of its inputs; it turns stale when notes, structure, trigger summaries, scores or reports change, and is never rewritten automatically. Required-table marks are the user's: set them in the viewer.`,
+  inputSchema: {
+    profile: profileArg,
+    action: z.enum(['get', 'save']),
+    schema: z.string().min(1),
+    table: z.string().min(1),
+    sections: z.object(Object.fromEntries(profileSections.map(k => [k, sectionArg]))).strict().optional().describe('save: the text of each section; at least one non-empty.'),
+    sources: z.object(Object.fromEntries(profileSections.map(k => [k, sourcesArg]))).strict().optional().describe('save: the sources of each section.'),
+    language: z.string().max(40).optional().describe('save: the language the text is written in (the notesLanguage).'),
+  },
+}, async ({ profile, action, schema, table, sections, sources, language }) => {
+  const name = db.resolveProfile(profile);
+  if (action === 'get') {
+    if (sections !== undefined || sources !== undefined || language !== undefined) throw new ToolError('INVALID_INPUT', 'action=get takes only profile, schema and table.');
+    return memory.tableProfile(name, schema, table);
+  }
+  if (sections === undefined) throw new ToolError('INVALID_INPUT', 'action=save needs sections.');
+  // Logged without the text: which table, and where the save went.
+  return db.audited('table_profile', { profile: profile ?? null, action, schema, table }, async () => memory.saveTableProfile(name, { schema, table, sections, sources, language }, { by: 'agent' }),
+    r => ({ stored: r.stored, version: r.version }));
+});
 
 tool('remember', {
   title: 'Remember a fact about the data',
