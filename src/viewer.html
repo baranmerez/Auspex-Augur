@@ -6444,9 +6444,13 @@ function tpLoadError(id, message, trail, ctx) {
 // ignored, case ignored. Schema-qualified (schema.table) and bare names match;
 // a bare name does not match after another schema ("other.orders"), and a
 // longer name that shares the prefix or suffix ("orders_archive") never does.
-const tpNameChar = '[\\p{L}\\p{N}_$]';
+// Comments, string literals and dollar-quoted strings become a space; a
+// quoted identifier becomes its name ("a""b" is a"b, and that " counts as
+// part of the name).
+const tpNameChar = '[\\p{L}\\p{N}_$"]';
 const tpEsc = v => String(v).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const tpStripSql = sql => sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ').replace(/"/g, '');
+const tpStripSql = sql => sql.replace(/\/\*[\s\S]*?\*\/|--[^\n]*|\$([A-Za-z_][A-Za-z0-9_]*)?\$[\s\S]*?\$\1\$|'(?:[^']|'')*'|"((?:[^"]|"")*)"/g,
+  (m, tag, ident) => (ident !== undefined ? ident.replace(/""/g, '"') : ' '));
 function tpMentionRe(schema, table) {
   const name = tpEsc(table), tail = `(?!${tpNameChar})`;
   const qualified = schema ? `(?<!${tpNameChar})${tpEsc(schema)}\\s*\\.\\s*${name}${tail}` : null;
