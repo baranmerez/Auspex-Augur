@@ -126,6 +126,7 @@ test('profileFreshness: legacy and missing inputs are unverified, a change wins 
   assert.deepEqual(profileFreshness(undefined, now), { state: 'unverified', reasons: [{ code: 'legacy' }] });
   assert.deepEqual(profileFreshness({ hash: 'h', structure: null, notes: [[1, 'rule', 'x']], triggers: null, scores: null, reports: [] }, now), { state: 'unverified', reasons: [{ code: 'structure-missing' }] });
   assert.deepEqual(profileFreshness({ hash: 'h', structure: 'a', notes: [[1, 'rule', 'x']], triggers: null, scores: null, reports: [] }, { ...now, structure: null }), { state: 'unverified', reasons: [{ code: 'table-missing' }] });
+  assert.deepEqual(profileFreshness({ hash: 'h', structure: null, notes: [[1, 'rule', 'x']], triggers: null, scores: null, reports: [] }, { ...now, structure: null }), { state: 'unverified', reasons: [{ code: 'structure-missing' }] }, 'no structure then or now is a gap too');
   const changed = profileFreshness({ hash: 'h', structure: 'a', notes: [[1, 'rule', 'y'], [2, 'observation', 'z']], triggers: null, scores: 's', reports: null }, now);
   assert.equal(changed.state, 'stale');
   assert.deepEqual(changed.reasons.map(r => r.code), ['notes-removed', 'notes-changed', 'scores-changed']);
