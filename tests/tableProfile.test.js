@@ -6,6 +6,7 @@ import path from 'node:path';
 import { SchemaMemory } from '../src/memory/store.js';
 import { profileFreshness, nameMatches, sqlMentions, validateSections, validateSources, freshnessText } from '../src/memory/tableProfile.js';
 import { seedExampleMemory, ordersDescribe } from './fixtures/exampleMemory.js';
+import { reportSources } from '../src/reports/service.js';
 
 // The table profile in the schema memory (src/memory/tableProfile.js and
 // SchemaMemory): versions, ownership, proposals, freshness and the tables a
@@ -86,6 +87,37 @@ test('a changed CHECK definition or foreign key target columns make the profile 
     memory.recordDescribe(desc);
     assert.deepEqual(memory.tableProfile(profile, 'example', 'orders').profile.freshnessReasons, [{ code: 'structure-changed' }]);
   } finally { done(); }
+});
+
+test('a report library read only in part leaves the profile unverified with reports-incomplete', () => {
+  const { memory, box, done } = setup();
+  try {
+    box.reports = { reports: [report('example-report', 'select order_id from example.orders')], complete: false };
+    memory.saveTableProfile(profile, { schema: 'example', table: 'orders', sections });
+    let view = memory.tableProfile(profile, 'example', 'orders');
+    assert.equal(view.profile.freshness, 'unverified');
+    assert.deepEqual(view.profile.freshnessReasons, [{ code: 'reports-incomplete' }]);
+    assert.equal(view.inputs.reportsIncomplete, true);
+    // Complete now, but the saved version was written from a partial read.
+    box.reports = { reports: box.reports.reports, complete: true };
+    assert.deepEqual(memory.tableProfile(profile, 'example', 'orders').profile.freshnessReasons, [{ code: 'reports-incomplete' }]);
+    memory.saveTableProfile(profile, { schema: 'example', table: 'orders', sections });
+    view = memory.tableProfile(profile, 'example', 'orders');
+    assert.equal(view.profile.freshness, 'fresh');
+    assert.equal(view.inputs.reportsIncomplete, undefined);
+  } finally { done(); }
+});
+
+test('reportSources says when the cap or an unreadable report left reports out', () => {
+  const item = (name, stage = 'draft') => ({ db: profile, stage, schema: 'example', category: 'Example Reports', name });
+  const library = items => ({ list: () => items, readSql: (stage, r) => { if (r.name === 'broken') throw new Error('EACCES'); return `select 1 from example.orders -- ${r.name}`; } });
+  const all = reportSources(library([item('a'), item('b'), item('a', 'approved')]), profile);
+  assert.equal(all.complete, true);
+  assert.deepEqual(all.reports.map(r => r.key), ['example|Example Reports|a', 'example|Example Reports|b']);
+  const capped = reportSources(library([item('a'), item('b'), item('c')]), profile, 2);
+  assert.deepEqual([capped.reports.length, capped.complete], [2, false]);
+  const broken = reportSources(library([item('a'), item('broken')]), profile);
+  assert.deepEqual([broken.reports.length, broken.complete], [1, false]);
 });
 
 test('profileFreshness: legacy and missing inputs are unverified, a change wins over a gap', () => {

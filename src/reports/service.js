@@ -130,7 +130,8 @@ export function approvedJoinPairs(library, profile) {
 // Draft and approved reports of one database with their active SQL, for the
 // table profile fingerprint (SchemaMemory reportSources): an approved copy
 // stands for its draft; at most cap reports, in library order; a report whose
-// SQL cannot be read is left out. key: schema|category|name (a report keeps
+// SQL cannot be read is left out. complete is false when the cap or an
+// unreadable report left one out. key: schema|category|name (a report keeps
 // its key when it is approved; its SQL hash shows a change).
 export const reportSourceCap = 400;
 export function reportSources(library, profile, cap = reportSourceCap) {
@@ -140,14 +141,17 @@ export function reportSources(library, profile, cap = reportSourceCap) {
     const key = [r.schema, r.category, r.name].join('|');
     if (!byName.has(key) || r.stage === 'approved') byName.set(key, r);
   }
-  return [...byName].slice(0, cap).flatMap(([key, r]) => {
+  let complete = byName.size <= cap;
+  const reports = [...byName].slice(0, cap).flatMap(([key, r]) => {
     try {
       const sql = library.readSql(r.stage, r);
       return [{ key, title: r.title ?? r.name, sqlHash: sqlHash(sql), sql }];
     } catch {
+      complete = false;
       return [];
     }
   });
+  return { reports, complete };
 }
 
 // Stage changes without a database, shared by approve_report and the viewer:

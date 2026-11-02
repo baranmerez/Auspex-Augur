@@ -129,7 +129,9 @@ export function sqlMentions(sql, schema, table) {
 //   scores     hash of the effective column scores
 //   reports    [[report key, SQL hash]] of draft and approved reports whose
 //              SQL mentions the table (null when the library was not read)
-export function profileInputs({ rec, notes, reports, effectiveScore }) {
+//   reportsIncomplete  true when only part of the library was read (a cap
+//              or an unreadable report); left out otherwise
+export function profileInputs({ rec, notes, reports, reportsComplete = true, effectiveScore }) {
   const described = !!rec?.describedAt;
   const structure = described ? hash({
     columns: (rec.columns ?? []).map(c => [c.name, c.type, !!c.notNull]),
@@ -147,6 +149,7 @@ export function profileInputs({ rec, notes, reports, effectiveScore }) {
     triggers: summaries.length ? hash(summaries) : null,
     scores: scores.length ? hash(scores) : null,
     reports: reportItems,
+    ...(reportItems !== null && reportsComplete === false ? { reportsIncomplete: true } : {}),
   };
 }
 
@@ -161,7 +164,8 @@ export function fingerprintOf(inputs) {
 // reports-added / reports-removed / reports-changed (count).
 // unverified codes: legacy (no fingerprint), structure-missing (written
 // before the structure was recorded), table-missing (no longer in memory),
-// reports-unknown (the report library could not be read then or now).
+// reports-unknown (the report library could not be read then or now),
+// reports-incomplete (only part of it could be read then or now).
 // A detected change wins over a gap; missing evidence is never fresh.
 export function profileFreshness(fp, now) {
   if (!fp || typeof fp !== 'object' || typeof fp.hash !== 'string') return { state: 'unverified', reasons: [{ code: 'legacy' }] };
@@ -182,6 +186,7 @@ export function profileFreshness(fp, now) {
   if ((fp.triggers ?? null) !== now.triggers) stale.push({ code: 'trigger-summaries-changed' });
   if ((fp.scores ?? null) !== now.scores) stale.push({ code: 'scores-changed' });
   if (!Array.isArray(fp.reports) || now.reports === null) gaps.push({ code: 'reports-unknown' });
+  else if (fp.reportsIncomplete || now.reportsIncomplete) gaps.push({ code: 'reports-incomplete' });
   else {
     const was = new Map(fp.reports.map(([k, h]) => [k, h]));
     const is = new Map(now.reports.map(([k, h]) => [k, h]));
@@ -216,6 +221,7 @@ export function freshnessText(reasons) {
       case 'structure-missing': return 'written before the structure was recorded';
       case 'table-missing': return 'the table is no longer in memory';
       case 'reports-unknown': return 'the report library could not be compared';
+      case 'reports-incomplete': return 'not every report could be read';
       default: return r.code;
     }
   };
