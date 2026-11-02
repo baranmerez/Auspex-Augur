@@ -97,6 +97,9 @@ it. Stop at the requested scope; save findings when that is part of the task.
    `auspex-columns` workflow (`score_columns`); its saved scores (effective
    `score`, roles) come back with `table_knowledge`. Scores are advisory.
 7. **Record.** Save new, scoped findings as below; reuse existing note IDs.
+   A table profile (`table_profile`) only on request, for one table, from
+   memory only; a batch only after stating the count and a yes; ask before
+   any database call. Follow [table-profile.md](references/table-profile.md).
 8. **Stop.** Summarize coverage and unresolved questions. Offer relevant
    `unexploredNeighbors`; do not expand beyond the requested scope.
 
@@ -127,8 +130,9 @@ Use actual evidence SQL when available; never invent SQL for a tool-generated
 measurement. Identify the tool and scope in the text when it returned no SQL.
 Confirm an inference (`action=confirm`) only after the user agreed. Archive
 outdated notes with a reason; never re-add a duplicate. The user can also
-archive notes on the viewer's *Rules* tab, and archived notes are not shown
-to you: if the user says a note was archived, do not re-add it without
+add, edit, confirm and archive notes in the viewer (an edited note is
+archived with the reason "edited" and replaced by the user's text), and
+archived notes are not shown to you: if the user says a note was archived, do not re-add it without
 asking, and before re-adding a measured fact the user may have archived, ask.
 
 `repair` on a saved note or `memory.repair` / `memoryRepair` on a read result

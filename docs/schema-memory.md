@@ -271,6 +271,28 @@ score. An agent rescan updates only the agent layer, so both stay visible
 (newest first, a removal included); columns and layers not listed keep their
 score.
 
+### Table profiles
+
+`table-profiles/<schema>/<table>.json` holds the prose profile of one table
+(`table_profile`, see [Tools](tools.md#table-profile)): the current version,
+a pending agent proposal, the history of earlier versions (the last 20) and
+the tables the user marked as required. Each version keeps its five
+sections, their sources, the author (`agent` or `user`), when the user
+confirmed or accepted it, and a fingerprint of the inputs it was written
+from (structure, active notes, trigger summaries, column scores, the reports
+that mention the table). Freshness is computed on every read; nothing
+rewrites a profile on its own, and a profile the user owns is changed by the
+agent only through a proposal the user accepts. The file is its own commit
+point; `graph.json` does not carry profiles.
+
+People change the memory from the viewer and the desktop app too, never the
+database: they add rules and observations (saved as written and confirmed by
+the user, `source: "user"`), edit a note (the old note is archived with the
+reason `edited` and `replacedBy`, the new one says `replaces`), confirm an
+inference as a rule or observation, archive a note with a reason, write or
+confirm the profile, accept or reject a proposal and mark or unmark a
+required table. Nothing is deleted.
+
 ### Code meanings
 
 What a column means is often visible only in the application that writes
