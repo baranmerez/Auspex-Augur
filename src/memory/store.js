@@ -304,9 +304,11 @@ export class SchemaMemory {
   // function records (upgradeCalls). Only the MCP server sets it; the viewer,
   // desktop CLI and scheduler compute them in memory and never write function
   // records.
-  // reportSources(profile) -> [{ key, title, sqlHash, sql }]: the draft and
-  // approved reports of the profile's database, for the table profile's
-  // fingerprint; null (or a throw) means the library could not be read.
+  // reportSources(profile) -> { reports: [{ key, title, sqlHash, sql }],
+  // complete } (or the array alone, complete): the draft and approved
+  // reports of the profile's database, for the table profile's fingerprint;
+  // complete false when some were left out (a cap, an unreadable SQL file);
+  // null (or a throw) means the library could not be read.
   constructor(root, { now = () => new Date().toISOString(), approvedJoins = () => [], reportSources = null, scannedFilesPerRoot = maxScannedFilesPerRoot, storeUpgradedCalls = false } = {}) {
     this.reportSources = reportSources;
     this.scannedFilesPerRoot = scannedFilesPerRoot;
@@ -1367,24 +1369,30 @@ export class SchemaMemory {
   }
 
   // Draft and approved reports whose SQL mentions the table, as
-  // [{ key, title, sqlHash }]; null when there is no report source or it
-  // failed (the profile's report input is then unverified).
+  // { reports: [{ key, title, sqlHash }], complete }; reports null when there
+  // is no report source or it failed, complete false when the library was
+  // read only in part (the profile's report input is then unverified).
   reportsMentioning(profile, schema, table) {
-    if (typeof this.reportSources !== 'function') return null;
-    let list;
+    if (typeof this.reportSources !== 'function') return { reports: null, complete: false };
+    let got;
     try {
-      list = this.reportSources(profile);
+      got = this.reportSources(profile);
     } catch (err) {
       process.stderr.write(`auspex: report library not read for a table profile: ${repairError(err).message}\n`);
-      return null;
+      return { reports: null, complete: false };
     }
-    if (!Array.isArray(list)) return null;
-    return list.filter(r => sqlMentions(r.sql, schema, table)).map(r => ({ key: r.key, title: r.title ?? null, sqlHash: r.sqlHash ?? null }));
+    const list = Array.isArray(got) ? got : Array.isArray(got?.reports) ? got.reports : null;
+    if (!list) return { reports: null, complete: false };
+    return {
+      reports: list.filter(r => sqlMentions(r.sql, schema, table)).map(r => ({ key: r.key, title: r.title ?? null, sqlHash: r.sqlHash ?? null })),
+      complete: Array.isArray(got) || got.complete !== false,
+    };
   }
 
-  // The inputs a profile of this table is based on now (profileInputs).
-  profileInputsOf(profile, rec, schema, table, reports) {
-    return profileInputs({ rec, notes: this.activeNotes(profile, [{ schema, table }]), reports, effectiveScore });
+  // The inputs a profile of this table is based on now (profileInputs), with
+  // the reports found by reportsMentioning.
+  profileInputsOf(profile, rec, schema, table, { reports, complete }) {
+    return profileInputs({ rec, notes: this.activeNotes(profile, [{ schema, table }]), reports, reportsComplete: complete, effectiveScore });
   }
 
   // Tables a trigger's function reads, from its stored body (an inference).
@@ -1513,8 +1521,9 @@ export class SchemaMemory {
   tableProfile(profile, schema, table, { historyItems = 10 } = {}) {
     const rec = this.readTable(profile, schema, table);
     const data = this.readTableProfile(profile, schema, table);
-    const reports = this.reportsMentioning(profile, schema, table);
-    const now = this.profileInputsOf(profile, rec, schema, table, reports);
+    const found = this.reportsMentioning(profile, schema, table);
+    const { reports } = found;
+    const now = this.profileInputsOf(profile, rec, schema, table, found);
     const notes = this.activeNotes(profile, [{ schema, table }]);
     const req = requiredTables({ rec, tables: this.listTables(profile), triggerReads: this.triggerReadsOf(profile), marks: data?.required ?? [] });
     const kinds = Object.fromEntries(noteKinds.map(k => [k, notes.filter(n => n.kind === k).length]));
@@ -1530,6 +1539,7 @@ export class SchemaMemory {
         notes: kinds,
         reports: reports === null ? null : reports.slice(0, 20).map(r => ({ key: r.key, title: r.title })),
         ...(reports && reports.length > 20 ? { moreReports: reports.length - 20 } : {}),
+        ...(reports && !found.complete ? { reportsIncomplete: true } : {}),
         triggerSummaries: Object.keys(rec?.triggerSummaries ?? {}).length,
         scoredColumns: Object.keys(rec?.columnScores ?? {}).length,
       },

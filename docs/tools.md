@@ -345,7 +345,8 @@ section can carry its sources (`{ type, ref }`, type one of `note`,
   `stale` with `freshnessReasons` (for example `notes-added` with kind and
   count, `structure-changed`, `reports-changed`) and a one-line
   `freshnessReason` ("2 new rules; structure changed"); or `unverified`
-  (`legacy`, `structure-missing`, `table-missing`, `reports-unknown`). A
+  (`legacy`, `structure-missing`, `table-missing`, `reports-unknown`,
+  `reports-incomplete` when only part of the report library was read). A
   profile is never rewritten automatically.
 - **Cannot live without.** `requiredTables` lists the tables the table
   needs, each with its evidence: `catalog` (a foreign key whose columns are
