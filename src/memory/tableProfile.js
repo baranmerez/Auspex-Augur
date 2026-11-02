@@ -121,7 +121,8 @@ export function sqlMentions(sql, schema, table) {
 
 // ---------- fingerprint ----------
 // What the profile is based on, as Auspex sees it in memory at save time:
-//   structure  the recorded columns, keys, indexes and triggers (null when
+//   structure  the recorded columns, constraints (with their definition and
+//              referenced columns), indexes and triggers (null when
 //              the table's structure is not recorded)
 //   notes      [[id, kind, hash]] of the active notes on the table
 //   triggers   hash of the agent's trigger summaries
@@ -132,7 +133,7 @@ export function profileInputs({ rec, notes, reports, effectiveScore }) {
   const described = !!rec?.describedAt;
   const structure = described ? hash({
     columns: (rec.columns ?? []).map(c => [c.name, c.type, !!c.notNull]),
-    constraints: (rec.constraints ?? []).map(c => [c.name, c.type, c.columns ?? [], c.references ? tableKey(c.references.schema, c.references.table) : null]),
+    constraints: (rec.constraints ?? []).map(c => [c.name, c.type, c.columns ?? [], c.definition ?? null, c.references ? [tableKey(c.references.schema, c.references.table), c.references.columns ?? []] : null]),
     indexes: (rec.indexes ?? []).map(i => i.definition ?? i.name),
     triggers: (rec.triggers ?? []).map(t => [t.name, t.definition ?? null]),
   }) : null;
