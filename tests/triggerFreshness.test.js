@@ -210,3 +210,16 @@ test('an older flattened record bound before keeps its evidence when describe_ta
   mem.recordDescribe(describe('exampledb', 'orders', [trigger('orders', 'orders_check', 'example.orders_before_write', { functionSchema: 'example', functionName: 'orders_before_write' })]));
   assert.deepEqual(freshness(mem, 'orders'), [['orders_check', 'fresh', null, false]]);
 });
+
+test('a trigger summary that turns stale makes the table profile stale', () => {
+  const mem = memory();
+  mem.recordDescribe(describe('exampledb', 'orders', [trigger('orders', 'orders_check')]));
+  mem.recordFunctions('exampledb', [fn('orders_before_write', 'NEW.status_code IS NULL')]);
+  summarize(mem, 'orders', ['orders_check']);
+  mem.saveTableProfile('exampledb', { schema: 'example', table: 'orders', sections: { purpose: 'One row per order.' } });
+  assert.deepEqual(mem.tableProfile('exampledb', 'example', 'orders').profile.freshnessReasons, [{ code: 'reports-unknown' }]);
+  mem.recordFunctions('exampledb', [fn('orders_before_write', "NEW.status_code NOT IN ('new', 'done')")]);
+  const v = mem.tableProfile('exampledb', 'example', 'orders').profile;
+  assert.equal(v.freshness, 'stale');
+  assert.deepEqual(v.freshnessReasons, [{ code: 'trigger-summaries-changed' }]);
+});

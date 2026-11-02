@@ -125,13 +125,15 @@ export function sqlMentions(sql, schema, table) {
 //              referenced columns), indexes and triggers (null when
 //              the table's structure is not recorded)
 //   notes      [[id, kind, hash]] of the active notes on the table
-//   triggers   hash of the agent's trigger summaries
+//   triggers   hash of the agent's trigger summaries with the freshness of
+//              each (summaryState) and the function definition it was
+//              based on, so a summary that turns stale changes it
 //   scores     hash of the effective column scores
 //   reports    [[report key, SQL hash]] of draft and approved reports whose
 //              SQL mentions the table (null when the library was not read)
 //   reportsIncomplete  true when only part of the library was read (a cap
 //              or an unreadable report); left out otherwise
-export function profileInputs({ rec, notes, reports, reportsComplete = true, effectiveScore }) {
+export function profileInputs({ rec, notes, reports, reportsComplete = true, effectiveScore, summaryState = () => null }) {
   const described = !!rec?.describedAt;
   const structure = described ? hash({
     columns: (rec.columns ?? []).map(c => [c.name, c.type, !!c.notNull]),
@@ -140,7 +142,9 @@ export function profileInputs({ rec, notes, reports, reportsComplete = true, eff
     triggers: (rec.triggers ?? []).map(t => [t.name, t.definition ?? null]),
   }) : null;
   const noteItems = (notes ?? []).map(n => [n.id, n.kind, hash(`${n.column ?? ''}\n${n.text}`)]).sort((a, b) => a[0] - b[0]);
-  const summaries = Object.entries(rec?.triggerSummaries ?? {}).map(([name, s]) => [name, s?.summary ?? null]).sort((a, b) => textOrder(a[0], b[0]));
+  const summaries = Object.entries(rec?.triggerSummaries ?? {})
+    .map(([name, s]) => [name, s?.summary ?? null, summaryState(name), s?.functionEvidence?.definitionHash ?? null])
+    .sort((a, b) => textOrder(a[0], b[0]));
   const scores = Object.entries(rec?.columnScores ?? {}).map(([name, e]) => [name, effectiveScore(e)?.score ?? null]).sort((a, b) => textOrder(a[0], b[0]));
   const reportItems = reports === null ? null : reports.map(r => [r.key, r.sqlHash ?? null]).sort((a, b) => textOrder(a[0], b[0]));
   return {

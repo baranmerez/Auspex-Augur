@@ -62,8 +62,9 @@ test('freshness: stale with reasons when an input changes, fresh otherwise, unve
     box.reports = [report('example-report', 'select order_id from example.orders')];
     memory.recordDescribe(ordersDescribe(profile));
     v = memory.tableProfile(profile, 'example', 'orders').profile;
-    assert.deepEqual(v.freshnessReasons.map(r => r.code), ['structure-changed', 'notes-added', 'reports-added']);
-    assert.match(v.freshnessReason, /^structure changed; 2 new rules; 1 new report$/);
+    // The changed trigger also turns its summary stale.
+    assert.deepEqual(v.freshnessReasons.map(r => r.code), ['structure-changed', 'notes-added', 'trigger-summaries-changed', 'reports-added']);
+    assert.match(v.freshnessReason, /^structure changed; 2 new rules; trigger summaries changed; 1 new report$/);
     // The library cannot be read: unverified, never fresh.
     memory.saveTableProfile(profile, { schema: 'example', table: 'orders', sections });
     box.reports = null;
