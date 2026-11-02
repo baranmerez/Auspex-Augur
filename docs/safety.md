@@ -93,17 +93,33 @@ How Auspex keeps every call read-only, layer by layer.
 ## Local viewer and other OS accounts
 
 The browser viewer (`npm run viewer`) listens on `127.0.0.1` and checks the
-Host header. Every `/api` route, reads as well as the four write routes, needs
+Host header. Every `/api` route, reads as well as the five write routes, needs
 the `X-Auspex-Token` header with a random token created per viewer process;
 write routes also need the exact `Origin`. Requests without the token get 401
 (reads) or 403 (writes) and no data.
+
+The write routes change only local Auspex files, never a database:
+
+| Route | What it changes |
+|---|---|
+| `POST /api/reports/approve`, `/api/reports/revoke` | the stage of one report in the local library |
+| `POST /api/memory/archive` | archives one schema-memory note, with a reason |
+| `POST /api/memory/column-score` | sets or removes one user column score |
+| `POST /api/memory/edit` | table page edits in the schema memory: adds a note (rule or observation, written and confirmed by the user), edits a note (the old one is archived with the reason "edited" and linked to its replacement), confirms an inference, saves the user's table profile text, confirms an agent draft, accepts or rejects an agent proposal, marks or unmarks a required table |
+
+Nothing is ever deleted: notes are archived, earlier profile versions and
+rejected proposals stay in the profile's history. The desktop app makes the
+same changes through `src/stageCli.js` (`archive-note`, `score-column`,
+`memory-edit` with the request on stdin), with the same checks and audit
+entries; every change is written to the audit log without note or profile
+text.
 
 This keeps other web pages out, but it does **not** separate local OS
 accounts: `GET /` still serves the page with the token to any process on the
 machine that can reach the loopback port, and a native HTTP client can send
 any `Origin`. Another account on the same machine could therefore read the
 audit log (SQL and parameters), reports and schema memory through the viewer,
-and use the approve/revoke, note archive and column score routes, even though
+and use the approve/revoke, note archive, column score and memory edit routes, even though
 it cannot open those files directly (owner-only file permissions do not apply
 to the HTTP route).
 

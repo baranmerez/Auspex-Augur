@@ -4,7 +4,9 @@
 // revoke an approval in the local library (stage moves) or archive one
 // schema-memory note; all three are audited.
 // A fourth POST route sets or removes one user column score (user layer only,
-// audited like score_columns).
+// audited like score_columns), and a fifth makes the table page's memory
+// edits (notes, the table profile, required-table marks;
+// src/memory/memoryEdit.js), audited like remember and table_profile.
 // Listens on 127.0.0.1 only, never connects to a database, never shows
 // passwords. Run with: npm run viewer (port: AUSPEX_VIEWER_PORT, default 4719).
 import http from 'node:http';
@@ -19,6 +21,7 @@ import { StageError as HttpError, stageActions as actions, validateStageInput, a
 import { SchemaMemory } from './memory/store.js';
 import { validateArchiveInput, archiveNoteFor } from './memory/noteArchive.js';
 import { validateUserScoreInput, userScoreAudit, setUserScoreFor } from './memory/userScore.js';
+import { validateEditInput, editAudit, applyMemoryEdit, readTableProfileFor, maxEditBytes } from './memory/memoryEdit.js';
 import { createAuditLog } from './auditLog.js';
 import { linkBelow } from './privateFiles.js';
 import { classifyError } from './errors.js';
@@ -47,6 +50,7 @@ const maxBodyBytes = 4096;
 const stageActions = new Map([['/api/reports/approve', actions.approve], ['/api/reports/revoke', actions.revoke]]);
 const archiveRoute = '/api/memory/archive';
 const columnScoreRoute = '/api/memory/column-score';
+const memoryEditRoute = '/api/memory/edit';
 
 // Re-read on every request so edits to profiles.json show up without restart.
 function readConfig() {
@@ -250,14 +254,14 @@ function hasToken(req) {
   return given.length === expected.length && crypto.timingSafeEqual(given, expected);
 }
 
-function readBody(req) {
+function readBody(req, limit = maxBodyBytes) {
   return new Promise((resolve, reject) => {
-    if (Number(req.headers['content-length'] || 0) > maxBodyBytes) return reject(new HttpError(413, 'Body too large'));
+    if (Number(req.headers['content-length'] || 0) > limit) return reject(new HttpError(413, 'Body too large'));
     const chunks = [];
     let size = 0;
     req.on('data', c => {
       size += c.length;
-      if (size > maxBodyBytes) reject(new HttpError(413, 'Body too large')); // the rest is drained, not kept
+      if (size > limit) reject(new HttpError(413, 'Body too large')); // the rest is drained, not kept
       else chunks.push(c);
     });
     req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
@@ -343,6 +347,31 @@ async function scoreColumn(req, res) {
   }
 }
 
+// One table-page memory edit (src/memory/memoryEdit.js): same origin,
+// token and content-type checks as the archive route; the body may hold a
+// profile text, so its limit is maxEditBytes. Audited like the MCP tool the
+// edit corresponds to (remember, table_profile), without any text.
+async function editMemory(req, res) {
+  checkWriteRequest(req);
+  const started = Date.now();
+  const entry = { source: 'viewer', tool: 'memory_edit', actor: 'viewer', correlationId: crypto.randomUUID() };
+  const audit = createAuditLog(logDir());
+  try {
+    if (!/^application\/json\s*(;|$)/i.test(req.headers['content-type'] || '')) throw new HttpError(415, 'Content-Type must be application/json');
+    let body;
+    try { body = JSON.parse(await readBody(req, maxEditBytes)); } catch (err) { throw err instanceof HttpError ? err : new HttpError(400, 'Body must be JSON'); }
+    const input = validateEditInput(body);
+    Object.assign(entry, editAudit(input));
+    const result = applyMemoryEdit(schemaMemory(library()), input);
+    audit({ ...entry, ms: Date.now() - started, ...(result.version !== undefined ? { version: result.version } : {}), ...(result.note?.id ? { noteId: result.note.id } : {}), ...(result.stored ? { stored: result.stored } : {}) });
+    return send(res, 200, { ...result, correlationId: entry.correlationId });
+  } catch (err) {
+    const { code } = classifyError(err);
+    audit({ ...entry, ms: Date.now() - started, error: err.message, errorCode: code });
+    return send(res, statusOf(err), { error: err.message, code, correlationId: entry.correlationId });
+  }
+}
+
 // The request target as a URL, or null when it is not origin-form: exactly one
 // leading "/" (no "//authority", no "/\authority" since URL parsing treats a
 // backslash as "/", no absolute-form, no "*"), parsed against a fixed base so the Host
@@ -389,9 +418,10 @@ function handle(req, res) {
       }
     });
   }
-  if (url.pathname === archiveRoute || url.pathname === columnScoreRoute) {
+  if (url.pathname === archiveRoute || url.pathname === columnScoreRoute || url.pathname === memoryEditRoute) {
     if (req.method !== 'POST') return send(res, 405, { error: 'Use POST' }, undefined, { Allow: 'POST' });
-    return (url.pathname === archiveRoute ? archiveNote : scoreColumn)(req, res).catch(err => {
+    const route = url.pathname === archiveRoute ? archiveNote : url.pathname === columnScoreRoute ? scoreColumn : editMemory;
+    return route(req, res).catch(err => {
       try {
         if (!res.headersSent) send(res, statusOf(err), { error: err.message, ...(err.errorCode ? { code: err.errorCode } : {}) });
       } catch (e) {
@@ -452,6 +482,15 @@ function handle(req, res) {
     if (url.pathname === '/api/memory/graph') return send(res, 200, memoryGraph(url.searchParams));
     if (url.pathname === '/api/memory/table') return send(res, 200, memoryFile(url.searchParams));
     if (url.pathname === '/api/memory/function') return send(res, 200, memoryFile(url.searchParams, memoryFunctionPattern));
+    // The table profile with freshness computed now (files only).
+    if (url.pathname === '/api/memory/table-profile') {
+      const q = url.searchParams;
+      try {
+        return send(res, 200, readTableProfileFor(schemaMemory(library()), { profile: q.get('profile'), schema: q.get('schema'), table: q.get('table') }));
+      } catch (err) {
+        return send(res, statusOf(err), { error: err.message, code: classifyError(err).code });
+      }
+    }
     if (url.pathname === '/api/health') {
       const days = listDays();
       return send(res, 200, { ok: true, latestDay: days[0]?.day ?? null, latestCount: days[0]?.count ?? 0, totalDays: days.length });
