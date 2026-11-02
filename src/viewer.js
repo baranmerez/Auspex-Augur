@@ -18,7 +18,7 @@ import { loadConfig, describeConnection, auspexHome } from './config.js';
 import { Library, LibraryError, refLabel } from './reports/library.js';
 import { approvedJoinPairs, reportHtmlHash, reportSources } from './reports/service.js';
 import { StageError as HttpError, stageActions as actions, validateStageInput, applyStageChange, statusOf } from './reports/stageChange.js';
-import { SchemaMemory } from './memory/store.js';
+import { SchemaMemory, MemoryError } from './memory/store.js';
 import { validateArchiveInput, archiveNoteFor } from './memory/noteArchive.js';
 import { validateUserScoreInput, userScoreAudit, setUserScoreFor } from './memory/userScore.js';
 import { validateEditInput, editAudit, applyMemoryEdit, readTableProfileFor, maxEditBytes } from './memory/memoryEdit.js';
@@ -168,10 +168,17 @@ function memoryProfile(params) {
 }
 
 // A schema-memory file; refused when a folder or the file below the memory
-// root is a symbolic link or junction (as in SchemaMemory.checkPath).
+// root is a symbolic link or junction (as in SchemaMemory.checkPath). A file
+// that is not valid JSON is refused with its path, never its content (as in
+// SchemaMemory.parseFile: a JSON parse error message can quote the text).
 function readJsonFile(file) {
   if (linkBelow(path.resolve(memoryDir()), path.resolve(file))) throw new LibraryError('Memory path is a link or junction; refused.');
-  return JSON.parse(fs.readFileSync(file, 'utf8'));
+  const text = fs.readFileSync(file, 'utf8');
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new MemoryError(`The schema memory file ${path.relative(memoryDir(), file).split(path.sep).join('/')} is not valid JSON.`, 'DISK_ERROR');
+  }
 }
 
 function memorySummary() {

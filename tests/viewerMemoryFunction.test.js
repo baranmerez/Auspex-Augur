@@ -85,3 +85,15 @@ test('the graph carries functions and the view fields', async () => {
   assert.deepEqual(graph.nodes.find(n => n.id === 'example.v_order_list').viewFunctions, ['example.order_total']);
   assert.ok(graph.edges.some(e => e.level === 'view'));
 });
+
+test('a memory file that is not valid JSON is refused with its path, never its content', async () => {
+  const dir = path.join(home, 'memory', 'brokendb');
+  fs.mkdirSync(path.join(dir, 'tables', 'example'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'tables', 'example', 'orders.json'), '{"note": "private text', 'utf8');
+  fs.writeFileSync(path.join(dir, 'graph.json'), 'private text {', 'utf8');
+  for (const p of ['/api/memory/table?profile=brokendb&file=tables/example/orders.json', '/api/memory/graph?profile=brokendb', '/api/memory']) {
+    const res = await get(p, { 'x-auspex-token': token });
+    assert.doesNotMatch(res.text, /private/, p);
+    if (p !== '/api/memory') assert.match(JSON.parse(res.text).error, /is not valid JSON/, p);
+  }
+});
