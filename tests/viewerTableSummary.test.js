@@ -142,6 +142,9 @@ test('report mention match: case, qualified and bare names, no longer table name
   assert.equal(tpMentions('select 1 from test.orders', 'example', 'orders'), false, 'same name in another schema');
   assert.equal(tpMentions('select 1 -- from orders\n from test.invoices /* example.orders */', 'example', 'orders'), false, 'comments are ignored');
   assert.equal(tpMentions('select 1 from example.orders;', 'example', 'orders'), true, 'statement end');
+  assert.equal(tpMentions("select 'example.orders' from test.invoices", 'example', 'orders'), false, 'a string literal');
+  assert.equal(tpMentions('select $q$orders$q$ from test.invoices', 'example', 'orders'), false, 'a dollar-quoted string');
+  assert.equal(tpMentions('select 1 from "orders""history"', 'example', 'orders'), false, 'a quoted name with a doubled quote is one name');
   assert.equal(tpMentions('select 1 from test . orders', 'example', 'orders'), false, 'another schema, spaces around the dot');
   assert.equal(tpMentions('select 1 from test'+String.fromCharCode(10)+'.orders', 'example', 'orders'), false, 'another schema, line break');
   assert.equal(tpMentions(null, 'example', 'orders'), false);

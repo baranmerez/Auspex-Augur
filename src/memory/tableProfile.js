@@ -106,9 +106,14 @@ export function validateLanguage(language) {
 }
 
 // ---------- mentions in report SQL ----------
-const nameChar = '[\\p{L}\\p{N}_$]';
+// A " left after stripSql belongs to a decoded identifier ("a""b" is a"b),
+// so it counts as part of the name.
+const nameChar = '[\\p{L}\\p{N}_$"]';
 const escapeRe = v => String(v).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const stripSql = sql => sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ').replace(/"/g, '');
+// Comments, string literals and dollar-quoted strings become a space; a
+// quoted identifier becomes its name.
+const stripSql = sql => sql.replace(/\/\*[\s\S]*?\*\/|--[^\n]*|\$([A-Za-z_][A-Za-z0-9_]*)?\$[\s\S]*?\$\1\$|'(?:[^']|'')*'|"((?:[^"]|"")*)"/g,
+  (m, tag, ident) => (ident !== undefined ? ident.replace(/""/g, '"') : ' '));
 // True when the SQL names schema.table, or the bare table name not after a
 // dot (the same rule as the viewer's "mentioned in SQL").
 export function sqlMentions(sql, schema, table) {

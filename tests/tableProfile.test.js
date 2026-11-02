@@ -276,6 +276,12 @@ test('sqlMentions: qualified or bare names outside comments', () => {
   assert.equal(sqlMentions('select 1 from orders', 'example', 'orders'), true);
   assert.equal(sqlMentions('-- example.orders\nselect 1 from example.order_items', 'example', 'orders'), false);
   assert.equal(sqlMentions('select 1 from test.orders', 'example', 'orders'), false);
+  assert.equal(sqlMentions("select 'example.orders' as label from example.customers", 'example', 'orders'), false, 'a string literal');
+  assert.equal(sqlMentions("select 'it''s orders' from example.customers", 'example', 'orders'), false, 'a literal with a doubled quote');
+  assert.equal(sqlMentions('select $q$ from example.orders $q$, $$orders$$ from example.customers', 'example', 'orders'), false, 'dollar-quoted strings');
+  assert.equal(sqlMentions('select $1 from example.orders where order_id = $2', 'example', 'orders'), true, 'parameters are not dollar quotes');
+  assert.equal(sqlMentions('select 1 from "orders""history"', 'example', 'orders'), false, 'a quoted name with a doubled quote is one name');
+  assert.equal(sqlMentions('select 1 from example."orders""history"', 'example', 'orders"history'), true);
 });
 
 test('table_knowledge carries a short profile section; editing a note archives it and links the replacement', () => {
