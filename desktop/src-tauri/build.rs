@@ -5,7 +5,7 @@ fn main() {
     println!("cargo:rerun-if-changed=icons");
     tauri_build::try_build(
         tauri_build::Attributes::new()
-            .app_manifest(tauri_build::AppManifest::new().commands(&["api", "approve_report", "revoke_report", "archive_note", "score_column"])),
+            .app_manifest(tauri_build::AppManifest::new().commands(&["api", "approve_report", "revoke_report", "archive_note", "score_column", "edit_memory"])),
     )
     .expect("failed to run tauri-build")
 }
