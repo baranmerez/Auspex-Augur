@@ -7569,7 +7569,7 @@ async function postMemoryEdit(fetchFn, token, req) {
   let data = null;
   try { data = await res.json(); } catch {}
   if (res.status === 403 && data?.code === 'TOKEN_INVALID') throw Object.assign(new Error(data.error), { viewerRestarted: true });
-  if (!res.ok) throw stageError(data?.error || res.statusText || `HTTP ${res.status}`, data?.code);
+  if (!res.ok) throw memoryEditError(data?.error || res.statusText || `HTTP ${res.status}`, data?.code);
   return data;
 }
 async function invokeMemoryEdit(invoke, req) {
@@ -7578,8 +7578,20 @@ async function invokeMemoryEdit(invoke, req) {
   } catch (err) {
     const code = typeof err === 'object' && err ? err.code : undefined;
     const message = typeof err === 'string' ? err : err?.message || String(err);
-    throw stageError(message, code);
+    throw memoryEditError(message, code);
   }
+}
+// A refusal of a memory edit, like stageError but with the memory's own text
+// for a stale version (stageError's text is about reports). A proposal
+// written before the person's newer edit can only be rejected.
+function memoryEditError(message, code) {
+  const err = stageError(message, code);
+  if (code === 'STALE_VERSION') {
+    err.setupText = /after this proposal was written/.test(message)
+      ? 'The profile changed after this proposal was written; you can only reject it.'
+      : 'The profile changed since you opened it; reload and try again.';
+  }
+  return err;
 }
 // memory-edit:end
 
@@ -7845,6 +7857,8 @@ function tpAskProfileFacts(prof) {
 // Translations of the page; keys the dictionary already has keep their text.
 for (const [k, v] of Object.entries({ ...tablePageTr, ...fnPageTr, ...tableProfileTr, ...{
   'Write the note.': 'Notu yazın.', 'At most 2000 characters.': 'En çok 2000 karakter.', 'No control characters.': 'Kontrol karakteri olmasın.',
+  'The profile changed since you opened it; reload and try again.': 'Profil siz açtıktan sonra değişti; yenileyip yeniden deneyin.',
+  'The profile changed after this proposal was written; you can only reject it.': 'Bu öneri yazıldıktan sonra profil değişti; öneriyi yalnızca reddedebilirsiniz.',
   'Write at least one section.': 'En az bir bölüm yazın.', 'A section has at most 4000 characters.': 'Bir bölüm en çok 4000 karakter olabilir.',
   'Keep the profile to about one page (12000 characters).': 'Profili yaklaşık bir sayfada tutun (12000 karakter).',
   'Column (optional)': 'Kolon (isteğe bağlı)', 'The whole table': 'Tüm tablo', 'Edit note #{id}': '#{id} notunu düzenle',

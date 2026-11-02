@@ -214,7 +214,12 @@ test('memory edit requests: checks, the browser POST with token and the desktop 
   assert.equal(sent.o.headers['X-Auspex-Token'], 'tok');
   assert.deepEqual(JSON.parse(sent.o.body), req);
   await assert.rejects(ctx.postMemoryEdit(async () => ({ ok: false, status: 403, json: async () => ({ error: 'x', code: 'TOKEN_INVALID' }) }), 't', req), e => e.viewerRestarted === true);
-  await assert.rejects(ctx.postMemoryEdit(async () => ({ ok: false, status: 409, json: async () => ({ error: 'changed', code: 'STALE_VERSION' }) }), 't', req), e => e.code === 'STALE_VERSION');
+  await assert.rejects(ctx.postMemoryEdit(async () => ({ ok: false, status: 409, json: async () => ({ error: 'The profile changed since you opened it (now version 3); reload.', code: 'STALE_VERSION' }) }), 't', req),
+    e => e.code === 'STALE_VERSION' && e.setupText === 'The profile changed since you opened it; reload and try again.' && e.version === 3);
+  await assert.rejects(ctx.invokeMemoryEdit(async () => { throw { code: 'STALE_VERSION', message: 'The profile changed after this proposal was written (it is based on version 1, now version 3); reject it and ask the agent again.' }; }, req),
+    e => e.setupText === 'The profile changed after this proposal was written; you can only reject it.');
+  // A refusal of another kind keeps the server text; report texts never show here.
+  await assert.rejects(ctx.invokeMemoryEdit(async () => { throw { code: 'NOT_FOUND', message: 'Note #4 not found.' }; }, req), e => e.setupText === null && e.message === 'Note #4 not found.');
   let invoked;
   await ctx.invokeMemoryEdit(async (cmd, args) => { invoked = { cmd, args }; return {}; }, req);
   assert.deepEqual(JSON.parse(JSON.stringify(invoked)), { cmd: 'edit_memory', args: { request: req } });
