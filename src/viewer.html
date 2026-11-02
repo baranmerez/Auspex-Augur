@@ -988,6 +988,88 @@
   .tp-pick legend { font-size: 12px; color: var(--text-3); padding: 0 4px; }
   .tp-pick-opt { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; cursor: pointer; }
   .tp-switch { margin-left: auto; }
+  /* Profile view: the book-like summary and the note categories in the
+     centre, collapsible cards on the right (below it on narrow screens). */
+  .tpp { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); grid-template-areas: "book side" "cats side"; grid-template-rows: auto 1fr; gap: 14px; align-items: start; }
+  .tpp-book { grid-area: book; min-width: 0; }
+  .tpp-main { grid-area: cats; }
+  .tpp-side { grid-area: side; }
+  .tpp-main, .tpp-side { display: grid; gap: 14px; min-width: 0; align-content: start; }
+  @media (max-width: 960px) { .tpp { grid-template-columns: minmax(0, 1fr); grid-template-areas: "book" "side" "cats"; grid-template-rows: none; } }
+  .tpp-book-h { flex-wrap: wrap; row-gap: 6px; }
+  .tpp-actions { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .tpp-actions.center { justify-content: center; margin-top: 12px; }
+  .badge.agent-draft { background: var(--warn-soft); color: var(--warn-ink); }
+  .tpp-book .panel-b { padding: 6px 22px 20px; }
+  .tpp-text { max-width: 74ch; font: 15.5px/1.72 "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif; color: var(--text); overflow-wrap: anywhere; }
+  .tpp-sec + .tpp-sec { margin-top: 16px; }
+  .tpp-text h3 { margin: 14px 0 4px; font: 650 11.5px/1.4 "Segoe UI", system-ui, sans-serif; letter-spacing: .6px; text-transform: uppercase; color: var(--text-3); }
+  .tpp-text p { margin: 0 0 8px; }
+  .tpp-text .tpp-src { margin: 2px 0 0; font: 12px/1.5 "Segoe UI", system-ui, sans-serif; color: var(--text-3); }
+  .tpp-src-k { font-weight: 650; }
+  .tpp-banner { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin: 10px 0 4px; padding: 8px 12px; border-radius: 8px; font-size: 13px; }
+  .tpp-banner.warn { background: var(--warn-soft); color: var(--warn-ink); }
+  .tpp-banner.info { background: var(--accent-soft); color: var(--accent-ink); }
+  .tpp-banner.muted-b { background: var(--surface-2); color: var(--text-2); }
+  .tpp-hist { margin-top: 14px; font-size: 12.5px; color: var(--text-2); }
+  .tpp-hist summary { cursor: pointer; color: var(--text-3); }
+  .tpp-hist ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 2px; }
+  .tpp-cat > summary, .tpp-card > summary { list-style: none; cursor: pointer; display: grid; gap: 2px; padding: 12px 16px; border-radius: var(--radius); }
+  .tpp-cat > summary::-webkit-details-marker, .tpp-card > summary::-webkit-details-marker { display: none; }
+  .tpp-cat > summary:focus-visible, .tpp-card > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .tpp-sum-h { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+  .tpp-sum-h::before { content: ""; width: 7px; height: 7px; flex: none; border-right: 2px solid var(--text-3); border-bottom: 2px solid var(--text-3); transform: rotate(-45deg); transition: transform .15s var(--ease); margin-right: 2px; }
+  details[open] > summary .tpp-sum-h::before { transform: rotate(45deg); }
+  .tpp-card-t { font-size: 14px; font-weight: 600; }
+  .tpp-count { font: 600 11px/1.6 var(--mono); padding: 0 7px; border-radius: 999px; background: var(--surface-2); color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .tpp-line { font-size: 12px; color: var(--text-3); padding-left: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .tpp-cat .tpp-line { white-space: normal; }
+  .tpp-cat-b, .tpp-card-b { padding: 0 16px 14px; display: grid; gap: 8px; justify-items: start; min-width: 0; }
+  .tpp-cat-b > ul, .tpp-card-b > ul { justify-self: stretch; }
+  .tpp-none { margin: 0; font-size: 13px; }
+  .tpp-notes { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .tpp-note { display: grid; gap: 6px; padding: 9px 11px; border: 1px solid var(--line); border-left: 3px solid var(--line-strong); border-radius: 8px; background: var(--surface); min-width: 0; }
+  .tpp-note.rule { border-left-color: var(--accent); }
+  .tpp-note.observation { border-left-color: var(--good-ink); }
+  .tpp-note.inference { border-left-color: var(--warn-ink); border-style: dashed solid dashed solid; }
+  .tpp-note-text { font-size: 13.5px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .tpp-note-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: 11.5px; color: var(--text-3); }
+  .tpp-note-actions { margin-left: auto; display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .tpp-col { font-weight: 650; color: var(--text-2); }
+  .tpp-card-required { border-top: 3px solid var(--role-ref-1); }
+  .tpp-items { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+  .tpp-item { display: flex; flex-wrap: wrap; gap: 3px 8px; align-items: center; min-width: 0; font-size: 13px; }
+  .tpp-item .tp-link { font-size: 13px; }
+  .tpp-item .tp-link.dim { color: var(--text-3); }
+  .tpp-meta { font-size: 11.5px; color: var(--text-3); }
+  .tpp-trg { display: grid; gap: 1px; }
+  .tpp-trg-sum { font-size: 12px; color: var(--text-2); overflow-wrap: anywhere; }
+  .tpp-evs { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+  .tpp-ev { font: 650 10.5px/1.6 "Segoe UI", system-ui, sans-serif; padding: 0 7px; border-radius: 999px; cursor: help; }
+  .tpp-ev.catalog { background: var(--good-soft); color: var(--good-ink); }
+  .tpp-ev.inference { background: var(--warn-soft); color: var(--warn-ink); }
+  .tpp-ev.user { background: var(--accent-soft); color: var(--accent-ink); }
+  .tpp-x { margin-left: auto; min-width: 28px; justify-content: center; }
+  .tpp-sub-h { margin: 4px 0 0; font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: .5px; justify-self: stretch; }
+  .tpp-more { font-size: 12px; }
+  .tpp-add { margin-top: 2px; }
+  /* Edit dialogs of the table page (notes, profile, proposal, required marks). */
+  .dlg.mem-dlg-box { width: min(520px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow: auto; }
+  .dlg.mem-dlg-box.wide { width: min(820px, calc(100vw - 24px)); }
+  .mem-dlg .dlg-field select, .mem-dlg .dlg-field input[type="text"] { height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 13px; }
+  .mem-dlg textarea { width: 100%; resize: vertical; min-height: 64px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; font-size: 13.5px; line-height: 1.55; }
+  .mem-dlg textarea:focus, .mem-dlg select:focus, .mem-dlg input[type="text"]:focus { border-color: var(--accent); outline: none; }
+  .mem-label { display: flex; justify-content: space-between; gap: 8px; font-weight: 600; color: var(--text-2); }
+  .mem-count { font: 11px var(--mono); color: var(--text-3); font-weight: 400; font-variant-numeric: tabular-nums; }
+  .mem-dlg .dlg-problem { color: var(--warn-ink); }
+  .tpp-diffs { display: grid; gap: 12px; margin: 0 0 12px; }
+  .tpp-diff h4 { margin: 0 0 6px; font-size: 12px; color: var(--text-2); text-transform: uppercase; letter-spacing: .5px; }
+  .tpp-diff-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+  @media (max-width: 640px) { .tpp-diff-cols { grid-template-columns: minmax(0, 1fr); } }
+  .tpp-diff-cols > div { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
+  .tpp-diff-cols > .new { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: var(--accent-soft); }
+  .tpp-diff-k { display: block; margin-bottom: 4px; font-size: 11px; font-weight: 650; color: var(--text-3); text-transform: uppercase; letter-spacing: .4px; white-space: normal; }
+  @media (max-width: 480px) { .tpp-book .panel-b { padding: 6px 14px 16px; } .tpp-text { font-size: 15px; } .tp-switch { margin-left: 0; } }
   /* views and functions: graph marks, badges, SQL boxes, lists, function page */
   .g-node .vring { fill: none; stroke: var(--good-ink); stroke-width: 1.4; stroke-dasharray: 3 2; }
   .g-edge.view { stroke: var(--good-ink); stroke-dasharray: 5 3; }
@@ -1284,6 +1366,7 @@
 <dialog class="dlg" id="archiveDlg" aria-labelledby="archiveDlgTitle"></dialog>
 <dialog class="dlg" id="scoreDlg" aria-labelledby="scoreDlgTitle"></dialog>
 <dialog class="dlg ask-dlg" id="askDlg" aria-labelledby="askDlgTitle"></dialog>
+<dialog class="dlg mem-dlg-box" id="memDlg" aria-labelledby="memDlgTitle"></dialog>
 <dialog class="dlg th-studio" id="themeDlg" aria-labelledby="themeDlgTitle">
   <div class="th-s-head" id="studioHead"></div>
   <div class="th-s-top" id="studioTop"></div>
@@ -1680,7 +1763,7 @@ const state = {
 };
 state.themeMode = 'auto';
 try { Object.assign(state, JSON.parse(localStorage.getItem('auspex.viewer') || '{}'), { all: [], seen: new Set(), firstLoad: true, open: null, reports: null, reportDoc: null, memory: null, memView: null, memPos: new Map() }); } catch {}
-const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, themeMode: state.themeMode, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy, memHideFaint: state.memHideFaint, memGraph3d: state.memGraph3d, memGraphSoft: state.memGraphSoft, memExpand: state.memExpand, repListCollapsed: state.repListCollapsed, repTreeOpen: state.repTreeOpen, repFavOpen: state.repFavOpen, repRecentOpen: state.repRecentOpen, rulesOpen: state.rulesOpen, rulesListCollapsed: state.rulesListCollapsed, rulesSideW: state.rulesSideW, sqlWrap: state.sqlWrap, perfOpen: state.perfOpen, tpView: state.tpView, tpGroup: state.tpGroup, fnSecOpen: state.fnSecOpen, schedStatus: state.schedStatus, schedDisabled: state.schedDisabled })); } catch {} };
+const persist = () => { try { localStorage.setItem('auspex.viewer', JSON.stringify({ range: state.range, tab: state.tab, live: state.live, pageSize: state.pageSize, systemTables: state.systemTables, theme: state.theme, themeMode: state.themeMode, db: state.db, stageFilter: state.stageFilter, reportSel: state.reportSel, memMode: state.memMode, memSelBy: state.memSelBy, memFocusBy: state.memFocusBy, memHideFaint: state.memHideFaint, memGraph3d: state.memGraph3d, memGraphSoft: state.memGraphSoft, memExpand: state.memExpand, repListCollapsed: state.repListCollapsed, repTreeOpen: state.repTreeOpen, repFavOpen: state.repFavOpen, repRecentOpen: state.repRecentOpen, rulesOpen: state.rulesOpen, rulesListCollapsed: state.rulesListCollapsed, rulesSideW: state.rulesSideW, sqlWrap: state.sqlWrap, perfOpen: state.perfOpen, tpView: state.tpView, tpGroup: state.tpGroup, tpCards: state.tpCards, tpCats: state.tpCats, fnSecOpen: state.fnSecOpen, schedStatus: state.schedStatus, schedDisabled: state.schedDisabled })); } catch {} };
 
 // In the Tauri desktop app the same routes are served by the Rust `api` command.
 const tauriCore = window.__TAURI__?.core;
@@ -3293,7 +3376,7 @@ const askTexts = {
     lastRunHead: 'Last run, as stored in the opened file (it may be older than the revision above):',
     lastRunNone: 'Last run: none stored in the opened file.',
     ranAt: 'ran at', preset: 'preset', params: 'parameters', paramsOut: 'left out ({n})', none: 'none', rows: 'rows', columns: 'first columns', more: '(+{n} more)',
-    object: 'schema {schema}, name {name}', column: 'column', overload: 'overload: arguments ({args}), {i} of {n}', overloadAll: 'overloads: {n} recorded; ask me which one if it matters',
+    object: 'schema {schema}, name {name}', column: 'column', tableProfile: 'table profile: version {v}, owner {o}, {f}{r}', tableProfileNone: 'table profile: none yet', tableProfileProposal: 'a proposal (version {v}) is waiting for my review', overload: 'overload: arguments ({args}), {i} of {n}', overloadAll: 'overloads: {n} recorded; ask me which one if it matters',
     task: 'Task:', question: 'My question:',
     tasks: {
       'report.explain': 'Explain what this report shows from its stored SQL and last result. Read it with list_reports and the report file; do not run SQL or the report.',
@@ -3302,6 +3385,7 @@ const askTexts = {
       'table.explain': 'Explain this {kind} from the stored schema memory (table_knowledge). Do not query rows.',
       'table.structure': 'Inspect its current structure with describe_table (catalog only, no row data) and tell me what changed since the memory was recorded.',
       'table.relations': 'Investigate how it relates to other tables with relation_stats and table_knowledge (planner statistics and catalog only, no row data).',
+      'table.profile': 'Write its table profile with table_profile action=save, from the stored schema memory only (table_profile action=get, table_knowledge, function_knowledge, notes, scores, report SQL, trigger summaries). Give every section its sources and leave out what memory does not support. Ask me before any database call. If my profile is mine (written, confirmed or accepted), your text is kept as a proposal I review.',
       'function.explain': 'Explain this function. If you need its definition and flags, read them with describe_functions (catalog only). Do not call the function.',
       'function.structure': 'Read its current definition and flags with describe_functions (catalog only) and tell me what changed. Do not call the function.',
     },
@@ -3318,7 +3402,7 @@ const askTexts = {
     lastRunHead: 'Son çalıştırma, açılan dosyada kayıtlı haliyle (yukarıdaki sürümden eski olabilir):',
     lastRunNone: 'Son çalıştırma: açılan dosyada kayıtlı çalıştırma yok.',
     ranAt: 'çalıştırma zamanı', preset: 'hazır ayar', params: 'parametreler', paramsOut: 'eklenmedi ({n})', none: 'yok', rows: 'satır', columns: 'ilk kolonlar', more: '(+{n} kolon daha)',
-    object: 'şema {schema}, ad {name}', column: 'kolon', overload: 'overload: argümanlar ({args}), {i}/{n}', overloadAll: 'overload: {n} kayıtlı; önemliyse hangisi olduğunu bana sor',
+    object: 'şema {schema}, ad {name}', column: 'kolon', tableProfile: 'tablo profili: sürüm {v}, sahibi {o}, {f}{r}', tableProfileNone: 'tablo profili: henüz yok', tableProfileProposal: 'incelemem için bir öneri (sürüm {v}) bekliyor', overload: 'overload: argümanlar ({args}), {i}/{n}', overloadAll: 'overload: {n} kayıtlı; önemliyse hangisi olduğunu bana sor',
     task: 'Görev:', question: 'Sorum:',
     tasks: {
       'report.explain': 'Bu raporun ne gösterdiğini kayıtlı SQL\'i ve son sonucundan açıkla. list_reports ve rapor dosyasıyla oku; SQL\'i ya da raporu çalıştırma.',
@@ -3327,6 +3411,7 @@ const askTexts = {
       'table.explain': 'Bu {kind} kayıtlı şema hafızasından (table_knowledge) açıkla. Satır sorgulama.',
       'table.structure': 'Güncel yapısını describe_table ile incele (yalnız katalog, satır verisi yok) ve hafıza kaydından bu yana neyin değiştiğini söyle.',
       'table.relations': 'Diğer tablolarla ilişkisini relation_stats ve table_knowledge ile araştır (yalnız planlayıcı istatistikleri ve katalog, satır verisi yok).',
+      'table.profile': 'Tablo profilini table_profile action=save ile yalnızca kayıtlı şema hafızasından yaz (table_profile action=get, table_knowledge, function_knowledge, notlar, puanlar, rapor SQL\'i, trigger özetleri). Her bölüme kaynaklarını ver, hafızanın desteklemediğini yazma. Herhangi bir veritabanı çağrısından önce bana sor. Profil benimse (yazdığım, onayladığım ya da kabul ettiğim), metnin incelemem için öneri olarak saklanır.',
       'function.explain': 'Bu fonksiyonu açıkla. Tanımı ve bayrakları gerekirse describe_functions ile oku (yalnız katalog). Fonksiyonu çağırma.',
       'function.structure': 'Güncel tanımını ve bayraklarını describe_functions ile oku (yalnız katalog) ve neyin değiştiğini söyle. Fonksiyonu çağırma.',
     },
@@ -3335,7 +3420,7 @@ const askTexts = {
 };
 const askKinds = { tr: { table: 'tabloyu', view: 'view\'ı', matview: 'materialized view\'ı' } };
 const askHeads = { en: { table: 'Table', view: 'View', matview: 'Materialized view', function: 'Function' }, tr: { table: 'Tablo', view: 'View', matview: 'Materialized view', function: 'Fonksiyon' } };
-const askTaskKeys = { report: ['explain', 'review', 'run'], table: ['explain', 'structure', 'relations'], function: ['explain', 'structure'] };
+const askTaskKeys = { report: ['explain', 'review', 'run'], table: ['explain', 'structure', 'relations', 'profile'], function: ['explain', 'structure'] };
 // Viewer text as data: a JSON string, one line, quotes and backslashes escaped.
 const askQuote = v => JSON.stringify(String(v ?? ''));
 const askFill = (text, vars) => String(text).replace(/\{(\w+)\}/g, (m, k) => (Object.hasOwn(vars, k) ? vars[k] : m));
@@ -3394,6 +3479,13 @@ function buildObjectAskPrompt(target, lng, opts = {}) {
   const lines = [askFill(x.intro, { what: x[kind] }), '', askFill(x.objectHead, { Kind: (askHeads[lng] || askHeads.en)[kind], p: askQuote(target.profile) }),
     `- ${askFill(x.object, { schema: askQuote(target.schema), name: askQuote(target.name) })}`];
   if (group === 'table' && target.column) lines.push(`- ${x.column}: ${askQuote(target.column)}`);
+  // The table profile as the page shows it (Profile view), so a rewrite
+  // request says what is stale.
+  const tpf = group === 'table' ? target.tableProfile : null;
+  if (tpf) {
+    lines.push(`- ${tpf.version ? askFill(x.tableProfile, { v: tpf.version, o: askQuote(tpf.owner), f: askQuote(tpf.freshness), r: tpf.reason ? ` (${askQuote(tpf.reason)})` : '' }) : x.tableProfileNone}`);
+    if (tpf.proposal) lines.push(`- ${askFill(x.tableProfileProposal, { v: tpf.proposal })}`);
+  }
   if (group === 'function') {
     const o = target.overload, n = Number.isInteger(target.overloads) ? target.overloads : 0;
     if (o) lines.push(`- ${askFill(x.overload, { args: askQuote(o.arguments ?? ''), i: (o.index ?? 0) + 1, n: Math.max(n, (o.index ?? 0) + 1) })}`);
@@ -3476,7 +3568,7 @@ function starButton(r, where) {
 // task, params (count of last-run parameter values, reports only), build(opts) }.
 const askTaskLabels = {
   'report.explain': 'Explain the report', 'report.review': 'Review its SQL', 'report.run': 'Run this copy',
-  'table.explain': 'Explain from memory', 'table.structure': 'Inspect the structure', 'table.relations': 'Investigate relationships',
+  'table.explain': 'Explain from memory', 'table.structure': 'Inspect the structure', 'table.relations': 'Investigate relationships', 'table.profile': 'Write the table profile',
   'function.explain': 'Explain from memory', 'function.structure': 'Re-read the definition',
 };
 function openAskDialog(spec) {
@@ -5644,17 +5736,22 @@ function renderRules() {
   }
 }
 
-function confirmArchiveNote(n) {
+// opts.reason prefills the reason (rejecting an inference); opts.title,
+// opts.action and opts.done name the dialog, its button and the toast;
+// opts.after is focused on the redrawn table page (Profile view).
+function confirmArchiveNote(n, opts = {}) {
   const dlg = $('archiveDlg');
+  const action = opts.action ?? 'Archive';
   const input = h('input', { id: 'archiveReason', type: 'text', maxlength: String(archiveReasonMax), autocomplete: 'off', placeholder: t('Why is this note no longer valid?') });
+  if (opts.reason) input.value = opts.reason;
   const hint = h('span', { role: 'status' });
-  const count = h('span', {}, `0 / ${archiveReasonMax}`);
-  const ok = h('button', { type: 'button', class: 'icon-btn secondary-danger', disabled: true }, t('Archive'));
+  const count = h('span', {}, `${input.value.length} / ${archiveReasonMax}`);
+  const ok = h('button', { type: 'button', class: 'icon-btn secondary-danger', disabled: !!archiveReasonProblem(input.value) }, t(action));
   const cancel = h('button', { type: 'button', class: 'icon-btn', onclick: () => dlg.close('cancel') }, t('Cancel'));
   const status = h('div', { class: 'dlg-status', role: 'alert' });
   let busy = false, final = false;
   const allowed = () => !busy && !final && !archiveReasonProblem(input.value);
-  const setBusy = on => { busy = on; ok.disabled = !allowed(); cancel.disabled = on; input.readOnly = on; ok.textContent = on ? t('Working…') : t('Archive'); dlg.setAttribute('aria-busy', on ? 'true' : 'false'); };
+  const setBusy = on => { busy = on; ok.disabled = !allowed(); cancel.disabled = on; input.readOnly = on; ok.textContent = on ? t('Working…') : t(action); dlg.setAttribute('aria-busy', on ? 'true' : 'false'); };
   input.addEventListener('input', () => {
     const problem = archiveReasonProblem(input.value);
     ok.disabled = !allowed();
@@ -5666,9 +5763,10 @@ function confirmArchiveNote(n) {
   const submit = async () => {
     if (!allowed()) return;
     status.textContent = '';
+    if (opts.after) state.tpFocus = opts.after;
     await runInDialog(dlg, () => runArchiveNote(state.db, n, input.value), {
       onBusy: setBusy,
-      onSuccess: () => toast(t('Note archived')),
+      onSuccess: () => toast(t(opts.done ?? 'Note archived')),
       onFailure: failure => { final = failure.final; ok.disabled = !allowed(); status.textContent = failureText(failure); },
     });
   };
@@ -5676,7 +5774,7 @@ function confirmArchiveNote(n) {
   input.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); submit(); } });
   const facts = [['Note', `#${n.id} · ${t(n.kind)}`], ['Table', n.table ? ruleTarget(n) + (n.column ? `.${n.column}` : '') : t('Database-wide')], ['Text', n.text]];
   put(dlg, h('div', {},
-    h('h3', { id: 'archiveDlgTitle' }, t('Archive this note?')),
+    h('h3', { id: 'archiveDlgTitle' }, t(opts.title ?? 'Archive this note?')),
     h('p', {}, t('The note stays in the schema memory as archived, with your reason, and is no longer given to your agent. Only local Auspex files change; no database is touched.')),
     h('dl', {}, facts.map(([label, v]) => [h('dt', {}, t(label)), h('dd', {}, v)])),
     h('label', { class: 'dlg-field', for: 'archiveReason' }, h('span', {}, t('Reason')), input),
@@ -5712,6 +5810,10 @@ async function runArchiveNote(profile, n, text) {
     state.rulesKey = null;
     state.schemaKey = null;
     renderRules();
+    // A note archived from a table page: that page and its profile anew.
+    tpProfileEpoch += 1;
+    invalidatePages();
+    renderPageTab(state.tab);
   }
 }
 
@@ -6486,11 +6588,12 @@ function tpSummary(model, sum, ctx) {
       isView ? null : group('Referencing tables', t('(they point to this table)'), limited('deps', sum.deps, tableChip('dep'))),
       isView || sum.usedByViews.length ? group('Used by views', t('(they read this one)'), limited('views', sum.usedByViews, tableChip('dep'))) : null));
 }
-// The page's own choice, else the remembered one, else Summary (first visit).
-const tpViewChoice = (own, saved) => ((own ?? saved) === 'detail' ? 'detail' : 'summary');
+// The page's own choice, else the remembered one, else Profile (first visit).
+const tpViewChoice = (own, saved) => { const v = own ?? saved; return v === 'detail' || v === 'summary' ? v : 'profile'; };
 const tpViewSwitch = ctx => (ctx.onView ? h('div', { class: 'seg tp-switch', role: 'group', 'aria-label': t('Table view') },
-  [['detail', t('Detailed')], ['summary', t('Summary')]].map(([v, label]) => h('button', { type: 'button', class: ctx.view === v ? 'on' : '', 'aria-pressed': String(ctx.view === v), onclick: () => ctx.onView(v) }, label))) : null);
+  [['profile', t('Profile')], ['detail', t('Detailed')], ['summary', t('Summary')]].map(([v, label]) => h('button', { type: 'button', class: ctx.view === v ? 'on' : '', 'aria-pressed': String(ctx.view === v), onclick: () => ctx.onView(v) }, label))) : null);
 function tablePageView(model, trail, ctx) {
+  if (ctx.view === 'profile' && ctx.profileModel) return h('div', { class: 'tp' }, tpCrumbs(trail, ctx), tpHeader(model, ctx), tpProfileView(model, ctx.profileModel, ctx));
   if (ctx.view === 'summary') return h('div', { class: 'tp' }, tpCrumbs(trail, ctx), tpHeader(model, ctx), tpSummary(model, tpSummaryModel(model, ctx.reports), ctx));
   const usedBy = () => tpRelPanel(model.usedByViews, 'deps', 'Used by views', 'Views that read this one', ctx);
   if (model.view) {
@@ -6583,6 +6686,289 @@ const tablePageTr = {
   'Wrap long lines': 'Uzun satırları kaydır', 'Wrap lines': 'Satır kaydır', 'Copy SQL': 'SQL kopyala',
 };
 // table-page:end
+
+// table-profile:start (tests/viewerTableProfile.test.js runs this block with table-page)
+// The Profile view of a table page: the book-like summary (the table profile
+// of the schema memory, GET /api/memory/table-profile), the notes by kind with
+// Add / Edit / Archive, and cards of what the table depends on and what uses
+// it, "Cannot live without" first. Built from graph.json, the table file and
+// the profile read; every edit goes through ctx (local memory only).
+const tppSections = ['purpose', 'behavior', 'usage', 'dependencies', 'caveats'];
+const tppSectionLabels = { purpose: 'What it is for', behavior: 'What it does', usage: 'Where it is used', dependencies: 'What it depends on', caveats: 'Watch out' };
+const tppTop = 5;
+// Cards in their fixed order; the first two start open.
+const tppCards = ['required', 'refs', 'deps', 'views', 'triggers', 'reports'];
+const tppCats = ['rule', 'observation', 'inference', 'meaning'];
+const tppPlural = (n, one, many) => t(n === 1 ? one : many, { n: fmt(n) });
+// "2 rules, 1 report, trigger orders_log": what one section is based on.
+// notes: every note of the profile (any status) to tell a note id's kind.
+function tppSourceLine(sources, notes) {
+  const list = tpArr(sources).filter(s => s && typeof s.type === 'string' && typeof s.ref === 'string');
+  if (!list.length) return null;
+  const kindOf = id => tpArr(notes).find(n => String(n.id) === id)?.kind ?? 'note';
+  const parts = [];
+  const counts = new Map();
+  for (const s of list) {
+    const key = s.type === 'note' ? `note:${kindOf(s.ref)}` : s.type;
+    counts.set(key, [...(counts.get(key) ?? []), s.ref]);
+  }
+  const named = { trigger: ['trigger {x}', '{n} triggers'], function: ['function {x}', '{n} functions'], table: ['table {x}', '{n} tables'], view: ['view {x}', '{n} views'], column: ['column {x}', '{n} columns'] };
+  const counted = { 'note:rule': ['{n} rule', '{n} rules'], 'note:observation': ['{n} observation', '{n} observations'], 'note:inference': ['{n} inference', '{n} inferences'],
+    'note:note': ['{n} note', '{n} notes'], report: ['{n} report', '{n} reports'], score: ['{n} column score', '{n} column scores'], code: ['{n} code reference', '{n} code references'] };
+  for (const [key, refs] of counts) {
+    if (named[key]) parts.push(refs.length === 1 ? t(named[key][0], { x: refs[0] }) : t(named[key][1], { n: fmt(refs.length) }));
+    else parts.push(tppPlural(refs.length, ...(counted[key] ?? ['{n} source', '{n} sources'])));
+  }
+  return parts.join(', ');
+}
+// One line for a freshness result of the store (profileFreshness reasons).
+function tppFreshText(reasons) {
+  const text = r => {
+    const n = Number.isInteger(r?.count) ? r.count : 1;
+    switch (r?.code) {
+      case 'structure-changed': return t('the structure changed');
+      case 'notes-added': return tppPlural(n, `{n} new ${r.kind === 'observation' ? 'observation' : r.kind === 'inference' ? 'inference' : 'rule'}`, `{n} new ${r.kind === 'observation' ? 'observations' : r.kind === 'inference' ? 'inferences' : 'rules'}`);
+      case 'notes-removed': return tppPlural(n, '{n} note archived', '{n} notes archived');
+      case 'notes-changed': return tppPlural(n, '{n} note changed', '{n} notes changed');
+      case 'trigger-summaries-changed': return t('trigger summaries changed');
+      case 'scores-changed': return t('column scores changed');
+      case 'reports-added': return tppPlural(n, '{n} new report', '{n} new reports');
+      case 'reports-removed': return tppPlural(n, '{n} report removed', '{n} reports removed');
+      case 'reports-changed': return tppPlural(n, '{n} report changed', '{n} reports changed');
+      case 'legacy': return t('written before freshness was recorded');
+      case 'structure-missing': return t('written before the structure was recorded');
+      case 'table-missing': return t('the table is no longer in memory');
+      case 'reports-unknown': return t('the reports could not be compared');
+      default: return String(r?.code ?? '');
+    }
+  };
+  return tpArr(reasons).map(text).filter(Boolean).join('; ');
+}
+// Paragraphs of a section text (blank lines separate them).
+const tppParagraphs = text => String(text ?? '').split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+// Everything the Profile view shows. prof: the profile read (null while it
+// loads or when it failed), reports: the page's report index.
+function tpProfileModel(model, data, prof, reports) {
+  const allNotes = tpArr(data?.notes).filter(n => n && n.schema === model.schema && n.table === model.table);
+  const active = allNotes.filter(n => n.status === 'active');
+  const byNew = (a, b) => tpCmp(tpNoteAt(b), tpNoteAt(a)) || (Number(b.id) || 0) - (Number(a.id) || 0);
+  const coded = n => tpCodeRefs(n).length > 0;
+  const cats = {
+    rule: active.filter(n => n.kind === 'rule' && !coded(n)).sort(byNew),
+    observation: active.filter(n => n.kind === 'observation' && !coded(n)).sort(byNew),
+    inference: active.filter(n => n.kind === 'inference').sort(byNew),
+    meaning: active.filter(n => n.kind !== 'inference' && coded(n)).sort((a, b) => tpCmp(a.column ?? '', b.column ?? '') || byNew(a, b)),
+  };
+  const required = tpArr(prof?.requiredTables).filter(r => r && typeof r.id === 'string');
+  const optionalIds = new Set(tpArr(prof?.optionalReferences).map(r => r.id));
+  const catalogRequired = new Set(required.filter(r => tpArr(r.evidence).some(e => e.type === 'catalog')).map(r => r.id));
+  // Edges with linked-row estimates (relation_stats) rank first, then the
+  // memory importance, then the row estimate.
+  const linked = (from, to) => Math.max(-1, ...tpArr(data?.edges).filter(e => e && e.level === 'fk' && e.from === from && e.to === to && typeof e.linkedRows === 'number').map(e => e.linkedRows));
+  const rank = (list, link) => list.map(n => ({ ...n, linkedRows: link(n.id), importance: tpImportance(data, n.id, reports?.items) }))
+    .sort((a, b) => b.linkedRows - a.linkedRows || b.importance - a.importance || (b.estRows ?? -1) - (a.estRows ?? -1) || tpCmp(a.id, b.id));
+  const refs = rank(model.neighbours.refs, id => linked(model.id, id)).map(n => ({ ...n, required: catalogRequired.has(n.id), optional: optionalIds.has(n.id) || !catalogRequired.has(n.id) }));
+  const deps = rank(model.neighbours.deps, id => linked(id, model.id));
+  const sum = tpSummaryModel(model, reports);
+  const triggers = model.triggers.map(tr => ({ name: tr.name, function: tr.function ?? null, disabled: tr.enabled === 'disabled', summary: tr.summary ?? null }));
+  return {
+    profile: prof?.profile ?? null, proposal: prof?.proposal ?? null, history: tpArr(prof?.history), notes: allNotes, cats, required,
+    refs, deps, views: model.usedByViews, triggers, functions: sum.functions, reports: sum.reports,
+    reportsState: { pending: sum.pending, failed: sum.failed, capped: sum.capped },
+  };
+}
+const tppEvidenceLabels = { catalog: 'catalog', inference: 'inferred', user: 'yours' };
+function tppEvidenceTitle(e) {
+  if (e.type === 'catalog') return t('Foreign key {c} ({cols}): every column is NOT NULL', { c: e.constraint ?? '', cols: tpArr(e.columns).join(', ') });
+  if (e.type === 'user') return t('You marked it as required');
+  if (e.basis === 'trigger') return t('Read by the function of trigger {tr} (inferred from its stored body)', { tr: e.trigger ?? '' });
+  return t('Column {c} has no foreign key; its name matches this table (inferred)', { c: e.column ?? '' });
+}
+// A collapsible card of the right column; open state from ctx.cardOpen
+// (first two open by default), stored through ctx.onCard without redrawing.
+function tppCard(key, title, count, line, body, ctx, extra = null) {
+  line ??= count ? null : t('None known.');
+  const saved = ctx.cardOpen?.[key];
+  const open = typeof saved === 'boolean' ? saved : tppCards.indexOf(key) < 2;
+  return h('details', { class: `panel tpp-card tpp-card-${key}`, open, ontoggle: ev => ctx.onCard?.(key, ev.currentTarget.open) },
+    h('summary', {}, h('span', { class: 'tpp-sum-h' }, h('span', { class: 'tpp-card-t' }, t(title)), h('span', { class: 'tpp-count' }, fmt(count))),
+      line ? h('span', { class: 'tpp-line' }, line) : null),
+    h('div', { class: 'tpp-card-b' }, body, extra));
+}
+// The first tppTop entries, the rest behind "+N more" (ctx.moreOpen).
+function tppLimited(key, list, row, ctx, empty) {
+  if (!list.length) return h('p', { class: 'muted tpp-none' }, t(empty));
+  const open = !!ctx.moreOpen?.[`tpp-${key}`];
+  const shown = open ? list : list.slice(0, tppTop);
+  return [h('ul', { class: 'tpp-items' }, shown.map(row)),
+    list.length > tppTop ? h('button', { type: 'button', class: 'tp-link tpp-more', 'aria-expanded': String(open), onclick: () => ctx.onMore?.(`tpp-${key}`, !open) },
+      open ? t('show fewer') : t('+{n} more', { n: fmt(list.length - tppTop) })) : null];
+}
+const tppTableLink = (id, ctx, explored = true) => h('button', { type: 'button', class: 'tp-link tp-mono' + (explored ? '' : ' dim'), onclick: () => ctx.onOpen(id), title: explored ? null : t('Not explored yet: describe_table records it.') }, id);
+function tppSide(model, pm, ctx) {
+  const ev = list => tpArr(list).map(e => h('span', { class: `tpp-ev ${e.type}`, title: tppEvidenceTitle(e) }, t(tppEvidenceLabels[e.type] ?? e.type)));
+  const kinds = type => pm.required.filter(r => tpArr(r.evidence).some(e => e.type === type)).length;
+  const reqLine = pm.required.length ? [kinds('catalog') ? t('{n} catalog', { n: fmt(kinds('catalog')) }) : null, kinds('inference') ? t('{n} inferred', { n: fmt(kinds('inference')) }) : null,
+    kinds('user') ? t('{n} yours', { n: fmt(kinds('user')) }) : null].filter(Boolean).join(' · ') : t('None found yet');
+  const reqRow = r => {
+    const mine = tpArr(r.evidence).some(e => e.type === 'user');
+    return h('li', { class: 'tpp-item' }, tppTableLink(r.id, ctx), h('span', { class: 'tpp-evs' }, ev(r.evidence)),
+      mine && ctx.onUnmark ? h('button', { type: 'button', class: 'icon-btn sm tpp-x', 'aria-label': t('Remove your mark from {id}', { id: r.id }), title: t('Remove your mark'), onclick: () => ctx.onUnmark(r) }, '×') : null);
+  };
+  const required = tppCard('required', 'Cannot live without', pm.required.length, reqLine,
+    ctx.profileState?.loading ? h('p', { class: 'muted tpp-none', role: 'status' }, t('Loading…')) : tppLimited('required', pm.required, reqRow, ctx, 'No required table found: no NOT NULL foreign key, name match or trigger read, and none marked by you.'),
+    ctx, ctx.onMark ? h('button', { type: 'button', class: 'icon-btn sm tpp-add', onclick: ctx.onMark }, t('Mark a table as required…')) : null);
+  const reqRefs = pm.refs.filter(n => n.required), optRefs = pm.refs.filter(n => !n.required);
+  const refRow = n => h('li', { class: 'tpp-item' }, tppTableLink(n.id, ctx, n.explored),
+    h('span', { class: 'tpp-meta' }, n.linkedRows >= 0 ? t('~{n} linked rows', { n: compact(n.linkedRows) }) : n.estRows === null ? '' : t('~{n} rows (est.)', { n: compact(n.estRows) })));
+  const refsBody = pm.refs.length ? [
+    reqRefs.length ? [h('h4', { class: 'tpp-sub-h' }, t('Required'), h('span', { class: 'muted' }, ` (${fmt(reqRefs.length)})`)), tppLimited('refs-req', reqRefs, refRow, ctx, '')] : null,
+    optRefs.length ? [h('h4', { class: 'tpp-sub-h' }, t('Optional'), h('span', { class: 'muted' }, ` (${fmt(optRefs.length)})`)), tppLimited('refs-opt', optRefs, refRow, ctx, '')] : null,
+  ] : h('p', { class: 'muted tpp-none' }, t('None known.'));
+  const refs = tppCard('refs', 'Referenced tables', pm.refs.length, pm.refs.length ? t('{r} required · {o} optional', { r: fmt(reqRefs.length), o: fmt(optRefs.length) }) : null, refsBody, ctx);
+  const deps = tppCard('deps', 'Referencing tables', pm.deps.length, pm.deps.length ? t('they point to this table') : null, tppLimited('deps', pm.deps, refRow, ctx, 'None known.'), ctx);
+  const views = tppCard('views', 'Used by views', pm.views.length, pm.views.length ? t('they read this one') : null,
+    tppLimited('views', pm.views, v => h('li', { class: 'tpp-item' }, tppTableLink(v.id, ctx, v.explored)), ctx, 'No view reads it (as far as memory knows).'), ctx);
+  const trgRow = tr => h('li', { class: 'tpp-item tpp-trg' }, h('span', { class: 'tp-mono' }, tr.name), tr.disabled ? h('span', { class: 'badge seen' }, t('disabled')) : null,
+    tr.function ? h('span', { class: 'tpp-meta tp-mono' }, tr.function) : null, tr.summary ? h('span', { class: 'tpp-trg-sum' }, tr.summary) : null);
+  const triggers = tppCard('triggers', 'Triggers and functions', pm.triggers.length,
+    pm.triggers.length ? t('{t} triggers · {f} functions', { t: fmt(pm.triggers.length), f: fmt(pm.functions.length) }) : null,
+    tppLimited('triggers', pm.triggers, trgRow, ctx, model.described ? 'No triggers recorded.' : 'Not described yet'), ctx);
+  const rs = pm.reportsState;
+  const repNote = [rs.pending ? t('{n} still loading', { n: fmt(rs.pending) }) : null, rs.failed ? t('{n} could not be read', { n: fmt(rs.failed) }) : null].filter(Boolean).join(' · ');
+  const reports = tppCard('reports', 'Reports', pm.reports.length, repNote || (pm.reports.length ? t('their SQL mentions it') : null),
+    tppLimited('reports', pm.reports, r => h('li', { class: 'tpp-item' }, h('button', { type: 'button', class: 'tp-link', onclick: () => ctx.onReport?.(r.id), title: t('Open on the Reports tab') }, r.title)), ctx, 'No report mentions this table.'), ctx);
+  return h('aside', { class: 'tpp-side', 'aria-label': t('What it depends on and what uses it') }, required, refs, deps, views, triggers, reports);
+}
+const tppCatLabels = { rule: 'Rules', observation: 'Observations', inference: 'Inferences', meaning: 'Column meanings' };
+const tppCatHints = {
+  rule: 'Business rules: stated by you or confirmed from an inference.',
+  observation: 'Findings from the data, dated.',
+  inference: 'The agent\'s own reading, not confirmed yet: confirm it as a rule or an observation, or reject it.',
+  meaning: 'Column meanings read from the application source code (references only).',
+};
+function tppNote(n, cat, ctx) {
+  const byUser = n.source === 'user';
+  const meta = [n.column ? h('span', { class: 'tp-mono tpp-col' }, n.column) : h('span', { class: 'muted' }, t('whole table')),
+    h('span', {}, `#${n.id}`),
+    h('span', {}, byUser ? t('by you') : t('by the agent')),
+    n.asOf ? h('span', {}, t('as of {d}', { d: tpDay(`${n.asOf}T12:00:00`) })) : h('span', {}, tpDay(tpNoteAt(n))),
+    n.replaces ? h('span', { title: t('Replaces note #{id}, archived as edited', { id: n.replaces }) }, t('edited')) : null,
+    tpCodeRefs(n).length ? h('span', { class: 'badge code', title: tpCodeRefs(n).map(codeRefText).join('\n') }, t('from code')) : null];
+  const label = text => t(text) + ': #' + n.id;
+  const actions = cat === 'inference'
+    ? [ctx.onConfirmNote ? h('button', { type: 'button', class: 'icon-btn sm', 'aria-label': label('Confirm as a rule'), onclick: () => ctx.onConfirmNote(n, 'rule') }, t('Confirm as rule')) : null,
+      ctx.onConfirmNote ? h('button', { type: 'button', class: 'icon-btn sm', 'aria-label': label('Confirm as an observation'), onclick: () => ctx.onConfirmNote(n, 'observation') }, t('Confirm as observation')) : null,
+      ctx.onRejectNote ? h('button', { type: 'button', class: 'icon-btn sm secondary-danger', 'aria-label': label('Reject'), onclick: () => ctx.onRejectNote(n) }, t('Reject')) : null]
+    : [ctx.onEditNote ? h('button', { type: 'button', class: 'icon-btn sm', 'aria-label': label('Edit'), onclick: () => ctx.onEditNote(n) }, t('Edit')) : null,
+      ctx.onArchiveNote ? h('button', { type: 'button', class: 'icon-btn sm secondary-danger', 'aria-label': label('Archive'), onclick: () => ctx.onArchiveNote(n) }, t('Archive')) : null];
+  return h('li', { class: `tpp-note ${n.kind}` }, h('div', { class: 'tpp-note-text' }, n.text),
+    h('div', { class: 'tpp-note-meta' }, meta, h('span', { class: 'tpp-note-actions' }, actions)));
+}
+function tppCategory(cat, list, ctx) {
+  const saved = ctx.catOpen?.[cat];
+  const open = typeof saved === 'boolean' ? saved : cat !== 'meaning' || list.length > 0;
+  const add = (cat === 'rule' || cat === 'observation') && ctx.onAddNote
+    ? h('button', { type: 'button', class: 'icon-btn sm tpp-add', onclick: () => ctx.onAddNote(cat) }, t(cat === 'rule' ? 'Add a rule' : 'Add an observation')) : null;
+  return h('details', { class: `panel tpp-cat tpp-cat-${cat}`, open, ontoggle: ev => ctx.onCat?.(cat, ev.currentTarget.open) },
+    h('summary', {}, h('span', { class: 'tpp-sum-h' }, h('span', { class: 'tpp-card-t' }, t(tppCatLabels[cat])), h('span', { class: 'tpp-count' }, fmt(list.length)),
+      cat === 'inference' && list.length ? h('span', { class: 'badge risk-warn' }, t('to review')) : null),
+      h('span', { class: 'tpp-line' }, t(tppCatHints[cat]))),
+    h('div', { class: 'tpp-cat-b' }, add,
+      list.length ? h('ul', { class: 'tpp-notes' }, list.map(n => tppNote(n, cat, ctx))) : h('p', { class: 'muted tpp-none' }, t(cat === 'inference' ? 'Nothing to review.' : 'None yet.'))));
+}
+// Who wrote the shown version and whether the user vouched for it.
+function tppStatus(v) {
+  if (!v) return null;
+  if (v.author === 'user') return { cls: 'ok', text: 'Written by you' };
+  if (v.acceptedAt) return { cls: 'ok', text: 'Agent text, accepted by you' };
+  if (v.confirmedAt) return { cls: 'ok', text: 'Agent text, confirmed by you' };
+  return { cls: 'agent-draft', text: 'Agent draft' };
+}
+function tppBook(model, pm, ctx) {
+  const ps = ctx.profileState ?? {};
+  const v = pm.profile;
+  const head = h('div', { class: 'panel-h tpp-book-h' }, h('h2', { id: 'tppTitle', tabindex: '-1' }, t('Profile')),
+    v ? h('span', { class: `badge ${tppStatus(v).cls}` }, t(tppStatus(v).text)) : null,
+    v ? h('span', { class: 'hint' }, t('version {v} · {d}', { v: fmt(v.version), d: tpDay(v.at) })) : null,
+    h('span', { class: 'grow' }),
+    h('span', { class: 'tpp-actions' },
+      v && v.owner !== 'user' && ctx.onConfirmProfile ? h('button', { type: 'button', class: 'icon-btn sm primary', onclick: ctx.onConfirmProfile }, t('Confirm')) : null,
+      v && ctx.onEditProfile ? h('button', { type: 'button', class: 'icon-btn sm', onclick: ctx.onEditProfile }, t('Edit')) : null,
+      ctx.onAskRewrite && (v || !ps.loading) ? h('button', { type: 'button', class: 'icon-btn sm tp-ask', 'aria-haspopup': 'dialog', onclick: ctx.onAskRewrite }, t(v ? 'Ask agent to rewrite' : 'Ask agent to write it')) : null));
+  let body;
+  if (ps.loading) body = h('p', { class: 'muted', role: 'status' }, t('Loading the profile…'));
+  else if (ps.error) body = h('div', { class: 'error-box', role: 'alert' }, t('The profile could not be loaded: {m}', { m: ps.error }), ' ', h('button', { type: 'button', class: 'icon-btn sm', onclick: ps.onRetry }, t('Retry')));
+  else if (!v) {
+    body = h('div', { class: 'tp-empty tpp-empty' }, h('b', {}, t('No profile yet')),
+      h('p', {}, t('A profile says in a few paragraphs what this table is for, what it does, where it is used and what it depends on. Your agent writes it from the schema memory only; you can also write it yourself.')),
+      h('div', { class: 'tpp-actions center' },
+        ctx.onAskRewrite ? h('button', { type: 'button', class: 'icon-btn primary', 'aria-haspopup': 'dialog', onclick: ctx.onAskRewrite }, t('Ask agent to write it')) : null,
+        ctx.onEditProfile ? h('button', { type: 'button', class: 'icon-btn', onclick: ctx.onEditProfile }, t('Write it yourself')) : null));
+  } else {
+    const fresh = v.freshness === 'stale' ? h('div', { class: 'tpp-banner warn', role: 'note' }, h('b', {}, t('May be out of date')), h('span', {}, tppFreshText(v.freshnessReasons)))
+      : v.freshness === 'unverified' ? h('div', { class: 'tpp-banner muted-b', role: 'note' }, h('b', {}, t('Not verified')), h('span', {}, tppFreshText(v.freshnessReasons))) : null;
+    const prop = pm.proposal ? h('div', { class: 'tpp-banner info', role: 'note' },
+      h('span', {}, t('The agent proposed a rewrite (version {v}). Your text stays until you accept it.', { v: fmt(pm.proposal.version) })),
+      ctx.onReviewProposal ? h('button', { type: 'button', class: 'icon-btn sm primary', 'aria-haspopup': 'dialog', onclick: ctx.onReviewProposal }, t('Review the proposal')) : null) : null;
+    const sections = tppSections.filter(k => typeof v.sections?.[k] === 'string' && v.sections[k].trim());
+    const article = h('article', { class: 'tpp-text', 'aria-labelledby': 'tppTitle', lang: v.language || null },
+      sections.map(k => h('section', { class: 'tpp-sec', 'aria-label': t(tppSectionLabels[k]) }, h('h3', {}, t(tppSectionLabels[k])),
+        tppParagraphs(v.sections[k]).map(p => h('p', {}, p)),
+        (line => (line ? h('p', { class: 'tpp-src' }, h('span', { class: 'tpp-src-k' }, t('Sources')), ' ', line) : null))(tppSourceLine(v.sources?.[k], pm.notes)))));
+    const hist = pm.history.length ? h('details', { class: 'tpp-hist' }, h('summary', {}, t('Earlier versions ({n})', { n: fmt(pm.history.length) })),
+      h('ul', {}, pm.history.map(x => h('li', {}, h('b', {}, t('version {v}', { v: fmt(x.version) })), ' · ',
+        t(x.author === 'user' ? 'by you' : 'by the agent'), ' · ', t({ replaced: 'replaced', rejected: 'rejected', superseded: 'superseded' }[x.status] ?? 'replaced'), ' · ', tpDay(x.closedAt ?? x.at))))) : null;
+    body = [prop, fresh, article, hist];
+  }
+  return h('section', { class: 'panel tpp-book', 'aria-labelledby': 'tppTitle' }, head, h('div', { class: 'panel-b' }, body));
+}
+function tpProfileView(model, pm, ctx) {
+  // Book, cards, categories: on a narrow screen the cards come right after
+  // the book, so "Cannot live without" is not below every note.
+  return h('div', { class: 'tpp' }, tppBook(model, pm, ctx), tppSide(model, pm, ctx),
+    h('div', { class: 'tpp-main' }, tppCats.map(cat => tppCategory(cat, pm.cats[cat], ctx))));
+}
+// Changed sections of a proposal against the current text, for the review.
+const tppDiff = (current, proposal) => tppSections.map(k => ({ key: k, before: current?.sections?.[k] ?? '', after: proposal?.sections?.[k] ?? '' }))
+  .map(d => ({ ...d, changed: d.before.trim() !== d.after.trim() }));
+const tableProfileTr = {
+  'Profile': 'Profil', 'What it is for': 'Ne işe yarar', 'What it does': 'Ne yapar', 'Where it is used': 'Nerede kullanılır', 'What it depends on': 'Neye bağlıdır', 'Watch out': 'Dikkat',
+  'Sources': 'Kaynaklar', 'trigger {x}': 'trigger {x}', '{n} triggers': '{n} trigger', 'function {x}': 'fonksiyon {x}', '{n} functions': '{n} fonksiyon', 'table {x}': 'tablo {x}', '{n} tables': '{n} tablo',
+  'view {x}': 'view {x}', '{n} views': '{n} view', 'column {x}': 'kolon {x}', '{n} columns': '{n} kolon', '{n} note': '{n} not', '{n} notes': '{n} not', '{n} report': '{n} rapor', '{n} reports': '{n} rapor',
+  '{n} column score': '{n} kolon puanı', '{n} column scores': '{n} kolon puanı', '{n} code reference': '{n} kod referansı', '{n} code references': '{n} kod referansı', '{n} source': '{n} kaynak', '{n} sources': '{n} kaynak',
+  'the structure changed': 'yapı değişti', '{n} new rule': '{n} yeni kural', '{n} new rules': '{n} yeni kural', '{n} new observation': '{n} yeni gözlem', '{n} new observations': '{n} yeni gözlem',
+  '{n} new inference': '{n} yeni çıkarım', '{n} new inferences': '{n} yeni çıkarım', '{n} note archived': '{n} not arşivlendi', '{n} notes archived': '{n} not arşivlendi',
+  '{n} note changed': '{n} not değişti', '{n} notes changed': '{n} not değişti', 'trigger summaries changed': 'trigger özetleri değişti', 'column scores changed': 'kolon puanları değişti',
+  '{n} new report': '{n} yeni rapor', '{n} new reports': '{n} yeni rapor', '{n} report removed': '{n} rapor kaldırıldı', '{n} reports removed': '{n} rapor kaldırıldı',
+  '{n} report changed': '{n} rapor değişti', '{n} reports changed': '{n} rapor değişti', 'written before freshness was recorded': 'tazelik kaydedilmeden önce yazıldı',
+  'written before the structure was recorded': 'yapı kaydedilmeden önce yazıldı', 'the table is no longer in memory': 'tablo artık hafızada yok', 'the reports could not be compared': 'raporlar karşılaştırılamadı',
+  'catalog': 'katalog', 'inferred': 'çıkarım', 'yours': 'sizin',
+  'Foreign key {c} ({cols}): every column is NOT NULL': 'Yabancı anahtar {c} ({cols}): tüm kolonlar NOT NULL', 'You marked it as required': 'Zorunlu olarak siz işaretlediniz',
+  'Read by the function of trigger {tr} (inferred from its stored body)': '{tr} trigger\'ının fonksiyonu okuyor (kayıtlı gövdesinden çıkarım)',
+  'Column {c} has no foreign key; its name matches this table (inferred)': '{c} kolonunun yabancı anahtarı yok; adı bu tabloyla eşleşiyor (çıkarım)',
+  '{n} catalog': '{n} katalog', '{n} inferred': '{n} çıkarım', '{n} yours': '{n} sizin', 'None found yet': 'Henüz bulunmadı',
+  'Remove your mark from {id}': '{id} üzerindeki işaretinizi kaldırın', 'Remove your mark': 'İşaretinizi kaldırın', 'Cannot live without': 'Olmazsa olmaz', 'Loading…': 'Yükleniyor…',
+  'No required table found: no NOT NULL foreign key, name match or trigger read, and none marked by you.': 'Zorunlu tablo bulunamadı: NOT NULL yabancı anahtar, ad eşleşmesi ya da trigger okuması yok, sizin işaretlediğiniz de yok.',
+  'Mark a table as required…': 'Bir tabloyu zorunlu işaretle…', '~{n} linked rows': '~{n} bağlı satır', 'Required': 'Zorunlu', 'Optional': 'İsteğe bağlı',
+  '{r} required · {o} optional': '{r} zorunlu · {o} isteğe bağlı', 'they point to this table': 'bu tabloya işaret ederler', 'they read this one': 'bunu okurlar',
+  'No view reads it (as far as memory knows).': 'Bunu okuyan view yok (hafızanın bildiği kadarıyla).', 'Triggers and functions': 'Trigger\'lar ve fonksiyonlar',
+  '{t} triggers · {f} functions': '{t} trigger · {f} fonksiyon', 'their SQL mentions it': 'SQL\'lerinde geçiyor', 'What it depends on and what uses it': 'Neye bağlı ve onu ne kullanıyor',
+  'Column meanings': 'Kolon anlamları', 'Business rules: stated by you or confirmed from an inference.': 'İş kuralları: sizin söyledikleriniz ya da bir çıkarımdan onaylananlar.',
+  'Findings from the data, dated.': 'Veriden bulgular, tarihli.', 'The agent\'s own reading, not confirmed yet: confirm it as a rule or an observation, or reject it.': 'Ajanın kendi yorumu, henüz onaylanmadı: kural ya da gözlem olarak onaylayın veya reddedin.',
+  'Column meanings read from the application source code (references only).': 'Uygulama kaynak kodundan okunan kolon anlamları (yalnızca referanslar).',
+  'whole table': 'tüm tablo', 'by you': 'sizin', 'by the agent': 'ajanın', 'as of {d}': '{d} itibarıyla', 'Replaces note #{id}, archived as edited': '#{id} notunun yerine geçer; o not düzenlendi diye arşivlendi', 'edited': 'düzenlendi',
+  'Confirm as a rule': 'Kural olarak onayla', 'Confirm as an observation': 'Gözlem olarak onayla', 'Reject': 'Reddet', 'Confirm as rule': 'Kural olarak onayla', 'Confirm as observation': 'Gözlem olarak onayla',
+  'Edit': 'Düzenle', 'Add a rule': 'Kural ekle', 'Add an observation': 'Gözlem ekle', 'to review': 'incelenecek', 'Nothing to review.': 'İncelenecek bir şey yok.', 'None yet.': 'Henüz yok.',
+  'Written by you': 'Sizin yazdığınız', 'Agent text, accepted by you': 'Ajan metni, sizin kabul ettiğiniz', 'Agent text, confirmed by you': 'Ajan metni, sizin onayladığınız', 'Agent draft': 'Ajan taslağı',
+  'version {v} · {d}': 'sürüm {v} · {d}', 'Confirm': 'Onayla', 'Ask agent to rewrite': 'Ajandan yeniden yazmasını iste', 'Ask agent to write it': 'Ajandan yazmasını iste',
+  'Loading the profile…': 'Profil yükleniyor…', 'The profile could not be loaded: {m}': 'Profil yüklenemedi: {m}', 'No profile yet': 'Henüz profil yok',
+  'A profile says in a few paragraphs what this table is for, what it does, where it is used and what it depends on. Your agent writes it from the schema memory only; you can also write it yourself.': 'Profil, bu tablonun ne işe yaradığını, ne yaptığını, nerede kullanıldığını ve neye bağlı olduğunu birkaç paragrafta anlatır. Ajanınız onu yalnızca şema hafızasından yazar; siz de kendiniz yazabilirsiniz.',
+  'Write it yourself': 'Kendiniz yazın', 'May be out of date': 'Güncel olmayabilir', 'Not verified': 'Doğrulanmadı',
+  'The agent proposed a rewrite (version {v}). Your text stays until you accept it.': 'Ajan bir yeniden yazım önerdi (sürüm {v}). Siz kabul edene kadar sizin metniniz kalır.',
+  'Review the proposal': 'Öneriyi incele', 'Earlier versions ({n})': 'Önceki sürümler ({n})', 'version {v}': 'sürüm {v}', 'replaced': 'yerine yenisi geldi', 'rejected': 'reddedildi', 'superseded': 'yenisi geldi',
+};
+// table-profile:end
 
 // fn-page:start (tests/viewerViewsFunctions.test.js runs this block with table-page)
 // Views and functions in the Schema tab: the counts of the type switch, the
@@ -7146,11 +7532,339 @@ async function invokeColumnScore(invoke, req) {
 }
 // column-score:end
 
+// memory-edit:start (tests/viewerTableProfile.test.js runs this block with stage-change)
+// The table page's memory edits (notes, the table profile, required-table
+// marks): the browser viewer POSTs to /api/memory/edit with the page token;
+// the desktop app calls the Tauri command edit_memory (src/stageCli.js
+// memory-edit). src/memory/memoryEdit.js checks every request again.
+const noteTextMax = 2000;
+const profileSectionMax = 4000;
+const profileTotalMax = 12000;
+function noteTextProblem(text) {
+  const body = String(text ?? '').trim();
+  if (!body) return 'Write the note.';
+  if (body.length > noteTextMax) return 'At most 2000 characters.';
+  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/.test(body)) return 'No control characters.';
+  return null;
+}
+// sections: { key: text }; null when the text can be saved.
+function profileTextProblem(sections) {
+  const values = Object.values(sections ?? {}).map(v => String(v ?? '').trim());
+  if (!values.some(Boolean)) return 'Write at least one section.';
+  if (values.some(v => v.length > profileSectionMax)) return 'A section has at most 4000 characters.';
+  if (values.reduce((a, v) => a + v.length, 0) > profileTotalMax) return 'Keep the profile to about one page (12000 characters).';
+  return null;
+}
+async function postMemoryEdit(fetchFn, token, req) {
+  const res = await fetchFn('/api/memory/edit', {
+    method: 'POST', cache: 'no-store', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', 'X-Auspex-Token': token },
+    body: JSON.stringify(req),
+  });
+  let data = null;
+  try { data = await res.json(); } catch {}
+  if (res.status === 403 && data?.code === 'TOKEN_INVALID') throw Object.assign(new Error(data.error), { viewerRestarted: true });
+  if (!res.ok) throw stageError(data?.error || res.statusText || `HTTP ${res.status}`, data?.code);
+  return data;
+}
+async function invokeMemoryEdit(invoke, req) {
+  try {
+    return await invoke('edit_memory', { request: req });
+  } catch (err) {
+    const code = typeof err === 'object' && err ? err.code : undefined;
+    const message = typeof err === 'string' ? err : err?.message || String(err);
+    throw stageError(message, code);
+  }
+}
+// memory-edit:end
+
+// ---------- table profile (glue) ----------
+// The profile read of the open table page, cached by table, graph time and
+// tpProfileEpoch (raised after every memory edit); a failed read shows Retry.
+const tpProfileCache = new Map();
+let tpProfileEpoch = 0, tpProfileLoading = null, tpProfileLast = null;
+function tpProfileRead(tab, db, model, generatedAt) {
+  const key = JSON.stringify([db, model.id, generatedAt, tpProfileEpoch]);
+  const table = `${db}|${model.id}`;
+  if (tpProfileCache.has(key)) {
+    const entry = tpProfileCache.get(key);
+    if (entry.value) tpProfileLast = { table, value: entry.value };
+    return { key, ...entry };
+  }
+  if (tpProfileLoading !== key) {
+    tpProfileLoading = key;
+    getJson('/api/memory/table-profile?' + new URLSearchParams({ profile: db, schema: model.schema, table: model.table }))
+      .then(value => ({ value }), err => ({ error: err?.message || String(err) }))
+      .then(entry => {
+        if (tpProfileCache.size > 50) tpProfileCache.clear();
+        tpProfileCache.set(key, entry);
+        if (tpProfileLoading === key) tpProfileLoading = null;
+        setPageKey(tab, null);
+        renderPageTab(tab);
+      });
+  }
+  // The last profile of this table stays on screen until the new read arrives.
+  return { key, loading: true, ...(tpProfileLast?.table === table ? { value: tpProfileLast.value } : {}) };
+}
+// After a memory edit (or an unknown outcome): the memory and the open
+// graph are read again and every page is drawn anew.
+async function refreshAfterMemoryEdit(profile) {
+  tpProfileEpoch += 1;
+  try { state.memory = await getJson('/api/memory'); } catch {}
+  try { state.memView = { profile, data: await getJson('/api/memory/graph?profile=' + encodeURIComponent(profile)) }; } catch { state.memView = null; }
+  invalidatePages();
+  state.schemaKey = null; state.rulesKey = null; state.viewsListKey = null; state.functionsListKey = null;
+  renderSchema();
+  renderObjectTab('views');
+  renderObjectTab('functions');
+}
+// Runs one memory edit; null on success, else the failure for the dialog
+// (actionFailure). The memory is read again either way.
+async function runMemoryEdit(req) {
+  if (state.memEditPending) return { text: 'Working…', vars: {}, suffix: null, final: false, refresh: false };
+  state.memEditPending = true;
+  try {
+    if (tauriCore) await invokeMemoryEdit(tauriCore.invoke, req);
+    else await postMemoryEdit(fetch, pageToken, req);
+    return null;
+  } catch (err) {
+    return actionFailure(err);
+  } finally {
+    state.memEditPending = false;
+    await refreshAfterMemoryEdit(req.profile);
+  }
+}
+$('memDlg').addEventListener('keydown', ev => ev.stopPropagation());
+// One dialog for every table-page edit: title, intro, fields, the primary
+// action and its request. The dialog stays open while the edit runs and after
+// a failure (shown as an alert); it closes on success or Cancel.
+// after: the selector focused on the redrawn page once the edit is done.
+function memDialog({ title, intro, facts = [], fields = [], action, danger = false, wide = false, request, valid = () => null, done, focus = null, extra = null, alt = null, after = null }) {
+  const dlg = $('memDlg');
+  dlg.classList.toggle('wide', !!wide);
+  const status = h('div', { class: 'dlg-status', role: 'alert' });
+  const hint = h('span', { class: 'dlg-problem', role: 'status' });
+  const ok = h('button', { type: 'button', class: 'icon-btn ' + (danger ? 'secondary-danger' : 'primary') }, t(action));
+  const cancel = h('button', { type: 'button', class: 'icon-btn', onclick: () => dlg.close('cancel') }, t('Cancel'));
+  const second = alt ? h('button', { type: 'button', class: 'icon-btn secondary-danger' }, t(alt.action)) : null;
+  let busy = false, final = false;
+  const check = () => {
+    const problem = valid();
+    hint.textContent = problem ? t(problem) : '';
+    ok.disabled = busy || final || !!problem;
+    if (second) second.disabled = busy || final;
+    return !problem;
+  };
+  const setBusy = on => {
+    busy = on; cancel.disabled = on; ok.textContent = on ? t('Working…') : t(action);
+    for (const el of dlg.querySelectorAll('input, textarea, select')) el.readOnly = on;
+    dlg.setAttribute('aria-busy', on ? 'true' : 'false');
+    check();
+  };
+  const submit = async (req = request, message = done) => {
+    if (busy || final || (req === request && !check())) return;
+    status.textContent = '';
+    if (after) state.tpFocus = after;
+    await runInDialog(dlg, () => runMemoryEdit(req()), {
+      onBusy: setBusy,
+      onSuccess: () => toast(t(message)),
+      onFailure: failure => { final = failure.final; check(); status.textContent = failureText(failure); },
+    });
+  };
+  ok.addEventListener('click', () => submit());
+  second?.addEventListener('click', () => submit(alt.request, alt.done));
+  put(dlg, h('div', { class: 'mem-dlg' },
+    h('h3', { id: 'memDlgTitle' }, title),
+    intro ? h('p', {}, intro) : null,
+    facts.length ? h('dl', {}, facts.map(([label, v]) => [h('dt', {}, t(label)), h('dd', {}, v)])) : null,
+    fields, extra,
+    h('div', { class: 'dlg-hint' }, hint),
+    status,
+    h('div', { class: 'dlg-actions' }, second, second ? h('span', { class: 'grow' }) : null, cancel, ok)));
+  for (const el of dlg.querySelectorAll('input, textarea, select')) el.addEventListener('input', check);
+  for (const el of dlg.querySelectorAll('input[type="radio"], select')) el.addEventListener('change', check);
+  check();
+  dlg.oncancel = null;
+  dlg.onclose = null;
+  dlg.returnValue = '';
+  dlg.showModal();
+  ((focus && dlg.querySelector(focus)) || dlg.querySelector('textarea, input:not([type="radio"]), select') || cancel).focus();
+}
+const memNoteRequest = (model, extra) => ({ profile: model.profile || state.db, ...extra });
+const memLocal = 'Only local Auspex files change; no database is touched.';
+// A text area with a live character count.
+function memTextField(id, label, value, max, rows = 4) {
+  const count = h('span', { class: 'mem-count' }, `${String(value ?? '').length} / ${fmt(max)}`);
+  const area = h('textarea', { id, rows, maxlength: String(max), oninput: ev => { count.textContent = `${ev.target.value.length} / ${fmt(max)}`; } });
+  area.value = value ?? '';
+  return h('div', { class: 'dlg-field mem-field' }, h('span', { class: 'mem-label' }, h('label', { for: id }, label), count), area);
+}
+function memKindField(kind, name = 'memKind') {
+  return h('fieldset', { class: 'tp-pick' }, h('legend', {}, t('Kind')),
+    ['rule', 'observation'].map(k => h('label', { class: 'tp-pick-opt' }, h('input', { type: 'radio', name, value: k, checked: kind === k ? true : null }), h('span', { class: `badge ${k}` }, t(k)))));
+}
+const memChosenKind = (name = 'memKind') => $('memDlg').querySelector(`input[name="${name}"]:checked`)?.value ?? null;
+// Add a rule or observation (cat), or edit note n (archived as "edited", the
+// new text saved as a note of the user).
+function openNoteDialog(model, { kind = null, note = null }) {
+  const edit = !!note;
+  const columns = model.columns.filter(c => c.inStructure).map(c => c.name);
+  const column = edit ? null : h('div', { class: 'dlg-field' }, h('label', { for: 'memColumn' }, t('Column (optional)')),
+    h('select', { id: 'memColumn' }, h('option', { value: '' }, t('The whole table')), columns.map(c => h('option', { value: c }, c))));
+  const startKind = edit ? (note.kind === 'inference' ? null : note.kind) : kind;
+  memDialog({
+    title: edit ? t('Edit note #{id}', { id: note.id }) : t(kind === 'rule' ? 'Add a rule to {id}' : 'Add an observation to {id}', { id: model.id }),
+    intro: edit ? t('The old note is archived with the reason "edited" and stays in the history; your text is saved as a new note written and confirmed by you. {local}', { local: t(memLocal) })
+      : t('Saved as written and confirmed by you. {local}', { local: t(memLocal) }),
+    facts: edit ? [['Table', model.id + (note.column ? `.${note.column}` : '')]] : [],
+    fields: [memKindField(startKind), column, memTextField('memText', t('Text'), edit ? note.text : '', noteTextMax, 5)],
+    action: edit ? 'Save the new version' : 'Add',
+    valid: () => (memChosenKind() ? noteTextProblem($('memText')?.value) : 'Choose rule or observation.'),
+    request: () => (edit
+      ? memNoteRequest(model, { op: 'note-edit', id: note.id, text: $('memText').value.trim(), kind: memChosenKind() })
+      : memNoteRequest(model, { op: 'note-add', schema: model.schema, table: model.table, kind: memChosenKind(), text: $('memText').value.trim(), ...($('memColumn').value ? { column: $('memColumn').value } : {}) })),
+    done: edit ? 'Note updated' : 'Note added',
+    focus: '#memText', after: `.tpp-cat-${edit ? (note.kind === 'observation' ? 'observation' : 'rule') : kind} > summary`,
+  });
+}
+// An inference the user agrees with becomes a rule or an observation.
+function confirmInferenceDialog(model, n, kind) {
+  memDialog({
+    title: t('Confirm inference #{id}?', { id: n.id }),
+    intro: t('The note stays as it is and counts as confirmed from now on. {local}', { local: t(memLocal) }),
+    facts: [['Table', model.id + (n.column ? `.${n.column}` : '')], ['Text', n.text]],
+    fields: [memKindField(kind, 'memConfirmKind')],
+    action: 'Confirm',
+    valid: () => (memChosenKind('memConfirmKind') ? null : 'Choose rule or observation.'),
+    request: () => memNoteRequest(model, { op: 'note-confirm', id: n.id, kind: memChosenKind('memConfirmKind') }),
+    done: 'Inference confirmed', after: '.tpp-cat-inference > summary',
+    focus: 'input[name="memConfirmKind"]:checked',
+  });
+}
+// The user's own profile text: every section, prefilled with the current one.
+function openProfileDialog(model, prof) {
+  const v = prof?.profile ?? null;
+  const fields = tppSections.map(k => memTextField(`memSec-${k}`, t(tppSectionLabels[k]), v?.sections?.[k] ?? '', profileSectionMax, k === 'purpose' || k === 'behavior' ? 5 : 3));
+  const read = () => Object.fromEntries(tppSections.map(k => [k, $(`memSec-${k}`)?.value ?? '']));
+  memDialog({
+    title: t(v ? 'Edit the profile of {id}' : 'Write the profile of {id}', { id: model.id }),
+    intro: t('Your text is never overwritten by the agent: a later rewrite comes as a proposal you accept or reject. Leave a section empty to drop it. {local}', { local: t(memLocal) }),
+    fields, wide: true,
+    action: 'Save',
+    valid: () => profileTextProblem(read()),
+    request: () => memNoteRequest(model, { op: 'profile-save', schema: model.schema, table: model.table, sections: read(), expectedVersion: v?.version ?? null }),
+    done: 'Profile saved', after: '#tppTitle',
+    focus: '#memSec-purpose',
+  });
+}
+function confirmProfileDialog(model, prof) {
+  const v = prof?.profile;
+  if (!v) return;
+  memDialog({
+    title: t('Confirm the agent draft?'),
+    intro: t('The draft becomes your profile as it is; a later agent rewrite then comes as a proposal. {local}', { local: t(memLocal) }),
+    facts: [['Table', model.id], ['Version', fmt(v.version)]],
+    action: 'Confirm',
+    request: () => memNoteRequest(model, { op: 'profile-confirm', schema: model.schema, table: model.table, expectedVersion: v.version }),
+    done: 'Profile confirmed', after: '#tppTitle',
+  });
+}
+// The proposal against the current text, section by section; accept or reject.
+function openProposalDialog(model, prof) {
+  const p = prof?.proposal;
+  if (!p) return;
+  const diff = tppDiff(prof.profile, p);
+  const changed = diff.filter(d => d.changed);
+  const rows = h('div', { class: 'tpp-diffs' },
+    changed.length ? changed.map(d => h('section', { class: 'tpp-diff', 'aria-label': t(tppSectionLabels[d.key]) }, h('h4', {}, t(tppSectionLabels[d.key])),
+      h('div', { class: 'tpp-diff-cols' },
+        h('div', { class: 'old' }, h('span', { class: 'tpp-diff-k' }, t('Your text')), d.before ? d.before : h('i', { class: 'muted' }, t('empty'))),
+        h('div', { class: 'new' }, h('span', { class: 'tpp-diff-k' }, t('Proposed')), d.after ? d.after : h('i', { class: 'muted' }, t('empty'))))))
+      : h('p', { class: 'muted' }, t('The proposal has the same text as your profile.')),
+    diff.length > changed.length ? h('p', { class: 'muted' }, t('Unchanged: {s}', { s: diff.filter(d => !d.changed).map(d => t(tppSectionLabels[d.key])).join(', ') })) : null);
+  const decide = decision => memNoteRequest(model, { op: 'profile-review', schema: model.schema, table: model.table, decision, proposalVersion: p.version });
+  const older = prof.profile && p.basedOn !== undefined && p.basedOn !== prof.profile.version;
+  memDialog({
+    title: t('Proposal for {id} (version {v})', { id: model.id, v: fmt(p.version) }),
+    intro: t('Accept makes the proposal your profile; Reject keeps your text and moves the proposal to the history. {local}', { local: t(memLocal) }),
+    extra: [older ? h('p', { class: 'tpp-banner warn', role: 'note' }, t('The agent wrote it against version {b}; your profile is now version {c}, so compare carefully.', { b: fmt(p.basedOn), c: fmt(prof.profile.version) })) : null, rows],
+    wide: true, action: 'Accept the proposal',
+    request: () => decide('accept'),
+    done: 'Proposal accepted', after: '#tppTitle',
+    alt: { action: 'Reject the proposal', request: () => decide('reject'), done: 'Proposal rejected' },
+  });
+}
+// Mark a known table as required (a list of the tables in memory).
+function openMarkDialog(model, data, prof) {
+  const marked = new Set(tpArr(prof?.requiredTables).filter(r => tpArr(r.evidence).some(e => e.type === 'user')).map(r => r.id));
+  const options = tpArr(data?.nodes).map(n => n.id).filter(id => id !== model.id && !marked.has(id)).sort(tpCmp);
+  const input = h('input', { id: 'memTarget', type: 'text', list: 'memTargets', autocomplete: 'off', placeholder: 'schema.table', spellcheck: 'false' });
+  const target = () => splitTableKey(String(input.value).trim());
+  memDialog({
+    title: t('Mark a table {id} cannot live without', { id: model.id }),
+    intro: t('Your mark is shown with the evidence "yours" next to the catalog and inferred ones. {local}', { local: t(memLocal) }),
+    fields: [h('div', { class: 'dlg-field' }, h('label', { for: 'memTarget' }, t('Table (schema.table)')), input,
+      h('datalist', { id: 'memTargets' }, options.map(id => h('option', { value: id }))))],
+    action: 'Mark as required',
+    valid: () => {
+      const x = target();
+      if (!x || !x.schema || !x.table) return 'Give the table as schema.table.';
+      if (tableKey(x.schema, x.table) === model.id) return 'A table cannot require itself.';
+      if (marked.has(tableKey(x.schema, x.table))) return 'Already marked by you.';
+      return null;
+    },
+    request: () => memNoteRequest(model, { op: 'required-mark', schema: model.schema, table: model.table, target: target(), required: true }),
+    done: 'Marked as required', after: '.tpp-card-required > summary',
+    focus: '#memTarget',
+  });
+}
+function confirmUnmarkDialog(model, r) {
+  memDialog({
+    title: t('Remove your mark from {id}?', { id: r.id }),
+    intro: t('Only your mark goes; catalog and inferred evidence stays. {local}', { local: t(memLocal) }),
+    action: 'Remove the mark', danger: true,
+    request: () => memNoteRequest(model, { op: 'required-mark', schema: model.schema, table: model.table, target: { schema: r.schema, table: r.table }, required: false }),
+    done: 'Mark removed', after: '.tpp-card-required > summary',
+  });
+}
+// What the "Ask agent" request says about the current profile.
+function tpAskProfileFacts(prof) {
+  const v = prof?.profile;
+  if (!v) return { version: null };
+  return { version: v.version, owner: v.owner, freshness: v.freshness, reason: v.freshnessReason ?? null, proposal: prof?.proposal?.version ?? null };
+}
+
 // ---------- table page (glue) ----------
 // Opened from the Tables tab, the Schema inspector or the Schema search; lives
 // in the Schema tab. trail: the visited tables, the last one is shown.
 // Translations of the page; keys the dictionary already has keep their text.
-for (const [k, v] of Object.entries({ ...tablePageTr, ...fnPageTr, ...{
+for (const [k, v] of Object.entries({ ...tablePageTr, ...fnPageTr, ...tableProfileTr, ...{
+  'Write the note.': 'Notu yazın.', 'At most 2000 characters.': 'En çok 2000 karakter.', 'No control characters.': 'Kontrol karakteri olmasın.',
+  'Write at least one section.': 'En az bir bölüm yazın.', 'A section has at most 4000 characters.': 'Bir bölüm en çok 4000 karakter olabilir.',
+  'Keep the profile to about one page (12000 characters).': 'Profili yaklaşık bir sayfada tutun (12000 karakter).',
+  'Column (optional)': 'Kolon (isteğe bağlı)', 'The whole table': 'Tüm tablo', 'Edit note #{id}': '#{id} notunu düzenle',
+  'Add a rule to {id}': '{id} için kural ekle', 'Add an observation to {id}': '{id} için gözlem ekle',
+  'The old note is archived with the reason "edited" and stays in the history; your text is saved as a new note written and confirmed by you. {local}': 'Eski not "düzenlendi" gerekçesiyle arşivlenir ve geçmişte kalır; metniniz sizin yazıp onayladığınız yeni bir not olarak kaydedilir. {local}',
+  'Saved as written and confirmed by you. {local}': 'Sizin yazıp onayladığınız not olarak kaydedilir. {local}',
+  'Only local Auspex files change; no database is touched.': 'Yalnızca yerel Auspex dosyaları değişir; hiçbir veritabanına dokunulmaz.',
+  'Save the new version': 'Yeni sürümü kaydet', 'Add': 'Ekle', 'Choose rule or observation.': 'Kural ya da gözlem seçin.', 'Note updated': 'Not güncellendi', 'Note added': 'Not eklendi',
+  'Confirm inference #{id}?': '#{id} çıkarımı onaylansın mı?', 'The note stays as it is and counts as confirmed from now on. {local}': 'Not olduğu gibi kalır ve bundan sonra onaylı sayılır. {local}',
+  'Inference confirmed': 'Çıkarım onaylandı', 'Edit the profile of {id}': '{id} profilini düzenle', 'Write the profile of {id}': '{id} profilini yaz',
+  'Your text is never overwritten by the agent: a later rewrite comes as a proposal you accept or reject. Leave a section empty to drop it. {local}': 'Metninizin üzerine ajan asla yazmaz: sonraki bir yeniden yazım, kabul ya da reddettiğiniz bir öneri olarak gelir. Bir bölümü çıkarmak için boş bırakın. {local}',
+  'Profile saved': 'Profil kaydedildi', 'Confirm the agent draft?': 'Ajan taslağı onaylansın mı?',
+  'The draft becomes your profile as it is; a later agent rewrite then comes as a proposal. {local}': 'Taslak olduğu gibi sizin profiliniz olur; ajanın sonraki yeniden yazımı öneri olarak gelir. {local}',
+  'Version': 'Sürüm', 'Profile confirmed': 'Profil onaylandı', 'Your text': 'Sizin metniniz', 'Proposed': 'Önerilen', 'empty': 'boş',
+  'The proposal has the same text as your profile.': 'Önerinin metni profilinizle aynı.', 'Unchanged: {s}': 'Değişmeyen: {s}', 'Proposal for {id} (version {v})': '{id} için öneri (sürüm {v})',
+  'Accept makes the proposal your profile; Reject keeps your text and moves the proposal to the history. {local}': 'Kabul, öneriyi profiliniz yapar; Ret metninizi korur ve öneriyi geçmişe taşır. {local}',
+  'Reject the proposal': 'Öneriyi reddet', 'The agent wrote it against version {b}; your profile is now version {c}, so compare carefully.': 'Ajan bunu sürüm {b} üzerine yazdı; profiliniz artık sürüm {c}, dikkatle karşılaştırın.', 'Accept the proposal': 'Öneriyi kabul et', 'Proposal accepted': 'Öneri kabul edildi', 'Proposal rejected': 'Öneri reddedildi',
+  'Mark a table {id} cannot live without': '{id} için olmazsa olmaz bir tablo işaretle',
+  'Your mark is shown with the evidence "yours" next to the catalog and inferred ones. {local}': 'İşaretiniz katalog ve çıkarım kanıtlarının yanında "sizin" kanıtıyla gösterilir. {local}',
+  'Table (schema.table)': 'Tablo (şema.tablo)', 'Mark as required': 'Zorunlu işaretle', 'Give the table as schema.table.': 'Tabloyu şema.tablo biçiminde verin.',
+  'A table cannot require itself.': 'Bir tablo kendisini zorunlu kılamaz.', 'Already marked by you.': 'Zaten sizin işaretiniz var.', 'Marked as required': 'Zorunlu işaretlendi',
+  'Remove your mark from {id}?': '{id} üzerindeki işaretiniz kaldırılsın mı?', 'Only your mark goes; catalog and inferred evidence stays. {local}': 'Yalnızca sizin işaretiniz gider; katalog ve çıkarım kanıtı kalır. {local}',
+  'Remove the mark': 'İşareti kaldır', 'Mark removed': 'İşaret kaldırıldı', 'Rejected by the user': 'Kullanıcı reddetti', 'Reject this inference?': 'Bu çıkarım reddedilsin mi?',
+  'Inference rejected': 'Çıkarım reddedildi', 'Write the table profile': 'Tablo profilini yaz',
+
   'Open table page': 'Tablo sayfasını aç', 'Search views': 'View\'larda ara', 'Search functions': 'Fonksiyonlarda ara',
   'view': 'view', 'reads (view)': 'okur (view)', 'Your score for {c}': '{c} için puanınız', 'Roles (optional)': 'Roller (isteğe bağlı)',
   'Only the user layer changes; the agent score stays. Only local Auspex files change; no database is touched.': 'Yalnızca kullanıcı katmanı değişir; ajan puanı kalır. Yalnızca yerel Auspex dosyaları değişir; hiçbir veritabanına dokunulmaz.',
@@ -7344,11 +8058,13 @@ function renderTablePage(view, data, tab = 'schema') {
   if (rec === null) return;
   const viewKind = tpViewOf(tp);
   const isView = tpIsView(node?.kind);
-  const index = viewKind === 'summary' || isView ? tpReportIndex(tp.db) : null;
-  const key = JSON.stringify([tp.db, data.generatedAt, tp.trail, tp.open, tp.showAll, lang, state.scorePending ?? null, viewKind, tpGroupOf(tp), tp.q ?? '', !!tp.unusedOpen, tp.moreOpen ?? null, index ? [index.items.length, index.pending, index.failed] : null, tp.codeOpen ?? null, state.sqlWrap !== false]);
+  const index = viewKind === 'summary' || viewKind === 'profile' || isView ? tpReportIndex(tp.db) : null;
+  const model = tablePageModel(data, id, rec ?? null);
+  const pr = viewKind === 'profile' ? tpProfileRead(tab, tp.db, model, data.generatedAt) : null;
+  const key = JSON.stringify([tp.db, data.generatedAt, tp.trail, tp.open, tp.showAll, lang, state.scorePending ?? null, viewKind, tpGroupOf(tp), tp.q ?? '', !!tp.unusedOpen, tp.moreOpen ?? null, index ? [index.items.length, index.pending, index.failed] : null, tp.codeOpen ?? null, state.sqlWrap !== false,
+    pr ? [pr.key, !!pr.loading, pr.error ?? null] : null]);
   if (pageKey(tab) === key && view.querySelector('.tp')) return;
   setPageKey(tab, key);
-  const model = tablePageModel(data, id, rec ?? null);
   const set = patch => { setPage(tab, { ...pageOf(tab), ...patch }); renderPageTab(tab); };
   tpKeepSearchFocus(document, () => put(view, tablePageView(model, tp.trail, {
     open: tp.open, showAll: tp.showAll, canScore: model.described && !state.scorePending,
@@ -7371,9 +8087,15 @@ function renderTablePage(view, data, tab = 'schema') {
     onReport: id => { const r = index?.reps.find(x => repKey(x) === id); if (r) openReportFromPage(r); },
     onAsk: (column, task) => openAskDialog({ kind: 'table', task, subject: column ? `${model.id}.${column}` : model.id,
       build: o => buildObjectAskPrompt({ kind: model.view ? (model.view.kind === 'matview' ? 'matview' : 'view') : 'table', profile: tp.db, schema: model.schema, name: model.table, column }, lang, o) }),
+    ...(pr ? tpProfileCtx(tab, tp, model, data, pr, index) : {}),
     ...tpCodeCtx(tab, tp, id, set), onOpenFunction: fn => openFunctionPage(tp.db, fn), searchId: searchIdOf(tab),
   })), tpQPending, searchIdOf(tab));
   if (index?.pending) tpLoadReportSql(index.reps);
+  if (state.tpFocus && pr && !pr.loading) {
+    const el = view.querySelector(state.tpFocus);
+    state.tpFocus = null;
+    el?.focus({ preventScroll: false });
+  }
   if (tp.reveal) {
     setPage(tab, { ...pageOf(tab), reveal: null });
     requestAnimationFrame(() => {
@@ -7382,6 +8104,32 @@ function renderTablePage(view, data, tab = 'schema') {
       row?.querySelector('.tp-cname')?.focus({ preventScroll: true });
     });
   }
+}
+// The Profile view's part of the page context: the profile model, its read
+// state, the remembered card and category states and every edit (only for a
+// table in memory, once its profile is read).
+function tpProfileCtx(tab, tp, model, data, pr, index) {
+  const prof = pr.value ?? null;
+  const editable = !!prof && prof.known !== false;
+  const onDb = fn => (editable ? fn : null);
+  return {
+    profileModel: tpProfileModel(model, data, prof, index),
+    profileState: { loading: !!pr.loading && !prof, error: pr.error ?? null, onRetry: () => { tpProfileCache.delete(pr.key); setPageKey(tab, null); renderPageTab(tab); } },
+    cardOpen: state.tpCards || {}, onCard: (k, v) => { state.tpCards = { ...state.tpCards, [k]: v }; persist(); },
+    catOpen: state.tpCats || {}, onCat: (k, v) => { state.tpCats = { ...state.tpCats, [k]: v }; persist(); },
+    onEditProfile: onDb(() => openProfileDialog(model, prof)),
+    onConfirmProfile: onDb(() => confirmProfileDialog(model, prof)),
+    onReviewProposal: onDb(() => openProposalDialog(model, prof)),
+    onAskRewrite: () => openAskDialog({ kind: 'table', task: 'profile', subject: model.id,
+      build: o => buildObjectAskPrompt({ kind: model.view ? (model.view.kind === 'matview' ? 'matview' : 'view') : 'table', profile: tp.db, schema: model.schema, name: model.table, tableProfile: tpAskProfileFacts(prof) }, lang, o) }),
+    onAddNote: onDb(kind => openNoteDialog(model, { kind })),
+    onEditNote: onDb(n => openNoteDialog(model, { note: n })),
+    onArchiveNote: onDb(n => confirmArchiveNote(n, { after: `.tpp-cat-${n.kind === 'observation' ? 'observation' : 'rule'} > summary` })),
+    onConfirmNote: onDb((n, kind) => confirmInferenceDialog(model, n, kind)),
+    onRejectNote: onDb(n => confirmArchiveNote(n, { after: '.tpp-cat-inference > summary', reason: t('Rejected by the user'), title: 'Reject this inference?', action: 'Reject', done: 'Inference rejected' })),
+    onMark: onDb(() => openMarkDialog(model, data, prof)),
+    onUnmark: onDb(r => confirmUnmarkDialog(model, r)),
+  };
 }
 // Schema search: matching tables as links to their table page.
 function memSearchResults(data, q) {

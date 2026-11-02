@@ -190,10 +190,10 @@ test('archiving keeps the "used" relations of approved reports in the rebuilt vi
 // ----- A failed archive keeps the dialog open with the typed reason -----
 test('page: a failed archive stays in the open dialog with a persistent alert and the typed reason; busy blocks a second submit', () => {
   const src = fs.readFileSync(new URL('../src/viewer.html', import.meta.url), 'utf8');
-  const confirm = src.match(/function confirmArchiveNote\(n\) \{[\s\S]*?\r?\n\}\r?\n/)[0];
+  const confirm = src.match(/function confirmArchiveNote\(n, opts = \{\}\) \{[\s\S]*?\r?\n\}\r?\n/)[0];
   assert.match(confirm, /const status = h\('div', \{ class: 'dlg-status', role: 'alert' \}\);/);
   assert.match(confirm, /await runInDialog\(dlg, \(\) => runArchiveNote\(state\.db, n, input\.value\), \{/, 'the same detach-safe run as approve and revoke');
-  assert.match(confirm, /onSuccess: \(\) => toast\(t\('Note archived'\)\),/);
+  assert.match(confirm, /onSuccess: \(\) => toast\(t\(opts\.done \?\? 'Note archived'\)\),/);
   assert.match(confirm, /onFailure: failure => \{ final = failure\.final; ok\.disabled = !allowed\(\); status\.textContent = failureText\(failure\); \},/);
   assert.match(confirm, /input\.readOnly = on;/, 'the reason is kept (read-only while busy, editable after)');
   assert.match(confirm, /const allowed = \(\) => !busy && !final && !archiveReasonProblem\(input\.value\);/, 'no second submit while busy or after an unknown outcome');
