@@ -1392,7 +1392,12 @@ export class SchemaMemory {
   // The inputs a profile of this table is based on now (profileInputs), with
   // the reports found by reportsMentioning.
   profileInputsOf(profile, rec, schema, table, { reports, complete }) {
-    return profileInputs({ rec, notes: this.activeNotes(profile, [{ schema, table }]), reports, reportsComplete: complete, effectiveScore });
+    const summaries = rec?.triggerSummaries ?? {};
+    const triggers = new Map((rec?.triggers ?? []).map(t => [t.name, t]));
+    const lookup = Object.keys(summaries).length ? this.functionLookup(profile) : null;
+    // A summary whose trigger is no longer recorded has no freshness.
+    const summaryState = name => (triggers.has(name) && Object.hasOwn(summaries, name) ? summaryFreshness(triggers.get(name), summaries[name], lookup).state : 'unverified');
+    return profileInputs({ rec, notes: this.activeNotes(profile, [{ schema, table }]), reports, reportsComplete: complete, effectiveScore, summaryState });
   }
 
   // Tables a trigger's function reads, from its stored body (an inference).
