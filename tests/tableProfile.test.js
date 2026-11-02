@@ -284,6 +284,29 @@ test('sqlMentions: qualified or bare names outside comments', () => {
   assert.equal(sqlMentions('select 1 from example."orders""history"', 'example', 'orders"history'), true);
 });
 
+test('sqlMentions reads the SQL in one linear, token-aware pass', () => {
+  // One token-aware pass: escape strings, dollar quotes at a token start only,
+  // a quoted identifier as one name, nested comments.
+  const cases = [
+    ["select E'it\\'s' from example.orders", true, 'a backslash escape in an E string'],
+    ["select e'\\\\' from example.orders", true, 'an escaped backslash ends an E string'],
+    ["select E'example.orders' from test.invoices", false, 'an E string is a literal'],
+    ['select col$q$ from example.orders join test.invoices on b$q$ = 1', true, 'a $ inside an identifier is no dollar quote'],
+    ['select 1 from "example.orders"', false, 'one quoted identifier is one name'],
+    ['select 1 from "example"."orders"', true, 'two quoted identifiers'],
+    ['select 1 from example /* a */ . /* b */ orders', true, 'comments between the names'],
+    ['select 1 /* outer /* example.orders */ still a comment */ from test.invoices', false, 'nested comments'],
+    ["select X'01' from test.invoices", false, 'a bit string prefix is no name'],
+    ['select 1 from db.example.orders', true, 'a database-qualified name'],
+  ];
+  for (const [sql, expected, label] of cases) assert.equal(sqlMentions(sql, 'example', 'orders'), expected, label);
+  assert.equal(sqlMentions('select 1 from x', 'example', 'x'), true);
+  const big = `${Array.from({ length: 20000 }, (_, i) => `c$t${i}$`).join(' ')} from example.orders`; // every $tN$ opens no quote
+  const started = performance.now();
+  assert.equal(sqlMentions(big, 'example', 'orders'), true);
+  assert.ok(performance.now() - started < 150, `${Math.round(performance.now() - started)} ms for ${big.length} characters`);
+});
+
 test('table_knowledge carries a short profile section; editing a note archives it and links the replacement', () => {
   const { memory, done } = setup();
   try {
