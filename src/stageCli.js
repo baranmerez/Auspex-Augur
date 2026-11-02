@@ -144,12 +144,27 @@ function scoreMain(args, dirs) {
 // reports' joins, report SQL for the table profile's fingerprint.
 const memoryOf = (dirs, lib = new Library(dirs.libraryDir)) => new SchemaMemory(dirs.memoryDir, { approvedJoins: profile => approvedJoinPairs(lib, profile), reportSources: profile => reportSources(lib, profile) });
 
-// The request of memory-edit: one JSON object on stdin, at most maxEditBytes.
-function readStdinJson(read = () => fs.readFileSync(0)) {
-  let raw;
-  try { raw = read(); } catch { throw new StageError(400, 'memory-edit reads its request as JSON on stdin'); }
-  if (raw.length > maxEditBytes) throw new StageError(413, 'Request too large');
-  try { return JSON.parse(raw.toString('utf8')); } catch { throw new StageError(400, 'The request on stdin must be JSON'); }
+// The request of memory-edit: one JSON object on stdin, at most maxEditBytes,
+// read in chunks so a larger one stops the read once it passes the limit.
+// readChunk(buf) -> bytes read, 0 at the end (an EOF error ends it too).
+function readStdinJson(readChunk = buf => fs.readSync(0, buf, 0, buf.length, null)) {
+  const buf = Buffer.alloc(16 * 1024);
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    let n;
+    try {
+      n = readChunk(buf);
+    } catch (err) {
+      if (err?.code === 'EOF') break;
+      throw new StageError(400, 'memory-edit reads its request as JSON on stdin');
+    }
+    if (!n) break;
+    total += n;
+    if (total > maxEditBytes) throw new StageError(413, 'Request too large');
+    chunks.push(Buffer.from(buf.subarray(0, n)));
+  }
+  try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw new StageError(400, 'The request on stdin must be JSON'); }
 }
 
 function editMain(args, dirs) {

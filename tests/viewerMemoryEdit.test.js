@@ -224,3 +224,18 @@ test('a corrupt profile file is refused without its content in the response or t
   assert.match(c.out.message, /customers\.json is not valid JSON/);
   for (const text of [v.text, JSON.stringify(c.out), JSON.stringify(auditOf(viewerHome)), JSON.stringify(auditOf(cliHome))]) assert.ok(!text.includes('EXAMPLE_PRIVATE'), text);
 });
+
+test('stageCli memory-edit stops reading stdin once the request passes the limit', async () => {
+  // stdin stays open: a read of everything up to EOF would never return.
+  const p = spawn(process.execPath, [cli, 'memory-edit'], { env: cliEnv(cliHome), stdio: ['pipe', 'pipe', 'pipe'] });
+  let out = '';
+  p.stdout.on('data', d => { out += d; });
+  p.stdin.on('error', () => {});
+  p.stdin.write('x'.repeat(70 * 1024));
+  const timer = setTimeout(() => p.kill(), 10000);
+  const code = await new Promise(resolve => p.on('exit', resolve));
+  clearTimeout(timer);
+  p.stdin.destroy();
+  assert.equal(code, 1, out);
+  assert.match(JSON.parse(out.trim()).message, /too large/);
+});
