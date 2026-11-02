@@ -346,8 +346,10 @@ section can carry its sources (`{ type, ref }`, type one of `note`,
   count, `structure-changed`, `reports-changed`) and a one-line
   `freshnessReason` ("2 new rules; structure changed"); or `unverified`
   (`legacy`, `structure-missing`, `table-missing`, `reports-unknown`,
-  `reports-incomplete` when only part of the report library was read). A
-  profile is never rewritten automatically.
+  `reports-incomplete` when only part of the report library was read,
+  `fingerprint-format` when the version was saved with an older fingerprint
+  format: the parts whose shape changed are not compared, the rest still
+  are). A profile is never rewritten automatically.
 - **Cannot live without.** `requiredTables` lists the tables the table
   needs, each with its evidence: `catalog` (a foreign key whose columns are
   all NOT NULL), `inference` (a code column without a foreign key whose name

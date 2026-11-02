@@ -214,6 +214,15 @@ export function sqlMentions(sql, schema, table) {
 //              SQL mentions the table (null when the library was not read)
 //   reportsIncomplete  true when only part of the library was read (a cap
 //              or an unreadable report); left out otherwise
+//   format     the fingerprint format (fingerprintFormat; 1 when missing)
+// Format 2 added the constraint definitions and referenced columns to
+// structure, and the summary state and function hash to triggers.
+export const fingerprintFormat = 2;
+// The formats in which the shape of a part changed. A part is compared only
+// when both fingerprints have the same shape of it.
+const partShapeChanges = { structure: [2], triggers: [2] };
+const partShape = (part, format) => (partShapeChanges[part] ?? []).filter(v => v <= format).length;
+const formatOf = fp => (Number.isInteger(fp?.format) ? fp.format : 1);
 export function profileInputs({ rec, notes, reports, reportsComplete = true, effectiveScore, summaryState = () => null }) {
   const described = !!rec?.describedAt;
   const structure = described ? hash({
@@ -235,6 +244,7 @@ export function profileInputs({ rec, notes, reports, reportsComplete = true, eff
     scores: scores.length ? hash(scores) : null,
     reports: reportItems,
     ...(reportItems !== null && reportsComplete === false ? { reportsIncomplete: true } : {}),
+    format: fingerprintFormat,
   };
 }
 
@@ -250,13 +260,16 @@ export function fingerprintOf(inputs) {
 // unverified codes: legacy (no fingerprint), structure-missing (written
 // before the structure was recorded), table-missing (no longer in memory),
 // reports-unknown (the report library could not be read then or now),
-// reports-incomplete (only part of it could be read then or now).
+// reports-incomplete (only part of it could be read then or now),
+// fingerprint-format (parts: the parts saved in another shape, not compared).
 // A detected change wins over a gap; missing evidence is never fresh.
 export function profileFreshness(fp, now) {
   if (!fp || typeof fp !== 'object' || typeof fp.hash !== 'string') return { state: 'unverified', reasons: [{ code: 'legacy' }] };
-  const stale = [], gaps = [];
+  const stale = [], gaps = [], otherShape = [];
+  const sameShape = part => partShape(part, formatOf(fp)) === partShape(part, formatOf(now));
   if (fp.structure === null || fp.structure === undefined) gaps.push({ code: 'structure-missing' });
   else if (now.structure === null) gaps.push({ code: 'table-missing' });
+  else if (!sameShape('structure')) otherShape.push('structure');
   else if (fp.structure !== now.structure) stale.push({ code: 'structure-changed' });
   const before = new Map((Array.isArray(fp.notes) ? fp.notes : []).map(([id, kind, h]) => [id, { kind, h }]));
   const after = new Map(now.notes.map(([id, kind, h]) => [id, { kind, h }]));
@@ -267,7 +280,10 @@ export function profileFreshness(fp, now) {
   if (removed) stale.push({ code: 'notes-removed', count: removed });
   const changed = [...after].filter(([id, n]) => before.has(id) && (before.get(id).kind !== n.kind || before.get(id).h !== n.h)).length;
   if (changed) stale.push({ code: 'notes-changed', count: changed });
-  if ((fp.triggers ?? null) !== now.triggers) stale.push({ code: 'trigger-summaries-changed' });
+  // No summaries (null) reads the same in every shape.
+  const triggersThen = fp.triggers ?? null;
+  if (triggersThen !== null && now.triggers !== null && !sameShape('triggers')) otherShape.push('triggers');
+  else if (triggersThen !== now.triggers) stale.push({ code: 'trigger-summaries-changed' });
   if ((fp.scores ?? null) !== now.scores) stale.push({ code: 'scores-changed' });
   if (!Array.isArray(fp.reports) || now.reports === null) gaps.push({ code: 'reports-unknown' });
   else if (fp.reportsIncomplete || now.reportsIncomplete) gaps.push({ code: 'reports-incomplete' });
@@ -282,6 +298,7 @@ export function profileFreshness(fp, now) {
     if (gone) stale.push({ code: 'reports-removed', count: gone });
     if (edited) stale.push({ code: 'reports-changed', count: edited });
   }
+  if (otherShape.length) gaps.push({ code: 'fingerprint-format', parts: otherShape });
   if (stale.length) return { state: 'stale', reasons: stale };
   if (gaps.length) return { state: 'unverified', reasons: gaps };
   return { state: 'fresh', reasons: [] };
@@ -306,6 +323,7 @@ export function freshnessText(reasons) {
       case 'table-missing': return 'the table is no longer in memory';
       case 'reports-unknown': return 'the report library could not be compared';
       case 'reports-incomplete': return 'not every report could be read';
+      case 'fingerprint-format': return `saved by an older Auspex; ${(r.parts ?? []).map(p => (p === 'triggers' ? 'trigger summaries' : p)).join(' and ')} not compared`;
       default: return r.code;
     }
   };

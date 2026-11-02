@@ -190,6 +190,7 @@ test('Turkish texts exist for the Profile view and its freshness reasons', () =>
   const ctx = load('tr');
   for (const k of Object.keys(ctx.tableProfileTr)) assert.ok(ctx.TR[k], k);
   assert.equal(ctx.tppFreshText([{ code: 'notes-added', kind: 'rule', count: 2 }, { code: 'structure-changed' }]), '2 yeni kural; yapı değişti');
+  assert.equal(ctx.tppFreshText([{ code: 'fingerprint-format', parts: ['structure'] }]), 'eski bir Auspex ile kaydedildi; bazı kısımlar karşılaştırılamadı');
   assert.match(textOf(byClass(render(ctx), 'tpp-card')[0]), /Olmazsa olmaz/);
 });
 
