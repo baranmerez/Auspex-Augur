@@ -1315,8 +1315,11 @@ fn table_profile(query: &HashMap<String, String>) -> Result<Value, String> {
 // the MCP server script for the client entry, where pgpass is looked for, the
 // skills folder). Writes: `setup_init` creates ~/.auspex and an example
 // profiles file only when they are absent; `install_skills` runs
-// `stageCli.js install-skills`. Nothing here connects to a database, reads a
-// password or edits an MCP client's configuration.
+// `stageCli.js install-skills`; `save_connection` runs `stageCli.js
+// save-connection`, which writes one profile and one pgpass line. The
+// password typed on the screen goes only into pgpass: it is never read back,
+// shown, logged or put in argv. Nothing here connects to a database or edits
+// an MCP client's configuration.
 
 const MIN_NODE_MAJOR: u64 = 20;
 const NODE_DOWNLOAD_URL: &str = "https://nodejs.org/";
@@ -1531,6 +1534,62 @@ async fn setup_init() -> Result<Value, Value> {
     .map_err(|e| stage_error("INTERNAL", e.to_string()))?
 }
 
+// The connection step: { profileName, host, port, database, user, password }.
+// Checked here for shape only (an object of exactly these keys, a valid
+// profile name, at most MAX_CONNECTION_BYTES); src/connectionSetup.js checks
+// every field. The request reaches `stageCli.js save-connection` on stdin,
+// never in argv. The password is never put in an error, the audit base or a
+// log: a failed run reports a fixed text, without the CLI's stderr.
+const MAX_CONNECTION_BYTES: usize = 8 * 1024;
+const CONNECTION_KEYS: [&str; 6] = ["profileName", "host", "port", "database", "user", "password"];
+
+fn connection_payload(request: &Value) -> Result<(String, Value), Value> {
+    let Some(obj) = request.as_object() else { return Err(stage_error("INVALID_INPUT", "The request must be a JSON object.")) };
+    if obj.keys().any(|k| !CONNECTION_KEYS.contains(&k.as_str())) || CONNECTION_KEYS.iter().any(|k| !obj.contains_key(*k)) {
+        return Err(stage_error("INVALID_INPUT", format!("The request needs exactly these fields: {}.", CONNECTION_KEYS.join(", "))));
+    }
+    let profile = obj.get("profileName").and_then(Value::as_str).unwrap_or("");
+    if !valid_profile(profile) {
+        return Err(stage_error("PROFILE_INVALID", "Invalid profile name: a-z, 0-9, - and _, starting with a letter, at most 40 characters."));
+    }
+    let text = request.to_string();
+    if text.len() > MAX_CONNECTION_BYTES {
+        return Err(stage_error("INVALID_INPUT", "The request is too large."));
+    }
+    Ok((text, json!({ "tool": "save_connection", "profile": profile })))
+}
+
+// A run without a JSON result (timeout, crash): a fixed text, never the CLI's
+// stderr, in the answer and in the audit line.
+fn connection_result(run: CliRun) -> Result<Value, Value> {
+    let unknown = |code: &str| stage_error(code, "src/stageCli.js gave no result; the connection may or may not have been saved. Check the profiles file and pgpass.");
+    match run {
+        CliRun::TimedOut => Err(unknown("TIMEOUT")),
+        CliRun::Done { stdout, code, .. } => parse_cli_output(&stdout, "", code).map_err(|e| if e["code"] == json!("CLI_FAILED") { unknown("CLI_FAILED") } else { e }),
+    }
+}
+
+fn run_connection_cli(text: &str, audit: &Value) -> Result<Value, Value> {
+    let (run, elapsed) = exec_cli(&["save-connection".to_string()], STAGE_TIMEOUT, MAX_CLI_OUTPUT, Some(text))?;
+    let result = connection_result(run);
+    if let Err(e) = &result {
+        if e["code"] == json!("CLI_FAILED") || e["code"] == json!("TIMEOUT") {
+            audit_uncertain(audit, elapsed, e);
+        }
+    }
+    result
+}
+
+#[tauri::command]
+async fn save_connection(request: Value) -> Result<Value, Value> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let (text, audit) = connection_payload(&request)?;
+        run_connection_cli(&text, &audit)
+    })
+    .await
+    .map_err(|e| stage_error("INTERNAL", e.to_string()))?
+}
+
 // force: replace skills that differ in the target (the page asks first).
 #[tauri::command]
 async fn install_skills(force: Option<bool>) -> Result<Value, Value> {
@@ -1557,7 +1616,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![HIDDEN_ARG])))
-        .invoke_handler(tauri::generate_handler![api, approve_report, revoke_report, archive_note, score_column, edit_memory, setup_init, install_skills])
+        .invoke_handler(tauri::generate_handler![api, approve_report, revoke_report, archive_note, score_column, edit_memory, setup_init, install_skills, save_connection])
         .setup(|app| {
             // The server copy bundled with the installed app; see resolve_auspex_root.
             if let Ok(dir) = app.path().resource_dir() {
@@ -2168,6 +2227,40 @@ lines")).is_err());
         assert_eq!((info["available"].clone(), info["present"].clone()), (json!(["auspex-explore", "auspex-report"]), json!(["auspex-report"])));
         assert_eq!(skills_info(None, &target)["available"], json!([]));
         let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn connection_requests_are_checked_and_never_leak_the_password() {
+        let pw = "S3cr:et-example";
+        let req = |extra: Value| {
+            let mut r = json!({ "profileName": "exampledb", "host": "db.example.test", "port": 5432, "database": "exampledb", "user": "report_reader", "password": pw });
+            if let (Some(o), Some(e)) = (r.as_object_mut(), extra.as_object()) {
+                for (k, v) in e {
+                    if v.is_null() { o.remove(k); } else { o.insert(k.clone(), v.clone()); }
+                }
+            }
+            r
+        };
+        let (text, audit) = connection_payload(&req(json!({}))).unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&text).unwrap()["password"], json!(pw), "the password reaches stdin unchanged");
+        assert_eq!(audit, json!({ "tool": "save_connection", "profile": "exampledb" }), "no password or connection detail in the audit base");
+        for (bad, code) in [
+            (json!([1]), "INVALID_INPUT"), (req(json!({ "extra": 1 })), "INVALID_INPUT"), (req(json!({ "password": null })), "INVALID_INPUT"),
+            (req(json!({ "profileName": "Example" })), "PROFILE_INVALID"), (req(json!({ "profileName": "../x" })), "PROFILE_INVALID"),
+            (req(json!({ "password": "x".repeat(MAX_CONNECTION_BYTES) })), "INVALID_INPUT"),
+        ] {
+            let e = connection_payload(&bad).unwrap_err();
+            assert_eq!(e["code"], json!(code), "{bad}");
+            assert!(!e.to_string().contains(pw), "{e}");
+        }
+        // A crash or timeout reports a fixed text, never the CLI's stderr.
+        let crashed = connection_result(CliRun::Done { stdout: String::new(), stderr: format!("Error near {pw}"), code: Some(1) }).unwrap_err();
+        assert_eq!(crashed["code"], json!("CLI_FAILED"));
+        assert!(!crashed.to_string().contains(pw));
+        assert_eq!(connection_result(CliRun::TimedOut).unwrap_err()["code"], json!("TIMEOUT"));
+        let refused = connection_result(CliRun::Done { stdout: "{\"ok\":false,\"code\":\"INVALID_INPUT\",\"message\":\"port must be a whole number from 1 to 65535.\"}\n".into(), stderr: String::new(), code: Some(1) }).unwrap_err();
+        assert_eq!(refused["message"], json!("port must be a whole number from 1 to 65535."));
+        assert_eq!(connection_result(CliRun::Done { stdout: "{\"ok\":true,\"profile\":\"exampledb\"}\n".into(), stderr: String::new(), code: Some(0) }).unwrap()["profile"], json!("exampledb"));
     }
 
     #[test]

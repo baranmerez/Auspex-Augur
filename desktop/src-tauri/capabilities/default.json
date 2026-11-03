@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Main window: core defaults, the read-only `api` command, the two report stage commands (approve_report, revoke_report) and the note archive command (archive_note), the user column score command (score_column), the table page memory edit command (edit_memory) and the skills install of the Setup screen (install_skills), which run src/stageCli.js, and the Setup screen's setup_init, which creates ~/.auspex and an example profiles file only when absent. No shell or other process plugin.",
+  "description": "Main window: core defaults, the read-only `api` command, the two report stage commands (approve_report, revoke_report) and the note archive command (archive_note), the user column score command (score_column), the table page memory edit command (edit_memory) and the skills install of the Setup screen (install_skills), which run src/stageCli.js, the Setup screen's setup_init, which creates ~/.auspex and an example profiles file only when absent, and its save_connection, which runs src/stageCli.js with the connection on stdin to write one profile and one pgpass line. No shell or other process plugin.",
   "windows": ["main"],
-  "permissions": ["core:default", "allow-api", "allow-approve-report", "allow-revoke-report", "allow-archive-note", "allow-score-column", "allow-edit-memory", "allow-setup-init", "allow-install-skills"]
+  "permissions": ["core:default", "allow-api", "allow-approve-report", "allow-revoke-report", "allow-archive-note", "allow-score-column", "allow-edit-memory", "allow-setup-init", "allow-install-skills", "allow-save-connection"]
 }
