@@ -63,10 +63,10 @@ test('pgpass: escaping, replacing the matching line only, keeping the rest byte 
   assert.deepEqual(pgpassFields('h\\:x:5432:d:u:p\\\\w'), ['h:x', '5432', 'd', 'u', 'p\\w']);
   const line = 'db.example.test:5432:exampledb:report_reader:S3cr\\:et\\\\pw-öz';
   const added = mergePgpass(null, request(), '\n');
-  assert.deepEqual(added, { text: `${line}\n`, action: 'added' });
-  const others = '# my servers\r\ndb.example.test:5433:testdb:report_reader:other\r\n*:*:*:report_reader:wild\r\n';
+  assert.deepEqual(added, { text: `${line}\n`, action: 'added', beforeWildcard: false });
+  const others = '# my servers\r\n\r\ndb.example.test:5433:testdb:report_reader:other\r\ndb.example.test:5432:otherdb:report_reader:other\r\n';
   const appended = mergePgpass(others, request(), '\n');
-  assert.equal(appended.text, `${others}${line}\r\n`, 'the file\'s own line ending is used');
+  assert.equal(appended.text, `${others}${line}\r\n`, 'same host and user with another port or database is another entry; the file\'s own line ending is used');
   const noFinalNewline = mergePgpass('a:1:b:c:d', request(), '\n');
   assert.equal(noFinalNewline.text, `a:1:b:c:d\n${line}\n`);
   const existing = `\uFEFFfirst:1:x:y:z\ndb.example.test:5432:exampledb:report_reader:old\r\nlast:2:x:y:z`;
@@ -75,6 +75,17 @@ test('pgpass: escaping, replacing the matching line only, keeping the rest byte 
   assert.equal(replaced.text, `first:1:x:y:z\n${line}\r\nlast:2:x:y:z`, 'BOM dropped, other lines and endings unchanged');
   const commented = mergePgpass('#db.example.test:5432:exampledb:report_reader:old\n', request(), '\n');
   assert.equal(commented.action, 'added', 'comments never match');
+  // Wildcards: never replaced; the exact line goes before the first one that
+  // would also match, so libpq (first match wins) uses the new password.
+  const wild = 'a:1:b:c:d\n*:*:*:report_reader:wild\n*:5432:exampledb:report_reader:wild2\n';
+  const beforeWild = mergePgpass(wild, request(), '\n');
+  assert.deepEqual(beforeWild, { text: `a:1:b:c:d\n${line}\n*:*:*:report_reader:wild\n*:5432:exampledb:report_reader:wild2\n`, action: 'added', beforeWildcard: true });
+  const otherUser = mergePgpass('*:*:*:someone_else:wild\n', request(), '\n');
+  assert.deepEqual([otherUser.beforeWildcard, otherUser.text], [false, `*:*:*:someone_else:wild\n${line}\n`], 'a wildcard line for another user does not match');
+  const literalStar = mergePgpass('\\*:5432:exampledb:report_reader:lit\n', request(), '\n');
+  assert.equal(literalStar.beforeWildcard, false, 'an escaped \\* is a literal star, not a wildcard');
+  const shadowed = mergePgpass('*:*:*:*:wild\ndb.example.test:5432:exampledb:report_reader:old\n', request(), '\n');
+  assert.deepEqual([shadowed.action, shadowed.shadowedByWildcard, shadowed.text], ['replaced', true, `*:*:*:*:wild\n${line}\n`], 'replaced in place, the wildcard before it is reported');
   const escapedHost = mergePgpass('fe80\\:\\:1:5432:exampledb:report_reader:old\n', request({ host: 'fe80::1' }), '\n');
   assert.deepEqual([escapedHost.action, escapedHost.text], ['replaced', 'fe80\\:\\:1:5432:exampledb:report_reader:S3cr\\:et\\\\pw-öz\n']);
 });
@@ -140,4 +151,13 @@ test('save-connection takes no arguments and refuses a broken profiles file with
   assert.equal(res.out.code, 'PRECONDITION_FAILED');
   assert.equal(fs.readFileSync(path.join(home, 'profiles.json'), 'utf8'), '{ broken');
   assert.equal(fs.existsSync(path.join(home, 'pg', 'pgpass.conf')), false, 'no password stored either');
+});
+
+test('save-connection reports when it put the line before a wildcard line', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'auspex-connection-'));
+  fs.mkdirSync(path.join(home, 'pg'));
+  fs.writeFileSync(path.join(home, 'pg', 'pgpass.conf'), '*:*:*:report_reader:wild\n');
+  const res = runCli(home, JSON.stringify(request()));
+  assert.deepEqual([res.status, res.out.pgpassAction, res.out.pgpassWildcard], [0, 'added', 'before']);
+  assert.match(fs.readFileSync(path.join(home, 'pg', 'pgpass.conf'), 'utf8'), /^db\.example\.test:5432:[^\n]*\n\*:\*:\*:report_reader:wild\n$/);
 });

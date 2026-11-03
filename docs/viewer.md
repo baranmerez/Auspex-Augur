@@ -449,9 +449,14 @@ or *optional*:
   fields; every other profile and key stays as it was. The URL is
   `postgresql://<user>@<host>:<port>/<database>`, without a password. It then
   writes `host:port:database:user:password` to pgpass, with `:` and `\`
-  escaped: the first line with the same host, port, database and user is
-  replaced, otherwise the line is added; every other line stays byte for
-  byte. Both files are written atomically, UTF-8 without BOM. The password is
+  escaped. The first line with the same host, port, database and user
+  (compared unescaped) is replaced in place; the same host and user with
+  another port or database is another entry. Otherwise the line is added at
+  the end, or, when a wildcard line (`*` in a field) would also match it,
+  just before the first such line, because libpq uses the first matching
+  line. Wildcard lines are never replaced; when one before the replaced line
+  still matches first, the screen says so. Every other line (comments and
+  blank lines included) stays byte for byte with its own line ending. Both files are written atomically, UTF-8 without BOM. The password is
   never shown again, never read back from pgpass and never logged; the audit
   entry `save_connection` holds the profile name and what was added or
   replaced. A name already set by `AUSPEX_DB_<NAME>` is refused. The app does

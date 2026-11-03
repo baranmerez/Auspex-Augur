@@ -103,30 +103,55 @@ export function pgpassFields(line) {
   return out;
 }
 
-// The pgpass file with the line for host:port:database:user replaced (the
-// first exact match, no wildcards) or added at the end. Every other line is
-// kept byte for byte with its own line ending; a leading BOM is dropped
-// (libpq would read it as part of the first host). text: the content, or null.
+// The first four fields of a pgpass line as libpq reads them: each unescaped,
+// with wildcard true for a field that is a bare * (an escaped \* is a literal
+// star). null for comments, blank lines and lines with fewer than 5 fields.
+function pgpassKey(content) {
+  if (content.startsWith('#')) return null;
+  const fields = [];
+  let cur = '', raw = '';
+  for (let i = 0; i < content.length; i++) {
+    const c = content[i];
+    if (c === '\\' && i + 1 < content.length) { cur += content[i + 1]; raw += c + content[i + 1]; i++; }
+    else if (c === ':') { fields.push({ value: cur, wildcard: raw === '*' }); cur = ''; raw = ''; } else { cur += c; raw += c; }
+  }
+  fields.push({ value: cur, wildcard: raw === '*' });
+  return fields.length >= 5 ? fields.slice(0, 4) : null;
+}
+
+// The pgpass file with the entry for host:port:database:user written, as
+// libpq reads the file (the first matching line wins):
+// - a line with exactly these four fields (compared unescaped, no wildcard)
+//   is replaced in place: action "replaced";
+// - otherwise the line is added, before the first wildcard line (* in a
+//   field) that would also match it, so the exact line wins: action "added"
+//   with beforeWildcard true; else at the end;
+// - a wildcard line is never replaced; when one before the replaced line
+//   still matches first, shadowedByWildcard is true.
+// Every other line is kept byte for byte with its own line ending; a leading
+// BOM is dropped (libpq would read it as part of the first host). text: the
+// content, or null.
 export function mergePgpass(text, { host, port, database, user, password }, eol = process.platform === 'win32' ? '\r\n' : '\n') {
   const body = (text ?? '').replace(/^﻿/, '');
   const line = [host, String(port), database, user, password].map(pgpassEscape).join(':');
   const lines = body.match(/[^\r\n]*(?:\r\n|\n|\r)|[^\r\n]+$/g) || [];
   const want = [host, String(port), database, user];
-  const index = lines.findIndex(l => {
-    const content = l.replace(/(?:\r\n|\n|\r)$/, '');
-    if (content.startsWith('#')) return false;
-    const f = pgpassFields(content);
-    return f.length >= 5 && want.every((v, i) => f[i] === v);
-  });
-  if (index >= 0) {
-    const ending = lines[index].match(/(?:\r\n|\n|\r)$/)?.[0] ?? '';
-    lines[index] = line + ending;
-    return { text: lines.join(''), action: 'replaced' };
-  }
+  const keys = lines.map(l => pgpassKey(l.replace(/(?:\r\n|\n|\r)$/, '')));
+  const exact = keys.findIndex(k => k && k.every((f, i) => !f.wildcard && f.value === want[i]));
+  const wildcard = keys.findIndex(k => k && k.some(f => f.wildcard) && k.every((f, i) => f.wildcard || f.value === want[i]));
   const lineEnding = body.match(/\r\n|\n|\r/)?.[0] ?? eol;
+  if (exact >= 0) {
+    const ending = lines[exact].match(/(?:\r\n|\n|\r)$/)?.[0] ?? '';
+    lines[exact] = line + ending;
+    return { text: lines.join(''), action: 'replaced', shadowedByWildcard: wildcard >= 0 && wildcard < exact };
+  }
+  if (wildcard >= 0) {
+    lines.splice(wildcard, 0, line + lineEnding);
+    return { text: lines.join(''), action: 'added', beforeWildcard: true };
+  }
   const joined = lines.join('');
   const sep = joined && !/(?:\r\n|\n|\r)$/.test(joined) ? lineEnding : '';
-  return { text: `${joined}${sep}${line}${lineEnding}`, action: 'added' };
+  return { text: `${joined}${sep}${line}${lineEnding}`, action: 'added', beforeWildcard: false };
 }
 
 // Where the password goes: PGPASSFILE (must be absolute), else
@@ -171,5 +196,8 @@ export function saveConnection(body, { profilesFile, env = process.env }) {
   } catch (err) {
     throw new StageError(500, `The profile was saved in ${profilesFile}, but ${passFile} could not be written (${err.code || 'error'}); the password was not stored.`, 'DISK_ERROR');
   }
-  return { profile: name, url, profilesFile, profileAction: profiles.action, pgpassFile: passFile, pgpassAction: pass.action };
+  // A wildcard line that also covers this entry: the new line was put before
+  // it, or (when the replaced line comes after it) it still wins.
+  const pgpassWildcard = pass.beforeWildcard ? 'before' : pass.shadowedByWildcard ? 'shadowed' : null;
+  return { profile: name, url, profilesFile, profileAction: profiles.action, pgpassFile: passFile, pgpassAction: pass.action, pgpassWildcard };
 }

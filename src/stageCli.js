@@ -280,7 +280,7 @@ function saveConnectionMain(args, env, dirs) {
     const body = readStdinJson(undefined, { command: 'save-connection', maxBytes: maxConnectionBytes });
     if (body && typeof body === 'object' && typeof body.profileName === 'string' && /^[a-z][a-z0-9_-]{0,39}$/.test(body.profileName)) entry.profile = body.profileName;
     const result = saveConnection(body, { profilesFile: env.AUSPEX_PROFILES_FILE || defaultProfilesFile(env), env });
-    audit({ ...entry, ms: Date.now() - started, profileAction: result.profileAction, pgpassAction: result.pgpassAction });
+    audit({ ...entry, ms: Date.now() - started, profileAction: result.profileAction, pgpassAction: result.pgpassAction, ...(result.pgpassWildcard ? { pgpassWildcard: result.pgpassWildcard } : {}) });
     return { status: 0, out: { ok: true, ...result, correlationId: entry.correlationId } };
   } catch (err) {
     const { code } = classifyError(err);

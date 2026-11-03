@@ -1670,7 +1670,9 @@ const TR = {
   'Database: at most 63 bytes.': 'Veritabanı: en çok 63 bayt.', 'User: at most 63 bytes.': 'Kullanıcı: en çok 63 bayt.',
   'Database: one line, no surrounding spaces.': 'Veritabanı: tek satır, başta ve sonda boşluk yok.', 'User: one line, no surrounding spaces.': 'Kullanıcı: tek satır, başta ve sonda boşluk yok.',
   'Password: required.': 'Parola: gerekli.', 'Password: one line of at most 1024 characters.': 'Parola: en çok 1024 karakterlik tek satır.',
-  'The file is larger than 4 KB.': 'Dosya 4 KB\'tan büyük.', 'The file is not valid JSON.': 'Dosya geçerli JSON değil.', 'The file must hold one JSON object.': 'Dosya tek bir JSON nesnesi içermeli.', 'installed': 'kuruldu', 'replaced': 'değiştirildi', 'unchanged': 'değişmedi',
+  'pgpass has a wildcard (*) line that also covers this connection; the new line was put before it so this password is used.': 'pgpass\'te bu bağlantıyı da kapsayan bir joker (*) satırı var; bu parolanın kullanılması için yeni satır onun önüne yazıldı.',
+  'A wildcard (*) line earlier in pgpass also covers this connection and is read first, so its password is used instead. Move the line for this profile above it in a text editor.': 'pgpass\'te daha önce gelen bir joker (*) satırı bu bağlantıyı da kapsıyor ve önce okunuyor, bu yüzden onun parolası kullanılır. Bu profilin satırını bir metin düzenleyicide onun üstüne taşı.',
+  'The file is larger than 4 KB.':'Dosya 4 KB\'tan büyük.', 'The file is not valid JSON.': 'Dosya geçerli JSON değil.', 'The file must hold one JSON object.': 'Dosya tek bir JSON nesnesi içermeli.', 'installed': 'kuruldu', 'replaced': 'değiştirildi', 'unchanged': 'değişmedi',
 };
 let lang = 'en';
 try { lang = localStorage.getItem('auspex.viewer.lang') || ((navigator.language || '').toLowerCase().startsWith('tr') ? 'tr' : 'en'); } catch {}
@@ -2666,6 +2668,8 @@ function setupConnectionStep(step, msg, busy) {
     saved ? h('div', { class: 'setup-done', role: 'status' },
       h('p', {}, t('Saved profile {p} ({a}) in ', { p: saved.profile, a: t(saved.profileAction) }), h('code', { class: 'setup-path' }, saved.profilesFile),
         t(' and its password ({a}) in ', { a: t(saved.pgpassAction) }), h('code', { class: 'setup-path' }, saved.pgpassFile), '.'),
+      saved.pgpassWildcard === 'before' ? h('p', { class: 'muted' }, t('pgpass has a wildcard (*) line that also covers this connection; the new line was put before it so this password is used.')) : null,
+      saved.pgpassWildcard === 'shadowed' ? h('div', { class: 'stale-box', role: 'alert' }, t('A wildcard (*) line earlier in pgpass also covers this connection and is read first, so its password is used instead. Move the line for this profile above it in a text editor.')) : null,
       h('p', {}, t('Next: restart your MCP client (for example Claude) so it reads the profile, then ask the agent:')),
       h('pre', { class: 'setup-pre' }, setupCheckRequest(saved.profile)),
       setupCopy(setupCheckRequest(saved.profile), t('Request'))) : null);
