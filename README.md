@@ -113,7 +113,7 @@ Details: [docs/safety.md](docs/safety.md)
 A small native app (about 3 MB) that sits in the tray and reads `~/.auspex` directly, with no server to start.
 
 <p align="center">
-  <img src="docs/assets/desktop-app.svg" alt="Desktop app: overview charts, the report library, the relation map and a table page with switchable themes" width="100%">
+  <img src="docs/assets/desktop-app.svg" alt="Desktop app: overview charts, the report library, the relation map, a table page with switchable themes and the first-run Setup screen" width="100%">
 </p>
 
 - 📈 **Overview and operations**: activity charts, slowest queries, recent errors, and the full SQL log with filters and CSV export.
