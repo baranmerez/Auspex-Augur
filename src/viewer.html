@@ -293,6 +293,12 @@
   .setup-problem { color: var(--critical); }
   .setup-list { margin: 10px 0 0; padding-left: 18px; font-size: 13px; }
   .setup .error-box .icon-btn { margin-top: 8px; }
+  .setup-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 160px), 1fr)); gap: 10px 12px; margin: 0 0 10px; }
+  .setup-field { display: grid; gap: 4px; min-width: 0; }
+  .setup-field label { font-size: 12px; color: var(--text-2); }
+  .setup-field input { width: 100%; min-width: 0; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); padding: 6px 8px; font: 13px var(--mono); }
+  .setup-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+  .setup-done { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
   .paths div { margin: 3px 0; }
 
   .empty { padding: 40px 20px; text-align: center; color: var(--text-3); }
@@ -1629,7 +1635,7 @@ const TR = {
   'The Setup screen is part of the desktop app.': 'Kurulum ekranı masaüstü uygulamasının parçasıdır.',
   'Auspex folder ready': 'Auspex klasörü hazır', 'Skills installed': 'Skill\'ler kuruldu',
   '1 step needs you': '1 adım seni bekliyor', '{n} steps need you': '{n} adım seni bekliyor', 'Auspex is ready on this computer': 'Auspex bu bilgisayarda hazır',
-  'Auspex runs on this computer. This screen never connects to a database, never asks for a password and never edits your MCP client: it checks, creates missing Auspex files and gives you text to copy.': 'Auspex bu bilgisayarda çalışır. Bu ekran hiçbir veritabanına bağlanmaz, parola sormaz ve MCP istemcini değiştirmez: kontrol eder, eksik Auspex dosyalarını oluşturur ve kopyalaman için metin verir.',
+  'Auspex runs on this computer. This screen never connects to a database and never edits your MCP client: it checks, creates missing Auspex files and gives you text to copy. A password you type in the connection step goes only into pgpass and is never shown again.': 'Auspex bu bilgisayarda çalışır. Bu ekran hiçbir veritabanına bağlanmaz ve MCP istemcini değiştirmez: kontrol eder, eksik Auspex dosyalarını oluşturur ve kopyalaman için metin verir. Bağlantı adımında yazdığın parola yalnız pgpass\'e gider ve bir daha gösterilmez.',
   'Checking…': 'Kontrol ediliyor…', 'Check again': 'Yeniden kontrol et', 'Node.js': 'Node.js', 'Node {v} found: ': 'Node {v} bulundu: ',
   'Node was not found.': 'Node bulunamadı.', 'Node {v} is too old; Auspex needs Node {m} or newer.': 'Node {v} çok eski; Auspex Node {m} ya da daha yenisini ister.',
   'Auspex needs Node {m} or newer. Install the LTS version from {u}, then press Check again.': 'Auspex Node {m} ya da daha yenisini ister. LTS sürümünü {u} adresinden kur, sonra Yeniden kontrol et\'e bas.',
@@ -1644,13 +1650,27 @@ const TR = {
   'Passwords never go into Auspex files. The PostgreSQL client reads them from the pgpass file:': 'Parolalar asla Auspex dosyalarına girmez. PostgreSQL istemcisi onları pgpass dosyasından okur:',
   '(no location known)': '(konum bilinmiyor)', '(from PGPASSFILE)': '(PGPASSFILE\'dan)', 'not created yet': 'henüz oluşturulmadı',
   'One line per server, in this format:': 'Her sunucu için bir satır, bu biçimde:',
-  'Create or edit the file yourself in a text editor; this screen has no password field.': 'Dosyayı bir metin düzenleyicide kendin oluştur ya da düzenle; bu ekranda parola alanı yok.',
+  'The connection step writes this line for you; you can also edit the file yourself in a text editor. Auspex never reads it back.': 'Bağlantı adımı bu satırı senin için yazar; dosyayı bir metin düzenleyicide kendin de düzenleyebilirsin. Auspex onu asla geri okumaz.',
   'MCP client entry': 'MCP istemci kaydı',
   'Add this entry to your MCP client (Claude Code, Codex, Cursor, VS Code...). Auspex does not edit any client configuration: copy it and paste it there.': 'Bu kaydı MCP istemcine ekle (Claude Code, Codex, Cursor, VS Code...). Auspex hiçbir istemci ayarını değiştirmez: kopyala ve oraya yapıştır.',
   'MCP entry': 'MCP kaydı', 'The entry needs the Auspex program files (see above).': 'Kayıt için Auspex program dosyaları gerekir (yukarıya bak).',
   'Workflow skills': 'İş akışı skill\'leri', 'Copies the Auspex workflow skills into your agent skills folder: ': 'Auspex iş akışı skill\'lerini ajanının skill klasörüne kopyalar: ',
   '{p} of {n} present': '{n} skill\'den {p} tanesi var', 'Installing…': 'Kuruluyor…', 'Install skills': 'Skill\'leri kur',
-  'Replace the differing skills': 'Farklı olan skill\'leri değiştir', 'installed': 'kuruldu', 'replaced': 'değiştirildi', 'unchanged': 'değişmedi',
+  'Replace the differing skills': 'Farklı olan skill\'leri değiştir',
+  'Database connection': 'Veritabanı bağlantısı', 'Profile name': 'Profil adı', 'Host': 'Sunucu', 'Port': 'Port',
+  'Saves one profile in the profiles file and its password in pgpass. The password is written only to pgpass, never shown again, and Auspex does not connect to the database from here.': 'Bir profili profil dosyasına, parolasını pgpass\'e kaydeder. Parola yalnız pgpass\'e yazılır, bir daha gösterilmez ve Auspex buradan veritabanına bağlanmaz.',
+  'Saving…': 'Kaydediliyor…', 'Save connection': 'Bağlantıyı kaydet', 'Import from file': 'Dosyadan içe aktar', 'Connection saved': 'Bağlantı kaydedildi',
+  'The connection file was not used: ': 'Bağlantı dosyası kullanılmadı: ', 'Filled from {f}. Type the password yourself.': '{f} dosyasından dolduruldu. Parolayı kendin yaz.',
+  'The file holds a password. It was ignored: passwords should not travel in files. Delete the file or remove the password from it.': 'Dosyada parola var. Yok sayıldı: parolalar dosyayla taşınmamalı. Dosyayı sil ya da parolayı içinden çıkar.',
+  'Saved profile {p} ({a}) in ': '{p} profili ({a}) şuraya kaydedildi: ', ' and its password ({a}) in ': ', parolası ({a}) şuraya: ', 'updated': 'güncellendi',
+  'Next: restart your MCP client (for example Claude) so it reads the profile, then ask the agent:': 'Sonraki adım: profili okuması için MCP istemcini (örneğin Claude) yeniden başlat, sonra ajana şunu sor:',
+  'Profile name: a-z, 0-9, - and _, starting with a letter, at most 40 characters.': 'Profil adı: a-z, 0-9, - ve _, harfle başlar, en çok 40 karakter.',
+  'Host: a host name, an IPv4 address or an IPv6 address without brackets.': 'Sunucu: bir host adı, IPv4 adresi ya da köşeli parantezsiz IPv6 adresi.',
+  'Port: a whole number from 1 to 65535.': 'Port: 1 ile 65535 arasında bir tam sayı.', 'Database: required.': 'Veritabanı: gerekli.', 'User: required.': 'Kullanıcı: gerekli.',
+  'Database: at most 63 bytes.': 'Veritabanı: en çok 63 bayt.', 'User: at most 63 bytes.': 'Kullanıcı: en çok 63 bayt.',
+  'Database: one line, no surrounding spaces.': 'Veritabanı: tek satır, başta ve sonda boşluk yok.', 'User: one line, no surrounding spaces.': 'Kullanıcı: tek satır, başta ve sonda boşluk yok.',
+  'Password: required.': 'Parola: gerekli.', 'Password: one line of at most 1024 characters.': 'Parola: en çok 1024 karakterlik tek satır.',
+  'The file is larger than 4 KB.': 'Dosya 4 KB\'tan büyük.', 'The file is not valid JSON.': 'Dosya geçerli JSON değil.', 'The file must hold one JSON object.': 'Dosya tek bir JSON nesnesi içermeli.', 'installed': 'kuruldu', 'replaced': 'değiştirildi', 'unchanged': 'değişmedi',
 };
 let lang = 'en';
 try { lang = localStorage.getItem('auspex.viewer.lang') || ((navigator.language || '').toLowerCase().startsWith('tr') ? 'tr' : 'en'); } catch {}
@@ -2400,7 +2420,60 @@ function setupMcpEntry(serverScript) {
   if (typeof serverScript !== 'string' || !serverScript) return null;
   return JSON.stringify({ mcpServers: { auspex: { command: 'node', args: [serverScript] } } }, null, 2);
 }
-function setupSteps(s) {
+// The connection form and the .auspex-connection file: the same field rules
+// as src/connectionSetup.js, which checks them again on save. Messages name
+// the field, never its value.
+const setupConnectionFields = ['profileName', 'host', 'port', 'database', 'user'];
+const setupConnectionFileMax = 4096;
+const setupProfilePattern = /^[a-z][a-z0-9_-]{0,39}$/;
+const setupHostPattern = /^[A-Za-z0-9_]([A-Za-z0-9_.-]{0,252})$/;
+const setupIpv6Pattern = /^[0-9A-Fa-f:.]{2,45}$/;
+function setupFieldProblem(key, value) {
+  if (key === 'profileName') return typeof value === 'string' && setupProfilePattern.test(value) ? null : 'Profile name: a-z, 0-9, - and _, starting with a letter, at most 40 characters.';
+  if (key === 'host') return typeof value === 'string' && (setupHostPattern.test(value) || (value.includes(':') && setupIpv6Pattern.test(value))) ? null : 'Host: a host name, an IPv4 address or an IPv6 address without brackets.';
+  if (key === 'port') return Number.isInteger(value) && value >= 1 && value <= 65535 ? null : 'Port: a whole number from 1 to 65535.';
+  const label = key === 'database' ? 'Database' : 'User';
+  if (typeof value !== 'string' || !value) return `${label}: required.`;
+  if (new TextEncoder().encode(value).length > 63) return `${label}: at most 63 bytes.`;
+  if (/[\u0000-\u001f\u007f-\u009f]/.test(value) || value.trim() !== value) return `${label}: one line, no surrounding spaces.`;
+  return null;
+}
+// The first problem of the form (port as typed text), or null.
+function setupFormProblem(form, password) {
+  const f = form || {};
+  const port = /^\d{1,5}$/.test(String(f.port ?? '').trim()) ? Number(String(f.port).trim()) : NaN;
+  for (const key of setupConnectionFields) {
+    const problem = setupFieldProblem(key, key === 'port' ? port : f[key]);
+    if (problem) return problem;
+  }
+  if (typeof password !== 'string' || !password) return 'Password: required.';
+  if (password.length > 1024 || /[\u0000\r\n]/.test(password)) return 'Password: one line of at most 1024 characters.';
+  return null;
+}
+// A .auspex-connection file: one JSON object of profileName, host, port,
+// database and user. A password in it is ignored (passwordIgnored: true);
+// any other key, a wrong type or a too large file is refused.
+function setupParseConnectionFile(text) {
+  if (typeof text !== 'string' || text.length > setupConnectionFileMax) return { error: 'The file is larger than 4 KB.' };
+  let data;
+  try { data = JSON.parse(text.replace(/^\uFEFF/, '')); } catch { return { error: 'The file is not valid JSON.' }; }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return { error: 'The file must hold one JSON object.' };
+  const unknown = Object.keys(data).filter(k => !setupConnectionFields.includes(k) && k !== 'password');
+  if (unknown.length) return { error: `Unknown field(s): ${unknown.map(k => k.slice(0, 40)).join(', ')}.` };
+  const missing = setupConnectionFields.filter(k => !Object.hasOwn(data, k));
+  if (missing.length) return { error: `Missing field(s): ${missing.join(', ')}.` };
+  for (const key of setupConnectionFields) {
+    const problem = setupFieldProblem(key, data[key]);
+    if (problem) return { error: problem };
+  }
+  const values = Object.fromEntries(setupConnectionFields.map(k => [k, k === 'port' ? String(data[k]) : data[k]]));
+  return { values, passwordIgnored: Object.hasOwn(data, 'password') };
+}
+// A profile other than the example one (profiles from /api/profiles).
+const setupHasConnection = profiles => Array.isArray(profiles) && profiles.some(p => p && !p.error && p.host && p.host !== 'db.example.test');
+// What to ask the agent after saving.
+const setupCheckRequest = profile => `Run check_profile on the Auspex profile "${profile}" and tell me whether its role is read-only.`;
+function setupSteps(s, profiles) {
   if (!s || typeof s !== 'object') return [];
   const node = s.node || {};
   const skills = s.skills || {};
@@ -2409,6 +2482,7 @@ function setupSteps(s) {
   return [
     { key: 'node', state: node.ok ? 'ok' : 'todo' },
     { key: 'home', state: s.homeExists && s.profilesExists ? 'ok' : 'todo' },
+    { key: 'connection', state: setupHasConnection(profiles) ? 'ok' : 'todo' },
     { key: 'root', state: s.root?.path && !s.root?.error ? 'ok' : 'todo' },
     { key: 'pgpass', state: s.pgpass?.exists ? 'ok' : 'info' },
     { key: 'mcp', state: setupMcpEntry(s.serverScript) ? 'info' : 'todo' },
@@ -2416,7 +2490,7 @@ function setupSteps(s) {
   ];
 }
 // Steps that keep Auspex from working: the tab count and the first-run switch.
-const setupAttention = s => setupSteps(s).filter(x => x.state === 'todo').length;
+const setupAttention = (s, profiles) => setupSteps(s, profiles).filter(x => x.state === 'todo').length;
 // The Setup screen opens by itself while there is no profiles file yet.
 const setupShouldOpen = s => !!s && typeof s === 'object' && s.profilesExists === false;
 // setup-screen:end
@@ -2426,8 +2500,11 @@ async function loadSetup() {
   try { state.setup = await tauriCore.invoke('api', { path: '/api/setup', query: {} }); state.setupError = null; }
   catch (err) { state.setupError = typeof err === 'string' ? err : err?.message || String(err); }
 }
+// The typed password lives only here, never in state (persisted keys) or the
+// DOM after a save; it is cleared once the connection is saved.
+let setupPassword = '';
 async function setupAction(command, args, busyKey) {
-  state.setupBusy = busyKey; state.setupMsg = null; renderSetup();
+  state.setupBusy = busyKey; state.setupMsg = null; renderSetup({ force: true });
   try {
     const res = await tauriCore.invoke(command, args);
     state.setupMsg = { key: busyKey, ok: true, res };
@@ -2437,22 +2514,47 @@ async function setupAction(command, args, busyKey) {
     state.setupMsg = { key: busyKey, ok: false, code, message: stageSetupTexts[code] && code !== 'TIMEOUT' && code !== 'CLI_FAILED' ? t(stageSetupTexts[code]) : message };
   }
   state.setupBusy = null;
+  if (state.setupMsg?.ok && busyKey === 'connection') {
+    setupPassword = '';
+    try { state.profiles = await getJson('/api/profiles'); } catch {}
+  }
   await loadSetup();
-  renderSetup();
-  if (state.setupMsg?.ok) toast(state.setupMsg.key === 'home' ? t('Auspex folder ready') : t('Skills installed'));
+  renderSetup({ force: true });
+  if (state.setupMsg?.ok) toast(state.setupMsg.key === 'home' ? t('Auspex folder ready') : state.setupMsg.key === 'connection' ? t('Connection saved') : t('Skills installed'));
+}
+function setupSaveConnection() {
+  const form = state.setupForm || {};
+  const problem = setupFormProblem(form, setupPassword);
+  if (problem) { state.setupMsg = { key: 'connection', ok: false, message: t(problem) }; renderSetup({ force: true }); return; }
+  const request = { ...Object.fromEntries(setupConnectionFields.map(k => [k, k === 'port' ? Number(String(form.port).trim()) : form[k]])), password: setupPassword };
+  setupAction('save_connection', { request }, 'connection');
+}
+async function setupImportFile(file) {
+  state.setupImport = null;
+  if (!file) return;
+  const parsed = file.size > setupConnectionFileMax ? { error: 'The file is larger than 4 KB.' } : setupParseConnectionFile(await file.text());
+  if (parsed.error) state.setupImport = { error: t(parsed.error) };
+  else {
+    state.setupForm = { ...(state.setupForm || {}), ...parsed.values };
+    state.setupImport = { name: file.name, passwordIgnored: parsed.passwordIgnored };
+  }
+  renderSetup({ force: true });
 }
 function setupCopy(text, label) {
   return h('button', { type: 'button', class: 'icon-btn sm', 'aria-label': t('Copy {w}', { w: label }), onclick: () => copy(text, label) }, t('Copy'));
 }
-function renderSetup() {
+function renderSetup({ force = false } = {}) {
   const view = $('v-setup');
   const s = state.setup;
-  const todo = setupAttention(s);
+  const profiles = state.profiles?.profiles;
+  const todo = setupAttention(s, profiles);
   $('cSetup').textContent = todo ? fmt(todo) : '';
   if (state.tab !== 'setup') return;
+  // A refresh never redraws the screen under a field being typed in.
+  if (!force && view.contains(document.activeElement) && document.activeElement.matches('input')) return;
   if (!tauriCore) { put(view, h('div', { class: 'panel' }, emptyState(t('The Setup screen is part of the desktop app.')))); return; }
   if (!s) { put(view, h('div', { class: 'panel' }, state.setupError ? h('div', { class: 'error-box', role: 'alert', style: 'margin:16px' }, state.setupError) : emptyState(t('Loading…')))); return; }
-  const steps = new Map(setupSteps(s).map(x => [x.key, x.state]));
+  const steps = new Map(setupSteps(s, profiles).map(x => [x.key, x.state]));
   const pill = key => {
     const st = steps.get(key);
     return h('span', { class: 'badge ' + (st === 'ok' ? 'ok' : st === 'todo' ? 'err' : 'old') }, st === 'ok' ? t('done') : st === 'todo' ? t('needed') : t('optional'));
@@ -2480,7 +2582,7 @@ function renderSetup() {
     h('div', { class: 'panel setup-intro' },
       h('div', { class: 'panel-h' }, h('h2', {}, t('Setup')), h('span', { class: 'hint' }, todo ? t(todo === 1 ? '1 step needs you' : '{n} steps need you', { n: todo }) : t('Auspex is ready on this computer'))),
       h('div', { class: 'panel-b' },
-        h('p', {}, t('Auspex runs on this computer. This screen never connects to a database, never asks for a password and never edits your MCP client: it checks, creates missing Auspex files and gives you text to copy.')),
+        h('p', {}, t('Auspex runs on this computer. This screen never connects to a database and never edits your MCP client: it checks, creates missing Auspex files and gives you text to copy. A password you type in the connection step goes only into pgpass and is never shown again.')),
         h('button', { type: 'button', class: 'icon-btn', disabled: !!state.setupBusy, onclick: async () => { state.setupBusy = 'check'; renderSetup(); await loadSetup(); state.setupBusy = null; renderSetup(); } }, busy('check') ? t('Checking…') : t('Check again')))),
     step('node', t('Node.js'),
       node.ok ? h('p', {}, t('Node {v} found: ', { v: node.version }), path(node.path))
@@ -2498,6 +2600,7 @@ function renderSetup() {
           h('p', {}, t('Creates the folder and a profiles file with one example profile (exampledb on db.example.test as report_reader) for you to edit. Existing files are never overwritten.')),
           h('button', { type: 'button', class: 'icon-btn primary', disabled: !!state.setupBusy, onclick: () => setupAction('setup_init', {}, 'home') }, busy('home') ? t('Creating…') : t('Create the Auspex folder'))),
       msg('home')),
+    setupConnectionStep(step, msg, busy),
     step('root', t('Auspex program files'),
       s.root?.path
         ? h('p', {}, t('Approvals and memory edits run from {w}: ', { w: rootSource[s.root.source] || s.root.source }), path(s.root.path))
@@ -2507,7 +2610,7 @@ function renderSetup() {
         s.pgpass?.fromEnv ? t('(from PGPASSFILE)') : '', ' ', s.pgpass?.exists ? t('exists') : t('not created yet')),
       h('p', {}, t('One line per server, in this format:')),
       h('pre', { class: 'setup-pre' }, setupPgpassFormat + '\n' + setupPgpassExample),
-      h('p', { class: 'muted' }, t('Create or edit the file yourself in a text editor; this screen has no password field.'))),
+      h('p', { class: 'muted' }, t('The connection step writes this line for you; you can also edit the file yourself in a text editor. Auspex never reads it back.'))),
     step('mcp', t('MCP client entry'),
       mcp
         ? h('div', {},
@@ -2523,6 +2626,49 @@ function renderSetup() {
         h('button', { type: 'button', class: 'icon-btn sm secondary-danger', disabled: !!state.setupBusy, onclick: () => setupAction('install_skills', { force: true }, 'skills') }, t('Replace the differing skills')))
         : msg('skills'),
       skillsDone ? h('ul', { class: 'setup-list', role: 'status' }, (skillsDone.skills || []).map(x => h('li', {}, `${x.name}: ${t(x.result)}`))) : null)));
+}
+
+// The connection step: profile name, host, port, database, user and a masked
+// password, or the fields from a .auspex-connection file. Saving writes the
+// profile into the profiles file and the password into pgpass only; the app
+// never tests the connection.
+function setupConnectionStep(step, msg, busy) {
+  const form = state.setupForm || (state.setupForm = { port: '5432' });
+  const field = (key, label, attrs = {}) => h('div', { class: 'setup-field' },
+    h('label', { for: `setup-${key}` }, label),
+    h('input', { id: `setup-${key}`, type: 'text', autocomplete: 'off', spellcheck: 'false', value: form[key] ?? '', oninput: ev => { form[key] = ev.target.value; }, ...attrs }));
+  const fileInput = h('input', { type: 'file', accept: '.auspex-connection,application/json', hidden: true, onchange: ev => { setupImportFile(ev.target.files?.[0]); ev.target.value = ''; } });
+  const imp = state.setupImport;
+  const saved = state.setupMsg?.key === 'connection' && state.setupMsg.ok ? state.setupMsg.res : null;
+  // A redraw (an error, an import) keeps what was typed, so the field never
+  // looks empty while a password is still held; empty again after a save.
+  const passwordInput = h('input', { id: 'setup-password', type: 'password', autocomplete: 'new-password', spellcheck: 'false', oninput: ev => { setupPassword = ev.target.value; } });
+  passwordInput.value = setupPassword;
+  return step('connection', t('Database connection'),
+    h('p', {}, t('Saves one profile in the profiles file and its password in pgpass. The password is written only to pgpass, never shown again, and Auspex does not connect to the database from here.')),
+    h('form', { class: 'setup-form', autocomplete: 'off', onsubmit: ev => { ev.preventDefault(); setupSaveConnection(); } },
+      field('profileName', t('Profile name'), { placeholder: 'exampledb', maxlength: '40' }),
+      field('host', t('Host'), { placeholder: 'db.example.test' }),
+      field('port', t('Port'), { inputmode: 'numeric', placeholder: '5432', maxlength: '5' }),
+      field('database', t('Database'), { placeholder: 'exampledb' }),
+      field('user', t('User'), { placeholder: 'report_reader' }),
+      h('div', { class: 'setup-field' },
+        h('label', { for: 'setup-password' }, t('Password')),
+        passwordInput),
+      h('div', { class: 'setup-actions' },
+        h('button', { type: 'submit', class: 'icon-btn primary', disabled: !!state.setupBusy }, busy('connection') ? t('Saving…') : t('Save connection')),
+        h('button', { type: 'button', class: 'icon-btn', disabled: !!state.setupBusy, onclick: () => fileInput.click() }, t('Import from file')),
+        fileInput)),
+    imp?.error ? h('div', { class: 'error-box', role: 'alert' }, t('The connection file was not used: '), imp.error) : null,
+    imp && !imp.error ? h('p', { class: 'muted', role: 'status' }, t('Filled from {f}. Type the password yourself.', { f: imp.name })) : null,
+    imp?.passwordIgnored ? h('div', { class: 'stale-box', role: 'alert' }, t('The file holds a password. It was ignored: passwords should not travel in files. Delete the file or remove the password from it.')) : null,
+    msg('connection'),
+    saved ? h('div', { class: 'setup-done', role: 'status' },
+      h('p', {}, t('Saved profile {p} ({a}) in ', { p: saved.profile, a: t(saved.profileAction) }), h('code', { class: 'setup-path' }, saved.profilesFile),
+        t(' and its password ({a}) in ', { a: t(saved.pgpassAction) }), h('code', { class: 'setup-path' }, saved.pgpassFile), '.'),
+      h('p', {}, t('Next: restart your MCP client (for example Claude) so it reads the profile, then ask the agent:')),
+      h('pre', { class: 'setup-pre' }, setupCheckRequest(saved.profile)),
+      setupCopy(setupCheckRequest(saved.profile), t('Request'))) : null);
 }
 
 // ---------- reports ----------
