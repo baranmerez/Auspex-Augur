@@ -440,11 +440,28 @@ or *optional*:
 - **Auspex program files**: the folder approvals and memory edits run from,
   and where that came from (the installed copy, `auspexRoot` or
   `AUSPEX_ROOT`).
+- **Database connection**: profile name, host, port, database, user and a
+  masked password, or *Import from file* to fill the first five from a
+  `.auspex-connection` file (below). *Save connection* runs
+  `node <auspexRoot>/src/stageCli.js save-connection` with the request as
+  JSON on stdin. It adds the profile to the profiles file, or replaces the
+  `url` of a profile with the same name (case-insensitive) and keeps its other
+  fields; every other profile and key stays as it was. The URL is
+  `postgresql://<user>@<host>:<port>/<database>`, without a password. It then
+  writes `host:port:database:user:password` to pgpass, with `:` and `\`
+  escaped: the first line with the same host, port, database and user is
+  replaced, otherwise the line is added; every other line stays byte for
+  byte. Both files are written atomically, UTF-8 without BOM. The password is
+  never shown again, never read back from pgpass and never logged; the audit
+  entry `save_connection` holds the profile name and what was added or
+  replaced. A name already set by `AUSPEX_DB_<NAME>` is refused. The app does
+  not test the connection: restart your MCP client and ask the agent to run
+  `check_profile` on the profile (the screen gives that request to copy).
 - **Passwords (pgpass)**: where the PostgreSQL client looks for the password
-  file (`PGPASSFILE`, else `%APPDATA%\postgresql\pgpass.conf` on Windows and
-  `~/.pgpass` elsewhere), whether it exists, and the line format
-  `hostname:port:database:username:password`. The screen never reads the file
-  and has no password field.
+  file (`PGPASSFILE`, which must be absolute, else
+  `%APPDATA%\postgresql\pgpass.conf` on Windows and `~/.pgpass` elsewhere),
+  whether it exists, and the line format
+  `hostname:port:database:username:password`. The screen never reads the file.
 - **MCP client entry**: the `mcpServers` entry with the installed
   `server\src\index.js` filled in, behind a *Copy* button. Auspex does not
   edit any client configuration.
@@ -456,8 +473,32 @@ or *optional*:
   (`install-skills --force true`). Audited as `install_skills`.
 
 Nothing on this screen connects to a database. It is read with
-`GET /api/setup` through the app's `api` command; the two writes are the
-`setup_init` and `install_skills` commands.
+`GET /api/setup` through the app's `api` command; the writes are the
+`setup_init`, `save_connection` and `install_skills` commands.
+
+##### The `.auspex-connection` file
+
+A small JSON file to hand a connection to a colleague without a password, at
+most 4 KB, with exactly these fields:
+
+```json
+{
+  "profileName": "exampledb",
+  "host": "db.example.test",
+  "port": 5432,
+  "database": "exampledb",
+  "user": "report_reader"
+}
+```
+
+`profileName` follows the profile-name rules (a-z, 0-9, `-` and `_`, starting
+with a letter, at most 40 characters); `host` is a host name, an IPv4 address
+or an IPv6 address without brackets; `port` is a whole number from 1 to 65535
+(a number, not text); `database` and `user` are one line of at most 63 bytes
+without surrounding spaces. Any other field, a missing one or a wrong type
+refuses the file. A `password` field is ignored: the screen warns that
+passwords should not travel in files and suggests deleting the file, and the
+person types the password.
 
 > [!NOTE]
 > Start the desktop app from Explorer. When it is launched from inside an
@@ -545,7 +586,7 @@ in Rust first, and stops the CLI after 30 seconds. When the CLI times out or
 gives no result, the change may or may not have been applied: the app says so,
 reloads the list and writes an audit line (actor `desktop`, error code
 `TIMEOUT` or `CLI_FAILED`) itself. Only `api`,
-`approve_report`, `revoke_report`, `archive_note`, `score_column`, `edit_memory`, `setup_init` and `install_skills` are allowed in the
+`approve_report`, `revoke_report`, `archive_note`, `score_column`, `edit_memory`, `setup_init`, `save_connection` and `install_skills` are allowed in the
 window's capability; there is no shell plugin. Besides the CLI, the Setup
 screen's Node check runs the same Node program with the single argument
 `--version`.

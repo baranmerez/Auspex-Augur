@@ -132,9 +132,16 @@ to the HTTP route).
 
 ## Desktop app and Windows installer
 
-- The desktop app never connects to a database and never shows or asks for a
-  password; its Setup screen has no password field and reports only whether
-  the pgpass file exists, never its content.
+- The desktop app never connects to a database and never shows a password.
+  Its Setup screen may take one password, in a masked field, and writes it
+  only into the pgpass file (`PGPASSFILE`, else
+  `%APPDATA%\postgresql\pgpass.conf` / `~/.pgpass`). It never reads a
+  password back, never prefills the field and reports only whether the pgpass
+  file exists. The password goes from the window to `src/stageCli.js
+  save-connection` on stdin, never in argv, and never into `profiles.json`,
+  the audit log, an error message or the output; a failed run reports a fixed
+  text instead of the CLI's stderr. A `.auspex-connection` file is read for
+  the other fields only: a password in it is ignored with a warning.
 - It starts only the Node program (`AUSPEX_NODE` or `node.exe` in an absolute
   `PATH` entry) with `src/stageCli.js` of the Auspex folder, or with the single
   argument `--version` for the Node check, never through a shell.
@@ -146,7 +153,11 @@ to the HTTP route).
 - The Setup screen writes only what is absent: `~/.auspex` and an example
   `profiles.json` with invented names (an existing file is never opened for
   writing), and the workflow skills in the agent skills folder (a differing
-  skill is replaced only on an explicit second click). It never edits an MCP
+  skill is replaced only on an explicit second click). Its connection step
+  adds or updates one profile in `profiles.json` (every other profile and key
+  stays as it was) and replaces or adds one pgpass line (every other line
+  stays byte for byte); both files are written atomically, UTF-8 without BOM.
+  It does not test the connection: the agent's `check_profile` does that. It never edits an MCP
   client's configuration; the entry is copied by the person.
 - `setup.exe` installs per user without administrator rights. The package
   holds the app, the server code and its production dependencies only: no

@@ -150,9 +150,12 @@ installer tells you when it is missing or older than 20.
 > your data in `~/.auspex` (memory, library, profiles, logs) stays.
 
 On first start the app opens its **Setup** screen: it checks Node, creates
-`~/.auspex` with an example `profiles.json` when there is none, shows the MCP
-client entry with the installed path to copy, explains where pgpass lives and
-installs the workflow skills on request. Then follow steps 1 to 4 below.
+`~/.auspex` with an example `profiles.json` when there is none, saves a
+database connection (the profile into `profiles.json`, the password only into
+pgpass), shows the MCP client entry with the installed path to copy and
+installs the workflow skills on request. It never connects to the database:
+afterwards ask the agent to run `check_profile`. Then follow steps 1 to 4 below
+(the Setup screen covers 2 to 4).
 
 ### From source
 
