@@ -67,7 +67,7 @@ export const allowedQueryOptions = new Set([
 // given, or with an explicit :5432 when it has no port, so the endpoint shown
 // (describeConnection) is the one node-postgres uses and a PGPORT (or PGUSER,
 // PGDATABASE, PGHOST) in the environment can never pick the target.
-function validateProfileUrl(text, where, field) {
+export function validateProfileUrl(text, where, field) {
   let url;
   try {
     url = new URL(text);

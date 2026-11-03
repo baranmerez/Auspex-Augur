@@ -25,6 +25,11 @@
 // npm run skills:install; a skill that differs there is replaced only with
 // --force true (src/skillsInstall.js):
 //   node src/stageCli.js install-skills [--force true]
+// and saves one database connection from the Setup screen: the profile in the
+// profiles file, the password as one pgpass line (src/connectionSetup.js).
+// The request, password included, comes as JSON on stdin, never in argv; the
+// output and the audit entry never hold the password:
+//   node src/stageCli.js save-connection < request.json
 // Files only: no database, no network. Prints one JSON line,
 // { ok: true, ... } or { ok: false, code, message }, and exits with 1 on any
 // error.
@@ -43,6 +48,8 @@ import { userScoreKeys, validateUserScoreInput, userScoreAudit, setUserScoreFor 
 import { validateEditInput, editAudit, applyMemoryEdit, readTableProfileFor, maxEditBytes } from './memory/memoryEdit.js';
 import { scheduleIndex, reportTrend, scheduleOverview } from './schedule/viewerData.js';
 import { skillsTarget, planSkillInstall, applySkillInstall } from './skillsInstall.js';
+import { saveConnection, maxConnectionBytes } from './connectionSetup.js';
+import { defaultProfilesFile } from './config.js';
 
 // The folders as the server and viewer see them; a broken profiles file does
 // not hide the library (the viewer falls back the same way).
@@ -153,7 +160,7 @@ const memoryOf = (dirs, lib = new Library(dirs.libraryDir)) => new SchemaMemory(
 // The request of memory-edit: one JSON object on stdin, at most maxEditBytes,
 // read in chunks so a larger one stops the read once it passes the limit.
 // readChunk(buf) -> bytes read, 0 at the end (an EOF error ends it too).
-function readStdinJson(readChunk = buf => fs.readSync(0, buf, 0, buf.length, null)) {
+function readStdinJson(readChunk = buf => fs.readSync(0, buf, 0, buf.length, null), { command = 'memory-edit', maxBytes = maxEditBytes } = {}) {
   const buf = Buffer.alloc(16 * 1024);
   const chunks = [];
   let total = 0;
@@ -163,11 +170,11 @@ function readStdinJson(readChunk = buf => fs.readSync(0, buf, 0, buf.length, nul
       n = readChunk(buf);
     } catch (err) {
       if (err?.code === 'EOF') break;
-      throw new StageError(400, 'memory-edit reads its request as JSON on stdin');
+      throw new StageError(400, `${command} reads its request as JSON on stdin`);
     }
     if (!n) break;
     total += n;
-    if (total > maxEditBytes) throw new StageError(413, 'Request too large');
+    if (total > maxBytes) throw new StageError(413, 'Request too large');
     chunks.push(Buffer.from(buf.subarray(0, n)));
   }
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw new StageError(400, 'The request on stdin must be JSON'); }
@@ -263,7 +270,27 @@ function installSkillsMain(args, env, dirs) {
   }
 }
 
+// One connection from the Setup screen. Errors name fields, never values.
+function saveConnectionMain(args, env, dirs) {
+  const started = Date.now();
+  const entry = { source: 'desktop', tool: 'save_connection', actor: 'desktop', correlationId: crypto.randomUUID() };
+  const audit = createAuditLog(dirs.logDir);
+  try {
+    if (args.length) throw new StageError(400, 'save-connection takes no arguments; the request comes as JSON on stdin');
+    const body = readStdinJson(undefined, { command: 'save-connection', maxBytes: maxConnectionBytes });
+    if (body && typeof body === 'object' && typeof body.profileName === 'string' && /^[a-z][a-z0-9_-]{0,39}$/.test(body.profileName)) entry.profile = body.profileName;
+    const result = saveConnection(body, { profilesFile: env.AUSPEX_PROFILES_FILE || defaultProfilesFile(env), env });
+    audit({ ...entry, ms: Date.now() - started, profileAction: result.profileAction, pgpassAction: result.pgpassAction });
+    return { status: 0, out: { ok: true, ...result, correlationId: entry.correlationId } };
+  } catch (err) {
+    const { code } = classifyError(err);
+    audit({ ...entry, ms: Date.now() - started, error: err.message, errorCode: code });
+    return { status: 1, out: { ok: false, code, message: err.message, correlationId: entry.correlationId } };
+  }
+}
+
 function main(argv, env) {
+  if (argv[0] === 'save-connection') return saveConnectionMain(argv.slice(1), env, folders(env));
   if (argv[0] === 'install-skills') return installSkillsMain(argv.slice(1), env, folders(env));
   if (argv[0] === 'schedules') return schedulesMain(argv.slice(1), env);
   if (argv[0] === 'schedule-overview') return scheduleOverviewMain(argv.slice(1), env);
@@ -273,7 +300,7 @@ function main(argv, env) {
   if (argv[0] === 'memory-edit') return editMain(argv.slice(1), folders(env));
   if (argv[0] === 'table-profile') return tableProfileMain(argv.slice(1), folders(env));
   const action = Object.hasOwn(stageActions, argv[0] ?? '') ? stageActions[argv[0]] : null;
-  if (!action) return { status: 1, out: { ok: false, code: 'INVALID_INPUT', message: 'Usage: stageCli.js approve|revoke --db <db> --schema <schema> --category <category> --name <name> --expected-hash <hash>, stageCli.js archive-note --profile <profile> --id <id> --reason <reason>, stageCli.js score-column --profile <profile> --schema <schema> --table <table> --column <column> (--score <1-5> [--roles <roles>] | --clear true), stageCli.js memory-edit (JSON request on stdin), stageCli.js table-profile --profile <profile> --schema <schema> --table <table> or stageCli.js install-skills [--force true]' } };
+  if (!action) return { status: 1, out: { ok: false, code: 'INVALID_INPUT', message: 'Usage: stageCli.js approve|revoke --db <db> --schema <schema> --category <category> --name <name> --expected-hash <hash>, stageCli.js archive-note --profile <profile> --id <id> --reason <reason>, stageCli.js score-column --profile <profile> --schema <schema> --table <table> --column <column> (--score <1-5> [--roles <roles>] | --clear true), stageCli.js memory-edit (JSON request on stdin), stageCli.js table-profile --profile <profile> --schema <schema> --table <table>, stageCli.js install-skills [--force true] or stageCli.js save-connection (JSON request on stdin)' } };
   const dirs = folders(env);
   const started = Date.now();
   const entry = { source: 'desktop', tool: action.tool, actor: 'desktop', correlationId: crypto.randomUUID(), fromStage: action.from, toStage: action.to };
