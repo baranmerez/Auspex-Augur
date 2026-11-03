@@ -281,6 +281,18 @@
   .pcard dd { margin: 0; font: 12px var(--mono); word-break: break-all; }
   .pcard dd .role-when { font-size: 11px; line-height: 1.4; font-family: inherit; color: var(--text-3); word-break: normal; }
   .paths { margin-top: 18px; font: 12px var(--mono); color: var(--text-3); }
+  .setup { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 14px; align-items: start; }
+  .setup-intro { grid-column: 1 / -1; }
+  .setup p { margin: 0 0 10px; line-height: 1.5; }
+  .setup .panel-b > :last-child { margin-bottom: 0; }
+  .setup-path { font: 12px var(--mono); background: var(--surface-2); border-radius: 6px; padding: 1px 6px; overflow-wrap: anywhere; }
+  .setup-pre { font: 12px/1.5 var(--mono); background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 0 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .setup-dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 12px; margin: 0 0 10px; font-size: 13px; }
+  .setup-dl dt { color: var(--text-3); }
+  .setup-dl dd { margin: 0; overflow-wrap: anywhere; }
+  .setup-problem { color: var(--critical); }
+  .setup-list { margin: 10px 0 0; padding-left: 18px; font-size: 13px; }
+  .setup .error-box .icon-btn { margin-top: 8px; }
   .paths div { margin: 3px 0; }
 
   .empty { padding: 40px 20px; text-align: center; color: var(--text-3); }
@@ -395,7 +407,7 @@
   .toolbar .field { background: var(--bg); }
   .toolbar[data-mode="reports"] .when, .toolbar[data-mode="reports"] .opsonly,
   .toolbar[data-mode="profiles"] .when, .toolbar[data-mode="profiles"] .opsonly { display: none; }
-  .toolbar[data-mode="profiles"], .toolbar[data-mode="rules"], .toolbar[data-mode="views"], .toolbar[data-mode="functions"], .toolbar[data-mode="schedules"] { display: none; }
+  .toolbar[data-mode="profiles"], .toolbar[data-mode="rules"], .toolbar[data-mode="views"], .toolbar[data-mode="functions"], .toolbar[data-mode="schedules"], .toolbar[data-mode="setup"] { display: none; }
   .field select { background: transparent; color: var(--text); cursor: pointer; }
   select option { background: var(--surface); color: var(--text); }
 
@@ -1320,6 +1332,7 @@
       <button data-tab="schema"><span data-i18n="Schema">Schema</span><span class="count" id="cSchema"></span></button>
       <button data-tab="rules"><span data-i18n="Rules">Rules</span><span class="count" id="cRules"></span></button>
       <button data-tab="profiles"><span data-i18n="Profiles">Profiles</span><span class="count" id="cProfiles"></span></button>
+      <button data-tab="setup" hidden><span data-i18n="Setup">Setup</span><span class="count" id="cSetup"></span></button>
       <span class="tab-ink" id="tabInk"></span>
     </nav>
   </div>
@@ -1358,6 +1371,7 @@
   <section id="v-schema" class="view" hidden></section>
   <section id="v-rules" class="view" hidden></section>
   <section id="v-profiles" class="view" hidden></section>
+  <section id="v-setup" class="view" hidden></section>
 </main>
 
 <div class="tip" id="tip" role="status" aria-live="polite"></div>
@@ -1611,6 +1625,32 @@ const TR = {
   'The clipboard is not available here. The text is selected: press Ctrl+C (Cmd+C) to copy it.': 'Pano burada kullanılamıyor. Metin seçili: kopyalamak için Ctrl+C (Cmd+C) bas.',
   'Explain the report': 'Raporu açıkla', 'Review its SQL': 'SQL\'ini incele', 'Run this copy': 'Bu kopyayı çalıştır',
   'Explain from memory': 'Hafızadan açıkla', 'Inspect the structure': 'Yapıyı incele', 'Investigate relationships': 'İlişkileri araştır', 'Re-read the definition': 'Tanımı yeniden oku',
+  'Setup': 'Kurulum', 'done': 'tamam', 'needed': 'gerekli', 'optional': 'isteğe bağlı', 'Copy {w}': '{w} kopyala',
+  'The Setup screen is part of the desktop app.': 'Kurulum ekranı masaüstü uygulamasının parçasıdır.',
+  'Auspex folder ready': 'Auspex klasörü hazır', 'Skills installed': 'Skill\'ler kuruldu',
+  '1 step needs you': '1 adım seni bekliyor', '{n} steps need you': '{n} adım seni bekliyor', 'Auspex is ready on this computer': 'Auspex bu bilgisayarda hazır',
+  'Auspex runs on this computer. This screen never connects to a database, never asks for a password and never edits your MCP client: it checks, creates missing Auspex files and gives you text to copy.': 'Auspex bu bilgisayarda çalışır. Bu ekran hiçbir veritabanına bağlanmaz, parola sormaz ve MCP istemcini değiştirmez: kontrol eder, eksik Auspex dosyalarını oluşturur ve kopyalaman için metin verir.',
+  'Checking…': 'Kontrol ediliyor…', 'Check again': 'Yeniden kontrol et', 'Node.js': 'Node.js', 'Node {v} found: ': 'Node {v} bulundu: ',
+  'Node was not found.': 'Node bulunamadı.', 'Node {v} is too old; Auspex needs Node {m} or newer.': 'Node {v} çok eski; Auspex Node {m} ya da daha yenisini ister.',
+  'Auspex needs Node {m} or newer. Install the LTS version from {u}, then press Check again.': 'Auspex Node {m} ya da daha yenisini ister. LTS sürümünü {u} adresinden kur, sonra Yeniden kontrol et\'e bas.',
+  'Download link': 'İndirme bağlantısı', 'Node used: ': 'Kullanılan Node: ', 'Auspex folder and profiles': 'Auspex klasörü ve profiller',
+  'Folder': 'Klasör', 'Profiles file': 'Profil dosyası', 'exists': 'var', 'missing': 'yok',
+  'Edit the profiles file to point each profile at your own read-only role, server and database. Auspex never overwrites it.': 'Her profili kendi salt okunur rolüne, sunucuna ve veritabanına yönlendirmek için profil dosyasını düzenle. Auspex onu asla üzerine yazmaz.',
+  'Creates the folder and a profiles file with one example profile (exampledb on db.example.test as report_reader) for you to edit. Existing files are never overwritten.': 'Klasörü ve düzenlemen için tek örnek profilli bir profil dosyası oluşturur (db.example.test üzerinde report_reader ile exampledb). Var olan dosyaların üzerine asla yazılmaz.',
+  'Creating…': 'Oluşturuluyor…', 'Create the Auspex folder': 'Auspex klasörünü oluştur', 'Auspex program files': 'Auspex program dosyaları',
+  'Approvals and memory edits run from {w}: ': 'Onaylar ve hafıza düzenlemeleri {w} üzerinden çalışır: ',
+  'the copy installed with this app': 'bu uygulamayla kurulan kopya', '"auspexRoot" in the profiles file': 'profil dosyasındaki "auspexRoot"', 'the AUSPEX_ROOT environment variable': 'AUSPEX_ROOT ortam değişkeni',
+  'Auspex folder not found.': 'Auspex klasörü bulunamadı.', 'Passwords (pgpass)': 'Parolalar (pgpass)',
+  'Passwords never go into Auspex files. The PostgreSQL client reads them from the pgpass file:': 'Parolalar asla Auspex dosyalarına girmez. PostgreSQL istemcisi onları pgpass dosyasından okur:',
+  '(no location known)': '(konum bilinmiyor)', '(from PGPASSFILE)': '(PGPASSFILE\'dan)', 'not created yet': 'henüz oluşturulmadı',
+  'One line per server, in this format:': 'Her sunucu için bir satır, bu biçimde:',
+  'Create or edit the file yourself in a text editor; this screen has no password field.': 'Dosyayı bir metin düzenleyicide kendin oluştur ya da düzenle; bu ekranda parola alanı yok.',
+  'MCP client entry': 'MCP istemci kaydı',
+  'Add this entry to your MCP client (Claude Code, Codex, Cursor, VS Code...). Auspex does not edit any client configuration: copy it and paste it there.': 'Bu kaydı MCP istemcine ekle (Claude Code, Codex, Cursor, VS Code...). Auspex hiçbir istemci ayarını değiştirmez: kopyala ve oraya yapıştır.',
+  'MCP entry': 'MCP kaydı', 'The entry needs the Auspex program files (see above).': 'Kayıt için Auspex program dosyaları gerekir (yukarıya bak).',
+  'Workflow skills': 'İş akışı skill\'leri', 'Copies the Auspex workflow skills into your agent skills folder: ': 'Auspex iş akışı skill\'lerini ajanının skill klasörüne kopyalar: ',
+  '{p} of {n} present': '{n} skill\'den {p} tanesi var', 'Installing…': 'Kuruluyor…', 'Install skills': 'Skill\'leri kur',
+  'Replace the differing skills': 'Farklı olan skill\'leri değiştir', 'installed': 'kuruldu', 'replaced': 'değiştirildi', 'unchanged': 'değişmedi',
 };
 let lang = 'en';
 try { lang = localStorage.getItem('auspex.viewer.lang') || ((navigator.language || '').toLowerCase().startsWith('tr') ? 'tr' : 'en'); } catch {}
@@ -1819,6 +1859,9 @@ async function load({ quiet = false } = {}) {
       try { state.schedules = await getJson('/api/schedules'); } catch (err) { state.schedules = { file: 'unavailable', error: err.message, schedules: [] }; }
     }
     try { state.memory = await getJson('/api/memory'); } catch (err) { state.memory = { error: err.message, profiles: [] }; }
+    // Desktop only: the Setup checks start Node (node --version), so the live
+    // refresh does not repeat them.
+    if (tauriCore && (!quiet || !state.setup)) await loadSetup();
     // The Refresh button also reads a graph again whose last read failed.
     if (!quiet) state.memView = memDropError(state.memView, state.db);
     const fresh = new Set();
@@ -1826,6 +1869,7 @@ async function load({ quiet = false } = {}) {
     state.seen = new Set(state.all.map(e => e._id));
     state.fresh = fresh;
     if (fresh.size && quiet) toast(t('{n} new operations', { n: fresh.size }), { announce: false });
+    if (state.firstLoad && setupShouldOpen(state.setup) && state.tab !== 'setup') switchTab('setup');
     state.firstLoad = false;
     syncFilterOptions();
     render();
@@ -2340,6 +2384,145 @@ function renderProfiles(rows) {
       data.logDir ? h('div', {}, t('Logs: ') + data.logDir) : null,
       data.exportDir ? h('div', {}, t('Exports: ') + data.exportDir) : null));
   $('cProfiles').textContent = cards.length ? fmt(cards.length) : '';
+}
+
+// ---------- setup (desktop app) ----------
+// setup-screen:start (tests/viewerSetupScreen.test.js runs this block in isolation)
+// The first-run Setup screen of the desktop app, from GET /api/setup (Rust
+// setup_status): each step says whether it is done ('ok'), needs the person
+// ('todo') or is optional ('info'). Nothing here connects to a database or
+// asks for a password; the MCP entry is copied, never written into a client.
+const setupPgpassFormat = 'hostname:port:database:username:password';
+const setupPgpassExample = 'db.example.test:5432:exampledb:report_reader:<password>';
+// The entry most MCP clients accept (docs/clients.md), with the installed
+// server script filled in; null without a usable Auspex folder.
+function setupMcpEntry(serverScript) {
+  if (typeof serverScript !== 'string' || !serverScript) return null;
+  return JSON.stringify({ mcpServers: { auspex: { command: 'node', args: [serverScript] } } }, null, 2);
+}
+function setupSteps(s) {
+  if (!s || typeof s !== 'object') return [];
+  const node = s.node || {};
+  const skills = s.skills || {};
+  const available = Array.isArray(skills.available) ? skills.available : [];
+  const present = Array.isArray(skills.present) ? skills.present : [];
+  return [
+    { key: 'node', state: node.ok ? 'ok' : 'todo' },
+    { key: 'home', state: s.homeExists && s.profilesExists ? 'ok' : 'todo' },
+    { key: 'root', state: s.root?.path && !s.root?.error ? 'ok' : 'todo' },
+    { key: 'pgpass', state: s.pgpass?.exists ? 'ok' : 'info' },
+    { key: 'mcp', state: setupMcpEntry(s.serverScript) ? 'info' : 'todo' },
+    { key: 'skills', state: available.length && available.every(n => present.includes(n)) ? 'ok' : 'info' },
+  ];
+}
+// Steps that keep Auspex from working: the tab count and the first-run switch.
+const setupAttention = s => setupSteps(s).filter(x => x.state === 'todo').length;
+// The Setup screen opens by itself while there is no profiles file yet.
+const setupShouldOpen = s => !!s && typeof s === 'object' && s.profilesExists === false;
+// setup-screen:end
+
+async function loadSetup() {
+  if (!tauriCore) return;
+  try { state.setup = await tauriCore.invoke('api', { path: '/api/setup', query: {} }); state.setupError = null; }
+  catch (err) { state.setupError = typeof err === 'string' ? err : err?.message || String(err); }
+}
+async function setupAction(command, args, busyKey) {
+  state.setupBusy = busyKey; state.setupMsg = null; renderSetup();
+  try {
+    const res = await tauriCore.invoke(command, args);
+    state.setupMsg = { key: busyKey, ok: true, res };
+  } catch (err) {
+    const code = typeof err === 'object' && err ? err.code : undefined;
+    const message = typeof err === 'string' ? err : err?.message || String(err);
+    state.setupMsg = { key: busyKey, ok: false, code, message: stageSetupTexts[code] && code !== 'TIMEOUT' && code !== 'CLI_FAILED' ? t(stageSetupTexts[code]) : message };
+  }
+  state.setupBusy = null;
+  await loadSetup();
+  renderSetup();
+  if (state.setupMsg?.ok) toast(state.setupMsg.key === 'home' ? t('Auspex folder ready') : t('Skills installed'));
+}
+function setupCopy(text, label) {
+  return h('button', { type: 'button', class: 'icon-btn sm', 'aria-label': t('Copy {w}', { w: label }), onclick: () => copy(text, label) }, t('Copy'));
+}
+function renderSetup() {
+  const view = $('v-setup');
+  const s = state.setup;
+  const todo = setupAttention(s);
+  $('cSetup').textContent = todo ? fmt(todo) : '';
+  if (state.tab !== 'setup') return;
+  if (!tauriCore) { put(view, h('div', { class: 'panel' }, emptyState(t('The Setup screen is part of the desktop app.')))); return; }
+  if (!s) { put(view, h('div', { class: 'panel' }, state.setupError ? h('div', { class: 'error-box', role: 'alert', style: 'margin:16px' }, state.setupError) : emptyState(t('Loading…')))); return; }
+  const steps = new Map(setupSteps(s).map(x => [x.key, x.state]));
+  const pill = key => {
+    const st = steps.get(key);
+    return h('span', { class: 'badge ' + (st === 'ok' ? 'ok' : st === 'todo' ? 'err' : 'old') }, st === 'ok' ? t('done') : st === 'todo' ? t('needed') : t('optional'));
+  };
+  const busy = key => state.setupBusy === key;
+  const msg = key => {
+    const m = state.setupMsg;
+    if (!m || m.key !== key) return null;
+    if (!m.ok) return h('div', { class: 'error-box', role: 'alert' }, m.message);
+    return null;
+  };
+  const step = (key, title, ...body) => h('section', { class: 'panel setup-step', 'aria-labelledby': `setup-h-${key}` },
+    h('div', { class: 'panel-h' }, h('h2', { id: `setup-h-${key}` }, title), h('span', { class: 'grow' }), pill(key)),
+    h('div', { class: 'panel-b' }, body));
+  const path = text => h('code', { class: 'setup-path' }, text);
+  const node = s.node || {};
+  const mcp = setupMcpEntry(s.serverScript);
+  const skills = s.skills || {};
+  const available = Array.isArray(skills.available) ? skills.available : [];
+  const present = Array.isArray(skills.present) ? skills.present : [];
+  const conflict = state.setupMsg?.key === 'skills' && state.setupMsg.code === 'SKILLS_CONFLICT';
+  const skillsDone = state.setupMsg?.key === 'skills' && state.setupMsg.ok ? state.setupMsg.res : null;
+  const rootSource = { installed: t('the copy installed with this app'), file: t('"auspexRoot" in the profiles file'), env: t('the AUSPEX_ROOT environment variable') };
+  put(view, h('div', { class: 'setup' },
+    h('div', { class: 'panel setup-intro' },
+      h('div', { class: 'panel-h' }, h('h2', {}, t('Setup')), h('span', { class: 'hint' }, todo ? t(todo === 1 ? '1 step needs you' : '{n} steps need you', { n: todo }) : t('Auspex is ready on this computer'))),
+      h('div', { class: 'panel-b' },
+        h('p', {}, t('Auspex runs on this computer. This screen never connects to a database, never asks for a password and never edits your MCP client: it checks, creates missing Auspex files and gives you text to copy.')),
+        h('button', { type: 'button', class: 'icon-btn', disabled: !!state.setupBusy, onclick: async () => { state.setupBusy = 'check'; renderSetup(); await loadSetup(); state.setupBusy = null; renderSetup(); } }, busy('check') ? t('Checking…') : t('Check again')))),
+    step('node', t('Node.js'),
+      node.ok ? h('p', {}, t('Node {v} found: ', { v: node.version }), path(node.path))
+        : h('div', {},
+          h('p', { class: 'setup-problem' }, !node.found ? t(stageSetupTexts.NODE_NOT_FOUND) : node.version ? t('Node {v} is too old; Auspex needs Node {m} or newer.', { v: node.version, m: node.minimum ?? 20 }) : node.problem || t('Node was not found.')),
+          h('p', {}, t('Auspex needs Node {m} or newer. Install the LTS version from {u}, then press Check again.', { m: node.minimum ?? 20, u: node.downloadUrl || 'https://nodejs.org/' }), ' ', setupCopy(node.downloadUrl || 'https://nodejs.org/', t('Download link'))),
+          node.path ? h('p', { class: 'muted' }, t('Node used: '), path(node.path)) : null)),
+    step('home', t('Auspex folder and profiles'),
+      h('dl', { class: 'setup-dl' },
+        h('dt', {}, t('Folder')), h('dd', {}, path(s.home), ' ', s.homeExists ? t('exists') : t('missing')),
+        h('dt', {}, t('Profiles file')), h('dd', {}, path(s.profilesFile), ' ', s.profilesExists ? t('exists') : t('missing'))),
+      s.homeExists && s.profilesExists
+        ? h('p', {}, t('Edit the profiles file to point each profile at your own read-only role, server and database. Auspex never overwrites it.'))
+        : h('div', {},
+          h('p', {}, t('Creates the folder and a profiles file with one example profile (exampledb on db.example.test as report_reader) for you to edit. Existing files are never overwritten.')),
+          h('button', { type: 'button', class: 'icon-btn primary', disabled: !!state.setupBusy, onclick: () => setupAction('setup_init', {}, 'home') }, busy('home') ? t('Creating…') : t('Create the Auspex folder'))),
+      msg('home')),
+    step('root', t('Auspex program files'),
+      s.root?.path
+        ? h('p', {}, t('Approvals and memory edits run from {w}: ', { w: rootSource[s.root.source] || s.root.source }), path(s.root.path))
+        : h('p', { class: 'setup-problem' }, stageSetupTexts[s.root?.error?.code] ? t(stageSetupTexts[s.root.error.code]) : s.root?.error?.message || t('Auspex folder not found.'))),
+    step('pgpass', t('Passwords (pgpass)'),
+      h('p', {}, t('Passwords never go into Auspex files. The PostgreSQL client reads them from the pgpass file:'), ' ', s.pgpass?.file ? path(s.pgpass.file) : t('(no location known)'), ' ',
+        s.pgpass?.fromEnv ? t('(from PGPASSFILE)') : '', ' ', s.pgpass?.exists ? t('exists') : t('not created yet')),
+      h('p', {}, t('One line per server, in this format:')),
+      h('pre', { class: 'setup-pre' }, setupPgpassFormat + '\n' + setupPgpassExample),
+      h('p', { class: 'muted' }, t('Create or edit the file yourself in a text editor; this screen has no password field.'))),
+    step('mcp', t('MCP client entry'),
+      mcp
+        ? h('div', {},
+          h('p', {}, t('Add this entry to your MCP client (Claude Code, Codex, Cursor, VS Code...). Auspex does not edit any client configuration: copy it and paste it there.')),
+          h('pre', { class: 'setup-pre' }, mcp),
+          setupCopy(mcp, t('MCP entry')))
+        : h('p', { class: 'setup-problem' }, t('The entry needs the Auspex program files (see above).'))),
+    step('skills', t('Workflow skills'),
+      h('p', {}, t('Copies the Auspex workflow skills into your agent skills folder: '), skills.target ? path(skills.target) : '', ' ',
+        t('{p} of {n} present', { p: present.length, n: available.length })),
+      h('button', { type: 'button', class: 'icon-btn', disabled: !!state.setupBusy || !available.length, onclick: () => setupAction('install_skills', { force: false }, 'skills') }, busy('skills') ? t('Installing…') : t('Install skills')),
+      conflict ? h('div', { class: 'error-box', role: 'alert' }, state.setupMsg.message, ' ',
+        h('button', { type: 'button', class: 'icon-btn sm secondary-danger', disabled: !!state.setupBusy, onclick: () => setupAction('install_skills', { force: true }, 'skills') }, t('Replace the differing skills')))
+        : msg('skills'),
+      skillsDone ? h('ul', { class: 'setup-list', role: 'status' }, (skillsDone.skills || []).map(x => h('li', {}, `${x.name}: ${t(x.result)}`))) : null)));
 }
 
 // ---------- reports ----------
@@ -8682,6 +8865,7 @@ function render() {
   $('cOps').textContent = rows.length ? fmt(rows.length) : '';
   renderTables(rows);
   renderProfiles(rows);
+  renderSetup();
   renderReports();
   renderSchedules();
   renderSchema();
@@ -8700,10 +8884,11 @@ function moveInk() {
   const nav = b.parentElement;
   if (b.offsetLeft < nav.scrollLeft || b.offsetLeft + b.offsetWidth > nav.scrollLeft + nav.clientWidth) nav.scrollLeft = Math.max(0, b.offsetLeft - 8);
 }
-const tabNames = ['overview', 'ops', 'tables', 'views', 'functions', 'reports', 'schedules', 'schema', 'rules', 'profiles'];
-const ownToolbarTabs = ['reports', 'schedules', 'profiles', 'schema', 'rules', 'views', 'functions'];
+const tabNames = ['overview', 'ops', 'tables', 'views', 'functions', 'reports', 'schedules', 'schema', 'rules', 'profiles', 'setup'];
+const ownToolbarTabs = ['reports', 'schedules', 'profiles', 'setup', 'schema', 'rules', 'views', 'functions'];
 function switchTab(tab) {
-  if (!tabNames.includes(tab)) tab = 'overview';
+  // Setup belongs to the desktop app (the browser viewer has no installer).
+  if (!tabNames.includes(tab) || (tab === 'setup' && !tauriCore)) tab = 'overview';
   state.tab = tab; persist();
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
   for (const t of tabNames) {
@@ -9654,6 +9839,7 @@ state.theme = themeDefaultId(state.theme);
 applyTheme();
 syncRangeButtons();
 applyLive();
+if (tauriCore) document.querySelector('#tabs button[data-tab="setup"]').hidden = false;
 switchTab(state.tab || 'overview');
 load();
 </script>

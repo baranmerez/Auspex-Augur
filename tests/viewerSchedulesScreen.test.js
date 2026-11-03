@@ -92,7 +92,7 @@ test('the fix request names the schedule and the action, quotes values as data a
 
 test('the screen is wired read-only: its own tab, the overview route, no write route', () => {
   assert.match(page, /<button data-tab="schedules">/);
-  assert.match(page, /const tabNames = \['overview', 'ops', 'tables', 'views', 'functions', 'reports', 'schedules', 'schema', 'rules', 'profiles'\];/);
+  assert.match(page, /const tabNames = \['overview', 'ops', 'tables', 'views', 'functions', 'reports', 'schedules', 'schema', 'rules', 'profiles', 'setup'\];/);
   assert.match(page, /state\.schedules = await getJson\('\/api\/schedules'\)/);
   const render = page.match(/function renderSchedules\(\) \{[\s\S]*?\r?\n\}\r?\n/)?.[0];
   assert.ok(render, 'renderSchedules found');

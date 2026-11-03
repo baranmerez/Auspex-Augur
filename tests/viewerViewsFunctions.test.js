@@ -341,7 +341,7 @@ test('TR and EN: every string of the fn-page block has a Turkish text', () => {
 test('tabs: Views and Functions follow Tables, restore after reload and have counts, own toolbar and shortcuts', () => {
   assert.match(page, /<button data-tab="tables">[\s\S]*?<\/button>\s*<button data-tab="views"><span data-i18n="Views">Views<\/span><span class="count" id="cViews"><\/span><\/button>\s*<button data-tab="functions"><span data-i18n="Functions">Functions<\/span><span class="count" id="cFunctions"><\/span><\/button>/);
   assert.match(page, /<section id="v-views" class="view" hidden><\/section>\s*<section id="v-functions" class="view" hidden><\/section>/);
-  assert.match(page, /const tabNames = \['overview', 'ops', 'tables', 'views', 'functions', 'reports', 'schedules', 'schema', 'rules', 'profiles'\];/);
+  assert.match(page, /const tabNames = \['overview', 'ops', 'tables', 'views', 'functions', 'reports', 'schedules', 'schema', 'rules', 'profiles', 'setup'\];/);
   assert.match(page, /const ownToolbarTabs = \[[^\]]*'views', 'functions'\]/);
   // 1-9 and 0 (the tenth tab) switch tabs.
   assert.match(page, /\/\^\[0-9\]\$\/\.test\(ev\.key\)[^\n]*switchTab\(tabNames\[ev\.key === '0' \? 9 : Number\(ev\.key\) - 1\]\)/);
