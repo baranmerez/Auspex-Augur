@@ -1,0 +1,90 @@
+name: Release installer
+
+# Builds the Windows installer (NSIS setup.exe: the desktop app plus the MCP
+# server code) and attaches it to a GitHub Release. Runs on version tags and
+# by hand, never on every push. v1 is unsigned (see docs/viewer.md).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to attach the installer to (empty = build only, as a workflow artifact)
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  installer:
+    name: Windows installer
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+      - name: Unit tests
+        run: |
+          npm ci
+          npm test
+      - name: Install desktop dependencies
+        run: npm ci
+        working-directory: desktop
+      - name: Prepare UI (generates desktop/dist for the Rust build)
+        run: npm run prepare-ui
+        working-directory: desktop
+      - name: Rust tests
+        run: cargo test
+        working-directory: desktop/src-tauri
+      - name: Build the installer
+        run: npm run installer
+        working-directory: desktop
+      - name: Name the installer
+        id: file
+        shell: bash
+        run: |
+          src=$(ls desktop/src-tauri/target/release/bundle/nsis/*-setup.exe)
+          version=$(node -p "require('./desktop/src-tauri/tauri.conf.json').version")
+          out="Auspex-Augur-${version}-x64-setup.exe"
+          cp "$src" "$out"
+          sha256sum "$out" > "$out.sha256"
+          echo "name=$out" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: auspex-augur-installer
+          path: |
+            ${{ steps.file.outputs.name }}
+            ${{ steps.file.outputs.name }}.sha256
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/') || inputs.tag != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+          FILE: ${{ steps.file.outputs.name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$FILE" "$FILE.sha256" --clobber
+          else
+            gh release create "$TAG" "$FILE" "$FILE.sha256" --verify-tag --title "Auspex Augur $TAG" \
+              --notes "Windows installer (per-user, no administrator rights). Unsigned: Windows SmartScreen shows \"unknown publisher\" on first start. Needs Node.js 20 or newer. See README for details."
+          fi
