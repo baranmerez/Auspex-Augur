@@ -600,6 +600,7 @@ fn api_route(path: &str, query: &HashMap<String, String>) -> Result<Value, Strin
             Ok(json!({ "ok": true, "latestDay": days.first().map(|d| d.0.clone()), "latestCount": days.first().map(|d| d.1).unwrap_or(0), "totalDays": days.len() }))
         }
         "/api/profiles" => Ok(profiles()),
+        "/api/setup" => Ok(setup_status()),
         "/api/reports" => Ok(list_reports()),
         "/api/reports/trend" => report_trend(query),
         "/api/schedules" => Ok(schedule_overview()),
@@ -720,30 +721,85 @@ fn auspex_root_from_file() -> Option<Value> {
     data.get(AUSPEX_ROOT_KEY).cloned()
 }
 
-// The Auspex checkout: AUSPEX_ROOT, else "auspexRoot" in profiles.json; an
-// absolute directory holding src/stageCli.js (same check as config.js).
-fn auspex_root() -> Result<PathBuf, Value> {
-    let (value, source) = match env("AUSPEX_ROOT") {
-        Some(v) => (Value::String(v), "AUSPEX_ROOT".to_string()),
-        None => match auspex_root_from_file() {
-            Some(v) => (v, format!("\"{AUSPEX_ROOT_KEY}\" in {}", profiles_file().display())),
-            None => {
-                return Err(stage_error(
-                    "AUSPEX_ROOT_MISSING",
-                    format!(
-                        "Auspex folder not found. Set \"{AUSPEX_ROOT_KEY}\" in {} (or the AUSPEX_ROOT environment variable) to the Auspex folder that holds src/stageCli.js.",
-                        profiles_file().display()
-                    ),
-                ))
-            }
-        },
+// Where src/stageCli.js lives. An explicit setting wins (developer
+// checkouts): AUSPEX_ROOT, else "auspexRoot" in profiles.json, which must be
+// an absolute directory holding src/stageCli.js (same check as config.js); an
+// invalid explicit value is refused, never replaced by the bundled copy.
+// Without either, the installed app uses the server copy bundled with it
+// (<resource dir>/server, see tauri.conf.json), recorded once at startup from
+// the location of the running executable: no setting, environment variable or
+// argument can move it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum RootSource {
+    Env,
+    File,
+    Bundled,
+}
+
+impl RootSource {
+    fn label(self) -> &'static str {
+        match self {
+            RootSource::Env => "env",
+            RootSource::File => "file",
+            RootSource::Bundled => "installed",
+        }
+    }
+}
+
+const BUNDLED_SERVER_DIR: &str = "server";
+static BUNDLED_ROOT: OnceLock<PathBuf> = OnceLock::new();
+
+fn holds_stage_cli(dir: &std::path::Path) -> bool {
+    dir.join("src").join("stageCli.js").is_file()
+}
+
+fn root_missing() -> Value {
+    stage_error(
+        "AUSPEX_ROOT_MISSING",
+        format!(
+            "Auspex folder not found. Set \"{AUSPEX_ROOT_KEY}\" in {} (or the AUSPEX_ROOT environment variable) to the Auspex folder that holds src/stageCli.js.",
+            profiles_file().display()
+        ),
+    )
+}
+
+// explicit: the configured value with where it came from (shown in the error)
+// and its kind; bundled: the server copy next to the installed executable.
+fn resolve_auspex_root(explicit: Option<(Value, String, RootSource)>, bundled: Option<&std::path::Path>) -> Result<(PathBuf, RootSource), Value> {
+    let Some((value, where_, source)) = explicit else {
+        return bundled.filter(|d| d.is_absolute() && holds_stage_cli(d)).map(|d| (d.to_path_buf(), RootSource::Bundled)).ok_or_else(root_missing);
     };
     let text = value.as_str().unwrap_or("");
     let dir = PathBuf::from(text);
-    if text.is_empty() || text.chars().any(char::is_control) || !dir.is_absolute() || !dir.join("src").join("stageCli.js").is_file() {
-        return Err(stage_error("AUSPEX_ROOT_INVALID", format!("{source} must be the absolute path of the Auspex folder that holds src/stageCli.js.")));
+    if text.is_empty() || text.chars().any(char::is_control) || !dir.is_absolute() || !holds_stage_cli(&dir) {
+        return Err(stage_error("AUSPEX_ROOT_INVALID", format!("{where_} must be the absolute path of the Auspex folder that holds src/stageCli.js.")));
     }
-    Ok(dir)
+    Ok((dir, source))
+}
+
+fn explicit_auspex_root() -> Option<(Value, String, RootSource)> {
+    if let Some(v) = env("AUSPEX_ROOT") {
+        return Some((Value::String(v), "AUSPEX_ROOT".to_string(), RootSource::Env));
+    }
+    auspex_root_from_file().map(|v| (v, format!("\"{AUSPEX_ROOT_KEY}\" in {}", profiles_file().display()), RootSource::File))
+}
+
+fn auspex_root_with_source() -> Result<(PathBuf, RootSource), Value> {
+    resolve_auspex_root(explicit_auspex_root(), BUNDLED_ROOT.get().map(PathBuf::as_path))
+}
+
+fn auspex_root() -> Result<PathBuf, Value> {
+    auspex_root_with_source().map(|(dir, _)| dir)
+}
+
+// The resource directory as Windows hands it to the app may carry the \?// prefix; the plain form goes into the MCP entry and Node's arguments. A
+// \\?\UNC\ path is kept as it is.
+fn plain_path(p: PathBuf) -> PathBuf {
+    let text = p.to_string_lossy().into_owned();
+    match text.strip_prefix(r"\\?\") {
+        Some(rest) if !rest.starts_with(r"UNC\") => PathBuf::from(rest),
+        _ => p,
+    }
 }
 
 fn read_capped<R: Read + Send + 'static>(r: R, cap: u64) -> std::thread::JoinHandle<String> {
@@ -1043,6 +1099,11 @@ fn audit_uncertain(base: &Value, elapsed: Duration, err: &Value) {
         e.insert("error".into(), err["message"].clone());
         e.insert("errorCode".into(), err["code"].clone());
     }
+    append_audit(&entry, &ts);
+}
+
+// One line in <log dir>/<UTC day>.jsonl; ts is the entry's own timestamp.
+fn append_audit(entry: &Value, ts: &str) {
     let dir = log_dir();
     // New folders 0700 and new day files 0600 on Unix, like src/privateFiles.js;
     // existing ones keep their permissions here.
@@ -1249,6 +1310,241 @@ fn table_profile(query: &HashMap<String, String>) -> Result<Value, String> {
     Ok(v)
 }
 
+// ---------- first-run Setup screen ----------
+// Read: GET /api/setup (the Auspex folder, the profiles file, the Node check,
+// the MCP server script for the client entry, where pgpass is looked for, the
+// skills folder). Writes: `setup_init` creates ~/.auspex and an example
+// profiles file only when they are absent; `install_skills` runs
+// `stageCli.js install-skills`. Nothing here connects to a database, reads a
+// password or edits an MCP client's configuration.
+
+const MIN_NODE_MAJOR: u64 = 20;
+const NODE_DOWNLOAD_URL: &str = "https://nodejs.org/";
+const NODE_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
+
+// "v22.11.0" (the output of node --version) -> (22, 11, 0); a suffix after
+// the patch number (-nightly...) is ignored.
+fn parse_node_version(s: &str) -> Option<(u64, u64, u64)> {
+    let v = s.trim().strip_prefix('v')?;
+    let mut parts = v.splitn(3, '.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    let digits: String = parts.next()?.chars().take_while(char::is_ascii_digit).collect();
+    let patch = digits.parse().ok()?;
+    Some((major, minor, patch))
+}
+
+// The Node check as the Setup screen shows it: program is the Node the app
+// would start (or why there is none), output what `node --version` printed
+// (or why it could not run).
+fn node_status(program: Result<PathBuf, Value>, output: Result<String, String>) -> Value {
+    let mut v = json!({ "minimum": MIN_NODE_MAJOR, "downloadUrl": NODE_DOWNLOAD_URL, "found": false, "ok": false, "path": null, "version": null, "problem": null });
+    let path = match program {
+        Ok(p) => p,
+        Err(e) => {
+            v["problem"] = e["message"].clone();
+            return v;
+        }
+    };
+    v["found"] = json!(true);
+    v["path"] = json!(path.to_string_lossy());
+    let text = match output {
+        Ok(t) => t,
+        Err(problem) => {
+            v["problem"] = json!(problem);
+            return v;
+        }
+    };
+    match parse_node_version(&text) {
+        Some((major, minor, patch)) => {
+            let version = format!("{major}.{minor}.{patch}");
+            v["version"] = json!(version);
+            if major >= MIN_NODE_MAJOR {
+                v["ok"] = json!(true);
+            } else {
+                v["problem"] = json!(format!("Node {version} is too old; Auspex needs Node {MIN_NODE_MAJOR} or newer."));
+            }
+        }
+        None => v["problem"] = json!("node --version gave no version number."),
+    }
+    v
+}
+
+// Runs `<node> --version` (the fixed Node program, one fixed argument, no
+// shell) with a short timeout.
+fn node_version_output(node: &std::path::Path) -> Result<String, String> {
+    let mut cmd = Command::new(node);
+    cmd.arg("--version").stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    let mut child = cmd.spawn().map_err(|e| format!("Could not start {}: {e}", node.display()))?;
+    let out = read_capped(child.stdout.take().expect("piped stdout"), 1024);
+    let started = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return Ok(out.join().unwrap_or_default()),
+            Ok(None) if started.elapsed() >= NODE_CHECK_TIMEOUT => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("node --version did not answer within {} s.", NODE_CHECK_TIMEOUT.as_secs()));
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(20)),
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+}
+
+fn node_check() -> Value {
+    let program = node_program();
+    let output = match &program {
+        Ok(p) => node_version_output(p),
+        Err(_) => Err(String::new()),
+    };
+    node_status(program, output)
+}
+
+// Where libpq and node-postgres look for the password file: PGPASSFILE, else
+// %APPDATA%\postgresql\pgpass.conf on Windows and ~/.pgpass elsewhere. Only
+// whether the file exists is reported, never its content.
+fn pgpass_location(get: impl Fn(&str) -> Option<String>) -> (Option<PathBuf>, bool) {
+    if let Some(f) = get("PGPASSFILE") {
+        return (Some(PathBuf::from(f)), true);
+    }
+    let file = if cfg!(windows) {
+        get("APPDATA").map(|d| PathBuf::from(d).join("postgresql").join("pgpass.conf"))
+    } else {
+        get("HOME").map(|d| PathBuf::from(d).join(".pgpass"))
+    };
+    (file, false)
+}
+
+// The agent skills folder of stageCli.js install-skills (src/skillsInstall.js).
+fn skills_target() -> PathBuf {
+    env("AUSPEX_SKILLS_TARGET").map(PathBuf::from).unwrap_or_else(|| {
+        let user = env("USERPROFILE").or_else(|| env("HOME")).unwrap_or_else(|| ".".into());
+        PathBuf::from(user).join(".claude").join("skills")
+    })
+}
+
+// Skill folders (with SKILL.md) of the Auspex folder and which of them the
+// target already has. Whether their content matches is decided by the install.
+fn skills_info(root: Option<&std::path::Path>, target: &std::path::Path) -> Value {
+    let names: Vec<String> = root
+        .map(|r| sub_dirs(&r.join("skills")).into_iter().filter(|n| r.join("skills").join(n).join("SKILL.md").is_file()).collect())
+        .unwrap_or_default();
+    let present: Vec<&String> = names.iter().filter(|n| target.join(n.as_str()).join("SKILL.md").is_file()).collect();
+    json!({ "target": target.to_string_lossy(), "available": names, "present": present })
+}
+
+fn setup_status() -> Value {
+    let home = auspex_home();
+    let file = profiles_file();
+    let root = auspex_root_with_source();
+    let root_dir = root.as_ref().ok().map(|(d, _)| plain_path(d.clone()));
+    let (pgpass, pgpass_from_env) = pgpass_location(env);
+    json!({
+        "home": home.to_string_lossy(),
+        "homeExists": home.is_dir(),
+        "profilesFile": file.to_string_lossy(),
+        "profilesExists": file.is_file(),
+        "root": match &root {
+            Ok((_, source)) => json!({ "path": root_dir.as_ref().map(|d| d.to_string_lossy().to_string()), "source": source.label(), "error": null }),
+            Err(e) => json!({ "path": null, "source": null, "error": e }),
+        },
+        "serverScript": root_dir.as_ref().map(|d| d.join("src").join("index.js").to_string_lossy().to_string()),
+        "node": node_check(),
+        "pgpass": { "file": pgpass.as_ref().map(|f| f.to_string_lossy().to_string()), "fromEnv": pgpass_from_env, "exists": pgpass.as_ref().is_some_and(|f| f.is_file()) },
+        "skills": skills_info(root_dir.as_deref(), &skills_target()),
+    })
+}
+
+// Alias names only: the user replaces them with their own read-only role,
+// server and database; the password goes to pgpass, never into this file.
+const EXAMPLE_PROFILES: &str = r#"{
+  "exampledb": {
+    "url": "postgresql://report_reader@db.example.test:5432/exampledb",
+    "description": "Example profile: replace the user, host and database with your own read-only role"
+  }
+}
+"#;
+
+// Creates the Auspex folder and an example profiles file when they are
+// absent. An existing file is never opened for writing (create_new).
+fn init_home(home: &std::path::Path, profiles: &std::path::Path) -> Result<Value, Value> {
+    let created_home = !home.exists();
+    let mut dirs = fs::DirBuilder::new();
+    dirs.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        dirs.mode(0o700);
+    }
+    let io = |e: std::io::Error| stage_error("IO_ERROR", e.to_string());
+    dirs.create(home).map_err(io)?;
+    if let Some(parent) = profiles.parent() {
+        dirs.create(parent).map_err(io)?;
+    }
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let created_profiles = match options.open(profiles) {
+        Ok(mut f) => {
+            use std::io::Write;
+            f.write_all(EXAMPLE_PROFILES.as_bytes()).map_err(io)?;
+            true
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => false,
+        Err(e) => return Err(io(e)),
+    };
+    Ok(json!({ "ok": true, "createdHome": created_home, "createdProfiles": created_profiles, "home": home.to_string_lossy(), "profilesFile": profiles.to_string_lossy() }))
+}
+
+// The page's "Create" button on the Setup screen; audited like the other writes.
+#[tauri::command]
+async fn setup_init() -> Result<Value, Value> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let started = Instant::now();
+        let result = init_home(&auspex_home(), &profiles_file());
+        let ts = iso_now();
+        let mut entry = json!({ "ts": ts, "source": "desktop", "actor": "desktop", "tool": "setup_init", "ms": started.elapsed().as_millis() as u64 });
+        match &result {
+            Ok(v) => {
+                entry["createdHome"] = v["createdHome"].clone();
+                entry["createdProfiles"] = v["createdProfiles"].clone();
+            }
+            Err(e) => {
+                entry["error"] = e["message"].clone();
+                entry["errorCode"] = e["code"].clone();
+            }
+        }
+        append_audit(&entry, &ts);
+        result
+    })
+    .await
+    .map_err(|e| stage_error("INTERNAL", e.to_string()))?
+}
+
+// force: replace skills that differ in the target (the page asks first).
+#[tauri::command]
+async fn install_skills(force: Option<bool>) -> Result<Value, Value> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut args = vec!["install-skills".to_string()];
+        if force == Some(true) {
+            args.push("--force=true".to_string());
+        }
+        run_cli(&args, &json!({ "tool": "install_skills" }))
+    })
+    .await
+    .map_err(|e| stage_error("INTERNAL", e.to_string()))?
+}
+
 fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
@@ -1261,8 +1557,12 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![HIDDEN_ARG])))
-        .invoke_handler(tauri::generate_handler![api, approve_report, revoke_report, archive_note, score_column, edit_memory])
+        .invoke_handler(tauri::generate_handler![api, approve_report, revoke_report, archive_note, score_column, edit_memory, setup_init, install_skills])
         .setup(|app| {
+            // The server copy bundled with the installed app; see resolve_auspex_root.
+            if let Ok(dir) = app.path().resource_dir() {
+                let _ = BUNDLED_ROOT.set(plain_path(dir.join(BUNDLED_SERVER_DIR)));
+            }
             let enabled = app.autolaunch().is_enabled().unwrap_or(false);
             let open = MenuItem::with_id(app, "open", "Open Auspex Augur", true, None::<&str>)?;
             let autostart = CheckMenuItem::with_id(app, "autostart", "Start with Windows", true, enabled, None::<&str>)?;
@@ -1751,6 +2051,123 @@ lines")).is_err());
         assert_eq!(auspex_root().unwrap_err()["code"], json!("AUSPEX_ROOT_INVALID"));
         std::env::remove_var("AUSPEX_ROOT");
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_explicit_auspex_root_wins_and_the_bundled_copy_is_only_the_fallback() {
+        let base = std::env::temp_dir().join(format!("auspex-root-resolve-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let checkout = base.join("checkout");
+        let bundled = base.join("install").join(BUNDLED_SERVER_DIR);
+        for dir in [&checkout, &bundled] {
+            fs::create_dir_all(dir.join("src")).unwrap();
+            fs::write(dir.join("src").join("stageCli.js"), "").unwrap();
+        }
+        let explicit = |v: &std::path::Path, source| Some((json!(v.to_string_lossy()), "AUSPEX_ROOT".to_string(), source));
+        assert_eq!(resolve_auspex_root(explicit(&checkout, RootSource::Env), Some(&bundled)).unwrap(), (checkout.clone(), RootSource::Env));
+        assert_eq!(resolve_auspex_root(explicit(&checkout, RootSource::File), Some(&bundled)).unwrap().1, RootSource::File);
+        assert_eq!(resolve_auspex_root(None, Some(&bundled)).unwrap(), (bundled.clone(), RootSource::Bundled));
+        // An invalid explicit value is refused, even with a valid bundled copy.
+        let empty = base.join("empty");
+        fs::create_dir_all(&empty).unwrap();
+        for bad in [json!(empty.to_string_lossy()), json!("relative/auspex"), json!(""), json!(42), json!(null), json!(format!("{}\n", checkout.display()))] {
+            let e = resolve_auspex_root(Some((bad.clone(), "\"auspexRoot\" in profiles.json".into(), RootSource::File)), Some(&bundled)).unwrap_err();
+            assert_eq!(e["code"], json!("AUSPEX_ROOT_INVALID"), "{bad}");
+        }
+        // The bundled copy must hold the CLI and be absolute.
+        assert_eq!(resolve_auspex_root(None, Some(&empty)).unwrap_err()["code"], json!("AUSPEX_ROOT_MISSING"));
+        assert_eq!(resolve_auspex_root(None, Some(std::path::Path::new("server"))).unwrap_err()["code"], json!("AUSPEX_ROOT_MISSING"));
+        assert_eq!(resolve_auspex_root(None, None).unwrap_err()["code"], json!("AUSPEX_ROOT_MISSING"));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn verbatim_resource_paths_become_plain_paths() {
+        assert_eq!(plain_path(PathBuf::from(r"\\?\C:\Users\example\AppData\Local\Programs\Auspex Augur\server")), PathBuf::from(r"C:\Users\example\AppData\Local\Programs\Auspex Augur\server"));
+        assert_eq!(plain_path(PathBuf::from(r"\\?\UNC\server\share\x")), PathBuf::from(r"\\?\UNC\server\share\x"));
+        assert_eq!(plain_path(PathBuf::from("/opt/auspex/server")), PathBuf::from("/opt/auspex/server"));
+    }
+
+    #[test]
+    fn node_versions_from_20_on_pass_the_check() {
+        assert_eq!(parse_node_version("v22.11.0\n"), Some((22, 11, 0)));
+        assert_eq!(parse_node_version("v24.0.0-nightly20260101"), Some((24, 0, 0)));
+        for bad in ["", "22.11.0", "v22", "v22.x.0", "node v22.1.0", "vX.1.2"] {
+            assert_eq!(parse_node_version(bad), None, "{bad}");
+        }
+        let node = || Ok(PathBuf::from(r"C:\Program Files\nodejs\node.exe"));
+        let ok = node_status(node(), Ok("v20.0.0\r\n".into()));
+        assert_eq!((ok["ok"].clone(), ok["version"].clone(), ok["problem"].clone(), ok["minimum"].clone()), (json!(true), json!("20.0.0"), Value::Null, json!(20)));
+        let old = node_status(node(), Ok("v18.19.1".into()));
+        assert_eq!((old["ok"].clone(), old["found"].clone()), (json!(false), json!(true)));
+        assert!(old["problem"].as_str().unwrap().contains("18.19.1 is too old"));
+        let missing = node_status(Err(stage_error("NODE_NOT_FOUND", "Node was not found on PATH")), Err(String::new()));
+        assert_eq!((missing["found"].clone(), missing["ok"].clone(), missing["downloadUrl"].clone()), (json!(false), json!(false), json!(NODE_DOWNLOAD_URL)));
+        assert_eq!(missing["problem"], json!("Node was not found on PATH"));
+        let broken = node_status(node(), Err("did not answer".into()));
+        assert_eq!((broken["found"].clone(), broken["ok"].clone(), broken["problem"].clone()), (json!(true), json!(false), json!("did not answer")));
+        assert_eq!(node_status(node(), Ok("garbage".into()))["ok"], json!(false));
+    }
+
+    #[test]
+    fn pgpass_is_looked_for_where_libpq_looks() {
+        let vars = |pairs: &[(&str, &str)]| {
+            let m: HashMap<String, String> = pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+            move |k: &str| m.get(k).cloned()
+        };
+        let custom = std::env::temp_dir().join("example-pgpass.conf");
+        let custom_text = custom.to_string_lossy().to_string();
+        assert_eq!(pgpass_location(vars(&[("PGPASSFILE", &custom_text), ("APPDATA", r"C:\Users\example\AppData\Roaming")])), (Some(custom), true));
+        let (file, from_env) = pgpass_location(vars(&[("APPDATA", r"C:\Users\example\AppData\Roaming"), ("HOME", "/home/example")]));
+        assert!(!from_env);
+        if cfg!(windows) {
+            assert_eq!(file, Some(PathBuf::from(r"C:\Users\example\AppData\Roaming\postgresql\pgpass.conf")));
+        } else {
+            assert_eq!(file, Some(PathBuf::from("/home/example/.pgpass")));
+        }
+        assert_eq!(pgpass_location(vars(&[])), (None, false));
+    }
+
+    #[test]
+    fn setup_creates_the_folder_and_example_profiles_only_when_absent() {
+        let base = std::env::temp_dir().join(format!("auspex-setup-init-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let home = base.join(".auspex");
+        let file = home.join("profiles.json");
+        let first = init_home(&home, &file).unwrap();
+        assert_eq!((first["createdHome"].clone(), first["createdProfiles"].clone()), (json!(true), json!(true)));
+        let example: Value = serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
+        let url = example["exampledb"]["url"].as_str().unwrap();
+        assert_eq!(profile_problem("exampledb", url), None, "the example passes the server's checks");
+        assert!(!describe(url)["passwordInString"].as_bool().unwrap(), "no password in the example");
+        // An existing file is never rewritten.
+        fs::write(&file, "{ \"mine\": {} }").unwrap();
+        let again = init_home(&home, &file).unwrap();
+        assert_eq!((again["createdHome"].clone(), again["createdProfiles"].clone()), (json!(false), json!(false)));
+        assert_eq!(fs::read_to_string(&file).unwrap(), "{ \"mine\": {} }");
+        // A profiles file elsewhere (AUSPEX_PROFILES_FILE) gets its folder too.
+        let elsewhere = base.join("config").join("profiles.json");
+        assert_eq!(init_home(&home, &elsewhere).unwrap()["createdProfiles"], json!(true));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn skills_info_lists_bundled_skills_and_those_already_present() {
+        let base = std::env::temp_dir().join(format!("auspex-skills-info-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let root = base.join("server");
+        let target = base.join("skills");
+        for name in ["auspex-explore", "auspex-report"] {
+            fs::create_dir_all(root.join("skills").join(name)).unwrap();
+            fs::write(root.join("skills").join(name).join("SKILL.md"), "x").unwrap();
+        }
+        fs::create_dir_all(root.join("skills").join("no-skill-file")).unwrap();
+        fs::create_dir_all(target.join("auspex-report")).unwrap();
+        fs::write(target.join("auspex-report").join("SKILL.md"), "x").unwrap();
+        let info = skills_info(Some(&root), &target);
+        assert_eq!((info["available"].clone(), info["present"].clone()), (json!(["auspex-explore", "auspex-report"]), json!(["auspex-report"])));
+        assert_eq!(skills_info(None, &target)["available"], json!([]));
+        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]
