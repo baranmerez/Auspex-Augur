@@ -79,9 +79,13 @@ suggests adding the key. Existing notes are not translated.
 
 An optional top-level `auspexRoot` is the absolute path of your Auspex
 checkout; the desktop app runs `src/stageCli.js` from it to approve or revoke
-reports (`AUSPEX_ROOT` takes precedence). It is not a profile; a value that is
+reports (`AUSPEX_ROOT` takes precedence). An app installed with `setup.exe`
+needs neither: without them it uses the server copy installed with it
+(`%LOCALAPPDATA%\Programs\Auspex Augur\server`); set `auspexRoot` only to
+run the app against a checkout instead. It is not a profile; a value that is
 not an absolute, existing directory holding `src/stageCli.js` stops the server
-at startup:
+at startup (and the desktop app refuses it rather than falling back to the
+installed copy):
 
 ```json
 {
@@ -162,8 +166,9 @@ naming the problem.
 | `AUSPEX_SCRIPT_ROOT_<NAME>` | none | Extra script root (absolute folder for `save_execute_script`), e.g. `AUSPEX_SCRIPT_ROOT_SCRIPTS`; the same name in `scriptRoots` and env is an error |
 | `AUSPEX_CODE_ROOT_<NAME>` | none | Extra code root (absolute source code folder the agent reads itself; names `remember` `evidenceCode` roots), e.g. `AUSPEX_CODE_ROOT_EXAMPLE_APP`; the same name in `codeRoots` and env is an error |
 | `AUSPEX_ENABLED_TOOL_GROUPS` | `enabledToolGroups` in the profiles file, else all | Comma-separated tool groups this server offers (see Tool groups); startup only |
-| `AUSPEX_ROOT` | `auspexRoot` in the profiles file | Auspex checkout the desktop app runs `src/stageCli.js` from (report approve/revoke) |
-| `AUSPEX_NODE` | `node` on `PATH` | Absolute path of the Node executable the desktop app uses for approve/revoke |
+| `AUSPEX_ROOT` | `auspexRoot` in the profiles file, else the installed server copy | Auspex checkout the desktop app runs `src/stageCli.js` from (report approve/revoke, memory edits, skills install) |
+| `AUSPEX_NODE` | `node` on `PATH` | Absolute path of the Node executable the desktop app (and its installer's Node check) uses |
+| `AUSPEX_SKILLS_TARGET` | `~/.claude/skills` | Agent skills folder for `npm run skills:install` and the desktop Setup screen's *Install skills* |
 | `AUSPEX_MAX_ROWS` | 500 | Row cap for `query` |
 | `AUSPEX_EXPORT_MAX_ROWS` | 100000 | Row cap for `export_csv` |
 | `AUSPEX_EXPORT_MAX_BYTES` | 104857600 | Size cap for one `export_csv` file (100 MB), BOM and header included |

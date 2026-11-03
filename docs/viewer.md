@@ -371,7 +371,8 @@ the tool it acts as (`remember` with `add`, `edit` or `confirm`;
 `desktop/` wraps the same viewer in a small native app (about 3 MB) that reads
 `~/.auspex` directly through a Rust command, so no Node server is needed
 (approve/revoke, archiving notes, user column scores, the table page's memory edits and its profile, the Schedules screen and the
-schedules and trend of approved reports need Node 20+ and the Auspex checkout, see below;
+schedules and trend of approved reports need Node 20+ and the Auspex folder, which is the server copy
+installed with the app or a checkout, see below;
 schedules and trends come from the same Node code as in the browser viewer and
 are only read when a schedules file exists).
 Closing the window keeps it in the tray; the tray menu has *Open*, *Show log
@@ -383,6 +384,80 @@ cd desktop && npm install && npm run build
 
 Needs Rust (MSVC toolchain on Windows), the platform C++ build tools and
 WebView2. Output: `desktop/src-tauri/target/release/auspex-augur.exe`.
+
+#### Windows installer
+
+```bash
+cd desktop && npm install && npm run installer
+```
+
+builds `desktop/src-tauri/target/release/bundle/nsis/Auspex Augur_<version>_x64-setup.exe`.
+`scripts/prepare-server.mjs` first stages the MCP server code in
+`desktop/server-dist/` (git-ignored): `src/`, `skills/`,
+`scripts/installSkills.mjs`, `package.json` with its lock file, `LICENSE`,
+`profiles.example.json` and the production `node_modules`
+(`npm ci --omit=dev --ignore-scripts`). `src-tauri/tauri.installer.conf.json`
+adds it to the bundle as the `server/` resource folder and turns on the NSIS
+target; the plain `npm run build` stays without a bundle. The NSIS script is
+Tauri's own template (`src-tauri/windows/installer.nsi`, kept in step with the
+`@tauri-apps/cli` version) with one change, the per-user folder, and
+`src-tauri/windows/hooks.nsh` adds the Node check after the files are copied.
+The workflow `.github/workflows/release.yml` builds the same installer on a
+Windows runner for `v*` tags or by hand and attaches it, with a SHA-256 file,
+to the GitHub Release.
+
+What `setup.exe` does:
+
+- installs for the current user only, without administrator rights, into
+  `%LOCALAPPDATA%\Programs\Auspex Augur` (`auspex-augur.exe`, `server\`,
+  `uninstall.exe`), with a Start menu entry and an entry in *Installed apps*;
+- checks for Node.js 20+ like the app does (`AUSPEX_NODE`, else `node.exe`
+  in an absolute `PATH` entry, run as `node --version`); when it is missing
+  or too old it says so and offers to open <https://nodejs.org/>. Node is not
+  bundled;
+- installs over an older version (no auto-update: a new version is a new
+  `setup.exe`);
+- uninstalls the program files and its shortcuts only. `~/.auspex` (memory,
+  library, profiles, logs, exports) is never touched.
+
+v1 is not code-signed: Windows SmartScreen shows "Unknown publisher" on first
+start (*More info* → *Run anyway*).
+
+#### Setup screen
+
+The desktop app has a **Setup** tab (TR *Kurulum*; the browser viewer has
+none). It opens by itself while there is no profiles file, and its count shows
+the steps that keep Auspex from working. Each step is marked *done*, *needed*
+or *optional*:
+
+- **Node.js**: the Node the app would start and its version (Node 20+), or
+  why there is none, with the download link to copy.
+- **Auspex folder and profiles**: `~/.auspex` (or `AUSPEX_HOME`) and the
+  profiles file. *Create the Auspex folder* creates the folder and an example
+  `profiles.json` with one profile (`exampledb` on `db.example.test` as
+  `report_reader`) only when they are absent; an existing file is never
+  opened for writing. The step is audited as `setup_init`.
+- **Auspex program files**: the folder approvals and memory edits run from,
+  and where that came from (the installed copy, `auspexRoot` or
+  `AUSPEX_ROOT`).
+- **Passwords (pgpass)**: where the PostgreSQL client looks for the password
+  file (`PGPASSFILE`, else `%APPDATA%\postgresql\pgpass.conf` on Windows and
+  `~/.pgpass` elsewhere), whether it exists, and the line format
+  `hostname:port:database:username:password`. The screen never reads the file
+  and has no password field.
+- **MCP client entry**: the `mcpServers` entry with the installed
+  `server\src\index.js` filled in, behind a *Copy* button. Auspex does not
+  edit any client configuration.
+- **Workflow skills**: *Install skills* runs
+  `node <auspexRoot>/src/stageCli.js install-skills`, which copies the bundled
+  skills into `~/.claude/skills` (or `AUSPEX_SKILLS_TARGET`) like
+  `npm run skills:install`. A skill that differs there is not touched: the
+  screen names it and offers *Replace the differing skills*
+  (`install-skills --force true`). Audited as `install_skills`.
+
+Nothing on this screen connects to a database. It is read with
+`GET /api/setup` through the app's `api` command; the two writes are the
+`setup_init` and `install_skills` commands.
 
 > [!NOTE]
 > Start the desktop app from Explorer. When it is launched from inside an
@@ -456,7 +531,12 @@ Requirements:
   `node.exe`. Only absolute `PATH` entries are searched.
 - **The Auspex folder**: `AUSPEX_ROOT`, or a top-level `"auspexRoot"` in
   `~/.auspex/profiles.json` (see Profiles file), pointing at the checkout that
-  holds `src/stageCli.js`. Without it the app shows "Auspex folder not found"
+  holds `src/stageCli.js`. An explicit value always wins, and an invalid one
+  is refused (never replaced by the installed copy). Without either, an
+  installed app uses the server copy installed with it
+  (`<install folder>\server`), found from the location of the running
+  executable; no setting, environment variable or argument can move it.
+  Without any of these the app shows "Auspex folder not found"
   (TR "Auspex klasörü bulunamadı") with how to set it.
 
 The app starts only this fixed program and script, passes each part of the
@@ -465,5 +545,7 @@ in Rust first, and stops the CLI after 30 seconds. When the CLI times out or
 gives no result, the change may or may not have been applied: the app says so,
 reloads the list and writes an audit line (actor `desktop`, error code
 `TIMEOUT` or `CLI_FAILED`) itself. Only `api`,
-`approve_report`, `revoke_report`, `archive_note`, `score_column` and `edit_memory` are allowed in the
-window's capability; there is no shell plugin.
+`approve_report`, `revoke_report`, `archive_note`, `score_column`, `edit_memory`, `setup_init` and `install_skills` are allowed in the
+window's capability; there is no shell plugin. Besides the CLI, the Setup
+screen's Node check runs the same Node program with the single argument
+`--version`.

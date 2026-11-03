@@ -129,3 +129,29 @@ to the HTTP route).
   IPC and opens no loopback HTTP port.
 - An owner-only bootstrap secret for the browser viewer is planned
   (issue #102).
+
+## Desktop app and Windows installer
+
+- The desktop app never connects to a database and never shows or asks for a
+  password; its Setup screen has no password field and reports only whether
+  the pgpass file exists, never its content.
+- It starts only the Node program (`AUSPEX_NODE` or `node.exe` in an absolute
+  `PATH` entry) with `src/stageCli.js` of the Auspex folder, or with the single
+  argument `--version` for the Node check, never through a shell.
+- The Auspex folder is `AUSPEX_ROOT`, else `auspexRoot` in the profiles file,
+  else the server copy installed with the app. The installed copy is found
+  from the running executable's own location, so no setting, environment
+  variable or argument can point the app at another program; an invalid
+  explicit value is refused instead of falling back.
+- The Setup screen writes only what is absent: `~/.auspex` and an example
+  `profiles.json` with invented names (an existing file is never opened for
+  writing), and the workflow skills in the agent skills folder (a differing
+  skill is replaced only on an explicit second click). It never edits an MCP
+  client's configuration; the entry is copied by the person.
+- `setup.exe` installs per user without administrator rights. The package
+  holds the app, the server code and its production dependencies only: no
+  profiles, secrets or environment-specific paths. Uninstalling removes the
+  program files and shortcuts and never touches `~/.auspex`.
+- v1 is not code-signed, so Windows SmartScreen shows "Unknown publisher".
+  Download it only from the project's GitHub Releases page; each release has
+  a `.sha256` file to compare with `Get-FileHash`.

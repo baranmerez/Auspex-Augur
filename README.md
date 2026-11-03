@@ -131,17 +131,44 @@ The same screens run in the browser with `npm run viewer`. Details: [docs/viewer
 
 ## 🚀 Quick start
 
-**You need** Node.js 20+ and a PostgreSQL server where you can create a role. Building the desktop app also needs Rust and WebView2.
+**You need** Node.js 20+ ([nodejs.org](https://nodejs.org/), LTS) and a PostgreSQL server where you can create a role.
+
+### Windows installer (recommended)
+
+Download `Auspex-Augur-<version>-x64-setup.exe` from the
+[Releases](https://github.com/baranmerez/Auspex-Augur/releases) page and run it. It installs
+for your user only (no administrator rights) into
+`%LOCALAPPDATA%\Programs\Auspex Augur`: the desktop app and the MCP server
+code, with a Start menu entry and an uninstaller. Node.js is not included; the
+installer tells you when it is missing or older than 20.
+
+> [!NOTE]
+> The installer is not code-signed yet. On first start Windows SmartScreen
+> says "Windows protected your PC" / "Unknown publisher": choose
+> **More info**, then **Run anyway**. There is no auto-update: install a new
+> `setup.exe` over the old one. Uninstalling removes the program files only;
+> your data in `~/.auspex` (memory, library, profiles, logs) stays.
+
+On first start the app opens its **Setup** screen: it checks Node, creates
+`~/.auspex` with an example `profiles.json` when there is none, shows the MCP
+client entry with the installed path to copy, explains where pgpass lives and
+installs the workflow skills on request. Then follow steps 1 to 4 below.
+
+### From source
+
+Building the desktop app from source also needs Rust and WebView2.
 
 ```bash
 git clone https://github.com/baranmerez/Auspex-Augur.git auspex
 cd auspex && npm install && npm test
 ```
 
+### Steps
+
 1. **Create the role** with [`scripts/create-auspex-role.sql`](scripts/create-auspex-role.sql), then grant schemas with [`scripts/grant-schemas-readonly.sql`](scripts/grant-schemas-readonly.sql).
 2. **Store the password in pgpass** as `host:port:database:Auspex:password`: `%APPDATA%\postgresql\pgpass.conf` on Windows, `~/.pgpass` elsewhere.
 3. **Add a profile** to `~/.auspex/profiles.json`. See [`profiles.example.json`](profiles.example.json).
-4. **Register the server** in your MCP client. See [docs/clients.md](docs/clients.md).
+4. **Register the server** in your MCP client. See [docs/clients.md](docs/clients.md). With the installer, copy the entry from the Setup screen; the server is `%LOCALAPPDATA%\Programs\Auspex Augur\server\src\index.js`.
 
 > [!TIP]
 > Say "work on the `example` database" and the agent starts right away. If you don't name one, it lists the profiles and asks.
