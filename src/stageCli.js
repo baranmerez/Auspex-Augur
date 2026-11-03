@@ -20,6 +20,11 @@
 //   node src/stageCli.js schedule-overview
 //   node src/stageCli.js trend --db <db> --schema <s> --category <c> --name <n>
 //   node src/stageCli.js table-profile --profile <p> --schema <s> --table <t>
+// For the desktop app's Setup screen: copies the bundled workflow skills into
+// the agent skills folder (~/.claude/skills or AUSPEX_SKILLS_TARGET), like
+// npm run skills:install; a skill that differs there is replaced only with
+// --force true (src/skillsInstall.js):
+//   node src/stageCli.js install-skills [--force true]
 // Files only: no database, no network. Prints one JSON line,
 // { ok: true, ... } or { ok: false, code, message }, and exits with 1 on any
 // error.
@@ -37,6 +42,7 @@ import { archiveKeys, validateArchiveInput, archiveNoteFor } from './memory/note
 import { userScoreKeys, validateUserScoreInput, userScoreAudit, setUserScoreFor } from './memory/userScore.js';
 import { validateEditInput, editAudit, applyMemoryEdit, readTableProfileFor, maxEditBytes } from './memory/memoryEdit.js';
 import { scheduleIndex, reportTrend, scheduleOverview } from './schedule/viewerData.js';
+import { skillsTarget, planSkillInstall, applySkillInstall } from './skillsInstall.js';
 
 // The folders as the server and viewer see them; a broken profiles file does
 // not hide the library (the viewer falls back the same way).
@@ -222,7 +228,43 @@ function trendMain(args, env) {
   }
 }
 
+// Skills into the agent skills folder (Setup screen). A conflict writes
+// nothing and names the differing skills; --force true replaces them.
+const skillArgKeys = new Map([['force', 'force']]);
+function installSkillsMain(args, env, dirs) {
+  const started = Date.now();
+  const entry = { source: 'desktop', tool: 'install_skills', actor: 'desktop', correlationId: crypto.randomUUID() };
+  const audit = createAuditLog(dirs.logDir);
+  try {
+    const { force } = parseArgs(args, skillArgKeys);
+    if (force !== undefined && force !== 'true') throw new StageError(400, '--force takes only true');
+    const target = skillsTarget(null, env);
+    const plan = planSkillInstall(target);
+    if (!plan.length) throw new Error('No skills found in the Auspex folder');
+    const { conflicts, done } = applySkillInstall(target, plan, { force: force === 'true' });
+    if (conflicts) {
+      audit({ ...entry, ms: Date.now() - started, error: 'skills differ', errorCode: 'SKILLS_CONFLICT', conflicts: conflicts.length });
+      return {
+        status: 1,
+        out: {
+          ok: false, code: 'SKILLS_CONFLICT', target, conflicts: conflicts.map(c => ({ name: c.name, files: c.diff })),
+          message: `Nothing written: ${conflicts.map(c => c.name).join(', ')} already ${conflicts.length === 1 ? 'exists' : 'exist'} in ${target} with different content. Compare them, then replace them on purpose.`,
+          correlationId: entry.correlationId,
+        },
+      };
+    }
+    const count = r => done.filter(d => d.result === r).length;
+    audit({ ...entry, ms: Date.now() - started, installed: count('installed'), replaced: count('replaced'), unchanged: count('unchanged') });
+    return { status: 0, out: { ok: true, target, skills: done.map(d => ({ name: d.name, result: d.result })), correlationId: entry.correlationId } };
+  } catch (err) {
+    const { code } = classifyError(err);
+    audit({ ...entry, ms: Date.now() - started, error: err.message, errorCode: code });
+    return { status: 1, out: { ok: false, code, message: err.message, correlationId: entry.correlationId } };
+  }
+}
+
 function main(argv, env) {
+  if (argv[0] === 'install-skills') return installSkillsMain(argv.slice(1), env, folders(env));
   if (argv[0] === 'schedules') return schedulesMain(argv.slice(1), env);
   if (argv[0] === 'schedule-overview') return scheduleOverviewMain(argv.slice(1), env);
   if (argv[0] === 'trend') return trendMain(argv.slice(1), env);
@@ -231,7 +273,7 @@ function main(argv, env) {
   if (argv[0] === 'memory-edit') return editMain(argv.slice(1), folders(env));
   if (argv[0] === 'table-profile') return tableProfileMain(argv.slice(1), folders(env));
   const action = Object.hasOwn(stageActions, argv[0] ?? '') ? stageActions[argv[0]] : null;
-  if (!action) return { status: 1, out: { ok: false, code: 'INVALID_INPUT', message: 'Usage: stageCli.js approve|revoke --db <db> --schema <schema> --category <category> --name <name> --expected-hash <hash>, stageCli.js archive-note --profile <profile> --id <id> --reason <reason>, stageCli.js score-column --profile <profile> --schema <schema> --table <table> --column <column> (--score <1-5> [--roles <roles>] | --clear true), stageCli.js memory-edit (JSON request on stdin) or stageCli.js table-profile --profile <profile> --schema <schema> --table <table>' } };
+  if (!action) return { status: 1, out: { ok: false, code: 'INVALID_INPUT', message: 'Usage: stageCli.js approve|revoke --db <db> --schema <schema> --category <category> --name <name> --expected-hash <hash>, stageCli.js archive-note --profile <profile> --id <id> --reason <reason>, stageCli.js score-column --profile <profile> --schema <schema> --table <table> --column <column> (--score <1-5> [--roles <roles>] | --clear true), stageCli.js memory-edit (JSON request on stdin), stageCli.js table-profile --profile <profile> --schema <schema> --table <table> or stageCli.js install-skills [--force true]' } };
   const dirs = folders(env);
   const started = Date.now();
   const entry = { source: 'desktop', tool: action.tool, actor: 'desktop', correlationId: crypto.randomUUID(), fromStage: action.from, toStage: action.to };
