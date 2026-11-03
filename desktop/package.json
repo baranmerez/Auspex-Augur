@@ -5,8 +5,10 @@
   "description": "Auspex Augur desktop viewer (Tauri): audit log and profiles from ~/.auspex, tray icon, optional start with Windows.",
   "scripts": {
     "prepare-ui": "node scripts/prepare-ui.mjs",
+    "prepare-server": "node scripts/prepare-server.mjs",
     "dev": "tauri dev",
     "build": "tauri build --no-bundle",
+    "installer": "node scripts/prepare-server.mjs && tauri build --bundles nsis --config src-tauri/tauri.installer.conf.json",
     "icons": "tauri icon icon.svg"
   },
   "devDependencies": {

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "Auspex Augur",
+    "shortDescription": "Auspex Augur: read-only PostgreSQL MCP server with a desktop viewer",
+    "copyright": "MIT License",
+    "resources": { "../server-dist/": "server/" },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "template": "windows/installer.nsi",
+        "installerHooks": "windows/hooks.nsh",
+        "displayLanguageSelector": false
+      }
+    }
+  }
+}
